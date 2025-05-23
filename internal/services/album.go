@@ -353,6 +353,37 @@ func (s *AlbumService) RemoveAssets(albumID uuid.UUID, userID uuid.UUID, req Rem
 	return s.GetAlbumByID(albumID, userID)
 }
 
+func (s *AlbumService) AddUsersToAlbum(albumID uuid.UUID, userIDs []uuid.UUID) error {
+	var album models.Album
+	if err := s.db.Where("id = ?", albumID).First(&album).Error; err != nil {
+		return errors.New("album not found")
+	}
+
+	// Add users to album
+	for _, userID := range userIDs {
+		var user models.User
+		if err := s.db.Where("id = ?", userID).First(&user).Error; err == nil {
+			s.db.Model(&album).Association("SharedUsers").Append(&user)
+		}
+	}
+
+	return nil
+}
+
+func (s *AlbumService) RemoveUserFromAlbum(albumID, userID uuid.UUID) error {
+	var album models.Album
+	if err := s.db.Where("id = ?", albumID).First(&album).Error; err != nil {
+		return errors.New("album not found")
+	}
+
+	var user models.User
+	if err := s.db.Where("id = ?", userID).First(&user).Error; err != nil {
+		return errors.New("user not found")
+	}
+
+	return s.db.Model(&album).Association("SharedUsers").Delete(&user)
+}
+
 func (s *AlbumService) toAlbumResponse(album models.Album) AlbumResponse {
 	response := AlbumResponse{
 		ID:                album.ID,

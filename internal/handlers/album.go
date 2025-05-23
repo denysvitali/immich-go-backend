@@ -269,3 +269,54 @@ func (h *AlbumHandler) GetAlbumCount(c *gin.Context) {
 		"notShared": len(albums),
 	})
 }
+
+func (h *AlbumHandler) AddUsersToAlbum(c *gin.Context) {
+	albumID := c.Param("id")
+	id, err := uuid.Parse(albumID)
+	if err != nil {
+		respondWithError(c, http.StatusBadRequest, "Invalid album ID")
+		return
+	}
+
+	var req struct {
+		SharedUserIds []uuid.UUID `json:"sharedUserIds" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondWithError(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	err = h.services.Album.AddUsersToAlbum(id, req.SharedUserIds)
+	if err != nil {
+		respondWithError(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondWithSuccess(c, "Users added to album")
+}
+
+func (h *AlbumHandler) RemoveUserFromAlbum(c *gin.Context) {
+	albumID := c.Param("id")
+	userID := c.Param("userId")
+
+	albumUUID, err := uuid.Parse(albumID)
+	if err != nil {
+		respondWithError(c, http.StatusBadRequest, "Invalid album ID")
+		return
+	}
+
+	userUUID, err := uuid.Parse(userID)
+	if err != nil {
+		respondWithError(c, http.StatusBadRequest, "Invalid user ID")
+		return
+	}
+
+	err = h.services.Album.RemoveUserFromAlbum(albumUUID, userUUID)
+	if err != nil {
+		respondWithError(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondWithSuccess(c, "User removed from album")
+}
