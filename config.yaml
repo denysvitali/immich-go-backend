@@ -1,0 +1,69 @@
+# Immich Go Backend Configuration
+server:
+  http_port: 3001
+  grpc_port: 3002
+  host: "0.0.0.0"
+  read_timeout: 30s
+  write_timeout: 30s
+  shutdown_timeout: 10s
+
+database:
+  host: "localhost"
+  port: 5432
+  user: "immich"
+  password: "immich"
+  name: "immich"
+  ssl_mode: "disable"
+  max_open_conns: 25
+  max_idle_conns: 10
+  conn_max_lifetime: 1h
+
+logging:
+  level: "info"
+  format: "json"
+  output: "stdout"
+
+jwt:
+  secret_key: "your-super-secret-jwt-key-change-this-in-production"
+  expiry: "24h"
+  refresh_expiry: "168h"
+
+storage:
+  upload_location: "./uploads"
+  library_location: "./library"
+  thumbs_location: "./thumbs"
+  profile_location: "./profile"
+  video_location: "./encoded-video"
+
+features:
+  oauth_enabled: false
+  facial_recognition: true
+  smart_search: true
+  trash: true
+  sidecar: true
+  map: true
+  duplicate_detection: true
+
+mail:
+  enabled: false
+  smtp:
+    host: ""
+    port: 587
+    username: ""
+    password: ""
+    from: "noreply@immich.app"
+
+external:
+  domain: ""
+  login_page_message: ""
+
+machine_learning:
+  enabled: true
+  url: "http://localhost:3003"
+  clip:
+    enabled: true
+    model_name: "ViT-B-32__openai"
+  facial_recognition:
+    enabled: true
+    model_name: "buffalo_l"
+    min_score: 0.7
