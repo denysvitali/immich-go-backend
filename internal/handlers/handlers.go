@@ -27,6 +27,8 @@ type Handlers struct {
 	SystemConfig *SystemConfigHandler
 	SystemMetadata *SystemMetadataHandler
 	OAuth    *OAuthHandler
+	AdminNotification *AdminNotificationHandler
+	AdminUser *AdminUserHandler
 }
 
 func NewHandlers(services *services.Services) *Handlers {
@@ -52,6 +54,8 @@ func NewHandlers(services *services.Services) *Handlers {
 		SystemConfig:   NewSystemConfigHandler(services),
 		SystemMetadata: NewSystemMetadataHandler(services),
 		OAuth:          NewOAuthHandler(services),
+		AdminNotification: NewAdminNotificationHandler(services),
+		AdminUser:      NewAdminUserHandler(services),
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 
 	"github.com/denysvitali/immich-go-backend/internal/services"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 // Stub handlers for completeness - these can be expanded later
@@ -311,7 +312,8 @@ func NewAdminUserHandler(services *services.Services) *AdminUserHandler {
 }
 
 func (h *AdminUserHandler) SearchUsersAdmin(c *gin.Context) {
-	users, err := h.services.User.GetAllUsers()
+	includeDeleted := c.Query("withDeleted") == "true"
+	users, err := h.services.User.GetAllUsers(includeDeleted)
 	if err != nil {
 		respondWithError(c, http.StatusInternalServerError, err.Error())
 		return
@@ -320,19 +322,14 @@ func (h *AdminUserHandler) SearchUsersAdmin(c *gin.Context) {
 }
 
 func (h *AdminUserHandler) CreateUserAdmin(c *gin.Context) {
-	var req struct {
-		Email    string `json:"email" binding:"required,email"`
-		Password string `json:"password" binding:"required,min=8"`
-		Name     string `json:"name" binding:"required"`
-		IsAdmin  bool   `json:"isAdmin"`
-	}
+	var createReq services.CreateUserRequest
 
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := c.ShouldBindJSON(&createReq); err != nil {
 		respondWithError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	user, err := h.services.User.CreateUser(req.Email, req.Password, req.Name, req.IsAdmin)
+	user, err := h.services.User.CreateUser(createReq)
 	if err != nil {
 		respondWithError(c, http.StatusInternalServerError, err.Error())
 		return
@@ -366,19 +363,14 @@ func (h *AdminUserHandler) UpdateUserAdmin(c *gin.Context) {
 		return
 	}
 
-	var req struct {
-		Email     *string `json:"email,omitempty"`
-		Name      *string `json:"name,omitempty"`
-		IsAdmin   *bool   `json:"isAdmin,omitempty"`
-		ShouldChangePassword *bool `json:"shouldChangePassword,omitempty"`
-	}
+	var updateReq services.UpdateUserRequest
 
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := c.ShouldBindJSON(&updateReq); err != nil {
 		respondWithError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	user, err := h.services.User.UpdateUser(id, req.Email, req.Name, req.IsAdmin, req.ShouldChangePassword)
+	user, err := h.services.User.UpdateUser(id, updateReq)
 	if err != nil {
 		respondWithError(c, http.StatusInternalServerError, err.Error())
 		return
@@ -440,7 +432,7 @@ func (h *AdminUserHandler) UpdateUserPreferencesAdmin(c *gin.Context) {
 		return
 	}
 
-	err = h.services.User.UpdateUserPreferences(id, prefs)
+	_, err = h.services.User.UpdateUserPreferences(id, prefs)
 	if err != nil {
 		respondWithError(c, http.StatusInternalServerError, err.Error())
 		return

@@ -211,3 +211,9 @@ func (h *AuthHandler) LogoutAuthDevice(c *gin.Context) {
 	// For now, just return success
 	respondWithSuccess(c, "Device logged out successfully")
 }
+
+func (h *AuthHandler) ValidateToken(c *gin.Context) {
+	respondWithData(c, gin.H{
+		"authStatus": true,
+	})
+}

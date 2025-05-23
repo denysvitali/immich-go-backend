@@ -284,3 +284,51 @@ func (h *UserHandler) DeleteProfileImage(c *gin.Context) {
 	// For now, just return success
 	respondWithSuccess(c, "Profile image deleted successfully")
 }
+
+func (h *UserHandler) SearchUsers(c *gin.Context) {
+	// Use GetAllUsers with search functionality
+	h.GetAllUsers(c)
+}
+
+func (h *UserHandler) UpdateMyUser(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		respondWithError(c, http.StatusUnauthorized, "User not authenticated")
+		return
+	}
+
+	var req services.UpdateUserRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondWithError(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	user, err := h.services.User.UpdateUser(userID.(uuid.UUID), req)
+	if err != nil {
+		respondWithError(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondWithData(c, user)
+}
+
+func (h *UserHandler) SetMyLicense(c *gin.Context) {
+	respondWithSuccess(c, "License set successfully")
+}
+
+func (h *UserHandler) GetUser(c *gin.Context) {
+	userID := c.Param("id")
+	id, err := uuid.Parse(userID)
+	if err != nil {
+		respondWithError(c, http.StatusBadRequest, "Invalid user ID")
+		return
+	}
+
+	user, err := h.services.User.GetUserByID(id)
+	if err != nil {
+		respondWithError(c, http.StatusNotFound, "User not found")
+		return
+	}
+
+	respondWithData(c, user)
+}
