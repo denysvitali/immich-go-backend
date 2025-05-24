@@ -194,3 +194,19 @@ type Stack struct {
 	Assets         []Asset   `gorm:"foreignKey:StackID" json:"assets"`
 	AssetCount     int       `json:"assetCount"`
 }
+
+// AlbumAsset represents the many-to-many relationship between albums and assets
+type AlbumAsset struct {
+	AlbumID uuid.UUID `gorm:"type:uuid;primaryKey" json:"albumId"`
+	AssetID uuid.UUID `gorm:"type:uuid;primaryKey" json:"assetId"`
+	Album   Album     `gorm:"foreignKey:AlbumID" json:"album"`
+	Asset   Asset     `gorm:"foreignKey:AssetID" json:"asset"`
+}
+
+// AlbumSharedUser represents the many-to-many relationship between albums and shared users
+type AlbumSharedUser struct {
+	AlbumID uuid.UUID `gorm:"type:uuid;primaryKey" json:"albumId"`
+	UserID  uuid.UUID `gorm:"type:uuid;primaryKey" json:"userId"`
+	Album   Album     `gorm:"foreignKey:AlbumID" json:"album"`
+	User    User      `gorm:"foreignKey:UserID" json:"user"`
+}

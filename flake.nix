@@ -60,11 +60,6 @@
             echo "   go run main.go        # Run the server"
             echo ""
             
-            # Set up Go environment
-            export GOPATH="$(pwd)/.gopath"
-            export PATH="$GOPATH/bin:$PATH"
-            mkdir -p "$GOPATH/bin"
-            
             # Protocol Buffers include path
             export PROTOC_INCLUDE="${pkgs.protobuf}/include"
           '';

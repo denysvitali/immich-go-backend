@@ -70,7 +70,6 @@ test-verbose: proto-gen ## Run tests with verbose output
 clean: proto-clean ## Clean all generated files and build artifacts
 	@echo "🧹 Cleaning build artifacts..."
 	@rm -rf bin/
-	@rm -rf .gopath/
 	@echo "✅ Clean complete"
 
 fmt: ## Format Go code

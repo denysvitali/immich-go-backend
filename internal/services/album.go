@@ -161,12 +161,10 @@ func (s *AlbumService) GetAlbumByID(albumID uuid.UUID, userID uuid.UUID) (*Album
 
 func (s *AlbumService) CreateAlbum(userID uuid.UUID, req CreateAlbumRequest) (*AlbumResponse, error) {
 	album := models.Album{
-		ID:                uuid.New(),
-		AlbumName:         req.AlbumName,
+		Name:              req.AlbumName,
 		Description:       "",
 		OwnerID:           userID,
 		IsActivityEnabled: true,
-		Order:             "DESC",
 	}
 
 	if req.Description != nil {
@@ -238,7 +236,7 @@ func (s *AlbumService) UpdateAlbum(albumID uuid.UUID, userID uuid.UUID, req Upda
 	}
 
 	if req.AlbumName != nil {
-		album.AlbumName = *req.AlbumName
+		album.Name = *req.AlbumName
 	}
 	if req.Description != nil {
 		album.Description = *req.Description
@@ -387,17 +385,17 @@ func (s *AlbumService) RemoveUserFromAlbum(albumID, userID uuid.UUID) error {
 func (s *AlbumService) toAlbumResponse(album models.Album) AlbumResponse {
 	response := AlbumResponse{
 		ID:                album.ID,
-		AlbumName:         album.AlbumName,
+		AlbumName:         album.Name,
 		Description:       album.Description,
 		CreatedAt:         album.CreatedAt,
 		UpdatedAt:         album.UpdatedAt,
-		Shared:            len(album.SharedUsers) > 0,
+		Shared:            false, // TODO: implement shared users
 		HasSharedLink:     false, // TODO: implement shared links
 		IsActivityEnabled: album.IsActivityEnabled,
-		Order:             album.Order,
+		Order:             "DESC", // Default order since not in model
 		Assets:            make([]AssetResponse, len(album.Assets)),
 		AssetCount:        len(album.Assets),
-		SharedUsers:       make([]UserResponse, len(album.SharedUsers)),
+		SharedUsers:       make([]UserResponse, 0), // TODO: implement shared users
 	}
 
 	// Convert owner
@@ -406,11 +404,7 @@ func (s *AlbumService) toAlbumResponse(album models.Album) AlbumResponse {
 		response.Owner = userService.toUserResponse(album.Owner)
 	}
 
-	// Convert shared users
-	for i, user := range album.SharedUsers {
-		userService := &UserService{db: s.db}
-		response.SharedUsers[i] = userService.toUserResponse(user)
-	}
+	// TODO: Convert shared users when implemented
 
 	// Convert assets
 	for i, asset := range album.Assets {
@@ -423,8 +417,8 @@ func (s *AlbumService) toAlbumResponse(album models.Album) AlbumResponse {
 		var startDate, endDate *time.Time
 		for _, asset := range album.Assets {
 			assetDate := asset.CreatedAt
-			if asset.FileCreatedAt != nil {
-				assetDate = *asset.FileCreatedAt
+			if !asset.FileCreatedAt.IsZero() {
+				assetDate = asset.FileCreatedAt
 			}
 
 			if startDate == nil || assetDate.Before(*startDate) {
@@ -447,26 +441,31 @@ func (s *AlbumService) toAlbumResponse(album models.Album) AlbumResponse {
 }
 
 func toAssetResponse(asset models.Asset) AssetResponse {
+	var duration *string
+	if asset.Duration != "" {
+		duration = &asset.Duration
+	}
+
 	return AssetResponse{
 		ID:               asset.ID,
-		DeviceAssetId:    asset.DeviceAssetId,
+		DeviceAssetId:    asset.DeviceAssetID,
 		OwnerID:          asset.OwnerID,
 		DeviceID:         asset.DeviceID,
 		Type:             asset.Type,
 		OriginalPath:     asset.OriginalPath,
 		OriginalFileName: asset.OriginalFileName,
-		ResizePath:       asset.ResizePath,
-		WebpPath:         asset.WebpPath,
-		ThumbhashPath:    asset.ThumbhashPath,
-		EncodedVideoPath: asset.EncodedVideoPath,
+		ResizePath:       nil, // TODO: implement resize path
+		WebpPath:         nil, // TODO: implement webp path
+		ThumbhashPath:    nil, // TODO: implement thumbhash path
+		EncodedVideoPath: nil, // TODO: implement encoded video path
 		CreatedAt:        asset.CreatedAt,
 		UpdatedAt:        asset.UpdatedAt,
 		IsFavorite:       asset.IsFavorite,
 		IsArchived:       asset.IsArchived,
 		IsTrashed:        asset.IsTrashed,
-		Duration:         asset.Duration,
+		Duration:         duration,
 		Checksum:         asset.Checksum,
-		StackParentId:    asset.StackParentId,
+		StackParentId:    asset.StackID,
 		// TODO: Add ExifInfo, SmartInfo, Tags, People conversion
 	}
 }

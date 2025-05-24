@@ -1,6 +1,8 @@
 version: v2
 plugins:
   - local: protoc-gen-go
-    out: src/proto/generated
+    out: internal/proto
+    opt: module=github.com/denysvitali/immich-go-backend
   - local: protoc-gen-go-grpc
-    out: src/proto/generated
+    out: internal/proto
+    opt: module=github.com/denysvitali/immich-go-backend
