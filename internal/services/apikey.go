@@ -69,14 +69,14 @@ func (s *APIKeyService) GetAPIKeyByID(keyID uuid.UUID, userID uuid.UUID) (*APIKe
 }
 
 func (s *APIKeyService) CreateAPIKey(userID uuid.UUID, req CreateAPIKeyRequest) (*APIKeyResponse, error) {
+	// Create auth service
+	authService := auth.NewService("") // TODO: Use proper secret from config
+
 	// Generate API key
-	keySecret, err := auth.GenerateAPIKey()
-	if err != nil {
-		return nil, err
-	}
+	keySecret := authService.GenerateAPIKey()
 
 	// Hash the key for storage
-	hashedKey, err := auth.HashPassword(keySecret)
+	hashedKey, err := authService.HashPassword(keySecret)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +87,6 @@ func (s *APIKeyService) CreateAPIKey(userID uuid.UUID, req CreateAPIKeyRequest) 
 	}
 
 	apiKey := models.APIKey{
-		ID:     uuid.New(),
 		Name:   name,
 		Key:    hashedKey,
 		UserID: userID,
@@ -151,8 +150,11 @@ func (s *APIKeyService) ValidateAPIKey(keySecret string) (*models.User, error) {
 		return nil, err
 	}
 
+	// Create auth service
+	authService := auth.NewService("") // TODO: Use proper secret from config
+
 	for _, apiKey := range apiKeys {
-		if auth.CheckPasswordHash(keySecret, apiKey.Key) {
+		if authService.CheckPassword(keySecret, apiKey.Key) == nil {
 			return &apiKey.User, nil
 		}
 	}

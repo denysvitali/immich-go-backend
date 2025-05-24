@@ -143,25 +143,29 @@ func (s *AssetService) CreateAsset(userID uuid.UUID, req CreateAssetRequest) (*A
 	}
 
 	asset := models.Asset{
-		ID:               uuid.New(),
-		DeviceAssetId:    req.DeviceAssetId,
+		DeviceAssetID:    req.DeviceAssetId,
 		OwnerID:          userID,
 		DeviceID:         req.DeviceID,
 		Type:             req.Type,
 		OriginalPath:     req.OriginalPath,
 		OriginalFileName: req.OriginalFileName,
-		ResizePath:       req.ResizePath,
-		WebpPath:         req.WebpPath,
-		ThumbhashPath:    req.ThumbhashPath,
-		EncodedVideoPath: req.EncodedVideoPath,
-		Duration:         req.Duration,
 		IsVisible:        true,
 		IsFavorite:       false,
 		IsArchived:       false,
 		IsTrashed:        false,
-		FileCreatedAt:    req.FileCreatedAt,
-		FileModifiedAt:   req.FileModifiedAt,
-		LibraryId:        req.LibraryId,
+	}
+	
+	// Set duration if provided
+	if req.Duration != nil {
+		asset.Duration = *req.Duration
+	}
+	
+	// Set file timestamps if provided
+	if req.FileCreatedAt != nil {
+		asset.FileCreatedAt = *req.FileCreatedAt
+	}
+	if req.FileModifiedAt != nil {
+		asset.FileModifiedAt = *req.FileModifiedAt
 	}
 
 	if req.IsVisible != nil {
@@ -252,9 +256,9 @@ func (s *AssetService) RestoreAssets(userID uuid.UUID, assetIDs []uuid.UUID) err
 
 func (s *AssetService) GetAssetStatistics(userID uuid.UUID) (*AssetStatsResponse, error) {
 	var stats struct {
-		TotalImages int
-		TotalVideos int
-		Total       int
+		TotalImages int64
+		TotalVideos int64
+		Total       int64
 	}
 
 	// Count images
@@ -274,9 +278,9 @@ func (s *AssetService) GetAssetStatistics(userID uuid.UUID) (*AssetStatsResponse
 	stats.Total = stats.TotalImages + stats.TotalVideos
 
 	return &AssetStatsResponse{
-		Images: stats.TotalImages,
-		Videos: stats.TotalVideos,
-		Total:  stats.Total,
+		Images: int(stats.TotalImages),
+		Videos: int(stats.TotalVideos),
+		Total:  int(stats.Total),
 	}, nil
 }
 
@@ -315,17 +319,8 @@ func (s *AssetService) GetAssetThumbnail(assetID uuid.UUID, userID uuid.UUID, fo
 		return "", err
 	}
 
-	switch format {
-	case "WEBP":
-		if asset.WebpPath != nil {
-			return *asset.WebpPath, nil
-		}
-	case "JPEG":
-		if asset.ResizePath != nil {
-			return *asset.ResizePath, nil
-		}
-	}
-
+	// TODO: Add thumbnail path fields to Asset model
+	// For now, return original path
 	return asset.OriginalPath, nil
 }
 
@@ -354,7 +349,7 @@ func (s *AssetService) CheckExistingAssets(userID uuid.UUID, deviceAssetIds []st
 	}
 
 	for _, asset := range assets {
-		existing[asset.DeviceAssetId] = true
+		existing[asset.DeviceAssetID] = true
 	}
 
 	return existing, nil
@@ -372,25 +367,29 @@ func (s *AssetService) BulkUploadCheck(userID uuid.UUID, assetData []CreateAsset
 		}
 
 		asset := models.Asset{
-			ID:               uuid.New(),
-			DeviceAssetId:    req.DeviceAssetId,
+			DeviceAssetID:    req.DeviceAssetId,
 			OwnerID:          userID,
 			DeviceID:         req.DeviceID,
 			Type:             req.Type,
 			OriginalPath:     req.OriginalPath,
 			OriginalFileName: req.OriginalFileName,
-			ResizePath:       req.ResizePath,
-			WebpPath:         req.WebpPath,
-			ThumbhashPath:    req.ThumbhashPath,
-			EncodedVideoPath: req.EncodedVideoPath,
-			Duration:         req.Duration,
 			IsVisible:        true,
 			IsFavorite:       false,
 			IsArchived:       false,
 			IsTrashed:        false,
-			FileCreatedAt:    req.FileCreatedAt,
-			FileModifiedAt:   req.FileModifiedAt,
-			LibraryId:        req.LibraryId,
+		}
+		
+		// Set duration if provided
+		if req.Duration != nil {
+			asset.Duration = *req.Duration
+		}
+		
+		// Set file timestamps if provided
+		if req.FileCreatedAt != nil {
+			asset.FileCreatedAt = *req.FileCreatedAt
+		}
+		if req.FileModifiedAt != nil {
+			asset.FileModifiedAt = *req.FileModifiedAt
 		}
 
 		if req.IsVisible != nil {
