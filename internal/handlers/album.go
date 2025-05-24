@@ -264,8 +264,8 @@ func (h *AlbumHandler) GetAlbumCount(c *gin.Context) {
 	}
 
 	respondWithData(c, gin.H{
-		"owned":  len(albums), // TODO: Separate owned vs shared count
-		"shared": 0,
+		"owned":     len(albums), // TODO: Separate owned vs shared count
+		"shared":    0,
 		"notShared": len(albums),
 	})
 }

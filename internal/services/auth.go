@@ -28,13 +28,13 @@ type LoginRequest struct {
 }
 
 type LoginResponse struct {
-	AccessToken             string `json:"accessToken"`
-	IsAdmin                 bool   `json:"isAdmin"`
-	Name                    string `json:"name"`
-	ProfileImagePath        string `json:"profileImagePath"`
-	ShouldChangePassword    bool   `json:"shouldChangePassword"`
-	UserEmail               string `json:"userEmail"`
-	UserID                  string `json:"userId"`
+	AccessToken          string `json:"accessToken"`
+	IsAdmin              bool   `json:"isAdmin"`
+	Name                 string `json:"name"`
+	ProfileImagePath     string `json:"profileImagePath"`
+	ShouldChangePassword bool   `json:"shouldChangePassword"`
+	UserEmail            string `json:"userEmail"`
+	UserID               string `json:"userId"`
 }
 
 type SignUpRequest struct {
@@ -91,12 +91,12 @@ func (s *AuthService) AdminSignUp(req SignUpRequest) (*models.User, error) {
 	}
 
 	user := models.User{
-		Email:        req.Email,
-		Name:         req.Name,
-		PasswordHash: hashedPassword,
-		IsAdmin:      true,
+		Email:            req.Email,
+		Name:             req.Name,
+		PasswordHash:     hashedPassword,
+		IsAdmin:          true,
 		ProfileChangedAt: time.Now(),
-		AvatarColor:  "primary",
+		AvatarColor:      "primary",
 	}
 
 	if err := s.db.Create(&user).Error; err != nil {

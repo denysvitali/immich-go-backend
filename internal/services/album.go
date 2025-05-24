@@ -25,9 +25,9 @@ type CreateAlbumRequest struct {
 }
 
 type UpdateAlbumRequest struct {
-	AlbumName           *string `json:"albumName,omitempty"`
-	Description         *string `json:"description,omitempty"`
-	IsActivityEnabled   *bool   `json:"isActivityEnabled,omitempty"`
+	AlbumName         *string `json:"albumName,omitempty"`
+	Description       *string `json:"description,omitempty"`
+	IsActivityEnabled *bool   `json:"isActivityEnabled,omitempty"`
 }
 
 type AddAssetsRequest struct {
@@ -39,50 +39,50 @@ type RemoveAssetsRequest struct {
 }
 
 type AlbumResponse struct {
-	ID                uuid.UUID         `json:"id"`
-	AlbumName         string            `json:"albumName"`
-	Description       string            `json:"description"`
-	CreatedAt         time.Time         `json:"createdAt"`
-	UpdatedAt         time.Time         `json:"updatedAt"`
-	AlbumThumbnailAssetId *uuid.UUID    `json:"albumThumbnailAssetId"`
-	Shared            bool              `json:"shared"`
-	HasSharedLink     bool              `json:"hasSharedLink"`
-	IsActivityEnabled bool              `json:"isActivityEnabled"`
-	Order             string            `json:"order"`
-	Owner             UserResponse      `json:"owner"`
-	SharedUsers       []UserResponse    `json:"sharedUsers"`
-	Assets            []AssetResponse   `json:"assets"`
-	AssetCount        int               `json:"assetCount"`
-	LastModifiedAssetTimestamp *time.Time `json:"lastModifiedAssetTimestamp"`
-	StartDate         *time.Time        `json:"startDate"`
-	EndDate           *time.Time        `json:"endDate"`
+	ID                         uuid.UUID       `json:"id"`
+	AlbumName                  string          `json:"albumName"`
+	Description                string          `json:"description"`
+	CreatedAt                  time.Time       `json:"createdAt"`
+	UpdatedAt                  time.Time       `json:"updatedAt"`
+	AlbumThumbnailAssetId      *uuid.UUID      `json:"albumThumbnailAssetId"`
+	Shared                     bool            `json:"shared"`
+	HasSharedLink              bool            `json:"hasSharedLink"`
+	IsActivityEnabled          bool            `json:"isActivityEnabled"`
+	Order                      string          `json:"order"`
+	Owner                      UserResponse    `json:"owner"`
+	SharedUsers                []UserResponse  `json:"sharedUsers"`
+	Assets                     []AssetResponse `json:"assets"`
+	AssetCount                 int             `json:"assetCount"`
+	LastModifiedAssetTimestamp *time.Time      `json:"lastModifiedAssetTimestamp"`
+	StartDate                  *time.Time      `json:"startDate"`
+	EndDate                    *time.Time      `json:"endDate"`
 }
 
 type AssetResponse struct {
-	ID               uuid.UUID  `json:"id"`
-	DeviceAssetId    string     `json:"deviceAssetId"`
-	OwnerID          uuid.UUID  `json:"ownerId"`
-	DeviceID         string     `json:"deviceId"`
-	Type             string     `json:"type"`
-	OriginalPath     string     `json:"originalPath"`
-	OriginalFileName string     `json:"originalFileName"`
-	ResizePath       *string    `json:"resizePath"`
-	WebpPath         *string    `json:"webpPath"`
-	ThumbhashPath    *string    `json:"thumbhashPath"`
-	EncodedVideoPath *string    `json:"encodedVideoPath"`
-	CreatedAt        time.Time  `json:"createdAt"`
-	UpdatedAt        time.Time  `json:"updatedAt"`
-	IsFavorite       bool       `json:"isFavorite"`
-	IsArchived       bool       `json:"isArchived"`
-	IsTrashed        bool       `json:"isTrashed"`
-	Duration         *string    `json:"duration"`
-	ExifInfo         *ExifInfo  `json:"exifInfo"`
-	SmartInfo        *SmartInfo `json:"smartInfo"`
-	LivePhotoVideoId *uuid.UUID `json:"livePhotoVideoId"`
-	Tags             []string   `json:"tags"`
-	People           []string   `json:"people"`
-	Checksum         string     `json:"checksum"`
-	StackParentId    *uuid.UUID `json:"stackParentId"`
+	ID               uuid.UUID       `json:"id"`
+	DeviceAssetId    string          `json:"deviceAssetId"`
+	OwnerID          uuid.UUID       `json:"ownerId"`
+	DeviceID         string          `json:"deviceId"`
+	Type             string          `json:"type"`
+	OriginalPath     string          `json:"originalPath"`
+	OriginalFileName string          `json:"originalFileName"`
+	ResizePath       *string         `json:"resizePath"`
+	WebpPath         *string         `json:"webpPath"`
+	ThumbhashPath    *string         `json:"thumbhashPath"`
+	EncodedVideoPath *string         `json:"encodedVideoPath"`
+	CreatedAt        time.Time       `json:"createdAt"`
+	UpdatedAt        time.Time       `json:"updatedAt"`
+	IsFavorite       bool            `json:"isFavorite"`
+	IsArchived       bool            `json:"isArchived"`
+	IsTrashed        bool            `json:"isTrashed"`
+	Duration         *string         `json:"duration"`
+	ExifInfo         *ExifInfo       `json:"exifInfo"`
+	SmartInfo        *SmartInfo      `json:"smartInfo"`
+	LivePhotoVideoId *uuid.UUID      `json:"livePhotoVideoId"`
+	Tags             []string        `json:"tags"`
+	People           []string        `json:"people"`
+	Checksum         string          `json:"checksum"`
+	StackParentId    *uuid.UUID      `json:"stackParentId"`
 	Stack            []AssetResponse `json:"stack,omitempty"`
 }
 
@@ -147,7 +147,7 @@ func (s *AlbumService) GetAllAlbums(userID uuid.UUID, shared *bool) ([]AlbumResp
 func (s *AlbumService) GetAlbumByID(albumID uuid.UUID, userID uuid.UUID) (*AlbumResponse, error) {
 	var album models.Album
 	if err := s.db.Preload("Owner").Preload("SharedUsers").Preload("Assets").
-		Where("id = ? AND (owner_id = ? OR id IN (SELECT album_id FROM album_shared_users WHERE user_id = ?))", 
+		Where("id = ? AND (owner_id = ? OR id IN (SELECT album_id FROM album_shared_users WHERE user_id = ?))",
 			albumID, userID, userID).First(&album).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New("album not found")
@@ -303,7 +303,7 @@ func (s *AlbumService) DeleteAlbum(albumID uuid.UUID, userID uuid.UUID) error {
 func (s *AlbumService) AddAssets(albumID uuid.UUID, userID uuid.UUID, req AddAssetsRequest) (*AlbumResponse, error) {
 	// Check access to album
 	var album models.Album
-	if err := s.db.Where("id = ? AND (owner_id = ? OR id IN (SELECT album_id FROM album_shared_users WHERE user_id = ?))", 
+	if err := s.db.Where("id = ? AND (owner_id = ? OR id IN (SELECT album_id FROM album_shared_users WHERE user_id = ?))",
 		albumID, userID, userID).First(&album).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New("album not found or access denied")
@@ -335,7 +335,7 @@ func (s *AlbumService) AddAssets(albumID uuid.UUID, userID uuid.UUID, req AddAss
 func (s *AlbumService) RemoveAssets(albumID uuid.UUID, userID uuid.UUID, req RemoveAssetsRequest) (*AlbumResponse, error) {
 	// Check access to album
 	var album models.Album
-	if err := s.db.Where("id = ? AND (owner_id = ? OR id IN (SELECT album_id FROM album_shared_users WHERE user_id = ?))", 
+	if err := s.db.Where("id = ? AND (owner_id = ? OR id IN (SELECT album_id FROM album_shared_users WHERE user_id = ?))",
 		albumID, userID, userID).First(&album).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New("album not found or access denied")
@@ -426,7 +426,7 @@ func (s *AlbumService) toAlbumResponse(album models.Album) AlbumResponse {
 			if asset.FileCreatedAt != nil {
 				assetDate = *asset.FileCreatedAt
 			}
-			
+
 			if startDate == nil || assetDate.Before(*startDate) {
 				startDate = &assetDate
 			}
@@ -436,7 +436,7 @@ func (s *AlbumService) toAlbumResponse(album models.Album) AlbumResponse {
 		}
 		response.StartDate = startDate
 		response.EndDate = endDate
-		
+
 		// Set thumbnail to first asset
 		if len(album.Assets) > 0 {
 			response.AlbumThumbnailAssetId = &album.Assets[0].ID

@@ -23,11 +23,11 @@ type CreateAPIKeyRequest struct {
 }
 
 type APIKeyResponse struct {
-	ID        uuid.UUID  `json:"id"`
-	Name      string     `json:"name"`
-	CreatedAt time.Time  `json:"createdAt"`
-	UpdatedAt time.Time  `json:"updatedAt"`
-	Secret    *string    `json:"secret,omitempty"` // Only returned on creation
+	ID        uuid.UUID `json:"id"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+	Secret    *string   `json:"secret,omitempty"` // Only returned on creation
 }
 
 func (s *APIKeyService) GetAllAPIKeys(userID uuid.UUID) ([]APIKeyResponse, error) {

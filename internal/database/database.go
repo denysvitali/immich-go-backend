@@ -16,7 +16,7 @@ func Initialize(databaseURL string) (*gorm.DB, error) {
 	}
 
 	logrus.Info("Connecting to database...")
-	
+
 	config := &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Info),
 	}

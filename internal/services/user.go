@@ -26,55 +26,55 @@ type CreateUserRequest struct {
 }
 
 type UpdateUserRequest struct {
-	Email                    *string    `json:"email,omitempty"`
-	FirstName                *string    `json:"firstName,omitempty"`
-	LastName                 *string    `json:"lastName,omitempty"`
-	IsAdmin                  *bool      `json:"isAdmin,omitempty"`
-	ShouldChangePassword     *bool      `json:"shouldChangePassword,omitempty"`
-	ProfileImagePath         *string    `json:"profileImagePath,omitempty"`
-	StorageLabel             *string    `json:"storageLabel,omitempty"`
-	ExternalPath             *string    `json:"externalPath,omitempty"`
-	MemoriesEnabled          *bool      `json:"memoriesEnabled,omitempty"`
-	AvatarColor              *string    `json:"avatarColor,omitempty"`
-	QuotaSizeInBytes         *int64     `json:"quotaSizeInBytes,omitempty"`
-	NotifyUpload             *bool      `json:"notifyUpload,omitempty"`
-	NotifyAlbumInvite        *bool      `json:"notifyAlbumInvite,omitempty"`
-	NotifyAlbumUpdate        *bool      `json:"notifyAlbumUpdate,omitempty"`
-	NotifyComment            *bool      `json:"notifyComment,omitempty"`
+	Email                *string `json:"email,omitempty"`
+	FirstName            *string `json:"firstName,omitempty"`
+	LastName             *string `json:"lastName,omitempty"`
+	IsAdmin              *bool   `json:"isAdmin,omitempty"`
+	ShouldChangePassword *bool   `json:"shouldChangePassword,omitempty"`
+	ProfileImagePath     *string `json:"profileImagePath,omitempty"`
+	StorageLabel         *string `json:"storageLabel,omitempty"`
+	ExternalPath         *string `json:"externalPath,omitempty"`
+	MemoriesEnabled      *bool   `json:"memoriesEnabled,omitempty"`
+	AvatarColor          *string `json:"avatarColor,omitempty"`
+	QuotaSizeInBytes     *int64  `json:"quotaSizeInBytes,omitempty"`
+	NotifyUpload         *bool   `json:"notifyUpload,omitempty"`
+	NotifyAlbumInvite    *bool   `json:"notifyAlbumInvite,omitempty"`
+	NotifyAlbumUpdate    *bool   `json:"notifyAlbumUpdate,omitempty"`
+	NotifyComment        *bool   `json:"notifyComment,omitempty"`
 }
 
 type UserResponse struct {
-	ID                       uuid.UUID  `json:"id"`
-	Email                    string     `json:"email"`
-	FirstName                string     `json:"firstName"`
-	LastName                 string     `json:"lastName"`
-	IsAdmin                  bool       `json:"isAdmin"`
-	ShouldChangePassword     bool       `json:"shouldChangePassword"`
-	ProfileImagePath         string     `json:"profileImagePath"`
-	CreatedAt                time.Time  `json:"createdAt"`
-	DeletedAt                *time.Time `json:"deletedAt,omitempty"`
-	UpdatedAt                time.Time  `json:"updatedAt"`
-	OAuthID                  string     `json:"oauthId"`
-	StorageLabel             *string    `json:"storageLabel,omitempty"`
-	ExternalPath             *string    `json:"externalPath,omitempty"`
-	MemoriesEnabled          *bool      `json:"memoriesEnabled,omitempty"`
-	AvatarColor              string     `json:"avatarColor"`
-	QuotaSizeInBytes         *int64     `json:"quotaSizeInBytes,omitempty"`
-	QuotaUsageInBytes        int64      `json:"quotaUsageInBytes"`
-	NotifyUpload             bool       `json:"notifyUpload"`
-	NotifyAlbumInvite        bool       `json:"notifyAlbumInvite"`
-	NotifyAlbumUpdate        bool       `json:"notifyAlbumUpdate"`
-	NotifyComment            bool       `json:"notifyComment"`
+	ID                   uuid.UUID  `json:"id"`
+	Email                string     `json:"email"`
+	FirstName            string     `json:"firstName"`
+	LastName             string     `json:"lastName"`
+	IsAdmin              bool       `json:"isAdmin"`
+	ShouldChangePassword bool       `json:"shouldChangePassword"`
+	ProfileImagePath     string     `json:"profileImagePath"`
+	CreatedAt            time.Time  `json:"createdAt"`
+	DeletedAt            *time.Time `json:"deletedAt,omitempty"`
+	UpdatedAt            time.Time  `json:"updatedAt"`
+	OAuthID              string     `json:"oauthId"`
+	StorageLabel         *string    `json:"storageLabel,omitempty"`
+	ExternalPath         *string    `json:"externalPath,omitempty"`
+	MemoriesEnabled      *bool      `json:"memoriesEnabled,omitempty"`
+	AvatarColor          string     `json:"avatarColor"`
+	QuotaSizeInBytes     *int64     `json:"quotaSizeInBytes,omitempty"`
+	QuotaUsageInBytes    int64      `json:"quotaUsageInBytes"`
+	NotifyUpload         bool       `json:"notifyUpload"`
+	NotifyAlbumInvite    bool       `json:"notifyAlbumInvite"`
+	NotifyAlbumUpdate    bool       `json:"notifyAlbumUpdate"`
+	NotifyComment        bool       `json:"notifyComment"`
 }
 
 func (s *UserService) GetAllUsers(includeDeleted bool) ([]UserResponse, error) {
 	var users []models.User
 	query := s.db
-	
+
 	if !includeDeleted {
 		query = query.Where("deleted_at IS NULL")
 	}
-	
+
 	if err := query.Find(&users).Error; err != nil {
 		return nil, err
 	}
@@ -83,7 +83,7 @@ func (s *UserService) GetAllUsers(includeDeleted bool) ([]UserResponse, error) {
 	for i, user := range users {
 		responses[i] = s.toUserResponse(user)
 	}
-	
+
 	return responses, nil
 }
 
@@ -236,12 +236,12 @@ func (s *UserService) GetUserPreferences(userID uuid.UUID) (map[string]interface
 	}
 
 	preferences := map[string]interface{}{
-		"memoriesEnabled":     user.MemoriesEnabled,
-		"avatarColor":         user.AvatarColor,
-		"notifyUpload":        user.NotifyUpload,
-		"notifyAlbumInvite":   user.NotifyAlbumInvite,
-		"notifyAlbumUpdate":   user.NotifyAlbumUpdate,
-		"notifyComment":       user.NotifyComment,
+		"memoriesEnabled":   user.MemoriesEnabled,
+		"avatarColor":       user.AvatarColor,
+		"notifyUpload":      user.NotifyUpload,
+		"notifyAlbumInvite": user.NotifyAlbumInvite,
+		"notifyAlbumUpdate": user.NotifyAlbumUpdate,
+		"notifyComment":     user.NotifyComment,
 	}
 
 	return preferences, nil
@@ -297,27 +297,27 @@ func (s *UserService) UpdateUserPreferences(userID uuid.UUID, preferences map[st
 
 func (s *UserService) toUserResponse(user models.User) UserResponse {
 	return UserResponse{
-		ID:                       user.ID,
-		Email:                    user.Email,
-		FirstName:                user.FirstName,
-		LastName:                 user.LastName,
-		IsAdmin:                  user.IsAdmin,
-		ShouldChangePassword:     user.ShouldChangePassword,
-		ProfileImagePath:         user.ProfileImagePath,
-		CreatedAt:                user.CreatedAt,
-		DeletedAt:                (*time.Time)(user.DeletedAt.Time),
-		UpdatedAt:                user.UpdatedAt,
-		OAuthID:                  user.OAuthID,
-		StorageLabel:             user.StorageLabel,
-		ExternalPath:             user.ExternalPath,
-		MemoriesEnabled:          user.MemoriesEnabled,
-		AvatarColor:              user.AvatarColor,
-		QuotaSizeInBytes:         user.QuotaSizeInBytes,
-		QuotaUsageInBytes:        user.QuotaUsageInBytes,
-		NotifyUpload:             user.NotifyUpload,
-		NotifyAlbumInvite:        user.NotifyAlbumInvite,
-		NotifyAlbumUpdate:        user.NotifyAlbumUpdate,
-		NotifyComment:            user.NotifyComment,
+		ID:                   user.ID,
+		Email:                user.Email,
+		FirstName:            user.FirstName,
+		LastName:             user.LastName,
+		IsAdmin:              user.IsAdmin,
+		ShouldChangePassword: user.ShouldChangePassword,
+		ProfileImagePath:     user.ProfileImagePath,
+		CreatedAt:            user.CreatedAt,
+		DeletedAt:            (*time.Time)(user.DeletedAt.Time),
+		UpdatedAt:            user.UpdatedAt,
+		OAuthID:              user.OAuthID,
+		StorageLabel:         user.StorageLabel,
+		ExternalPath:         user.ExternalPath,
+		MemoriesEnabled:      user.MemoriesEnabled,
+		AvatarColor:          user.AvatarColor,
+		QuotaSizeInBytes:     user.QuotaSizeInBytes,
+		QuotaUsageInBytes:    user.QuotaUsageInBytes,
+		NotifyUpload:         user.NotifyUpload,
+		NotifyAlbumInvite:    user.NotifyAlbumInvite,
+		NotifyAlbumUpdate:    user.NotifyAlbumUpdate,
+		NotifyComment:        user.NotifyComment,
 	}
 }
 

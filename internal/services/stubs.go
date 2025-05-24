@@ -135,22 +135,22 @@ func (s *ServerService) GetServerVersion() map[string]interface{} {
 func (s *ServerService) GetServerFeatures() map[string]interface{} {
 	return map[string]interface{}{
 		"facialRecognition": false,
-		"map":              false,
-		"reverseGeocoding": false,
-		"oauth":            false,
-		"passwordLogin":    true,
-		"search":           false,
-		"sidecar":          false,
-		"configFile":       false,
-		"trash":            true,
+		"map":               false,
+		"reverseGeocoding":  false,
+		"oauth":             false,
+		"passwordLogin":     true,
+		"search":            false,
+		"sidecar":           false,
+		"configFile":        false,
+		"trash":             true,
 	}
 }
 
 func (s *ServerService) GetServerStats() map[string]interface{} {
 	return map[string]interface{}{
-		"photos": 0,
-		"videos": 0,
-		"usage":  0,
+		"photos":      0,
+		"videos":      0,
+		"usage":       0,
 		"usageByUser": []interface{}{},
 	}
 }

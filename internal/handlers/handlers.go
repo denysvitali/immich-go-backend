@@ -6,56 +6,56 @@ import (
 )
 
 type Handlers struct {
-	services *services.Services
-	Auth     *AuthHandler
-	User     *UserHandler
-	Album    *AlbumHandler
-	Asset    *AssetHandler
-	Library  *LibraryHandler
-	APIKey   *APIKeyHandler
-	Tag      *TagHandler
-	Activity *ActivityHandler
-	Notification *NotificationHandler
-	Partner  *PartnerHandler
-	Person   *PersonHandler
-	SharedLink *SharedLinkHandler
-	Stack    *StackHandler
-	Job      *JobHandler
-	Search   *SearchHandler
-	Download *DownloadHandler
-	Server   *ServerHandler
-	SystemConfig *SystemConfigHandler
-	SystemMetadata *SystemMetadataHandler
-	OAuth    *OAuthHandler
+	services          *services.Services
+	Auth              *AuthHandler
+	User              *UserHandler
+	Album             *AlbumHandler
+	Asset             *AssetHandler
+	Library           *LibraryHandler
+	APIKey            *APIKeyHandler
+	Tag               *TagHandler
+	Activity          *ActivityHandler
+	Notification      *NotificationHandler
+	Partner           *PartnerHandler
+	Person            *PersonHandler
+	SharedLink        *SharedLinkHandler
+	Stack             *StackHandler
+	Job               *JobHandler
+	Search            *SearchHandler
+	Download          *DownloadHandler
+	Server            *ServerHandler
+	SystemConfig      *SystemConfigHandler
+	SystemMetadata    *SystemMetadataHandler
+	OAuth             *OAuthHandler
 	AdminNotification *AdminNotificationHandler
-	AdminUser *AdminUserHandler
+	AdminUser         *AdminUserHandler
 }
 
 func NewHandlers(services *services.Services) *Handlers {
 	return &Handlers{
-		services:       services,
-		Auth:           NewAuthHandler(services),
-		User:           NewUserHandler(services),
-		Album:          NewAlbumHandler(services),
-		Asset:          NewAssetHandler(services),
-		Library:        NewLibraryHandler(services),
-		APIKey:         NewAPIKeyHandler(services),
-		Tag:            NewTagHandler(services),
-		Activity:       NewActivityHandler(services),
-		Notification:   NewNotificationHandler(services),
-		Partner:        NewPartnerHandler(services),
-		Person:         NewPersonHandler(services),
-		SharedLink:     NewSharedLinkHandler(services),
-		Stack:          NewStackHandler(services),
-		Job:            NewJobHandler(services),
-		Search:         NewSearchHandler(services),
-		Download:       NewDownloadHandler(services),
-		Server:         NewServerHandler(services),
-		SystemConfig:   NewSystemConfigHandler(services),
-		SystemMetadata: NewSystemMetadataHandler(services),
-		OAuth:          NewOAuthHandler(services),
+		services:          services,
+		Auth:              NewAuthHandler(services),
+		User:              NewUserHandler(services),
+		Album:             NewAlbumHandler(services),
+		Asset:             NewAssetHandler(services),
+		Library:           NewLibraryHandler(services),
+		APIKey:            NewAPIKeyHandler(services),
+		Tag:               NewTagHandler(services),
+		Activity:          NewActivityHandler(services),
+		Notification:      NewNotificationHandler(services),
+		Partner:           NewPartnerHandler(services),
+		Person:            NewPersonHandler(services),
+		SharedLink:        NewSharedLinkHandler(services),
+		Stack:             NewStackHandler(services),
+		Job:               NewJobHandler(services),
+		Search:            NewSearchHandler(services),
+		Download:          NewDownloadHandler(services),
+		Server:            NewServerHandler(services),
+		SystemConfig:      NewSystemConfigHandler(services),
+		SystemMetadata:    NewSystemMetadataHandler(services),
+		OAuth:             NewOAuthHandler(services),
 		AdminNotification: NewAdminNotificationHandler(services),
-		AdminUser:      NewAdminUserHandler(services),
+		AdminUser:         NewAdminUserHandler(services),
 	}
 }
 

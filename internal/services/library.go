@@ -40,9 +40,9 @@ type LibraryResponse struct {
 }
 
 type LibraryStatsResponse struct {
-	Photos int `json:"photos"`
-	Videos int `json:"videos"`
-	Total  int `json:"total"`
+	Photos int   `json:"photos"`
+	Videos int   `json:"videos"`
+	Total  int   `json:"total"`
 	Usage  int64 `json:"usage"`
 }
 

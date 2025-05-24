@@ -494,9 +494,9 @@ func (h *ServerHandler) GetStatistics(c *gin.Context) {
 
 func (h *ServerHandler) GetStorage(c *gin.Context) {
 	respondWithData(c, gin.H{
-		"diskSizeRaw":        1000000000000,
-		"diskUseRaw":         500000000000,
-		"diskAvailableRaw":   500000000000,
+		"diskSizeRaw":         1000000000000,
+		"diskUseRaw":          500000000000,
+		"diskAvailableRaw":    500000000000,
 		"diskUsagePercentage": 50.0,
 	})
 }
@@ -541,26 +541,26 @@ func (h *SystemConfigHandler) UpdateConfig(c *gin.Context) {
 func (h *SystemConfigHandler) GetConfigDefaults(c *gin.Context) {
 	respondWithData(c, gin.H{
 		"ffmpeg": gin.H{
-			"crf":                23,
-			"threads":            0,
-			"preset":             "ultrafast",
-			"targetVideoCodec":   "h264",
+			"crf":                 23,
+			"threads":             0,
+			"preset":              "ultrafast",
+			"targetVideoCodec":    "h264",
 			"acceptedVideoCodecs": []string{"h264"},
-			"targetAudioCodec":   "aac",
+			"targetAudioCodec":    "aac",
 			"acceptedAudioCodecs": []string{"aac", "mp3", "libopus"},
-			"targetResolution":   "720",
-			"maxBitrate":         "0",
-			"bframes":            -1,
-			"refs":               0,
-			"gopSize":            0,
-			"npl":                0,
-			"temporalAQ":         false,
-			"cqMode":             "auto",
-			"twoPass":            false,
-			"preferredHwDevice":  "auto",
-			"transcode":          "required",
-			"tonemap":            "hable",
-			"accel":              "disabled",
+			"targetResolution":    "720",
+			"maxBitrate":          "0",
+			"bframes":             -1,
+			"refs":                0,
+			"gopSize":             0,
+			"npl":                 0,
+			"temporalAQ":          false,
+			"cqMode":              "auto",
+			"twoPass":             false,
+			"preferredHwDevice":   "auto",
+			"transcode":           "required",
+			"tonemap":             "hable",
+			"accel":               "disabled",
 		},
 	})
 }

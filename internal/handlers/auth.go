@@ -21,11 +21,11 @@ type LoginRequest struct {
 }
 
 type LoginResponse struct {
-	AccessToken  string                  `json:"accessToken"`
-	RefreshToken string                  `json:"refreshToken"`
-	UserEmail    string                  `json:"userEmail"`
-	UserID       string                  `json:"userId"`
-	UserInfo     services.UserResponse   `json:"userInfo"`
+	AccessToken  string                `json:"accessToken"`
+	RefreshToken string                `json:"refreshToken"`
+	UserEmail    string                `json:"userEmail"`
+	UserID       string                `json:"userId"`
+	UserInfo     services.UserResponse `json:"userInfo"`
 }
 
 type SignUpRequest struct {
