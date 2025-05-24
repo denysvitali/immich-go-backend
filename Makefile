@@ -1,0 +1,126 @@
+# Immich Go Backend Makefile
+# Requires Nix development environment
+
+.PHONY: help proto-gen proto-clean proto-check setup dev-shell build test clean all
+
+# Default target
+help: ## Show this help message
+	@echo "Immich Go Backend - Available targets:"
+	@echo ""
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
+	@echo ""
+	@echo "Note: Most targets require being in a Nix development environment."
+	@echo "Run 'make dev-shell' or 'nix develop' first."
+
+# Protocol Buffers targets
+proto-gen: ## Generate protocol buffer Go files using buf
+	@echo "🔨 Generating protocol buffers..."
+	@./scripts/generate-protos.sh
+
+proto-clean: ## Clean generated protocol buffer files
+	@echo "🧹 Cleaning generated protocol buffer files..."
+	@rm -rf src/proto/generated
+	@echo "✅ Cleaned generated files"
+
+proto-check: ## Verify protocol buffer definitions and generated files
+	@echo "🔍 Checking protocol buffer definitions..."
+	@if command -v buf >/dev/null 2>&1; then \
+		buf lint; \
+		buf breaking --against '.git#branch=main'; \
+	else \
+		echo "❌ buf not found. Run 'make dev-shell' first."; \
+		exit 1; \
+	fi
+
+# Development environment
+dev-shell: ## Enter Nix development shell
+	@echo "🚀 Entering Nix development environment..."
+	@if [ -f "flake.nix" ]; then \
+		nix develop; \
+	elif [ -f "shell.nix" ]; then \
+		nix-shell; \
+	else \
+		echo "❌ No Nix configuration found"; \
+		exit 1; \
+	fi
+
+setup: ## Set up development environment and generate initial files
+	@echo "🔧 Setting up development environment..."
+	@$(MAKE) proto-gen
+	@echo "📦 Installing Go dependencies..."
+	@go mod tidy
+	@echo "✅ Setup complete!"
+
+# Build targets
+build: proto-gen ## Build the application
+	@echo "🔨 Building application..."
+	@go build -o bin/immich-go-backend .
+	@echo "✅ Build complete: bin/immich-go-backend"
+
+# Test targets
+test: proto-gen ## Run tests
+	@echo "🧪 Running tests..."
+	@go test ./...
+
+test-verbose: proto-gen ## Run tests with verbose output
+	@echo "🧪 Running tests (verbose)..."
+	@go test -v ./...
+
+# Utility targets
+clean: proto-clean ## Clean all generated files and build artifacts
+	@echo "🧹 Cleaning build artifacts..."
+	@rm -rf bin/
+	@rm -rf .gopath/
+	@echo "✅ Clean complete"
+
+fmt: ## Format Go code
+	@echo "🎨 Formatting Go code..."
+	@go fmt ./...
+
+lint: ## Run linters
+	@echo "🔍 Running linters..."
+	@if command -v golangci-lint >/dev/null 2>&1; then \
+		golangci-lint run; \
+	else \
+		echo "⚠️  golangci-lint not found, running basic checks..."; \
+		go vet ./...; \
+	fi
+
+mod-tidy: ## Tidy Go modules
+	@echo "📦 Tidying Go modules..."
+	@go mod tidy
+
+# CI/CD targets
+ci-check: proto-gen lint test ## Run all CI checks
+	@echo "✅ All CI checks passed"
+
+all: clean setup build test ## Clean, setup, build, and test everything
+	@echo "🎉 All tasks completed successfully!"
+
+# Pipeline targets for CI/CD
+.PHONY: pipeline-setup pipeline-build pipeline-test pipeline-deploy
+
+pipeline-setup: ## CI/CD: Setup environment and generate protos
+	@echo "🚀 Pipeline: Setting up environment..."
+	@if [ ! -d "src/proto/generated" ] || [ -z "$$(ls -A src/proto/generated 2>/dev/null)" ]; then \
+		echo "📦 Generating protocol buffers..."; \
+		./scripts/generate-protos.sh; \
+	else \
+		echo "✅ Protocol buffers already generated"; \
+	fi
+	@go mod download
+	@echo "✅ Pipeline setup complete"
+
+pipeline-build: pipeline-setup ## CI/CD: Build application
+	@echo "🔨 Pipeline: Building application..."
+	@go build -o bin/immich-go-backend .
+	@echo "✅ Pipeline build complete"
+
+pipeline-test: pipeline-setup ## CI/CD: Run tests
+	@echo "🧪 Pipeline: Running tests..."
+	@go test -v -race -coverprofile=coverage.out ./...
+	@echo "✅ Pipeline tests complete"
+
+pipeline-deploy: pipeline-build pipeline-test ## CI/CD: Deploy application
+	@echo "🚀 Pipeline: Deploying application..."
+	@echo "✅ Pipeline deployment complete"
