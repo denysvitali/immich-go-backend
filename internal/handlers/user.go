@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"net/http"
-	"strconv"
 
 	"github.com/denysvitali/immich-go-backend/internal/services"
 	"github.com/gin-gonic/gin"

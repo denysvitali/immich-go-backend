@@ -1,0 +1,238 @@
+syntax = "proto3";
+
+package immich.v1;
+
+import "common.proto";
+import "asset.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
+
+// Album service
+service AlbumService {
+  // Get all albums
+  rpc GetAllAlbums(GetAllAlbumsRequest) returns (GetAllAlbumsResponse) {
+    option (google.api.http) = {
+      get: "/api/albums"
+    };
+  }
+
+  // Create a new album
+  rpc CreateAlbum(CreateAlbumRequest) returns (Album) {
+    option (google.api.http) = {
+      post: "/api/albums"
+      body: "*"
+    };
+  }
+
+  // Get album information
+  rpc GetAlbumInfo(GetAlbumInfoRequest) returns (Album) {
+    option (google.api.http) = {
+      get: "/api/albums/{album_id}"
+    };
+  }
+
+  // Update album information
+  rpc UpdateAlbumInfo(UpdateAlbumInfoRequest) returns (Album) {
+    option (google.api.http) = {
+      patch: "/api/albums/{album_id}"
+      body: "*"
+    };
+  }
+
+  // Delete an album
+  rpc DeleteAlbum(DeleteAlbumRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/api/albums/{album_id}"
+    };
+  }
+
+  // Add assets to album
+  rpc AddAssetsToAlbum(AddAssetsToAlbumRequest) returns (AddAssetsToAlbumResponse) {
+    option (google.api.http) = {
+      put: "/api/albums/{album_id}/assets"
+      body: "*"
+    };
+  }
+
+  // Remove asset from album
+  rpc RemoveAssetFromAlbum(RemoveAssetFromAlbumRequest) returns (RemoveAssetFromAlbumResponse) {
+    option (google.api.http) = {
+      delete: "/api/albums/{album_id}/assets"
+      body: "*"
+    };
+  }
+
+  // Add users to album
+  rpc AddUsersToAlbum(AddUsersToAlbumRequest) returns (Album) {
+    option (google.api.http) = {
+      put: "/api/albums/{album_id}/users"
+      body: "*"
+    };
+  }
+
+  // Remove user from album
+  rpc RemoveUserFromAlbum(RemoveUserFromAlbumRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/api/albums/{album_id}/user/{user_id}"
+    };
+  }
+
+  // Update album user
+  rpc UpdateAlbumUser(UpdateAlbumUserRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      put: "/api/albums/{album_id}/user/{user_id}"
+      body: "*"
+    };
+  }
+
+  // Get album statistics
+  rpc GetAlbumStatistics(GetAlbumStatisticsRequest) returns (AlbumStatisticsResponse) {
+    option (google.api.http) = {
+      get: "/api/albums/statistics"
+    };
+  }
+}
+
+// Album message
+message Album {
+  string id = 1;
+  string album_name = 2;
+  string description = 3;
+  string owner_id = 4;
+  User owner = 5;
+  optional string album_thumbnail_asset_id = 6;
+  bool is_activity_enabled = 7;
+  repeated Asset assets = 8;
+  int32 asset_count = 9;
+  optional google.protobuf.Timestamp start_date = 10;
+  optional google.protobuf.Timestamp end_date = 11;
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp updated_at = 13;
+  repeated AlbumUser shared_users = 14;
+  bool has_shared_link = 15;
+}
+
+// Album user sharing information
+message AlbumUser {
+  string user_id = 1;
+  User user = 2;
+  AlbumUserRole role = 3;
+}
+
+// Album user roles
+enum AlbumUserRole {
+  ALBUM_USER_ROLE_UNSPECIFIED = 0;
+  ALBUM_USER_ROLE_VIEWER = 1;
+  ALBUM_USER_ROLE_EDITOR = 2;
+}
+
+// Get all albums request
+message GetAllAlbumsRequest {
+  optional string asset_id = 1; // Only returns albums that contain the asset
+  optional bool shared = 2;
+}
+
+// Get all albums response
+message GetAllAlbumsResponse {
+  repeated Album albums = 1;
+}
+
+// Create album request
+message CreateAlbumRequest {
+  string album_name = 1;
+  string description = 2;
+  repeated string asset_ids = 3;
+  repeated string shared_with_user_ids = 4;
+}
+
+// Get album info request
+message GetAlbumInfoRequest {
+  string album_id = 1;
+  optional string key = 2; // For shared albums
+  optional bool without_assets = 3;
+}
+
+// Update album info request
+message UpdateAlbumInfoRequest {
+  string album_id = 1;
+  optional string album_name = 2;
+  optional string description = 3;
+  optional string album_thumbnail_asset_id = 4;
+  optional bool is_activity_enabled = 5;
+  google.protobuf.FieldMask update_mask = 6;
+}
+
+// Delete album request
+message DeleteAlbumRequest {
+  string album_id = 1;
+}
+
+// Bulk IDs for asset operations
+message BulkIds {
+  repeated string ids = 1;
+}
+
+// Bulk ID response
+message BulkIdResponse {
+  string id = 1;
+  bool success = 2;
+  optional string error = 3;
+}
+
+// Add assets to album request
+message AddAssetsToAlbumRequest {
+  string album_id = 1;
+  BulkIds asset_ids = 2;
+  optional string key = 3; // For shared albums
+}
+
+// Add assets to album response
+message AddAssetsToAlbumResponse {
+  repeated BulkIdResponse results = 1;
+}
+
+// Remove asset from album request
+message RemoveAssetFromAlbumRequest {
+  string album_id = 1;
+  BulkIds asset_ids = 2;
+}
+
+// Remove asset from album response
+message RemoveAssetFromAlbumResponse {
+  repeated BulkIdResponse results = 1;
+}
+
+// Add users to album request
+message AddUsersToAlbumRequest {
+  string album_id = 1;
+  repeated string shared_user_ids = 2;
+}
+
+// Remove user from album request
+message RemoveUserFromAlbumRequest {
+  string album_id = 1;
+  string user_id = 2;
+}
+
+// Update album user request
+message UpdateAlbumUserRequest {
+  string album_id = 1;
+  string user_id = 2;
+  AlbumUserRole role = 3;
+}
+
+// Get album statistics request
+message GetAlbumStatisticsRequest {
+  // Empty - returns statistics for all albums
+}
+
+// Album statistics response
+message AlbumStatisticsResponse {
+  int32 owned = 1;
+  int32 shared = 2;
+  int32 not_shared = 3;
+}

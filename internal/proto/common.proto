@@ -1,0 +1,88 @@
+syntax = "proto3";
+
+package immich.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
+
+// Common enums and types
+enum AssetType {
+  ASSET_TYPE_UNSPECIFIED = 0;
+  ASSET_TYPE_IMAGE = 1;
+  ASSET_TYPE_VIDEO = 2;
+}
+
+enum UserAvatarColor {
+  USER_AVATAR_COLOR_UNSPECIFIED = 0;
+  USER_AVATAR_COLOR_PRIMARY = 1;
+  USER_AVATAR_COLOR_PINK = 2;
+  USER_AVATAR_COLOR_RED = 3;
+  USER_AVATAR_COLOR_YELLOW = 4;
+  USER_AVATAR_COLOR_BLUE = 5;
+  USER_AVATAR_COLOR_GREEN = 6;
+  USER_AVATAR_COLOR_PURPLE = 7;
+  USER_AVATAR_COLOR_ORANGE = 8;
+  USER_AVATAR_COLOR_GRAY = 9;
+  USER_AVATAR_COLOR_AMBER = 10;
+}
+
+enum ImageFormat {
+  IMAGE_FORMAT_UNSPECIFIED = 0;
+  IMAGE_FORMAT_JPEG = 1;
+  IMAGE_FORMAT_WEBP = 2;
+}
+
+// EXIF information for assets
+message ExifInfo {
+  optional string make = 1;
+  optional string model = 2;
+  optional int32 exif_image_width = 3;
+  optional int32 exif_image_height = 4;
+  int64 file_size_in_byte = 5;
+  optional string orientation = 6;
+  optional google.protobuf.Timestamp date_time_original = 7;
+  optional google.protobuf.Timestamp modify_date = 8;
+  optional string time_zone = 9;
+  optional string lens_model = 10;
+  optional double f_number = 11;
+  optional double focal_length = 12;
+  optional int32 iso = 13;
+  optional string exposure_time = 14;
+  optional double latitude = 15;
+  optional double longitude = 16;
+  optional string city = 17;
+  optional string state = 18;
+  optional string country = 19;
+  optional string description = 20;
+}
+
+// Smart information for assets
+message SmartInfo {
+  repeated string tags = 1;
+  repeated string objects = 2;
+}
+
+// User information
+message User {
+  string id = 1;
+  string email = 2;
+  string name = 3;
+  bool is_admin = 4;
+  UserAvatarColor avatar_color = 5;
+  string profile_image_path = 6;
+  google.protobuf.Timestamp profile_changed_at = 7;
+  bool should_change_password = 8;
+  int64 quota_size_in_bytes = 9;
+  optional string storage_label = 10;
+  string status = 11;
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp updated_at = 13;
+}
+
+// Pagination
+message PageInfo {
+  int32 page = 1;
+  int32 size = 2;
+  int64 total = 3;
+}

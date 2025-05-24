@@ -3,7 +3,6 @@ package handlers
 import (
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/denysvitali/immich-go-backend/internal/services"

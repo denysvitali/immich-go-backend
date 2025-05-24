@@ -1,0 +1,361 @@
+syntax = "proto3";
+
+package immich.v1;
+
+import "common.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
+
+// Asset service
+service AssetService {
+  // Get all assets for a user
+  rpc GetAssets(GetAssetsRequest) returns (GetAssetsResponse) {
+    option (google.api.http) = {
+      get: "/api/assets"
+    };
+  }
+
+  // Get a specific asset by ID
+  rpc GetAsset(GetAssetRequest) returns (Asset) {
+    option (google.api.http) = {
+      get: "/api/assets/{asset_id}"
+    };
+  }
+
+  // Upload a new asset
+  rpc UploadAsset(UploadAssetRequest) returns (Asset) {
+    option (google.api.http) = {
+      post: "/api/assets"
+      body: "*"
+    };
+  }
+
+  // Update an asset
+  rpc UpdateAsset(UpdateAssetRequest) returns (Asset) {
+    option (google.api.http) = {
+      put: "/api/assets/{asset_id}"
+      body: "*"
+    };
+  }
+
+  // Bulk update assets
+  rpc UpdateAssets(UpdateAssetsRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      put: "/api/assets"
+      body: "*"
+    };
+  }
+
+  // Delete assets
+  rpc DeleteAssets(DeleteAssetsRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/api/assets"
+      body: "*"
+    };
+  }
+
+  // Check if assets exist
+  rpc CheckExistingAssets(CheckExistingAssetsRequest) returns (CheckExistingAssetsResponse) {
+    option (google.api.http) = {
+      post: "/api/assets/exist"
+      body: "*"
+    };
+  }
+
+  // Bulk upload check
+  rpc CheckBulkUpload(CheckBulkUploadRequest) returns (CheckBulkUploadResponse) {
+    option (google.api.http) = {
+      post: "/api/assets/bulk-upload-check"
+      body: "*"
+    };
+  }
+
+  // Get asset statistics
+  rpc GetAssetStatistics(GetAssetStatisticsRequest) returns (AssetStatisticsResponse) {
+    option (google.api.http) = {
+      get: "/api/assets/statistics"
+    };
+  }
+
+  // Get all user assets by device ID
+  rpc GetAllUserAssetsByDeviceId(GetAllUserAssetsByDeviceIdRequest) returns (GetAllUserAssetsByDeviceIdResponse) {
+    option (google.api.http) = {
+      get: "/api/assets/device/{device_id}"
+    };
+  }
+
+  // Get random assets (deprecated)
+  rpc GetRandom(GetRandomRequest) returns (GetRandomResponse) {
+    option deprecated = true;
+    option (google.api.http) = {
+      get: "/api/assets/random"
+    };
+  }
+
+  // Run asset jobs
+  rpc RunAssetJobs(RunAssetJobsRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/api/assets/jobs"
+      body: "*"
+    };
+  }
+
+  // Download asset original
+  rpc DownloadAsset(DownloadAssetRequest) returns (DownloadAssetResponse) {
+    option (google.api.http) = {
+      get: "/api/assets/{asset_id}/original"
+    };
+  }
+
+  // Replace asset
+  rpc ReplaceAsset(ReplaceAssetRequest) returns (Asset) {
+    option (google.api.http) = {
+      put: "/api/assets/{asset_id}/original"
+      body: "*"
+    };
+  }
+
+  // Get asset thumbnail
+  rpc GetAssetThumbnail(GetAssetThumbnailRequest) returns (GetAssetThumbnailResponse) {
+    option (google.api.http) = {
+      get: "/api/assets/{asset_id}/thumbnail"
+    };
+  }
+
+  // Play asset video
+  rpc PlayAssetVideo(PlayAssetVideoRequest) returns (PlayAssetVideoResponse) {
+    option (google.api.http) = {
+      get: "/api/assets/{asset_id}/video/playback"
+    };
+  }
+}
+
+// Asset message
+message Asset {
+  string id = 1;
+  string device_asset_id = 2;
+  string owner_id = 3;
+  string device_id = 4;
+  AssetType type = 5;
+  string original_path = 6;
+  string original_file_name = 7;
+  optional string resize_path = 8;
+  optional string webp_path = 9;
+  optional string thumbhash_path = 10;
+  optional string encoded_video_path = 11;
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp updated_at = 13;
+  bool is_favorite = 14;
+  bool is_archived = 15;
+  bool is_trashed = 16;
+  optional string duration = 17;
+  optional ExifInfo exif_info = 18;
+  optional SmartInfo smart_info = 19;
+  optional string live_photo_video_id = 20;
+  repeated string tags = 21;
+  repeated string people = 22;
+  string checksum = 23;
+  optional string stack_parent_id = 24;
+  repeated Asset stack = 25;
+}
+
+// Create asset request for upload
+message CreateAssetRequest {
+  string device_asset_id = 1;
+  string device_id = 2;
+  AssetType type = 3;
+  string original_path = 4;
+  string original_file_name = 5;
+  optional string resize_path = 6;
+  optional string webp_path = 7;
+  optional string thumbhash_path = 8;
+  optional string encoded_video_path = 9;
+  optional string duration = 10;
+  optional bool is_visible = 11;
+  optional bool is_favorite = 12;
+  optional bool is_archived = 13;
+  optional google.protobuf.Timestamp file_created_at = 14;
+  optional google.protobuf.Timestamp file_modified_at = 15;
+  optional string library_id = 16;
+}
+
+// Get assets request
+message GetAssetsRequest {
+  optional AssetType type = 1;
+  optional bool is_favorite = 2;
+  optional bool is_archived = 3;
+  optional bool is_trashed = 4;
+  optional string city = 5;
+  optional string state = 6;
+  optional string country = 7;
+  optional string make = 8;
+  optional string model = 9;
+  optional google.protobuf.Timestamp taken_after = 10;
+  optional google.protobuf.Timestamp taken_before = 11;
+  optional string original_path = 12;
+  optional string library_id = 13;
+  int32 page = 14;
+  int32 size = 15;
+}
+
+// Get assets response
+message GetAssetsResponse {
+  repeated Asset assets = 1;
+  PageInfo page_info = 2;
+}
+
+// Get asset request
+message GetAssetRequest {
+  string asset_id = 1;
+}
+
+// Upload asset request
+message UploadAssetRequest {
+  CreateAssetRequest asset_data = 1;
+  optional string key = 2;
+  optional string checksum = 3; // x-immich-checksum header
+}
+
+// Update asset request
+message UpdateAssetRequest {
+  string asset_id = 1;
+  optional bool is_favorite = 2;
+  optional bool is_archived = 3;
+  optional string description = 4;
+  optional google.protobuf.Timestamp date_time_original = 5;
+  optional double latitude = 6;
+  optional double longitude = 7;
+  google.protobuf.FieldMask update_mask = 8;
+}
+
+// Bulk update request
+message UpdateAssetsRequest {
+  repeated string asset_ids = 1;
+  optional bool is_favorite = 2;
+  optional bool is_archived = 3;
+  optional string description = 4;
+  optional google.protobuf.Timestamp date_time_original = 5;
+  optional double latitude = 6;
+  optional double longitude = 7;
+  google.protobuf.FieldMask update_mask = 8;
+}
+
+// Delete assets request
+message DeleteAssetsRequest {
+  repeated string asset_ids = 1;
+  bool force = 2;
+}
+
+// Check existing assets request
+message CheckExistingAssetsRequest {
+  repeated string device_asset_ids = 1;
+  string device_id = 2;
+}
+
+// Check existing assets response
+message CheckExistingAssetsResponse {
+  map<string, bool> existing_ids = 1;
+}
+
+// Bulk upload check request
+message CheckBulkUploadRequest {
+  repeated CreateAssetRequest assets = 1;
+}
+
+// Bulk upload check response
+message CheckBulkUploadResponse {
+  repeated Asset results = 1;
+}
+
+// Asset statistics request
+message GetAssetStatisticsRequest {
+  // Empty - uses authenticated user
+}
+
+// Asset statistics response
+message AssetStatisticsResponse {
+  int32 images = 1;
+  int32 videos = 2;
+  int32 total = 3;
+}
+
+// Get assets by device ID request
+message GetAllUserAssetsByDeviceIdRequest {
+  string device_id = 1;
+}
+
+// Get assets by device ID response
+message GetAllUserAssetsByDeviceIdResponse {
+  repeated string asset_ids = 1;
+}
+
+// Get random assets request (deprecated)
+message GetRandomRequest {
+  optional int32 count = 1;
+}
+
+// Get random assets response (deprecated)
+message GetRandomResponse {
+  repeated Asset assets = 1;
+}
+
+// Job names for asset processing
+enum AssetJobName {
+  ASSET_JOB_NAME_UNSPECIFIED = 0;
+  ASSET_JOB_NAME_THUMBNAIL_GENERATION = 1;
+  ASSET_JOB_NAME_METADATA_EXTRACTION = 2;
+  ASSET_JOB_NAME_VIDEO_CONVERSION = 3;
+  ASSET_JOB_NAME_DUPLICATE_DETECTION = 4;
+}
+
+// Run asset jobs request
+message RunAssetJobsRequest {
+  AssetJobName name = 1;
+  repeated string asset_ids = 2;
+}
+
+// Download asset request
+message DownloadAssetRequest {
+  string asset_id = 1;
+}
+
+// Download asset response
+message DownloadAssetResponse {
+  bytes data = 1;
+  string content_type = 2;
+  string filename = 3;
+}
+
+// Replace asset request
+message ReplaceAssetRequest {
+  string asset_id = 1;
+  CreateAssetRequest asset_data = 2;
+}
+
+// Get asset thumbnail request
+message GetAssetThumbnailRequest {
+  string asset_id = 1;
+  optional ImageFormat format = 2;
+  optional int32 size = 3;
+}
+
+// Get asset thumbnail response
+message GetAssetThumbnailResponse {
+  bytes data = 1;
+  string content_type = 2;
+}
+
+// Play asset video request
+message PlayAssetVideoRequest {
+  string asset_id = 1;
+}
+
+// Play asset video response
+message PlayAssetVideoResponse {
+  bytes data = 1;
+  string content_type = 2;
+}

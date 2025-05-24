@@ -1,0 +1,93 @@
+syntax = "proto3";
+
+package immich.v1;
+
+import "common.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+
+option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
+
+// Authentication service
+service AuthService {
+  // Login with email and password
+  rpc Login(LoginRequest) returns (LoginResponse) {
+    option (google.api.http) = {
+      post: "/api/auth/login"
+      body: "*"
+    };
+  }
+
+  // Admin sign up
+  rpc AdminSignUp(AdminSignUpRequest) returns (LoginResponse) {
+    option (google.api.http) = {
+      post: "/api/auth/admin-sign-up"
+      body: "*"
+    };
+  }
+
+  // Change password
+  rpc ChangePassword(ChangePasswordRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/api/auth/change-password"
+      body: "*"
+    };
+  }
+
+  // Logout
+  rpc Logout(google.protobuf.Empty) returns (LogoutResponse) {
+    option (google.api.http) = {
+      post: "/api/auth/logout"
+      body: "*"
+    };
+  }
+
+  // Validate token
+  rpc ValidateToken(google.protobuf.Empty) returns (ValidateTokenResponse) {
+    option (google.api.http) = {
+      post: "/api/auth/validateToken"
+      body: "*"
+    };
+  }
+}
+
+// Login request
+message LoginRequest {
+  string email = 1;
+  string password = 2;
+}
+
+// Login response
+message LoginResponse {
+  string access_token = 1;
+  string user_id = 2;
+  string user_email = 3;
+  string name = 4;
+  string profile_image_path = 5;
+  bool is_admin = 6;
+  bool should_change_password = 7;
+}
+
+// Admin sign up request
+message AdminSignUpRequest {
+  string email = 1;
+  string password = 2;
+  string name = 3;
+}
+
+// Change password request
+message ChangePasswordRequest {
+  string current_password = 1;
+  string new_password = 2;
+}
+
+// Logout response
+message LogoutResponse {
+  bool successful = 1;
+  string redirect_uri = 2;
+}
+
+// Validate token response
+message ValidateTokenResponse {
+  bool auth_status = 1;
+}
