@@ -54,7 +54,7 @@ jobs:
       uses: actions/cache@v4
       id: proto-cache
       with:
-        path: src/proto/generated
+        path: internal/proto/gen
         key: ${{ runner.os }}-proto-${{ hashFiles('internal/proto/**/*.proto', 'buf.gen.yaml', 'buf.yaml') }}
         restore-keys: |
           ${{ runner.os }}-proto-
@@ -68,22 +68,22 @@ jobs:
           which protoc protoc-gen-go protoc-gen-go-grpc buf
           
           echo '🧹 Cleaning previous generated files...'
-          rm -rf src/proto/generated
+          rm -rf internal/proto/gen
           
           echo '🔨 Running buf generate...'
           buf generate
           
           echo '✅ Protocol buffer generation complete!'
-          find src/proto/generated -name '*.go' | head -10
+          find internal/proto/gen -name '*.go' | head -10
         "
 
     - name: Verify generated files exist
       run: |
-        if [ ! -d "src/proto/generated" ] || [ -z "$(ls -A src/proto/generated)" ]; then
+        if [ ! -d "internal/proto/gen" ] || [ -z "$(ls -A internal/proto/gen)" ]; then
           echo "❌ No protocol buffer files were generated"
           exit 1
         fi
-        echo "✅ Generated $(find src/proto/generated -name '*.go' | wc -l) Go files"
+        echo "✅ Generated $(find internal/proto/gen -name '*.go' | wc -l) Go files"
 
     - name: Download Go dependencies
       run: go mod download
