@@ -75,9 +75,7 @@ func (s *LibraryService) GetLibraryByID(libraryID uuid.UUID, userID uuid.UUID) (
 
 func (s *LibraryService) CreateLibrary(userID uuid.UUID, req CreateLibraryRequest) (*LibraryResponse, error) {
 	library := models.Library{
-		ID:          uuid.New(),
 		Name:        req.Name,
-		Type:        req.Type,
 		ImportPaths: req.ImportPaths,
 		OwnerID:     userID,
 	}
@@ -157,8 +155,8 @@ func (s *LibraryService) GetLibraryStatistics(libraryID uuid.UUID, userID uuid.U
 	}
 
 	var stats struct {
-		TotalPhotos int
-		TotalVideos int
+		TotalPhotos int64
+		TotalVideos int64
 		TotalSize   int64
 	}
 
@@ -180,9 +178,9 @@ func (s *LibraryService) GetLibraryStatistics(libraryID uuid.UUID, userID uuid.U
 	stats.TotalSize = 0
 
 	return &LibraryStatsResponse{
-		Photos: stats.TotalPhotos,
-		Videos: stats.TotalVideos,
-		Total:  stats.TotalPhotos + stats.TotalVideos,
+		Photos: int(stats.TotalPhotos),
+		Videos: int(stats.TotalVideos),
+		Total:  int(stats.TotalPhotos + stats.TotalVideos),
 		Usage:  stats.TotalSize,
 	}, nil
 }
@@ -210,7 +208,7 @@ func (s *LibraryService) toLibraryResponse(library models.Library) LibraryRespon
 	return LibraryResponse{
 		ID:          library.ID,
 		Name:        library.Name,
-		Type:        library.Type,
+		Type:        "EXTERNAL", // Default type since not in model
 		ImportPaths: library.ImportPaths,
 		CreatedAt:   library.CreatedAt,
 		UpdatedAt:   library.UpdatedAt,

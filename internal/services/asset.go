@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/denysvitali/immich-go-backend/internal/models"
+	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -70,7 +71,7 @@ type AssetSearchOptions struct {
 	Size         int
 }
 
-func (s *AssetService) GetAllAssets(userID uuid.UUID, options AssetSearchOptions) ([]AssetResponse, error) {
+func (s *AssetService) GetAllAssets(userID uuid.UUID, options AssetSearchOptions) ([]*immichv1.Asset, error) {
 	var assets []models.Asset
 	query := s.db.Where("owner_id = ?", userID)
 
@@ -113,15 +114,15 @@ func (s *AssetService) GetAllAssets(userID uuid.UUID, options AssetSearchOptions
 		return nil, err
 	}
 
-	responses := make([]AssetResponse, len(assets))
+	responses := make([]*immichv1.Asset, len(assets))
 	for i, asset := range assets {
-		responses[i] = toAssetResponse(asset)
+		responses[i] = toAssetProto(asset)
 	}
 
 	return responses, nil
 }
 
-func (s *AssetService) GetAssetByID(assetID uuid.UUID, userID uuid.UUID) (*AssetResponse, error) {
+func (s *AssetService) GetAssetByID(assetID uuid.UUID, userID uuid.UUID) (*immichv1.Asset, error) {
 	var asset models.Asset
 	if err := s.db.Where("id = ? AND owner_id = ?", assetID, userID).First(&asset).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -130,11 +131,11 @@ func (s *AssetService) GetAssetByID(assetID uuid.UUID, userID uuid.UUID) (*Asset
 		return nil, err
 	}
 
-	response := toAssetResponse(asset)
-	return &response, nil
+	response := toAssetProto(asset)
+	return response, nil
 }
 
-func (s *AssetService) CreateAsset(userID uuid.UUID, req CreateAssetRequest) (*AssetResponse, error) {
+func (s *AssetService) CreateAsset(userID uuid.UUID, req CreateAssetRequest) (*immichv1.Asset, error) {
 	// Check if asset already exists
 	var existingAsset models.Asset
 	if err := s.db.Where("device_asset_id = ? AND device_id = ? AND owner_id = ?",
@@ -182,11 +183,11 @@ func (s *AssetService) CreateAsset(userID uuid.UUID, req CreateAssetRequest) (*A
 		return nil, err
 	}
 
-	response := toAssetResponse(asset)
-	return &response, nil
+	response := toAssetProto(asset)
+	return response, nil
 }
 
-func (s *AssetService) UpdateAsset(assetID uuid.UUID, userID uuid.UUID, req UpdateAssetRequest) (*AssetResponse, error) {
+func (s *AssetService) UpdateAsset(assetID uuid.UUID, userID uuid.UUID, req UpdateAssetRequest) (*immichv1.Asset, error) {
 	var asset models.Asset
 	if err := s.db.Where("id = ? AND owner_id = ?", assetID, userID).First(&asset).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -206,8 +207,8 @@ func (s *AssetService) UpdateAsset(assetID uuid.UUID, userID uuid.UUID, req Upda
 		return nil, err
 	}
 
-	response := toAssetResponse(asset)
-	return &response, nil
+	response := toAssetProto(asset)
+	return response, nil
 }
 
 func (s *AssetService) DeleteAsset(assetID uuid.UUID, userID uuid.UUID) error {
@@ -284,7 +285,7 @@ func (s *AssetService) GetAssetStatistics(userID uuid.UUID) (*AssetStatsResponse
 	}, nil
 }
 
-func (s *AssetService) GetMemoryLane(userID uuid.UUID, day int, month int) ([]AssetResponse, error) {
+func (s *AssetService) GetMemoryLane(userID uuid.UUID, day int, month int) ([]*immichv1.Asset, error) {
 	var assets []models.Asset
 
 	// Get assets from previous years on this day
@@ -302,9 +303,9 @@ func (s *AssetService) GetMemoryLane(userID uuid.UUID, day int, month int) ([]As
 		return nil, err
 	}
 
-	responses := make([]AssetResponse, len(assets))
+	responses := make([]*immichv1.Asset, len(assets))
 	for i, asset := range assets {
-		responses[i] = toAssetResponse(asset)
+		responses[i] = toAssetProto(asset)
 	}
 
 	return responses, nil
@@ -355,7 +356,7 @@ func (s *AssetService) CheckExistingAssets(userID uuid.UUID, deviceAssetIds []st
 	return existing, nil
 }
 
-func (s *AssetService) BulkUploadCheck(userID uuid.UUID, assetData []CreateAssetRequest) ([]AssetResponse, error) {
+func (s *AssetService) BulkUploadCheck(userID uuid.UUID, assetData []CreateAssetRequest) ([]*immichv1.Asset, error) {
 	var newAssets []models.Asset
 
 	for _, req := range assetData {
@@ -412,9 +413,9 @@ func (s *AssetService) BulkUploadCheck(userID uuid.UUID, assetData []CreateAsset
 		}
 	}
 
-	responses := make([]AssetResponse, len(newAssets))
+	responses := make([]*immichv1.Asset, len(newAssets))
 	for i, asset := range newAssets {
-		responses[i] = toAssetResponse(asset)
+		responses[i] = toAssetProto(asset)
 	}
 
 	return responses, nil

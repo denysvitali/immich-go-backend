@@ -116,17 +116,11 @@ func (s *UserService) CreateUser(req CreateUserRequest) (*UserResponse, error) {
 	}
 
 	user := models.User{
-		ID:                   uuid.New(),
 		Email:                req.Email,
-		FirstName:            req.FirstName,
-		LastName:             req.LastName,
+		Name:                 req.FirstName, // Use Name field instead of FirstName/LastName
 		IsAdmin:              req.IsAdmin,
 		ShouldChangePassword: false,
 		AvatarColor:          generateRandomColor(),
-		NotifyUpload:         true,
-		NotifyAlbumInvite:    true,
-		NotifyAlbumUpdate:    true,
-		NotifyComment:        true,
 	}
 
 	if err := s.db.Create(&user).Error; err != nil {
@@ -151,10 +145,7 @@ func (s *UserService) UpdateUser(userID uuid.UUID, req UpdateUserRequest) (*User
 		user.Email = *req.Email
 	}
 	if req.FirstName != nil {
-		user.FirstName = *req.FirstName
-	}
-	if req.LastName != nil {
-		user.LastName = *req.LastName
+		user.Name = *req.FirstName
 	}
 	if req.IsAdmin != nil {
 		user.IsAdmin = *req.IsAdmin
@@ -166,31 +157,13 @@ func (s *UserService) UpdateUser(userID uuid.UUID, req UpdateUserRequest) (*User
 		user.ProfileImagePath = *req.ProfileImagePath
 	}
 	if req.StorageLabel != nil {
-		user.StorageLabel = req.StorageLabel
-	}
-	if req.ExternalPath != nil {
-		user.ExternalPath = req.ExternalPath
-	}
-	if req.MemoriesEnabled != nil {
-		user.MemoriesEnabled = req.MemoriesEnabled
+		user.StorageLabel = *req.StorageLabel
 	}
 	if req.AvatarColor != nil {
 		user.AvatarColor = *req.AvatarColor
 	}
 	if req.QuotaSizeInBytes != nil {
-		user.QuotaSizeInBytes = req.QuotaSizeInBytes
-	}
-	if req.NotifyUpload != nil {
-		user.NotifyUpload = *req.NotifyUpload
-	}
-	if req.NotifyAlbumInvite != nil {
-		user.NotifyAlbumInvite = *req.NotifyAlbumInvite
-	}
-	if req.NotifyAlbumUpdate != nil {
-		user.NotifyAlbumUpdate = *req.NotifyAlbumUpdate
-	}
-	if req.NotifyComment != nil {
-		user.NotifyComment = *req.NotifyComment
+		user.QuotaSizeInBytes = *req.QuotaSizeInBytes
 	}
 
 	if err := s.db.Save(&user).Error; err != nil {
@@ -236,12 +209,7 @@ func (s *UserService) GetUserPreferences(userID uuid.UUID) (map[string]interface
 	}
 
 	preferences := map[string]interface{}{
-		"memoriesEnabled":   user.MemoriesEnabled,
-		"avatarColor":       user.AvatarColor,
-		"notifyUpload":      user.NotifyUpload,
-		"notifyAlbumInvite": user.NotifyAlbumInvite,
-		"notifyAlbumUpdate": user.NotifyAlbumUpdate,
-		"notifyComment":     user.NotifyComment,
+		"avatarColor": user.AvatarColor,
 	}
 
 	return preferences, nil
@@ -257,34 +225,9 @@ func (s *UserService) UpdateUserPreferences(userID uuid.UUID, preferences map[st
 	}
 
 	// Update preferences
-	if val, ok := preferences["memoriesEnabled"]; ok {
-		if enabled, ok := val.(bool); ok {
-			user.MemoriesEnabled = &enabled
-		}
-	}
 	if val, ok := preferences["avatarColor"]; ok {
 		if color, ok := val.(string); ok {
 			user.AvatarColor = color
-		}
-	}
-	if val, ok := preferences["notifyUpload"]; ok {
-		if notify, ok := val.(bool); ok {
-			user.NotifyUpload = notify
-		}
-	}
-	if val, ok := preferences["notifyAlbumInvite"]; ok {
-		if notify, ok := val.(bool); ok {
-			user.NotifyAlbumInvite = notify
-		}
-	}
-	if val, ok := preferences["notifyAlbumUpdate"]; ok {
-		if notify, ok := val.(bool); ok {
-			user.NotifyAlbumUpdate = notify
-		}
-	}
-	if val, ok := preferences["notifyComment"]; ok {
-		if notify, ok := val.(bool); ok {
-			user.NotifyComment = notify
 		}
 	}
 
@@ -296,28 +239,33 @@ func (s *UserService) UpdateUserPreferences(userID uuid.UUID, preferences map[st
 }
 
 func (s *UserService) toUserResponse(user models.User) UserResponse {
+	var deletedAt *time.Time
+	if user.DeletedAt.Valid {
+		deletedAt = &user.DeletedAt.Time
+	}
+	
 	return UserResponse{
 		ID:                   user.ID,
 		Email:                user.Email,
-		FirstName:            user.FirstName,
-		LastName:             user.LastName,
+		FirstName:            user.Name, // Use Name for FirstName
+		LastName:             "",        // LastName not in model
 		IsAdmin:              user.IsAdmin,
 		ShouldChangePassword: user.ShouldChangePassword,
 		ProfileImagePath:     user.ProfileImagePath,
 		CreatedAt:            user.CreatedAt,
-		DeletedAt:            (*time.Time)(user.DeletedAt.Time),
+		DeletedAt:            deletedAt,
 		UpdatedAt:            user.UpdatedAt,
 		OAuthID:              user.OAuthID,
-		StorageLabel:         user.StorageLabel,
-		ExternalPath:         user.ExternalPath,
-		MemoriesEnabled:      user.MemoriesEnabled,
+		StorageLabel:         &user.StorageLabel,
+		ExternalPath:         nil, // Not in model
+		MemoriesEnabled:      nil, // Not in model
 		AvatarColor:          user.AvatarColor,
-		QuotaSizeInBytes:     user.QuotaSizeInBytes,
-		QuotaUsageInBytes:    user.QuotaUsageInBytes,
-		NotifyUpload:         user.NotifyUpload,
-		NotifyAlbumInvite:    user.NotifyAlbumInvite,
-		NotifyAlbumUpdate:    user.NotifyAlbumUpdate,
-		NotifyComment:        user.NotifyComment,
+		QuotaSizeInBytes:     &user.QuotaSizeInBytes,
+		QuotaUsageInBytes:    0, // Not in model
+		NotifyUpload:         false, // Not in model
+		NotifyAlbumInvite:    false, // Not in model
+		NotifyAlbumUpdate:    false, // Not in model
+		NotifyComment:        false, // Not in model
 	}
 }
 
