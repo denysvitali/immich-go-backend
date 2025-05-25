@@ -2,20 +2,23 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
+
+	"github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 
 	"github.com/denysvitali/immich-go-backend/internal/config"
 	"github.com/denysvitali/immich-go-backend/internal/database"
 	"github.com/denysvitali/immich-go-backend/internal/server"
-	"github.com/sirupsen/logrus"
-	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 var rootCmd = &cobra.Command{
@@ -59,6 +62,7 @@ func initConfig() {
 
 	viper.AutomaticEnv()
 	viper.SetEnvPrefix("IMMICH")
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 
 	if err := viper.ReadInConfig(); err == nil {
 		logrus.WithField("config", viper.ConfigFileUsed()).Info("Using config file")
@@ -104,7 +108,7 @@ func runServer(cmd *cobra.Command, args []string) {
 
 	go func() {
 		logrus.WithField("port", cfg.Server.Port).Info("Starting HTTP server")
-		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logrus.WithError(err).Fatal("HTTP server failed")
 		}
 	}()

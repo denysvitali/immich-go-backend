@@ -1,2 +1,4 @@
 /openapi.yaml
 /internal/proto/gen
+.vscode
+/internal/proto/*.swagger.json

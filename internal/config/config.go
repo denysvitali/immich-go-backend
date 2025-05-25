@@ -38,6 +38,7 @@ func Load() *Config {
 	viper.SetDefault("server.port", "8080")
 	viper.SetDefault("server.grpc_port", "9090")
 	viper.SetDefault("server.host", "localhost")
+	viper.SetDefault("database.url", "postgres://immich:immich@localhost:5432/immich?sslmode=disable")
 	viper.SetDefault("database.max_connections", 100)
 	viper.SetDefault("database.max_idle", 10)
 	viper.SetDefault("log.level", "info")

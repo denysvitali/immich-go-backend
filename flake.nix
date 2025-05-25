@@ -29,6 +29,7 @@
             protobuf
             protoc-gen-go
             protoc-gen-go-grpc
+            grpc-gateway
             
             # Buf for modern protobuf workflow
             buf
