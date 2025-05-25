@@ -50,11 +50,6 @@ func (s *Server) ServeGRPC(listener net.Listener) error {
 	return s.grpcServer.Serve(listener)
 }
 
-// getGRPCEndpoint returns the gRPC server endpoint
-func (s *Server) getGRPCEndpoint() string {
-	return s.config.Server.Host + ":" + s.config.Server.GRPCPort
-}
-
 // HTTPHandler creates and returns the HTTP handler with grpc-gateway
 func (s *Server) HTTPHandler() http.Handler {
 	if s.config.Log.Level == "debug" {
