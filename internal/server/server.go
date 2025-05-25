@@ -6,13 +6,13 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"gorm.io/gorm"
 
 	"github.com/denysvitali/immich-go-backend/internal/auth"
 	"github.com/denysvitali/immich-go-backend/internal/config"
-	"github.com/denysvitali/immich-go-backend/internal/middleware"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 )
 
@@ -50,6 +50,12 @@ func (s *Server) ServeGRPC(listener net.Listener) error {
 	return s.grpcServer.Serve(listener)
 }
 
+// getGRPCEndpoint returns the gRPC server endpoint
+func (s *Server) getGRPCEndpoint() string {
+	return s.config.Server.Host + ":" + s.config.Server.GRPCPort
+}
+
+// HTTPHandler creates and returns the HTTP handler with grpc-gateway
 func (s *Server) HTTPHandler() http.Handler {
 	if s.config.Log.Level == "debug" {
 		gin.SetMode(gin.DebugMode)
@@ -57,7 +63,40 @@ func (s *Server) HTTPHandler() http.Handler {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	return r
+	// Create grpc-gateway mux
+	mux := runtime.NewServeMux(
+		runtime.WithMarshalerOption(runtime.MIMEWildcard, &runtime.JSONPb{}),
+	)
+
+	// Register all the service handlers directly with the server implementations
+	// This avoids the need for an external network connection
+	ctx := context.Background()
+
+	// Register AuthService
+	err := immichv1.RegisterAuthServiceHandlerServer(ctx, mux, &s.authSvc)
+	if err != nil {
+		logrus.WithError(err).Error("Failed to register AuthService handler")
+	}
+
+	// Register AlbumService
+	err = immichv1.RegisterAlbumServiceHandlerServer(ctx, mux, &s.albumService)
+	if err != nil {
+		logrus.WithError(err).Error("Failed to register AlbumService handler")
+	}
+
+	// Register AssetService
+	err = immichv1.RegisterAssetServiceHandlerServer(ctx, mux, &s.assetService)
+	if err != nil {
+		logrus.WithError(err).Error("Failed to register AssetService handler")
+	}
+
+	// Register ImmichAPI
+	err = immichv1.RegisterImmichAPIHandlerServer(ctx, mux, &s.immichAPI)
+	if err != nil {
+		logrus.WithError(err).Error("Failed to register ImmichAPI handler")
+	}
+
+	return mux
 }
 
 func (s *Server) Stop() {
