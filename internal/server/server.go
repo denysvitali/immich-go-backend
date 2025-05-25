@@ -5,7 +5,6 @@ import (
 	"net"
 	"net/http"
 
-	"github.com/gin-gonic/gin"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
@@ -24,8 +23,10 @@ type Server struct {
 
 	albumService immichv1.UnimplementedAlbumServiceServer
 	assetService immichv1.UnimplementedAssetServiceServer
-	authSvc      immichv1.UnimplementedAuthServiceServer
-	immichAPI    immichv1.UnimplementedImmichAPIServer
+
+	immichv1.UnimplementedAuthServiceServer
+	immichv1.UnimplementedNotificationsServiceServer
+	immichv1.UnimplementedServerServiceServer
 }
 
 func NewServer(cfg *config.Config, db *gorm.DB) *Server {
@@ -39,8 +40,9 @@ func NewServer(cfg *config.Config, db *gorm.DB) *Server {
 	grpcServer := grpc.NewServer()
 	immichv1.RegisterAlbumServiceServer(grpcServer, &s.albumService)
 	immichv1.RegisterAssetServiceServer(grpcServer, &s.assetService)
-	immichv1.RegisterAuthServiceServer(grpcServer, &s.authSvc)
-	immichv1.RegisterImmichAPIServer(grpcServer, &s.immichAPI)
+	immichv1.RegisterAuthServiceServer(grpcServer, &s)
+	immichv1.RegisterNotificationsServiceServer(grpcServer, &s)
+	immichv1.RegisterServerServiceServer(grpcServer, &s)
 	s.grpcServer = grpcServer
 	return &s
 }
@@ -52,15 +54,10 @@ func (s *Server) ServeGRPC(listener net.Listener) error {
 
 // HTTPHandler creates and returns the HTTP handler with grpc-gateway
 func (s *Server) HTTPHandler() http.Handler {
-	if s.config.Log.Level == "debug" {
-		gin.SetMode(gin.DebugMode)
-	} else {
-		gin.SetMode(gin.ReleaseMode)
-	}
-
 	// Create grpc-gateway mux
 	mux := runtime.NewServeMux(
 		runtime.WithMarshalerOption(runtime.MIMEWildcard, &runtime.JSONPb{}),
+		runtime.WithMiddlewares(loggingMiddleware),
 	)
 
 	// Register all the service handlers directly with the server implementations
@@ -68,9 +65,15 @@ func (s *Server) HTTPHandler() http.Handler {
 	ctx := context.Background()
 
 	// Register AuthService
-	err := immichv1.RegisterAuthServiceHandlerServer(ctx, mux, &s.authSvc)
+	err := immichv1.RegisterAuthServiceHandlerServer(ctx, mux, s)
 	if err != nil {
 		logrus.WithError(err).Error("Failed to register AuthService handler")
+	}
+
+	// Register NotificationsService
+	err = immichv1.RegisterNotificationsServiceHandlerServer(ctx, mux, s)
+	if err != nil {
+		logrus.WithError(err).Error("Failed to register NotificationsService handler")
 	}
 
 	// Register AlbumService
@@ -85,13 +88,25 @@ func (s *Server) HTTPHandler() http.Handler {
 		logrus.WithError(err).Error("Failed to register AssetService handler")
 	}
 
-	// Register ImmichAPI
-	err = immichv1.RegisterImmichAPIHandlerServer(ctx, mux, &s.immichAPI)
+	err = immichv1.RegisterServerServiceHandlerServer(ctx, mux, s)
 	if err != nil {
-		logrus.WithError(err).Error("Failed to register ImmichAPI handler")
+		logrus.WithError(err).Error("Failed to register ServerService handler")
 	}
 
 	return mux
+}
+
+func loggingMiddleware(handlerFunc runtime.HandlerFunc) runtime.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request, pathParams map[string]string) {
+		logrus.WithFields(logrus.Fields{
+			"method": r.Method,
+			"path":   r.URL.Path,
+			"query":  r.URL.RawQuery,
+		}).Info("Handling request")
+
+		// Call the original handler
+		handlerFunc(w, r, pathParams)
+	}
 }
 
 func (s *Server) Stop() {

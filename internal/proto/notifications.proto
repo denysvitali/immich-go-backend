@@ -1,0 +1,129 @@
+syntax = "proto3";
+
+package immich.v1;
+
+import "common.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
+
+option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
+
+// Notifications service
+service NotificationsService {
+  // Get notifications
+  rpc GetNotifications(GetNotificationsRequest) returns (GetNotificationsResponse) {
+    option (google.api.http) = {
+      get: "/api/notifications"
+    };
+  }
+
+  // Get single notification
+  rpc GetNotification(GetNotificationRequest) returns (NotificationDto) {
+    option (google.api.http) = {
+      get: "/api/notifications/{id}"
+    };
+  }
+
+  // Update notification
+  rpc UpdateNotification(UpdateNotificationRequest) returns (NotificationDto) {
+    option (google.api.http) = {
+      put: "/api/notifications/{id}"
+      body: "*"
+    };
+  }
+
+  // Delete notification
+  rpc DeleteNotification(DeleteNotificationRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/api/notifications/{id}"
+    };
+  }
+
+  // Update multiple notifications
+  rpc UpdateNotifications(UpdateNotificationsRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      put: "/api/notifications"
+      body: "*"
+    };
+  }
+
+  // Delete multiple notifications
+  rpc DeleteNotifications(DeleteNotificationsRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/api/notifications"
+      body: "*"
+    };
+  }
+}
+
+// Notification level enum
+enum NotificationLevel {
+  NOTIFICATION_LEVEL_UNSPECIFIED = 0;
+  NOTIFICATION_LEVEL_SUCCESS = 1;
+  NOTIFICATION_LEVEL_ERROR = 2;
+  NOTIFICATION_LEVEL_WARNING = 3;
+  NOTIFICATION_LEVEL_INFO = 4;
+}
+
+// Notification type enum
+enum NotificationType {
+  NOTIFICATION_TYPE_UNSPECIFIED = 0;
+  NOTIFICATION_TYPE_JOB_FAILED = 1;
+  NOTIFICATION_TYPE_BACKUP_FAILED = 2;
+  NOTIFICATION_TYPE_SYSTEM_MESSAGE = 3;
+  NOTIFICATION_TYPE_CUSTOM = 4;
+}
+
+// Notification DTO
+message NotificationDto {
+  string id = 1;
+  string title = 2;
+  optional string description = 3;
+  NotificationLevel level = 4;
+  NotificationType type = 5;
+  google.protobuf.Timestamp created_at = 6;
+  optional google.protobuf.Timestamp read_at = 7;
+  optional google.protobuf.Struct data = 8;
+}
+
+// Get notifications request
+message GetNotificationsRequest {
+  optional string id = 1;
+  optional NotificationLevel level = 2;
+  optional NotificationType type = 3;
+  optional bool unread = 4;
+}
+
+// Get notifications response
+message GetNotificationsResponse {
+  repeated NotificationDto notifications = 1;
+}
+
+// Get notification request
+message GetNotificationRequest {
+  string id = 1;
+}
+
+// Update notification request
+message UpdateNotificationRequest {
+  string id = 1;
+  optional google.protobuf.Timestamp read_at = 2;
+}
+
+// Delete notification request
+message DeleteNotificationRequest {
+  string id = 1;
+}
+
+// Update notifications request
+message UpdateNotificationsRequest {
+  repeated string ids = 1;
+  optional google.protobuf.Timestamp read_at = 2;
+}
+
+// Delete notifications request
+message DeleteNotificationsRequest {
+  repeated string ids = 1;
+}
