@@ -4,34 +4,27 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 )
 
 func (s *Server) GetAllAlbums(ctx context.Context, request *immichv1.GetAllAlbumsRequest) (*immichv1.GetAllAlbumsResponse, error) {
-	return &immichv1.GetAllAlbumsResponse{
-		Albums: []*immichv1.Album{
-			{
-				Id:                    uuid.New().String(),
-				AlbumName:             "Example Album",
-				Description:           "",
-				OwnerId:               "",
-				Owner:                 nil,
-				AlbumThumbnailAssetId: nil,
-				IsActivityEnabled:     false,
-				Assets:                nil,
-				AssetCount:            0,
-				StartDate:             nil,
-				EndDate:               nil,
-				CreatedAt:             nil,
-				UpdatedAt:             nil,
-				SharedUsers:           nil,
-				HasSharedLink:         false,
-			},
-		},
-	}, nil
+	albums, err := s.db.GetAlbums(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get albums: %w", err)
+	}
+	immichAlbums := make([]*immichv1.Album, len(albums))
+	for i, album := range albums {
+		immichAlbums[i] = &immichv1.Album{
+			Id:          album.ID.String(),
+			AlbumName:   album.AlbumName,
+			Description: album.Description,
+			OwnerId:     album.OwnerId.String(),
+			// TODO: populate other fields
+		}
+	}
+	return &immichv1.GetAllAlbumsResponse{Albums: immichAlbums}, nil
 }
 
 func (s *Server) CreateAlbum(ctx context.Context, request *immichv1.CreateAlbumRequest) (*immichv1.Album, error) {

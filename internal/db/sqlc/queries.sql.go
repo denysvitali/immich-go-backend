@@ -34,3 +34,39 @@ func (q *Queries) GetAlbum(ctx context.Context, id pgtype.UUID) (Album, error) {
 	)
 	return i, err
 }
+
+const getAlbums = `-- name: GetAlbums :many
+SELECT id, "ownerId", "albumName", "createdAt", "albumThumbnailAssetId", "updatedAt", description, "deletedAt", "isActivityEnabled", "order", "updateId" FROM albums
+`
+
+func (q *Queries) GetAlbums(ctx context.Context) ([]Album, error) {
+	rows, err := q.db.Query(ctx, getAlbums)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Album
+	for rows.Next() {
+		var i Album
+		if err := rows.Scan(
+			&i.ID,
+			&i.OwnerId,
+			&i.AlbumName,
+			&i.CreatedAt,
+			&i.AlbumThumbnailAssetId,
+			&i.UpdatedAt,
+			&i.Description,
+			&i.DeletedAt,
+			&i.IsActivityEnabled,
+			&i.Order,
+			&i.UpdateId,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
