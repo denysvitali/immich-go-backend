@@ -27,6 +27,11 @@ enum UserAvatarColor {
   USER_AVATAR_COLOR_AMBER = 10;
 }
 
+enum AssetOrder {
+  ASC = 0;
+  DESC = 1;
+}
+
 enum ImageFormat {
   IMAGE_FORMAT_UNSPECIFIED = 0;
   IMAGE_FORMAT_JPEG = 1;

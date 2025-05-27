@@ -67,30 +67,9 @@ func stringPtr(s string) *string {
 }
 
 func (s *Server) GetNotifications(ctx context.Context, req *immichv1.GetNotificationsRequest) (*immichv1.GetNotificationsResponse, error) {
-	var filteredNotifications []*immichv1.NotificationDto
-
-	for _, notification := range mockNotifications {
-		// Apply filters
-		if req.Id != nil && *req.Id != notification.Id {
-			continue
-		}
-		if req.Level != nil && *req.Level != notification.Level {
-			continue
-		}
-		if req.Type != nil && *req.Type != notification.Type {
-			continue
-		}
-		if req.Unread != nil && *req.Unread {
-			if notification.ReadAt != nil {
-				continue // Skip read notifications when unread filter is true
-			}
-		}
-
-		filteredNotifications = append(filteredNotifications, notification)
-	}
 
 	return &immichv1.GetNotificationsResponse{
-		Notifications: filteredNotifications,
+		Notifications: []*immichv1.NotificationDto{},
 	}, nil
 }
 

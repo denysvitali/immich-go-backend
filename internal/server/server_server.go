@@ -15,34 +15,34 @@ func (s *Server) GetAboutInfo(ctx context.Context, empty *emptypb.Empty) (*immic
 
 func (s *Server) GetServerConfig(ctx context.Context, empty *emptypb.Empty) (*immichv1.ServerConfigResponse, error) {
 	return &immichv1.ServerConfigResponse{
-		ExternalDomain:   "foo.example.com",
+		LoginPageMessage: "Welcome to Immich",
+		TrashDays:        30,
+		UserDeleteDelay:  7,
+		OauthButtonText:  "Login with OAuth",
 		IsInitialized:    true,
 		IsOnboarded:      true,
-		LoginPageMessage: "Welcome to Immich",
-		MapDarkStyleUrl:  "",
-		MapLightStyleUrl: "",
-		OauthButtonText:  "",
-		PublicUsers:      false,
-		TrashDays:        0,
-		UserDeleteDelay:  0,
+		ExternalDomain:   "",
+		PublicUsers:      true,
+		MapDarkStyleUrl:  "https://tiles.immich.cloud/v1/style/dark.json",
+		MapLightStyleUrl: "https://tiles.immich.cloud/v1/style/light.json",
 	}, nil
 }
 
 func (s *Server) GetServerFeatures(ctx context.Context, empty *emptypb.Empty) (*immichv1.ServerFeaturesResponse, error) {
 	return &immichv1.ServerFeaturesResponse{
-		ConfigFile:         false,
-		DuplicateDetection: false,
-		Email:              false,
-		FacialRecognition:  false,
+		SmartSearch:        true,
+		FacialRecognition:  true,
+		DuplicateDetection: true,
+		Map:                true,
+		ReverseGeocoding:   true,
 		ImportFaces:        false,
-		Map:                false,
+		Sidecar:            true,
+		Search:             true,
+		Trash:              true,
 		Oauth:              false,
 		OauthAutoLaunch:    false,
 		PasswordLogin:      true,
-		ReverseGeocoding:   false,
-		Search:             false,
-		Sidecar:            false,
-		SmartSearch:        false,
-		Trash:              false,
+		ConfigFile:         false,
+		Email:              false,
 	}, nil
 }

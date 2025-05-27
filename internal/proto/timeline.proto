@@ -1,0 +1,84 @@
+syntax = "proto3";
+
+package immich.v1;
+
+import "common.proto";
+import "asset.proto";
+import "google/api/annotations.proto";
+
+option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
+
+// Asset visibility enum
+enum AssetVisibility {
+  ASSET_VISIBILITY_UNSPECIFIED = 0;
+  ASSET_VISIBILITY_PUBLIC = 1;
+  ASSET_VISIBILITY_PRIVATE = 2;
+}
+
+// Timeline service
+service TimelineService {
+  // Get time bucket of assets
+  rpc GetTimeBucket(GetTimeBucketRequest) returns (TimeBucketAssetResponseDto) {
+    option (google.api.http) = {
+      get: "/api/timeline/bucket"
+    };
+  }
+
+  // Get time buckets
+  rpc GetTimeBuckets(GetTimeBucketsRequest) returns (GetTimeBucketsResponse) {
+    option (google.api.http) = {
+      get: "/api/timeline/buckets"
+    };
+  }
+}
+
+// Get time bucket request
+message GetTimeBucketRequest {
+  optional string album_id = 1;
+  optional bool is_favorite = 2;
+  optional bool is_trashed = 3;
+  optional string key = 4;
+  optional AssetOrder order = 5;
+  optional int32 page = 6;
+  optional int32 page_size = 7;
+  optional string person_id = 8;
+  optional string tag_id = 9;
+  string time_bucket = 10; // required
+  optional string user_id = 11;
+  optional AssetVisibility visibility = 12;
+  optional bool with_partners = 13;
+  optional bool with_stacked = 14;
+}
+
+// Get time buckets request
+message GetTimeBucketsRequest {
+  optional string album_id = 1;
+  optional bool is_favorite = 2;
+  optional bool is_trashed = 3;
+  optional string key = 4;
+  optional AssetOrder order = 5;
+  optional string person_id = 6;
+  optional string tag_id = 7;
+  optional string user_id = 8;
+  optional AssetVisibility visibility = 9;
+  optional bool with_partners = 10;
+  optional bool with_stacked = 11;
+}
+
+// Time bucket asset response
+message TimeBucketAssetResponseDto {
+  repeated Asset assets = 1;
+  string time_bucket = 2;
+  int32 count = 3;
+}
+
+// Time buckets response DTO
+message TimeBucketsResponseDto {
+  int32 count = 1;
+  string time_bucket = 2;
+}
+
+// Get time buckets response
+message GetTimeBucketsResponse {
+  repeated TimeBucketsResponseDto buckets = 1;
+}

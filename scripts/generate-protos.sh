@@ -63,18 +63,6 @@ check_tool "go"
 
 echo ""
 
-# Clean previous generated files
-echo -e "${BLUE}🧹 Cleaning previous generated files...${NC}"
-if [[ -d "src/proto/generated" ]]; then
-    rm -rf src/proto/generated
-    echo "   Removed src/proto/generated"
-fi
-
-# Create output directory
-mkdir -p src/proto/generated
-echo "   Created src/proto/generated"
-echo ""
-
 # Generate protobuf files using buf
 echo -e "${BLUE}🔨 Generating protobuf files with buf...${NC}"
 
@@ -96,25 +84,6 @@ if buf generate; then
     echo -e "${GREEN}   ✅ Protocol buffer generation completed successfully${NC}"
 else
     echo -e "${RED}   ❌ Protocol buffer generation failed${NC}"
-    exit 1
-fi
-
-echo ""
-
-# Verify generated files
-echo -e "${BLUE}🔍 Verifying generated files...${NC}"
-
-if [[ -d "src/proto/generated" ]]; then
-    generated_files=$(find src/proto/generated -name "*.go" | wc -l)
-    if [[ $generated_files -gt 0 ]]; then
-        echo -e "${GREEN}   ✅ Generated $generated_files Go files${NC}"
-        echo "   Generated files:"
-        find src/proto/generated -name "*.go" -type f | sort | sed 's/^/      /'
-    else
-        echo -e "${YELLOW}   ⚠️  No Go files generated${NC}"
-    fi
-else
-    echo -e "${RED}   ❌ Generated directory not found${NC}"
     exit 1
 fi
 

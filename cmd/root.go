@@ -41,11 +41,13 @@ func init() {
 	cobra.OnInitialize(initConfig)
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is ./config.yaml)")
 	rootCmd.PersistentFlags().StringP("log-level", "l", "info", "log level (debug, info, warn, error)")
+	rootCmd.PersistentFlags().StringP("log-format", "f", "json", "log format (text, json)")
 	rootCmd.PersistentFlags().StringP("port", "p", "8080", "HTTP port")
 	rootCmd.PersistentFlags().StringP("grpc-port", "g", "9090", "gRPC port")
 	rootCmd.PersistentFlags().String("database-url", "", "PostgreSQL database URL")
 
 	viper.BindPFlag("log.level", rootCmd.PersistentFlags().Lookup("log-level"))
+	viper.BindPFlag("log.format", rootCmd.PersistentFlags().Lookup("log-format"))
 	viper.BindPFlag("server.port", rootCmd.PersistentFlags().Lookup("port"))
 	viper.BindPFlag("server.grpc_port", rootCmd.PersistentFlags().Lookup("grpc-port"))
 	viper.BindPFlag("database.url", rootCmd.PersistentFlags().Lookup("database-url"))
@@ -74,7 +76,7 @@ func runServer(cmd *cobra.Command, args []string) {
 	cfg := config.Load()
 
 	// Setup logger
-	setupLogger(cfg.Log.Level)
+	setupLogger(cfg.Log.Level, cfg.Log.Format)
 
 	logrus.Info("Starting Immich Go Backend Server")
 
@@ -103,7 +105,7 @@ func runServer(cmd *cobra.Command, args []string) {
 	// Start HTTP server
 	httpServer := &http.Server{
 		Addr:    fmt.Sprintf(":%s", cfg.Server.Port),
-		Handler: srv.HTTPHandler(),
+		Handler: cors(srv.HTTPHandler()),
 	}
 
 	go func() {
@@ -132,8 +134,28 @@ func runServer(cmd *cobra.Command, args []string) {
 	logrus.Info("Servers stopped")
 }
 
-func setupLogger(level string) {
-	logrus.SetFormatter(&logrus.JSONFormatter{})
+func cors(handler http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		handler.ServeHTTP(w, r)
+	})
+}
+
+func setupLogger(level string, format string) {
+	switch strings.ToLower(format) {
+	case "text":
+		logrus.SetFormatter(&logrus.TextFormatter{})
+	default:
+		logrus.SetFormatter(&logrus.JSONFormatter{})
+	}
 
 	switch level {
 	case "debug":

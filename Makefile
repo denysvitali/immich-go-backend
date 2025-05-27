@@ -19,7 +19,6 @@ proto-gen: ## Generate protocol buffer Go files using buf
 
 proto-clean: ## Clean generated protocol buffer files
 	@echo "🧹 Cleaning generated protocol buffer files..."
-	@rm -rf src/proto/generated
 	@echo "✅ Cleaned generated files"
 
 proto-check: ## Verify protocol buffer definitions and generated files
@@ -95,31 +94,3 @@ ci-check: proto-gen lint test ## Run all CI checks
 
 all: clean setup build test ## Clean, setup, build, and test everything
 	@echo "🎉 All tasks completed successfully!"
-
-# Pipeline targets for CI/CD
-.PHONY: pipeline-setup pipeline-build pipeline-test pipeline-deploy
-
-pipeline-setup: ## CI/CD: Setup environment and generate protos
-	@echo "🚀 Pipeline: Setting up environment..."
-	@if [ ! -d "src/proto/generated" ] || [ -z "$$(ls -A src/proto/generated 2>/dev/null)" ]; then \
-		echo "📦 Generating protocol buffers..."; \
-		./scripts/generate-protos.sh; \
-	else \
-		echo "✅ Protocol buffers already generated"; \
-	fi
-	@go mod download
-	@echo "✅ Pipeline setup complete"
-
-pipeline-build: pipeline-setup ## CI/CD: Build application
-	@echo "🔨 Pipeline: Building application..."
-	@go build -o bin/immich-go-backend .
-	@echo "✅ Pipeline build complete"
-
-pipeline-test: pipeline-setup ## CI/CD: Run tests
-	@echo "🧪 Pipeline: Running tests..."
-	@go test -v -race -coverprofile=coverage.out ./...
-	@echo "✅ Pipeline tests complete"
-
-pipeline-deploy: pipeline-build pipeline-test ## CI/CD: Deploy application
-	@echo "🚀 Pipeline: Deploying application..."
-	@echo "✅ Pipeline deployment complete"
