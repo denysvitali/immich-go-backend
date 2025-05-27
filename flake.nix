@@ -30,6 +30,9 @@
             protoc-gen-go
             protoc-gen-go-grpc
             grpc-gateway
+
+            # SQL
+            sqlc
             
             # Buf for modern protobuf workflow
             buf

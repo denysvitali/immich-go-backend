@@ -31,6 +31,15 @@ proto-check: ## Verify protocol buffer definitions and generated files
 		exit 1; \
 	fi
 
+sqlc-gen: ## Generate SQL code using sqlc
+	@echo "🔨 Generating SQL code..."
+	@if command -v sqlc >/dev/null 2>&1; then \
+		sqlc generate; \
+	else \
+		echo "❌ sqlc not found. Run 'make dev-shell' first."; \
+		exit 1; \
+	fi
+
 # Development environment
 dev-shell: ## Enter Nix development shell
 	@echo "🚀 Entering Nix development environment..."
