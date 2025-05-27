@@ -17,7 +17,7 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/denysvitali/immich-go-backend/internal/config"
-	"github.com/denysvitali/immich-go-backend/internal/database"
+	"github.com/denysvitali/immich-go-backend/internal/db"
 	"github.com/denysvitali/immich-go-backend/internal/server"
 )
 
@@ -80,14 +80,15 @@ func runServer(cmd *cobra.Command, args []string) {
 
 	logrus.Info("Starting Immich Go Backend Server")
 
-	// Initialize database
-	db, err := database.Initialize(cfg.Database.URL)
+	ctx := context.Background()
+	conn, err := db.New(ctx, cfg.Database.URL)
 	if err != nil {
-		logrus.WithError(err).Fatal("Failed to initialize database")
+		logrus.WithError(err).Fatal("Failed to connect to database")
 	}
+	defer conn.Close()
 
 	// Create server
-	srv := server.NewServer(cfg, db)
+	srv := server.NewServer(cfg, conn)
 
 	// Start gRPC server
 	grpcListener, err := net.Listen("tcp", fmt.Sprintf(":%s", cfg.Server.GRPCPort))

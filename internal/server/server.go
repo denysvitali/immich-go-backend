@@ -12,10 +12,10 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
-	"gorm.io/gorm"
 
 	"github.com/denysvitali/immich-go-backend/internal/auth"
 	"github.com/denysvitali/immich-go-backend/internal/config"
+	"github.com/denysvitali/immich-go-backend/internal/db"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 	"github.com/denysvitali/immich-go-backend/internal/websocket"
 )
@@ -30,7 +30,7 @@ var (
 
 type Server struct {
 	config      *config.Config
-	db          *gorm.DB
+	db          *db.Conn
 	grpcServer  *grpc.Server
 	authService *auth.Service
 	wsHub       *websocket.Hub
@@ -45,7 +45,7 @@ type Server struct {
 	immichv1.UnimplementedUsersServiceServer
 }
 
-func NewServer(cfg *config.Config, db *gorm.DB) *Server {
+func NewServer(cfg *config.Config, db *db.Conn) *Server {
 	authService := auth.NewService(cfg.JWT.SecretKey)
 	wsHub := websocket.New()
 
