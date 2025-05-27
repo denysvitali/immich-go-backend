@@ -10,6 +10,7 @@ import (
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"gorm.io/gorm"
 
@@ -17,6 +18,14 @@ import (
 	"github.com/denysvitali/immich-go-backend/internal/config"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 	"github.com/denysvitali/immich-go-backend/internal/websocket"
+)
+
+var (
+	// All these fields are set at build time using ldflags
+	Version      = "dev"
+	SourceCommit = "unknown"
+	SourceRef    = "unknown"
+	SourceUrl    = "unknown"
 )
 
 type Server struct {
@@ -29,23 +38,11 @@ type Server struct {
 	immichv1.UnimplementedAlbumServiceServer
 	immichv1.UnimplementedAssetServiceServer
 	immichv1.UnimplementedAuthServiceServer
+	immichv1.UnimplementedMemoryServiceServer
 	immichv1.UnimplementedNotificationsServiceServer
 	immichv1.UnimplementedServerServiceServer
 	immichv1.UnimplementedTimelineServiceServer
-}
-
-func (s *Server) GetTimeBucket(ctx context.Context, request *immichv1.GetTimeBucketRequest) (*immichv1.TimeBucketAssetResponseDto, error) {
-	return &immichv1.TimeBucketAssetResponseDto{
-		Assets: []*immichv1.Asset{},
-	}, nil
-}
-
-func (s *Server) GetTimeBuckets(ctx context.Context, request *immichv1.GetTimeBucketsRequest) (*immichv1.GetTimeBucketsResponse, error) {
-	return &immichv1.GetTimeBucketsResponse{
-		Buckets: []*immichv1.TimeBucketsResponseDto{
-			{},
-		},
-	}, nil
+	immichv1.UnimplementedUsersServiceServer
 }
 
 func NewServer(cfg *config.Config, db *gorm.DB) *Server {
@@ -109,14 +106,15 @@ func httpResponseModifier(ctx context.Context, w http.ResponseWriter, p proto.Me
 		delete(w.Header(), "Grpc-Metadata-X-Http-Code")
 		w.WriteHeader(code)
 	}
-
 	return nil
 }
 
 // HTTPHandler creates and returns the HTTP handler with grpc-gateway
 func (s *Server) HTTPHandler() http.Handler {
 	mux := runtime.NewServeMux(
-		runtime.WithMarshalerOption(runtime.MIMEWildcard, &runtime.JSONPb{}),
+		runtime.WithMarshalerOption(runtime.MIMEWildcard, &runtime.JSONPb{
+			MarshalOptions: protojson.MarshalOptions{},
+		}),
 		runtime.WithMiddlewares(loggingMiddleware),
 		runtime.WithForwardResponseOption(httpResponseModifier),
 	)
@@ -143,6 +141,12 @@ func (s *Server) HTTPHandler() http.Handler {
 	}
 	if err := immichv1.RegisterTimelineServiceHandlerServer(ctx, mux, s); err != nil {
 		logrus.WithError(err).Error("Failed to register TimelineService handler")
+	}
+	if err := immichv1.RegisterUsersServiceHandlerServer(ctx, mux, s); err != nil {
+		logrus.WithError(err).Error("Failed to register UsersService handler")
+	}
+	if err := immichv1.RegisterMemoryServiceHandlerServer(ctx, mux, s); err != nil {
+		logrus.WithError(err).Error("Failed to register MemoryService handler")
 	}
 	return s.handleWs(mux)
 }

@@ -1,0 +1,308 @@
+syntax = "proto3";
+
+package immich.v1;
+
+import "common.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
+
+// Users service
+service UsersService {
+  // Get current user information
+  rpc GetMyUser(google.protobuf.Empty) returns (UserAdminResponse) {
+    option (google.api.http) = {
+      get: "/api/users/me"
+    };
+  }
+
+  // Update current user information
+  rpc UpdateMyUser(UserUpdateMeRequest) returns (UserAdminResponse) {
+    option (google.api.http) = {
+      put: "/api/users/me"
+      body: "*"
+    };
+  }
+
+  // Get user license information
+  rpc GetUserLicense(google.protobuf.Empty) returns (UserLicenseResponse) {
+    option (google.api.http) = {
+      get: "/api/users/me/license"
+    };
+  }
+
+  // Set user license
+  rpc SetUserLicense(UserLicenseKeyRequest) returns (UserLicenseResponse) {
+    option (google.api.http) = {
+      put: "/api/users/me/license"
+      body: "*"
+    };
+  }
+
+  // Delete user license
+  rpc DeleteUserLicense(google.protobuf.Empty) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/api/users/me/license"
+    };
+  }
+
+  // Get user preferences
+  rpc GetMyPreferences(google.protobuf.Empty) returns (UserPreferencesResponse) {
+    option (google.api.http) = {
+      get: "/api/users/me/preferences"
+    };
+  }
+
+  // Update user preferences
+  rpc UpdateMyPreferences(UserPreferencesUpdateRequest) returns (UserPreferencesResponse) {
+    option (google.api.http) = {
+      put: "/api/users/me/preferences"
+      body: "*"
+    };
+  }
+
+  // Create profile image
+  rpc CreateProfileImage(CreateProfileImageRequest) returns (CreateProfileImageResponse) {
+    option (google.api.http) = {
+      post: "/api/users/profile-image"
+      body: "*"
+    };
+  }
+
+  // Delete profile image
+  rpc DeleteProfileImage(google.protobuf.Empty) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/api/users/profile-image"
+    };
+  }
+
+  // Get user by ID
+  rpc GetUser(GetUserRequest) returns (UserResponse) {
+    option (google.api.http) = {
+      get: "/api/users/{user_id}"
+    };
+  }
+
+  // Get profile image by user ID
+  rpc GetProfileImage(GetProfileImageRequest) returns (GetProfileImageResponse) {
+    option (google.api.http) = {
+      get: "/api/users/{user_id}/profile-image"
+    };
+  }
+}
+
+// User status enum
+enum UserStatus {
+  USER_STATUS_UNSPECIFIED = 0;
+  USER_STATUS_ACTIVE = 1;
+  USER_STATUS_REMOVING = 2;
+  USER_STATUS_DELETED = 3;
+}
+
+// User license information
+message UserLicense {
+  google.protobuf.Timestamp activated_at = 1;
+  string activation_key = 2;
+  string license_key = 3;
+}
+
+// User admin response (includes sensitive fields)
+message UserAdminResponse {
+  string id = 1;
+  string email = 2;
+  string name = 3;
+  bool is_admin = 4;
+  UserAvatarColor avatar_color = 5;
+  string profile_image_path = 6;
+  google.protobuf.Timestamp profile_changed_at = 7;
+  bool should_change_password = 8;
+  optional int64 quota_size_in_bytes = 9;
+  optional int64 quota_usage_in_bytes = 10;
+  optional string storage_label = 11;
+  UserStatus status = 12;
+  google.protobuf.Timestamp created_at = 13;
+  google.protobuf.Timestamp updated_at = 14;
+  optional google.protobuf.Timestamp deleted_at = 15;
+  string oauth_id = 16;
+  optional UserLicense license = 17;
+}
+
+// User response (public fields only)
+message UserResponse {
+  string id = 1;
+  string email = 2;
+  string name = 3;
+  UserAvatarColor avatar_color = 4;
+  string profile_image_path = 5;
+  google.protobuf.Timestamp profile_changed_at = 6;
+}
+
+// Update current user request
+message UserUpdateMeRequest {
+  optional string email = 1;
+  optional string name = 2;
+  optional string password = 3;
+  optional UserAvatarColor avatar_color = 4;
+}
+
+// User license key request
+message UserLicenseKeyRequest {
+  string activation_key = 1;
+  string license_key = 2;
+}
+
+// User license response
+message UserLicenseResponse {
+  google.protobuf.Timestamp activated_at = 1;
+  string activation_key = 2;
+  string license_key = 3;
+}
+
+// User preferences response
+message UserPreferencesResponse {
+  DownloadResponse download = 1;
+  EmailNotificationsResponse email_notifications = 2;
+  FoldersResponse folders = 3;
+  MemoriesResponse memories = 4;
+  PeopleResponse people = 5;
+  PurchaseResponse purchase = 6;
+  RatingsResponse ratings = 7;
+  SharedLinksResponse shared_links = 8;
+  TagsResponse tags = 9;
+}
+
+// User preferences update request
+message UserPreferencesUpdateRequest {
+  optional AvatarUpdate avatar = 1;
+  optional DownloadUpdate download = 2;
+  optional EmailNotificationsUpdate email_notifications = 3;
+  optional FoldersUpdate folders = 4;
+  optional MemoriesUpdate memories = 5;
+  optional PeopleUpdate people = 6;
+  optional PurchaseUpdate purchase = 7;
+  optional RatingsUpdate ratings = 8;
+  optional SharedLinksUpdate shared_links = 9;
+  optional TagsUpdate tags = 10;
+}
+
+// Preference sub-messages (these would need to be defined based on the actual structure)
+message DownloadResponse {
+  bool include_embedded_videos = 1;
+}
+
+message EmailNotificationsResponse {
+  bool enabled = 1;
+  bool album_invite = 2;
+  bool album_update = 3;
+}
+
+message FoldersResponse {
+  bool enabled = 1;
+  int32 size_threshold = 2;
+}
+
+message MemoriesResponse {
+  bool enabled = 1;
+}
+
+message PeopleResponse {
+  bool enabled = 1;
+  int32 size_threshold = 2;
+}
+
+message PurchaseResponse {
+  bool show_support_badge = 1;
+}
+
+message RatingsResponse {
+  bool enabled = 1;
+}
+
+message SharedLinksResponse {
+  bool enabled = 1;
+  bool show_metadata = 2;
+  string password_options = 3;
+}
+
+message TagsResponse {
+  bool enabled = 1;
+  int32 size_threshold = 2;
+}
+
+// Update sub-messages for preferences
+message AvatarUpdate {
+  optional UserAvatarColor color = 1;
+}
+
+message DownloadUpdate {
+  optional bool include_embedded_videos = 1;
+}
+
+message EmailNotificationsUpdate {
+  optional bool enabled = 1;
+  optional bool album_invite = 2;
+  optional bool album_update = 3;
+}
+
+message FoldersUpdate {
+  optional bool enabled = 1;
+  optional int32 size_threshold = 2;
+}
+
+message MemoriesUpdate {
+  optional bool enabled = 1;
+}
+
+message PeopleUpdate {
+  optional bool enabled = 1;
+  optional int32 size_threshold = 2;
+}
+
+message PurchaseUpdate {
+  optional bool show_support_badge = 1;
+}
+
+message RatingsUpdate {
+  optional bool enabled = 1;
+}
+
+message SharedLinksUpdate {
+  optional bool enabled = 1;
+  optional bool show_metadata = 2;
+  optional string password_options = 3;
+}
+
+message TagsUpdate {
+  optional bool enabled = 1;
+  optional int32 size_threshold = 2;
+}
+
+// Create profile image request
+message CreateProfileImageRequest {
+  bytes file = 1;
+}
+
+// Create profile image response
+message CreateProfileImageResponse {
+  string user_id = 1;
+  string profile_image_path = 2;
+  google.protobuf.Timestamp profile_changed_at = 3;
+}
+
+// Get user request
+message GetUserRequest {
+  string user_id = 1;
+}
+
+// Get profile image request
+message GetProfileImageRequest {
+  string user_id = 1;
+}
+
+// Get profile image response
+message GetProfileImageResponse {
+  bytes image_data = 1;
+  string content_type = 2;
+}

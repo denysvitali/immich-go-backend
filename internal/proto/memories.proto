@@ -1,0 +1,157 @@
+syntax = "proto3";
+
+package immich.v1;
+
+import "common.proto";
+import "asset.proto";
+import "album.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
+
+// Memory service
+service MemoryService {
+  // Search memories
+  // TODO: Find a better return type as SearchMemoriesResponse is not directly an array as Immich expects it to be.
+  // ListValue looks promising, but it's not really typed. Alternatively we can try to create a custom marshaler:
+  // https://grpc-ecosystem.github.io/grpc-gateway/docs/mapping/custom_marshalers/
+  rpc SearchMemories(SearchMemoriesRequest) returns (SearchMemoriesResponse) {
+    option (google.api.http) = {
+      get: "/api/memories"
+    };
+  }
+
+  // Create a new memory
+  rpc CreateMemory(CreateMemoryRequest) returns (Memory) {
+    option (google.api.http) = {
+      post: "/api/memories"
+      body: "*"
+    };
+  }
+
+  // Get memory by ID
+  rpc GetMemory(GetMemoryRequest) returns (Memory) {
+    option (google.api.http) = {
+      get: "/api/memories/{id}"
+    };
+  }
+
+  // Update memory
+  rpc UpdateMemory(UpdateMemoryRequest) returns (Memory) {
+    option (google.api.http) = {
+      put: "/api/memories/{id}"
+      body: "*"
+    };
+  }
+
+  // Delete memory
+  rpc DeleteMemory(DeleteMemoryRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/api/memories/{id}"
+    };
+  }
+
+  // Add assets to memory
+  rpc AddMemoryAssets(AddMemoryAssetsRequest) returns (BulkIdResponseList) {
+    option (google.api.http) = {
+      put: "/api/memories/{id}/assets"
+      body: "*"
+    };
+  }
+
+  // Remove assets from memory
+  rpc RemoveMemoryAssets(RemoveMemoryAssetsRequest) returns (BulkIdResponseList) {
+    option (google.api.http) = {
+      delete: "/api/memories/{id}/assets"
+      body: "*"
+    };
+  }
+}
+
+// Memory types
+enum MemoryType {
+  MEMORY_TYPE_UNSPECIFIED = 0;
+  MEMORY_TYPE_ON_THIS_DAY = 1;
+}
+
+// OnThisDay data structure
+message OnThisDayData {
+  int32 year = 1;
+}
+
+// Memory message
+message Memory {
+  string id = 1;
+  string owner_id = 2;
+  MemoryType type = 3;
+  google.protobuf.Timestamp memory_at = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp updated_at = 6;
+  bool is_saved = 7;
+  OnThisDayData data = 8;
+  repeated Asset assets = 9;
+  optional google.protobuf.Timestamp seen_at = 10;
+  optional google.protobuf.Timestamp deleted_at = 11;
+  optional google.protobuf.Timestamp show_at = 12;
+  optional google.protobuf.Timestamp hide_at = 13;
+}
+
+// Search memories request
+message SearchMemoriesRequest {
+  optional google.protobuf.Timestamp for_date = 1;
+  optional bool is_saved = 2;
+  optional bool is_trashed = 3;
+  optional MemoryType type = 4;
+}
+
+// Search memories response
+message SearchMemoriesResponse {
+  repeated Memory memories = 1;
+}
+
+// Create memory request
+message CreateMemoryRequest {
+  MemoryType type = 1;
+  google.protobuf.Timestamp memory_at = 2;
+  OnThisDayData data = 3;
+  repeated string asset_ids = 4;
+  optional bool is_saved = 5;
+  optional google.protobuf.Timestamp seen_at = 6;
+}
+
+// Get memory request
+message GetMemoryRequest {
+  string id = 1;
+}
+
+// Update memory request
+message UpdateMemoryRequest {
+  string id = 1;
+  optional bool is_saved = 2;
+  optional google.protobuf.Timestamp memory_at = 3;
+  optional google.protobuf.Timestamp seen_at = 4;
+}
+
+// Delete memory request
+message DeleteMemoryRequest {
+  string id = 1;
+}
+
+// Bulk ID response list
+message BulkIdResponseList {
+  repeated BulkIdResponse responses = 1;
+}
+
+// Add memory assets request
+message AddMemoryAssetsRequest {
+  string id = 1;
+  BulkIds bulk_ids = 2;
+}
+
+// Remove memory assets request
+message RemoveMemoryAssetsRequest {
+  string id = 1;
+  BulkIds bulk_ids = 2;
+}

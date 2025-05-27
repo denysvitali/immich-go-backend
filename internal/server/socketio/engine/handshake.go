@@ -33,12 +33,12 @@ func GenerateSessionID() string {
 }
 
 // CreateHandshakeResponse creates a handshake response with default values
-func CreateHandshakeResponse() HandshakeResponse {
+func CreateHandshakeResponse(sessionId string) HandshakeResponse {
 	return HandshakeResponse{
-		SessionID:    GenerateSessionID(),
-		Upgrades:     []string{"websocket"},
+		SessionID:    sessionId,
+		Upgrades:     []string{},
 		PingInterval: 25000, // 25 seconds
-		PingTimeout:  20000, // 20 seconds  
+		PingTimeout:  20000, // 20 seconds
 		MaxPayload:   1000000,
 	}
 }

@@ -76,7 +76,7 @@ func (h *Hub) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	defer c.Close()
 
 	// Create handshake response
-	handshake := engine.CreateHandshakeResponse()
+	handshake := engine.CreateHandshakeResponse(engine.GenerateSessionID())
 
 	// Create session
 	session := engine.NewSession(
@@ -105,7 +105,7 @@ func (h *Hub) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	openPacket := engine.EncodePacket(engine.PacketOpen, handshakeBytes)
+	openPacket := engine.EncodePacket(engine.PacketMessage, handshakeBytes)
 	if err := c.WriteMessage(websocket.TextMessage, openPacket); err != nil {
 		logrus.WithError(err).Error("Failed to write handshake response to WebSocket")
 		return
@@ -286,7 +286,7 @@ func (c *Client) handleSocketIOConnect(packet *socketio.SocketIOPacket) {
 	}
 
 	// Wrap in Engine.IO message packet
-	messagePacket := engine.EncodePacket(engine.PacketMessage, responseBytes)
+	messagePacket := engine.EncodePacket(engine.PacketOpen, responseBytes)
 
 	select {
 	case c.send <- messagePacket:
