@@ -63,7 +63,7 @@ func DecodeSocketIOPacket(data []byte) (*SocketIOPacket, error) {
 	}
 
 	remaining := string(data[1:])
-	
+
 	// Parse namespace if present
 	if strings.HasPrefix(remaining, "/") {
 		commaIdx := strings.Index(remaining, ",")
@@ -82,7 +82,7 @@ func DecodeSocketIOPacket(data []byte) (*SocketIOPacket, error) {
 			break
 		}
 	}
-	
+
 	if idEnd > 0 {
 		if id, err := strconv.Atoi(remaining[:idEnd]); err == nil {
 			packet.ID = &id
