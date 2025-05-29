@@ -100,11 +100,11 @@ func (s *Server) UpdateAlbumInfo(ctx context.Context, request *immichv1.UpdateAl
 	}
 
 	album, err := s.db.UpdateAlbum(ctx, sqlc.UpdateAlbumParams{
-		ID:                     albumID,
-		AlbumName:              albumName,
-		Description:            description,
-		AlbumThumbnailAssetID:  thumbnailAssetID,
-		IsActivityEnabled:      isActivityEnabled,
+		ID:                    albumID,
+		AlbumName:             albumName,
+		Description:           description,
+		AlbumThumbnailAssetID: thumbnailAssetID,
+		IsActivityEnabled:     isActivityEnabled,
 	})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to update album: %v", err)

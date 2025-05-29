@@ -47,14 +47,14 @@ func (s *Server) UpdateMyUser(ctx context.Context, request *immichv1.UserUpdateM
 	}
 
 	user, err := s.db.UpdateUser(ctx, sqlc.UpdateUserParams{
-		ID:                     userID,
-		Name:                   name,
-		Email:                  email,
-		AvatarColor:            avatarColor,
-		ProfileImagePath:       pgtype.Text{}, // Not in UserUpdateMeRequest
-		ShouldChangePassword:   pgtype.Bool{}, // Not in UserUpdateMeRequest
-		QuotaSizeInBytes:       pgtype.Int8{}, // Not in UserUpdateMeRequest
-		StorageLabel:           pgtype.Text{}, // Not in UserUpdateMeRequest
+		ID:                   userID,
+		Name:                 name,
+		Email:                email,
+		AvatarColor:          avatarColor,
+		ProfileImagePath:     pgtype.Text{}, // Not in UserUpdateMeRequest
+		ShouldChangePassword: pgtype.Bool{}, // Not in UserUpdateMeRequest
+		QuotaSizeInBytes:     pgtype.Int8{}, // Not in UserUpdateMeRequest
+		StorageLabel:         pgtype.Text{}, // Not in UserUpdateMeRequest
 	})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to update user: %v", err)

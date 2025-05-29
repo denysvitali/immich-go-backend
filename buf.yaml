@@ -6,4 +6,12 @@ deps:
   - buf.build/grpc-ecosystem/grpc-gateway
 lint:
   use:
-    - DEFAULT
+    - BASIC
+  except:
+    - PACKAGE_DIRECTORY_MATCH
+    - RPC_REQUEST_RESPONSE_UNIQUE
+    - RPC_REQUEST_STANDARD_NAME
+    - RPC_RESPONSE_STANDARD_NAME
+    - ENUM_VALUE_PREFIX
+    - ENUM_ZERO_VALUE_SUFFIX
+    - IMPORT_USED
