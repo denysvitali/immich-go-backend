@@ -23,11 +23,11 @@ func New(ctx context.Context, databaseURL string) (*Conn, error) {
 		return nil, err
 	}
 
-	conn, err := pool.Acquire(ctx)
-	if err != nil {
+	// Test the connection
+	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
 		return nil, err
 	}
 
-	return &Conn{pool: pool, Queries: sqlc.New(conn)}, nil
+	return &Conn{pool: pool, Queries: sqlc.New(pool)}, nil
 }
