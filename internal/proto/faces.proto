@@ -1,0 +1,92 @@
+syntax = "proto3";
+
+package immich.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+
+option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
+
+// Faces service for managing face detection and recognition
+service FacesService {
+  // Get all faces
+  rpc GetFaces(GetFacesRequest) returns (GetFacesResponse) {
+    option (google.api.http) = {
+      get: "/faces"
+    };
+  }
+
+  // Create face
+  rpc CreateFace(CreateFaceRequest) returns (FaceResponse) {
+    option (google.api.http) = {
+      post: "/faces"
+      body: "*"
+    };
+  }
+
+  // Delete face
+  rpc DeleteFace(DeleteFaceRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/faces/{id}"
+    };
+  }
+
+  // Reassign faces by ID
+  rpc ReassignFacesById(ReassignFacesByIdRequest) returns (ReassignFacesByIdResponse) {
+    option (google.api.http) = {
+      put: "/faces/{id}"
+      body: "*"
+    };
+  }
+}
+
+// Request to get faces
+message GetFacesRequest {
+  optional string id = 1;
+}
+
+// Response containing faces
+message GetFacesResponse {
+  repeated FaceResponse faces = 1;
+}
+
+// Request to create face
+message CreateFaceRequest {
+  string asset_id = 1;
+  string person_id = 2;
+  BoundingBox bounding_box = 3;
+}
+
+// Request to delete face
+message DeleteFaceRequest {
+  string id = 1;
+}
+
+// Request to reassign faces
+message ReassignFacesByIdRequest {
+  string id = 1;
+  string person_id = 2;
+}
+
+// Response for reassigning faces
+message ReassignFacesByIdResponse {
+  repeated FaceResponse updated_faces = 1;
+}
+
+// Face response
+message FaceResponse {
+  string id = 1;
+  string asset_id = 2;
+  string person_id = 3;
+  BoundingBox bounding_box = 4;
+  optional string image_width = 5;
+  optional string image_height = 6;
+}
+
+// Bounding box for face detection
+message BoundingBox {
+  int32 x1 = 1;
+  int32 y1 = 2;
+  int32 x2 = 3;
+  int32 y2 = 4;
+}

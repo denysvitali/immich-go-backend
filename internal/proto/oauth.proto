@@ -1,0 +1,100 @@
+syntax = "proto3";
+
+package immich.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+
+option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
+
+// OAuth service for external authentication
+service OAuthService {
+  // Authorize OAuth
+  rpc AuthorizeOAuth(AuthorizeOAuthRequest) returns (AuthorizeOAuthResponse) {
+    option (google.api.http) = {
+      post: "/oauth/authorize"
+      body: "*"
+    };
+  }
+
+  // Callback OAuth
+  rpc CallbackOAuth(CallbackOAuthRequest) returns (CallbackOAuthResponse) {
+    option (google.api.http) = {
+      post: "/oauth/callback"
+      body: "*"
+    };
+  }
+
+  // Generate OAuth config
+  rpc GenerateOAuthConfig(GenerateOAuthConfigRequest) returns (GenerateOAuthConfigResponse) {
+    option (google.api.http) = {
+      post: "/oauth/config"
+      body: "*"
+    };
+  }
+
+  // Link OAuth account
+  rpc LinkOAuthAccount(LinkOAuthAccountRequest) returns (LinkOAuthAccountResponse) {
+    option (google.api.http) = {
+      post: "/oauth/link"
+      body: "*"
+    };
+  }
+
+  // Unlink OAuth account
+  rpc UnlinkOAuthAccount(google.protobuf.Empty) returns (UnlinkOAuthAccountResponse) {
+    option (google.api.http) = {
+      post: "/oauth/unlink"
+      body: "*"
+    };
+  }
+}
+
+// Request to authorize OAuth
+message AuthorizeOAuthRequest {
+  string redirect_uri = 1;
+}
+
+// Response for OAuth authorization
+message AuthorizeOAuthResponse {
+  string url = 1;
+  string state = 2;
+}
+
+// Request for OAuth callback
+message CallbackOAuthRequest {
+  string url = 1;
+}
+
+// Response for OAuth callback
+message CallbackOAuthResponse {
+  string access_token = 1;
+  string user_id = 2;
+}
+
+// Request to generate OAuth config
+message GenerateOAuthConfigRequest {
+  string redirect_uri = 1;
+}
+
+// Response for OAuth config generation
+message GenerateOAuthConfigResponse {
+  bool enabled = 1;
+  string password_login_enabled = 2;
+  string url = 3;
+}
+
+// Request to link OAuth account
+message LinkOAuthAccountRequest {
+  string url = 1;
+}
+
+// Response for linking OAuth account
+message LinkOAuthAccountResponse {
+  bool linked = 1;
+}
+
+// Response for unlinking OAuth account
+message UnlinkOAuthAccountResponse {
+  bool unlinked = 1;
+}

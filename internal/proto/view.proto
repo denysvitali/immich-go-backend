@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+package immich.v1;
+
+import "common.proto";
+import "google/api/annotations.proto";
+
+option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
+
+// View service for browsing assets by folder structure
+service ViewService {
+  // Get assets by original path
+  rpc GetAssetsByOriginalPath(GetAssetsByOriginalPathRequest) returns (GetAssetsByOriginalPathResponse) {
+    option (google.api.http) = {
+      get: "/view/folder"
+    };
+  }
+
+  // Get unique original paths
+  rpc GetUniqueOriginalPaths(GetUniqueOriginalPathsRequest) returns (GetUniqueOriginalPathsResponse) {
+    option (google.api.http) = {
+      get: "/view/folder/unique-paths"
+    };
+  }
+}
+
+// Request to get assets by original path
+message GetAssetsByOriginalPathRequest {
+  string path = 1;
+  optional bool is_archived = 2;
+  optional bool is_favorite = 3;
+  optional int32 skip = 4;
+  optional int32 take = 5;
+}
+
+// Response containing assets by original path
+message GetAssetsByOriginalPathResponse {
+  repeated AssetInfo assets = 1;
+  int32 total = 2;
+}
+
+// Request to get unique original paths
+message GetUniqueOriginalPathsRequest {
+  // No parameters needed
+}
+
+// Response containing unique original paths
+message GetUniqueOriginalPathsResponse {
+  repeated string paths = 1;
+}
+
+// Asset info for view service
+message AssetInfo {
+  string id = 1;
+  string device_asset_id = 2;
+  string device_id = 3;
+  AssetType type = 4;
+  string original_path = 5;
+  string original_file_name = 6;
+  bool is_archived = 7;
+  bool is_favorite = 8;
+  bool is_trashed = 9;
+}

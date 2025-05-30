@@ -1,0 +1,85 @@
+syntax = "proto3";
+
+package immich.v1;
+
+import "common.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
+
+// Partners service for managing user partnerships
+service PartnersService {
+  // Get partners
+  rpc GetPartners(GetPartnersRequest) returns (GetPartnersResponse) {
+    option (google.api.http) = {
+      get: "/partners"
+    };
+  }
+
+  // Remove partner
+  rpc RemovePartner(RemovePartnerRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/partners/{id}"
+    };
+  }
+
+  // Create partner
+  rpc CreatePartner(CreatePartnerRequest) returns (PartnerResponse) {
+    option (google.api.http) = {
+      post: "/partners/{id}"
+      body: "*"
+    };
+  }
+
+  // Update partner
+  rpc UpdatePartner(UpdatePartnerRequest) returns (PartnerResponse) {
+    option (google.api.http) = {
+      put: "/partners/{id}"
+      body: "*"
+    };
+  }
+}
+
+// Partner direction enum
+enum PartnerDirection {
+  PARTNER_DIRECTION_UNSPECIFIED = 0;
+  PARTNER_DIRECTION_SHARED_BY = 1;
+  PARTNER_DIRECTION_SHARED_WITH = 2;
+}
+
+// Request to get partners
+message GetPartnersRequest {
+  PartnerDirection direction = 1;
+}
+
+// Response containing partners
+message GetPartnersResponse {
+  repeated PartnerResponse partners = 1;
+}
+
+// Request to remove partner
+message RemovePartnerRequest {
+  string id = 1;
+}
+
+// Request to create partner
+message CreatePartnerRequest {
+  string id = 1;
+}
+
+// Request to update partner
+message UpdatePartnerRequest {
+  string id = 1;
+  bool in_timeline = 2;
+}
+
+// Partner response
+message PartnerResponse {
+  string id = 1;
+  User user = 2;
+  bool in_timeline = 3;
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp updated_at = 5;
+}

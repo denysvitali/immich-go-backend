@@ -135,7 +135,7 @@ message UserAdminResponseDto {
 // User preferences response DTO
 message UserPreferencesResponseDto {
   AvatarResponse avatar = 1;
-  DownloadResponse download = 2;
+  UserDownloadPreferencesResponse download = 2;
   EmailNotificationsResponse email_notifications = 3;
   MemoriesResponse memories = 4;
   PurchaseResponse purchase = 5;
@@ -153,8 +153,8 @@ message AvatarResponse {
   UserAvatarColor color = 1;
 }
 
-// Download response
-message DownloadResponse {
+// User download preferences response
+message UserDownloadPreferencesResponse {
   bool include_embedded_videos = 1;
 }
 

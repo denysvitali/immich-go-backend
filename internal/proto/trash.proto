@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package immich.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+
+option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
+
+// Trash service for managing deleted assets
+service TrashService {
+  // Empty trash
+  rpc EmptyTrash(google.protobuf.Empty) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/trash/empty"
+      body: "*"
+    };
+  }
+
+  // Restore trash
+  rpc RestoreTrash(google.protobuf.Empty) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/trash/restore"
+      body: "*"
+    };
+  }
+
+  // Restore assets
+  rpc RestoreAssets(RestoreAssetsRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/trash/restore/assets"
+      body: "*"
+    };
+  }
+}
+
+// Request to restore assets
+message RestoreAssetsRequest {
+  repeated string asset_ids = 1;
+}

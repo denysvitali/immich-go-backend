@@ -1,0 +1,160 @@
+syntax = "proto3";
+
+package immich.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
+
+// Libraries service for managing external libraries
+service LibrariesService {
+  // Get all libraries
+  rpc GetAllLibraries(GetAllLibrariesRequest) returns (GetAllLibrariesResponse) {
+    option (google.api.http) = {
+      get: "/libraries"
+    };
+  }
+
+  // Create library
+  rpc CreateLibrary(CreateLibraryRequest) returns (LibraryResponse) {
+    option (google.api.http) = {
+      post: "/libraries"
+      body: "*"
+    };
+  }
+
+  // Delete library
+  rpc DeleteLibrary(DeleteLibraryRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/libraries/{id}"
+    };
+  }
+
+  // Get library
+  rpc GetLibrary(GetLibraryRequest) returns (LibraryResponse) {
+    option (google.api.http) = {
+      get: "/libraries/{id}"
+    };
+  }
+
+  // Update library
+  rpc UpdateLibrary(UpdateLibraryRequest) returns (LibraryResponse) {
+    option (google.api.http) = {
+      put: "/libraries/{id}"
+      body: "*"
+    };
+  }
+
+  // Scan library
+  rpc ScanLibrary(ScanLibraryRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/libraries/{id}/scan"
+      body: "*"
+    };
+  }
+
+  // Get library statistics
+  rpc GetLibraryStatistics(GetLibraryStatisticsRequest) returns (LibraryStatisticsResponse) {
+    option (google.api.http) = {
+      get: "/libraries/{id}/statistics"
+    };
+  }
+
+  // Validate library
+  rpc ValidateLibrary(ValidateLibraryRequest) returns (ValidateLibraryResponse) {
+    option (google.api.http) = {
+      post: "/libraries/{id}/validate"
+      body: "*"
+    };
+  }
+}
+
+// Library type enum
+enum LibraryType {
+  LIBRARY_TYPE_UNSPECIFIED = 0;
+  LIBRARY_TYPE_UPLOAD = 1;
+  LIBRARY_TYPE_EXTERNAL = 2;
+}
+
+// Request to get all libraries
+message GetAllLibrariesRequest {
+  optional LibraryType type = 1;
+}
+
+// Response containing all libraries
+message GetAllLibrariesResponse {
+  repeated LibraryResponse libraries = 1;
+}
+
+// Request to create library
+message CreateLibraryRequest {
+  string name = 1;
+  LibraryType type = 2;
+  repeated string import_paths = 3;
+  repeated string exclusion_patterns = 4;
+  optional string owner_id = 5;
+}
+
+// Request to delete library
+message DeleteLibraryRequest {
+  string id = 1;
+}
+
+// Request to get library
+message GetLibraryRequest {
+  string id = 1;
+}
+
+// Request to update library
+message UpdateLibraryRequest {
+  string id = 1;
+  optional string name = 2;
+  repeated string import_paths = 3;
+  repeated string exclusion_patterns = 4;
+}
+
+// Request to scan library
+message ScanLibraryRequest {
+  string id = 1;
+  optional bool refresh_modified_files = 2;
+  optional bool refresh_all_files = 3;
+}
+
+// Request to get library statistics
+message GetLibraryStatisticsRequest {
+  string id = 1;
+}
+
+// Request to validate library
+message ValidateLibraryRequest {
+  string id = 1;
+}
+
+// Library response
+message LibraryResponse {
+  string id = 1;
+  string name = 2;
+  LibraryType type = 3;
+  string owner_id = 4;
+  repeated string import_paths = 5;
+  repeated string exclusion_patterns = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp updated_at = 8;
+  optional google.protobuf.Timestamp refreshed_at = 9;
+  int32 asset_count = 10;
+}
+
+// Library statistics response
+message LibraryStatisticsResponse {
+  int32 photos = 1;
+  int32 videos = 2;
+  int64 total = 3;
+  int64 usage = 4;
+}
+
+// Validate library response
+message ValidateLibraryResponse {
+  repeated string import_paths = 1;
+}

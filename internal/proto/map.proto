@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+package immich.v1;
+
+import "google/api/annotations.proto";
+
+option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
+
+// Map service for geographic features
+service MapService {
+  // Get map markers
+  rpc GetMapMarkers(GetMapMarkersRequest) returns (GetMapMarkersResponse) {
+    option (google.api.http) = {
+      get: "/map/markers"
+    };
+  }
+
+  // Reverse geocode
+  rpc ReverseGeocode(ReverseGeocodeRequest) returns (ReverseGeocodeResponse) {
+    option (google.api.http) = {
+      get: "/map/reverse-geocode"
+    };
+  }
+}
+
+// Request to get map markers
+message GetMapMarkersRequest {
+  optional bool is_archived = 1;
+  optional bool is_favorite = 2;
+  optional string file_created_after = 3;
+  optional string file_created_before = 4;
+}
+
+// Response containing map markers
+message GetMapMarkersResponse {
+  repeated MapMarker markers = 1;
+}
+
+// Request for reverse geocoding
+message ReverseGeocodeRequest {
+  double lat = 1;
+  double lon = 2;
+}
+
+// Response for reverse geocoding
+message ReverseGeocodeResponse {
+  string city = 1;
+  string state = 2;
+  string country = 3;
+}
+
+// Map marker
+message MapMarker {
+  string id = 1;
+  double lat = 2;
+  double lon = 3;
+  string city = 4;
+  string state = 5;
+  string country = 6;
+}

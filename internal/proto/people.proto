@@ -1,0 +1,192 @@
+syntax = "proto3";
+
+package immich.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
+
+// People service for managing people and face recognition
+service PeopleService {
+  // Get all people
+  rpc GetAllPeople(GetAllPeopleRequest) returns (GetAllPeopleResponse) {
+    option (google.api.http) = {
+      get: "/people"
+    };
+  }
+
+  // Create person
+  rpc CreatePerson(CreatePersonRequest) returns (PersonResponse) {
+    option (google.api.http) = {
+      post: "/people"
+      body: "*"
+    };
+  }
+
+  // Update people
+  rpc UpdatePeople(UpdatePeopleRequest) returns (UpdatePeopleResponse) {
+    option (google.api.http) = {
+      put: "/people"
+      body: "*"
+    };
+  }
+
+  // Get person
+  rpc GetPerson(GetPersonRequest) returns (PersonResponse) {
+    option (google.api.http) = {
+      get: "/people/{id}"
+    };
+  }
+
+  // Update person
+  rpc UpdatePerson(UpdatePersonRequest) returns (PersonResponse) {
+    option (google.api.http) = {
+      put: "/people/{id}"
+      body: "*"
+    };
+  }
+
+  // Merge person
+  rpc MergePerson(MergePersonRequest) returns (MergePersonResponse) {
+    option (google.api.http) = {
+      post: "/people/{id}/merge"
+      body: "*"
+    };
+  }
+
+  // Reassign faces
+  rpc ReassignFaces(ReassignFacesRequest) returns (ReassignFacesResponse) {
+    option (google.api.http) = {
+      put: "/people/{id}/reassign"
+      body: "*"
+    };
+  }
+
+  // Get person statistics
+  rpc GetPersonStatistics(GetPersonStatisticsRequest) returns (PersonStatisticsResponse) {
+    option (google.api.http) = {
+      get: "/people/{id}/statistics"
+    };
+  }
+
+  // Get person thumbnail
+  rpc GetPersonThumbnail(GetPersonThumbnailRequest) returns (GetPersonThumbnailResponse) {
+    option (google.api.http) = {
+      get: "/people/{id}/thumbnail"
+    };
+  }
+}
+
+// Request to get all people
+message GetAllPeopleRequest {
+  optional bool with_hidden = 1;
+}
+
+// Response containing all people
+message GetAllPeopleResponse {
+  repeated PersonResponse people = 1;
+  int32 total = 2;
+  bool has_next_page = 3;
+}
+
+// Request to create person
+message CreatePersonRequest {
+  optional string name = 1;
+  optional string birth_date = 2;
+  optional bool is_hidden = 3;
+}
+
+// Request to update people
+message UpdatePeopleRequest {
+  repeated PersonUpdate people = 1;
+}
+
+// Response for updating people
+message UpdatePeopleResponse {
+  repeated PersonResponse people = 1;
+}
+
+// Request to get person
+message GetPersonRequest {
+  string id = 1;
+}
+
+// Request to update person
+message UpdatePersonRequest {
+  string id = 1;
+  optional string name = 2;
+  optional string birth_date = 3;
+  optional bool is_hidden = 4;
+  optional string feature_face_asset_id = 5;
+}
+
+// Request to merge person
+message MergePersonRequest {
+  string id = 1;
+  repeated string ids = 2;
+}
+
+// Response for merging person
+message MergePersonResponse {
+  PersonResponse person = 1;
+}
+
+// Request to reassign faces
+message ReassignFacesRequest {
+  string id = 1;
+  repeated FaceUpdate face_updates = 2;
+}
+
+// Response for reassigning faces
+message ReassignFacesResponse {
+  repeated PersonResponse people = 1;
+}
+
+// Request to get person statistics
+message GetPersonStatisticsRequest {
+  string id = 1;
+}
+
+// Request to get person thumbnail
+message GetPersonThumbnailRequest {
+  string id = 1;
+}
+
+// Response for person thumbnail
+message GetPersonThumbnailResponse {
+  bytes thumbnail_data = 1;
+  string content_type = 2;
+}
+
+// Person response
+message PersonResponse {
+  string id = 1;
+  string name = 2;
+  optional string birth_date = 3;
+  string thumbnail_path = 4;
+  bool is_hidden = 5;
+  google.protobuf.Timestamp updated_at = 6;
+  int32 faces = 7;
+}
+
+// Person update for bulk operations
+message PersonUpdate {
+  string id = 1;
+  optional string name = 2;
+  optional string birth_date = 3;
+  optional bool is_hidden = 4;
+  optional string feature_face_asset_id = 5;
+}
+
+// Face update for reassignment
+message FaceUpdate {
+  string asset_id = 1;
+  string person_id = 2;
+}
+
+// Person statistics response
+message PersonStatisticsResponse {
+  int32 assets = 1;
+}

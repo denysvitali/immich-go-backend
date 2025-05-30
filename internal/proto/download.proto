@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+package immich.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+
+option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
+
+// Download service for creating and managing download archives
+service DownloadService {
+  // Create download archive
+  rpc DownloadArchive(DownloadArchiveRequest) returns (DownloadResponse) {
+    option (google.api.http) = {
+      post: "/download/archive"
+      body: "*"
+    };
+  }
+
+  // Get download info
+  rpc GetDownloadInfo(DownloadInfoRequest) returns (DownloadInfoResponse) {
+    option (google.api.http) = {
+      post: "/download/info"
+      body: "*"
+    };
+  }
+}
+
+// Request to create download archive
+message DownloadArchiveRequest {
+  repeated string asset_ids = 1;
+  optional string album_id = 2;
+  optional string user_id = 3;
+  optional string name = 4;
+}
+
+// Request to get download info
+message DownloadInfoRequest {
+  repeated string asset_ids = 1;
+  optional string album_id = 2;
+  optional string user_id = 3;
+}
+
+// Download response
+message DownloadResponse {
+  int64 total_size = 1;
+  repeated DownloadArchiveInfo archives = 2;
+}
+
+// Download info response
+message DownloadInfoResponse {
+  int64 archive_size = 1;
+  repeated string asset_ids = 2;
+  optional string album_id = 3;
+  optional string user_id = 4;
+}
+
+// Download archive info
+message DownloadArchiveInfo {
+  string asset_id = 1;
+  string asset_path = 2;
+  int64 size = 3;
+}
