@@ -1,0 +1,141 @@
+syntax = "proto3";
+
+package immich.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
+
+// Sync service for managing asset synchronization
+service SyncService {
+  // Delete sync acknowledgment
+  rpc DeleteSyncAck(DeleteSyncAckRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/sync/ack"
+      body: "*"
+    };
+  }
+
+  // Get sync acknowledgment
+  rpc GetSyncAck(GetSyncAckRequest) returns (GetSyncAckResponse) {
+    option (google.api.http) = {
+      get: "/sync/ack"
+    };
+  }
+
+  // Send sync acknowledgment
+  rpc SendSyncAck(SendSyncAckRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/sync/ack"
+      body: "*"
+    };
+  }
+
+  // Get delta sync
+  rpc GetDeltaSync(GetDeltaSyncRequest) returns (GetDeltaSyncResponse) {
+    option (google.api.http) = {
+      post: "/sync/delta-sync"
+      body: "*"
+    };
+  }
+
+  // Get full sync for user
+  rpc GetFullSyncForUser(GetFullSyncForUserRequest) returns (GetFullSyncForUserResponse) {
+    option (google.api.http) = {
+      post: "/sync/full-sync"
+      body: "*"
+    };
+  }
+
+  // Get sync stream
+  rpc GetSyncStream(GetSyncStreamRequest) returns (stream SyncStreamResponse) {
+    option (google.api.http) = {
+      post: "/sync/stream"
+      body: "*"
+    };
+  }
+}
+
+// Request to delete sync acknowledgment
+message DeleteSyncAckRequest {
+  repeated string asset_ids = 1;
+}
+
+// Request to get sync acknowledgment
+message GetSyncAckRequest {
+  // No parameters needed
+}
+
+// Response for sync acknowledgment
+message GetSyncAckResponse {
+  repeated string asset_ids = 1;
+}
+
+// Request to send sync acknowledgment
+message SendSyncAckRequest {
+  repeated string asset_ids = 1;
+}
+
+// Request to get delta sync
+message GetDeltaSyncRequest {
+  google.protobuf.Timestamp updated_after = 1;
+  optional string user_id = 2;
+}
+
+// Response for delta sync
+message GetDeltaSyncResponse {
+  bool needs_full_sync = 1;
+  repeated string upserted = 2;
+  repeated string deleted = 3;
+}
+
+// Request to get full sync for user
+message GetFullSyncForUserRequest {
+  optional string user_id = 1;
+  optional int32 limit = 2;
+  optional google.protobuf.Timestamp updated_until = 3;
+}
+
+// Response for full sync for user
+message GetFullSyncForUserResponse {
+  repeated string asset_ids = 1;
+  bool has_more = 2;
+  optional google.protobuf.Timestamp last_updated = 3;
+}
+
+// Request to get sync stream
+message GetSyncStreamRequest {
+  optional string user_id = 1;
+}
+
+// Response for sync stream
+message SyncStreamResponse {
+  oneof event {
+    AssetSyncEvent asset_event = 1;
+    AlbumSyncEvent album_event = 2;
+    PartnerSyncEvent partner_event = 3;
+  }
+}
+
+// Asset sync event
+message AssetSyncEvent {
+  string type = 1; // "upsert" or "delete"
+  string asset_id = 2;
+  google.protobuf.Timestamp timestamp = 3;
+}
+
+// Album sync event
+message AlbumSyncEvent {
+  string type = 1; // "upsert" or "delete"
+  string album_id = 2;
+  google.protobuf.Timestamp timestamp = 3;
+}
+
+// Partner sync event
+message PartnerSyncEvent {
+  string type = 1; // "upsert" or "delete"
+  string partner_id = 2;
+  google.protobuf.Timestamp timestamp = 3;
+}

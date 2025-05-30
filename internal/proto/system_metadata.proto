@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+package immich.v1;
+
+import "google/api/annotations.proto";
+
+option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
+
+// System metadata service for managing system-level metadata
+service SystemMetadataService {
+  // Get admin onboarding
+  rpc GetAdminOnboarding(GetAdminOnboardingRequest) returns (GetAdminOnboardingResponse) {
+    option (google.api.http) = {
+      get: "/system-metadata/admin-onboarding"
+    };
+  }
+
+  // Update admin onboarding
+  rpc UpdateAdminOnboarding(UpdateAdminOnboardingRequest) returns (UpdateAdminOnboardingResponse) {
+    option (google.api.http) = {
+      post: "/system-metadata/admin-onboarding"
+      body: "*"
+    };
+  }
+
+  // Get reverse geocoding state
+  rpc GetReverseGeocodingState(GetReverseGeocodingStateRequest) returns (GetReverseGeocodingStateResponse) {
+    option (google.api.http) = {
+      get: "/system-metadata/reverse-geocoding-state"
+    };
+  }
+}
+
+// Request to get admin onboarding
+message GetAdminOnboardingRequest {
+  // No parameters needed
+}
+
+// Response for admin onboarding
+message GetAdminOnboardingResponse {
+  bool is_onboarded = 1;
+}
+
+// Request to update admin onboarding
+message UpdateAdminOnboardingRequest {
+  bool is_onboarded = 1;
+}
+
+// Response for updating admin onboarding
+message UpdateAdminOnboardingResponse {
+  bool is_onboarded = 1;
+}
+
+// Request to get reverse geocoding state
+message GetReverseGeocodingStateRequest {
+  // No parameters needed
+}
+
+// Response for reverse geocoding state
+message GetReverseGeocodingStateResponse {
+  int32 last_update = 1;
+  int32 last_import_file_name = 2;
+}

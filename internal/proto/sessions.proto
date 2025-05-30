@@ -1,0 +1,87 @@
+syntax = "proto3";
+
+package immich.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
+
+// Sessions service for managing user sessions
+service SessionsService {
+  // Delete all sessions
+  rpc DeleteAllSessions(google.protobuf.Empty) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/sessions"
+    };
+  }
+
+  // Get sessions
+  rpc GetSessions(google.protobuf.Empty) returns (GetSessionsResponse) {
+    option (google.api.http) = {
+      get: "/sessions"
+    };
+  }
+
+  // Create session
+  rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse) {
+    option (google.api.http) = {
+      post: "/sessions"
+      body: "*"
+    };
+  }
+
+  // Delete session
+  rpc DeleteSession(DeleteSessionRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/sessions/{id}"
+    };
+  }
+
+  // Lock session
+  rpc LockSession(LockSessionRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/sessions/{id}/lock"
+      body: "*"
+    };
+  }
+}
+
+// Response containing sessions
+message GetSessionsResponse {
+  repeated SessionResponse sessions = 1;
+}
+
+// Request to create session
+message CreateSessionRequest {
+  string device_type = 1;
+  string device_os = 2;
+}
+
+// Response for creating session
+message CreateSessionResponse {
+  string access_token = 1;
+  string user_id = 2;
+}
+
+// Request to delete session
+message DeleteSessionRequest {
+  string id = 1;
+}
+
+// Request to lock session
+message LockSessionRequest {
+  string id = 1;
+}
+
+// Session response
+message SessionResponse {
+  string id = 1;
+  string user_id = 2;
+  string device_type = 3;
+  string device_os = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp updated_at = 6;
+  bool current = 7;
+}

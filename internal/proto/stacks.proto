@@ -1,0 +1,104 @@
+syntax = "proto3";
+
+package immich.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
+
+// Stacks service for managing asset stacks
+service StacksService {
+  // Delete stacks
+  rpc DeleteStacks(DeleteStacksRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/stacks"
+      body: "*"
+    };
+  }
+
+  // Search stacks
+  rpc SearchStacks(SearchStacksRequest) returns (SearchStacksResponse) {
+    option (google.api.http) = {
+      get: "/stacks"
+    };
+  }
+
+  // Create stack
+  rpc CreateStack(CreateStackRequest) returns (StackResponse) {
+    option (google.api.http) = {
+      post: "/stacks"
+      body: "*"
+    };
+  }
+
+  // Delete stack
+  rpc DeleteStack(DeleteStackRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/stacks/{id}"
+    };
+  }
+
+  // Get stack
+  rpc GetStack(GetStackRequest) returns (StackResponse) {
+    option (google.api.http) = {
+      get: "/stacks/{id}"
+    };
+  }
+
+  // Update stack
+  rpc UpdateStack(UpdateStackRequest) returns (StackResponse) {
+    option (google.api.http) = {
+      put: "/stacks/{id}"
+      body: "*"
+    };
+  }
+}
+
+// Request to delete stacks
+message DeleteStacksRequest {
+  repeated string ids = 1;
+}
+
+// Request to search stacks
+message SearchStacksRequest {
+  optional string user_id = 1;
+  optional string primary_asset_id = 2;
+}
+
+// Response containing stacks
+message SearchStacksResponse {
+  repeated StackResponse stacks = 1;
+}
+
+// Request to create stack
+message CreateStackRequest {
+  repeated string asset_ids = 1;
+}
+
+// Request to delete stack
+message DeleteStackRequest {
+  string id = 1;
+}
+
+// Request to get stack
+message GetStackRequest {
+  string id = 1;
+}
+
+// Request to update stack
+message UpdateStackRequest {
+  string id = 1;
+  optional string primary_asset_id = 2;
+}
+
+// Stack response
+message StackResponse {
+  string id = 1;
+  string primary_asset_id = 2;
+  repeated string asset_ids = 3;
+  int32 asset_count = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp updated_at = 6;
+}

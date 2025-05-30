@@ -1,0 +1,163 @@
+syntax = "proto3";
+
+package immich.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
+
+// Shared links service for managing shared asset links
+service SharedLinksService {
+  // Get all shared links
+  rpc GetAllSharedLinks(GetAllSharedLinksRequest) returns (GetAllSharedLinksResponse) {
+    option (google.api.http) = {
+      get: "/shared-links"
+    };
+  }
+
+  // Create shared link
+  rpc CreateSharedLink(CreateSharedLinkRequest) returns (SharedLinkResponse) {
+    option (google.api.http) = {
+      post: "/shared-links"
+      body: "*"
+    };
+  }
+
+  // Get my shared link
+  rpc GetMySharedLink(GetMySharedLinkRequest) returns (SharedLinkResponse) {
+    option (google.api.http) = {
+      get: "/shared-links/me"
+    };
+  }
+
+  // Remove shared link
+  rpc RemoveSharedLink(RemoveSharedLinkRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/shared-links/{id}"
+    };
+  }
+
+  // Get shared link by ID
+  rpc GetSharedLinkById(GetSharedLinkByIdRequest) returns (SharedLinkResponse) {
+    option (google.api.http) = {
+      get: "/shared-links/{id}"
+    };
+  }
+
+  // Update shared link
+  rpc UpdateSharedLink(UpdateSharedLinkRequest) returns (SharedLinkResponse) {
+    option (google.api.http) = {
+      patch: "/shared-links/{id}"
+      body: "*"
+    };
+  }
+
+  // Remove shared link assets
+  rpc RemoveSharedLinkAssets(RemoveSharedLinkAssetsRequest) returns (SharedLinkResponse) {
+    option (google.api.http) = {
+      delete: "/shared-links/{id}/assets"
+      body: "*"
+    };
+  }
+
+  // Add shared link assets
+  rpc AddSharedLinkAssets(AddSharedLinkAssetsRequest) returns (SharedLinkResponse) {
+    option (google.api.http) = {
+      put: "/shared-links/{id}/assets"
+      body: "*"
+    };
+  }
+}
+
+// Shared link type enum
+enum SharedLinkType {
+  SHARED_LINK_TYPE_UNSPECIFIED = 0;
+  SHARED_LINK_TYPE_ALBUM = 1;
+  SHARED_LINK_TYPE_INDIVIDUAL = 2;
+}
+
+// Request to get all shared links
+message GetAllSharedLinksRequest {
+  // No parameters needed
+}
+
+// Response containing all shared links
+message GetAllSharedLinksResponse {
+  repeated SharedLinkResponse shared_links = 1;
+}
+
+// Request to create shared link
+message CreateSharedLinkRequest {
+  SharedLinkType type = 1;
+  repeated string asset_ids = 2;
+  optional string album_id = 3;
+  optional string description = 4;
+  optional google.protobuf.Timestamp expires_at = 5;
+  optional bool allow_upload = 6;
+  optional bool allow_download = 7;
+  optional bool show_metadata = 8;
+  optional string password = 9;
+}
+
+// Request to get my shared link
+message GetMySharedLinkRequest {
+  optional string password = 1;
+  optional string token = 2;
+}
+
+// Request to remove shared link
+message RemoveSharedLinkRequest {
+  string id = 1;
+}
+
+// Request to get shared link by ID
+message GetSharedLinkByIdRequest {
+  string id = 1;
+  optional string password = 2;
+  optional string token = 3;
+}
+
+// Request to update shared link
+message UpdateSharedLinkRequest {
+  string id = 1;
+  optional string description = 2;
+  optional google.protobuf.Timestamp expires_at = 3;
+  optional bool allow_upload = 4;
+  optional bool allow_download = 5;
+  optional bool show_metadata = 6;
+  optional string password = 7;
+}
+
+// Request to remove shared link assets
+message RemoveSharedLinkAssetsRequest {
+  string id = 1;
+  repeated string asset_ids = 2;
+}
+
+// Request to add shared link assets
+message AddSharedLinkAssetsRequest {
+  string id = 1;
+  repeated string asset_ids = 2;
+}
+
+// Shared link response
+message SharedLinkResponse {
+  string id = 1;
+  string user_id = 2;
+  string key = 3;
+  SharedLinkType type = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp updated_at = 6;
+  optional google.protobuf.Timestamp expires_at = 7;
+  optional string description = 8;
+  bool allow_upload = 9;
+  bool allow_download = 10;
+  bool show_metadata = 11;
+  bool password = 12;
+  optional string token = 13;
+  repeated string asset_ids = 14;
+  optional string album_id = 15;
+  int32 assets = 16;
+}

@@ -163,7 +163,7 @@ message UserLicenseResponse {
 
 // User preferences response
 message UserPreferencesResponse {
-  DownloadResponse download = 1;
+  UserDownloadPreferencesResponse download = 1;
   EmailNotificationsResponse email_notifications = 2;
   FoldersResponse folders = 3;
   MemoriesResponse memories = 4;

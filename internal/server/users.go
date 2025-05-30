@@ -88,7 +88,7 @@ func (s *Server) DeleteUserLicense(ctx context.Context, empty *emptypb.Empty) (*
 
 func (s *Server) GetMyPreferences(ctx context.Context, empty *emptypb.Empty) (*immichv1.UserPreferencesResponse, error) {
 	return &immichv1.UserPreferencesResponse{
-		Download:           &immichv1.DownloadResponse{IncludeEmbeddedVideos: true},
+		Download:           &immichv1.UserDownloadPreferencesResponse{IncludeEmbeddedVideos: true},
 		EmailNotifications: &immichv1.EmailNotificationsResponse{Enabled: false},
 		Folders:            &immichv1.FoldersResponse{Enabled: true},
 		Memories: &immichv1.MemoriesResponse{
@@ -116,7 +116,7 @@ func (s *Server) UpdateMyPreferences(ctx context.Context, request *immichv1.User
 	// User preferences would be stored in a separate table
 	// For now, return empty responses (would need proper conversion from Update to Response types)
 	return &immichv1.UserPreferencesResponse{
-		Download:           &immichv1.DownloadResponse{},
+		Download:           &immichv1.UserDownloadPreferencesResponse{},
 		EmailNotifications: &immichv1.EmailNotificationsResponse{},
 		Folders:            &immichv1.FoldersResponse{},
 		Memories:           &immichv1.MemoriesResponse{},

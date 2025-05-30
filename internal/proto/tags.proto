@@ -1,0 +1,172 @@
+syntax = "proto3";
+
+package immich.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
+
+// Tags service for managing asset tags
+service TagsService {
+  // Get all tags
+  rpc GetAllTags(GetAllTagsRequest) returns (GetAllTagsResponse) {
+    option (google.api.http) = {
+      get: "/tags"
+    };
+  }
+
+  // Create tag
+  rpc CreateTag(CreateTagRequest) returns (TagResponse) {
+    option (google.api.http) = {
+      post: "/tags"
+      body: "*"
+    };
+  }
+
+  // Upsert tags
+  rpc UpsertTags(UpsertTagsRequest) returns (UpsertTagsResponse) {
+    option (google.api.http) = {
+      put: "/tags"
+      body: "*"
+    };
+  }
+
+  // Bulk tag assets
+  rpc BulkTagAssets(BulkTagAssetsRequest) returns (BulkTagAssetsResponse) {
+    option (google.api.http) = {
+      put: "/tags/assets"
+      body: "*"
+    };
+  }
+
+  // Delete tag
+  rpc DeleteTag(DeleteTagRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/tags/{id}"
+    };
+  }
+
+  // Get tag by ID
+  rpc GetTagById(GetTagByIdRequest) returns (TagResponse) {
+    option (google.api.http) = {
+      get: "/tags/{id}"
+    };
+  }
+
+  // Update tag
+  rpc UpdateTag(UpdateTagRequest) returns (TagResponse) {
+    option (google.api.http) = {
+      put: "/tags/{id}"
+      body: "*"
+    };
+  }
+
+  // Untag assets
+  rpc UntagAssets(UntagAssetsRequest) returns (UntagAssetsResponse) {
+    option (google.api.http) = {
+      delete: "/tags/{id}/assets"
+      body: "*"
+    };
+  }
+
+  // Tag assets
+  rpc TagAssets(TagAssetsRequest) returns (TagAssetsResponse) {
+    option (google.api.http) = {
+      put: "/tags/{id}/assets"
+      body: "*"
+    };
+  }
+}
+
+// Request to get all tags
+message GetAllTagsRequest {
+  // No parameters needed
+}
+
+// Response containing all tags
+message GetAllTagsResponse {
+  repeated TagResponse tags = 1;
+}
+
+// Request to create tag
+message CreateTagRequest {
+  string name = 1;
+  optional string type = 2;
+}
+
+// Request to upsert tags
+message UpsertTagsRequest {
+  repeated TagUpsert tags = 1;
+}
+
+// Response for upserting tags
+message UpsertTagsResponse {
+  repeated TagResponse tags = 1;
+}
+
+// Request to bulk tag assets
+message BulkTagAssetsRequest {
+  repeated string asset_ids = 1;
+  repeated string tag_ids = 2;
+}
+
+// Response for bulk tagging assets
+message BulkTagAssetsResponse {
+  int32 count = 1;
+}
+
+// Request to delete tag
+message DeleteTagRequest {
+  string id = 1;
+}
+
+// Request to get tag by ID
+message GetTagByIdRequest {
+  string id = 1;
+}
+
+// Request to update tag
+message UpdateTagRequest {
+  string id = 1;
+  string name = 2;
+}
+
+// Request to untag assets
+message UntagAssetsRequest {
+  string id = 1;
+  repeated string asset_ids = 2;
+}
+
+// Response for untagging assets
+message UntagAssetsResponse {
+  int32 count = 1;
+}
+
+// Request to tag assets
+message TagAssetsRequest {
+  string id = 1;
+  repeated string asset_ids = 2;
+}
+
+// Response for tagging assets
+message TagAssetsResponse {
+  int32 count = 1;
+}
+
+// Tag response
+message TagResponse {
+  string id = 1;
+  string name = 2;
+  string type = 3;
+  string user_id = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp updated_at = 6;
+}
+
+// Tag upsert for bulk operations
+message TagUpsert {
+  string name = 1;
+  optional string type = 2;
+}

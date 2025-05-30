@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package immich.v1;
+
+import "common.proto";
+import "google/api/annotations.proto";
+
+option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
+
+// Duplicates service for managing duplicate assets
+service DuplicatesService {
+  // Get asset duplicates
+  rpc GetAssetDuplicates(GetAssetDuplicatesRequest) returns (GetAssetDuplicatesResponse) {
+    option (google.api.http) = {
+      get: "/duplicates"
+    };
+  }
+}
+
+// Request to get asset duplicates
+message GetAssetDuplicatesRequest {
+  // No parameters needed for basic duplicate detection
+}
+
+// Response containing duplicate assets
+message GetAssetDuplicatesResponse {
+  repeated DuplicateGroup duplicates = 1;
+}
+
+// Group of duplicate assets
+message DuplicateGroup {
+  string duplicate_id = 1;
+  repeated DuplicateAsset assets = 2;
+}
+
+// Duplicate asset information
+message DuplicateAsset {
+  string asset_id = 1;
+  string device_asset_id = 2;
+  string device_id = 3;
+  string checksum = 4;
+  AssetType type = 5;
+  string original_path = 6;
+  int64 file_size_in_byte = 7;
+}
