@@ -45,14 +45,14 @@ func (m *CustomMarshaler) Marshal(v interface{}) ([]byte, error) {
 	// Check if this is a message we want to unwrap
 	if msg, ok := v.(proto.Message); ok {
 		msgName := string(msg.ProtoReflect().Descriptor().FullName())
-		
+
 		// Unwrap GetAllAlbumsResponse to return albums array directly
 		if msgName == "immich.v1.GetAllAlbumsResponse" {
 			var obj map[string]interface{}
 			if err := json.Unmarshal(data, &obj); err != nil {
 				return data, nil // Return original on error
 			}
-			
+
 			if albums, exists := obj["albums"]; exists {
 				return json.Marshal(albums)
 			}
