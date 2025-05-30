@@ -6,6 +6,7 @@ import "common.proto";
 import "google/api/annotations.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
+import "admin.proto";
 
 option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
 
@@ -188,32 +189,14 @@ message UserPreferencesUpdateRequest {
 }
 
 // Preference sub-messages (these would need to be defined based on the actual structure)
-message DownloadResponse {
-  bool include_embedded_videos = 1;
-}
-
-message EmailNotificationsResponse {
-  bool enabled = 1;
-  bool album_invite = 2;
-  bool album_update = 3;
-}
-
 message FoldersResponse {
   bool enabled = 1;
   int32 size_threshold = 2;
 }
 
-message MemoriesResponse {
-  bool enabled = 1;
-}
-
 message PeopleResponse {
   bool enabled = 1;
   int32 size_threshold = 2;
-}
-
-message PurchaseResponse {
-  bool show_support_badge = 1;
 }
 
 message RatingsResponse {

@@ -28,7 +28,7 @@ type HandshakeResponse struct {
 // GenerateSessionID creates a new session ID
 func GenerateSessionID() string {
 	bytes := make([]byte, 10)
-	rand.Read(bytes)
+	_, _ = rand.Read(bytes) // crypto/rand.Read never returns an error
 	return hex.EncodeToString(bytes)
 }
 

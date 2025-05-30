@@ -46,11 +46,11 @@ func init() {
 	rootCmd.PersistentFlags().StringP("grpc-port", "g", "9090", "gRPC port")
 	rootCmd.PersistentFlags().String("database-url", "", "PostgreSQL database URL")
 
-	viper.BindPFlag("log.level", rootCmd.PersistentFlags().Lookup("log-level"))
-	viper.BindPFlag("log.format", rootCmd.PersistentFlags().Lookup("log-format"))
-	viper.BindPFlag("server.port", rootCmd.PersistentFlags().Lookup("port"))
-	viper.BindPFlag("server.grpc_port", rootCmd.PersistentFlags().Lookup("grpc-port"))
-	viper.BindPFlag("database.url", rootCmd.PersistentFlags().Lookup("database-url"))
+	_ = viper.BindPFlag("log.level", rootCmd.PersistentFlags().Lookup("log-level"))
+	_ = viper.BindPFlag("log.format", rootCmd.PersistentFlags().Lookup("log-format"))
+	_ = viper.BindPFlag("server.port", rootCmd.PersistentFlags().Lookup("port"))
+	_ = viper.BindPFlag("server.grpc_port", rootCmd.PersistentFlags().Lookup("grpc-port"))
+	_ = viper.BindPFlag("database.url", rootCmd.PersistentFlags().Lookup("database-url"))
 }
 
 func initConfig() {

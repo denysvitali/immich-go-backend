@@ -1,0 +1,89 @@
+syntax = "proto3";
+
+package immich.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
+
+// API Key service for managing API keys
+service ApiKeyService {
+  // Get all API keys
+  rpc GetApiKeys(google.protobuf.Empty) returns (GetApiKeysResponse) {
+    option (google.api.http) = {
+      get: "/api/api-keys"
+    };
+  }
+
+  // Create API key
+  rpc CreateApiKey(CreateApiKeyRequest) returns (CreateApiKeyResponse) {
+    option (google.api.http) = {
+      post: "/api/api-keys"
+      body: "*"
+    };
+  }
+
+  // Delete API key
+  rpc DeleteApiKey(DeleteApiKeyRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/api/api-keys/{id}"
+    };
+  }
+
+  // Update API key
+  rpc UpdateApiKey(UpdateApiKeyRequest) returns (ApiKeyResponseDto) {
+    option (google.api.http) = {
+      put: "/api/api-keys/{id}"
+      body: "*"
+    };
+  }
+
+  // Get API key by ID
+  rpc GetApiKey(GetApiKeyRequest) returns (ApiKeyResponseDto) {
+    option (google.api.http) = {
+      get: "/api/api-keys/{id}"
+    };
+  }
+}
+
+// API Key response DTO
+message ApiKeyResponseDto {
+  google.protobuf.Timestamp created_at = 1;
+  string id = 2;
+  string name = 3;
+  google.protobuf.Timestamp updated_at = 4;
+}
+
+// Create API Key response DTO
+message CreateApiKeyResponse {
+  ApiKeyResponseDto api_key = 1;
+  string secret = 2;
+}
+
+// Get API keys response (wrapper for array)
+message GetApiKeysResponse {
+  repeated ApiKeyResponseDto api_keys = 1;
+}
+
+// Create API key request
+message CreateApiKeyRequest {
+  string name = 1;
+}
+
+// Delete API key request
+message DeleteApiKeyRequest {
+  string id = 1;
+}
+
+// Update API key request
+message UpdateApiKeyRequest {
+  string id = 1;
+  string name = 2;
+}
+
+// Get API key request
+message GetApiKeyRequest {
+  string id = 1;
+}

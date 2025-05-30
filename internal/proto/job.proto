@@ -1,0 +1,119 @@
+syntax = "proto3";
+
+package immich.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+
+option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
+
+// Job service for managing background jobs
+service JobService {
+  // Get all job statuses
+  rpc GetAllJobStatuses(google.protobuf.Empty) returns (AllJobStatusResponseDto) {
+    option (google.api.http) = {
+      get: "/api/jobs"
+    };
+  }
+
+  // Send job command
+  rpc SendJobCommand(SendJobCommandRequest) returns (JobStatusDto) {
+    option (google.api.http) = {
+      put: "/api/jobs/{id}"
+      body: "command"
+    };
+  }
+
+  // Clear job
+  rpc ClearJob(ClearJobRequest) returns (JobStatusDto) {
+    option (google.api.http) = {
+      post: "/api/jobs"
+      body: "*"
+    };
+  }
+}
+
+// All job status response DTO
+message AllJobStatusResponseDto {
+  JobStatusDto background_task = 1;
+  JobStatusDto clip_encoding = 2;
+  JobStatusDto duplicate_detection = 3;
+  JobStatusDto face_detection = 4;
+  JobStatusDto facial_recognition = 5;
+  JobStatusDto library = 6;
+  JobStatusDto metadata_extraction = 7;
+  JobStatusDto migration = 8;
+  JobStatusDto notification = 9;
+  JobStatusDto search = 10;
+  JobStatusDto sidecar = 11;
+  JobStatusDto smart_search = 12;
+  JobStatusDto storage_template_migration = 13;
+  JobStatusDto thumbnail_generation = 14;
+  JobStatusDto video_conversion = 15;
+}
+
+// Job status DTO
+message JobStatusDto {
+  bool is_active = 1;
+  bool is_paused = 2;
+  QueueStatusDto queue_status = 3;
+}
+
+// Queue status DTO
+message QueueStatusDto {
+  int32 active = 1;
+  int32 completed = 2;
+  int32 delayed = 3;
+  int32 failed = 4;
+  int32 paused = 5;
+  int32 waiting = 6;
+}
+
+// Job command DTO
+message JobCommandDto {
+  JobCommand command = 1;
+  bool force = 2;
+}
+
+// Send job command request
+message SendJobCommandRequest {
+  string id = 1; // Job name
+  JobCommandDto command = 2;
+}
+
+// Job command enum
+enum JobCommand {
+  JOB_COMMAND_UNSPECIFIED = 0;
+  JOB_COMMAND_START = 1;
+  JOB_COMMAND_PAUSE = 2;
+  JOB_COMMAND_RESUME = 3;
+  JOB_COMMAND_EMPTY = 4;
+  JOB_COMMAND_CLEAR_FAILED = 5;
+}
+
+// Job name enum
+enum JobName {
+  JOB_NAME_UNSPECIFIED = 0;
+  JOB_NAME_BACKGROUND_TASK = 1;
+  JOB_NAME_CLIP_ENCODING = 2;
+  JOB_NAME_DUPLICATE_DETECTION = 3;
+  JOB_NAME_FACE_DETECTION = 4;
+  JOB_NAME_FACIAL_RECOGNITION = 5;
+  JOB_NAME_LIBRARY = 6;
+  JOB_NAME_METADATA_EXTRACTION = 7;
+  JOB_NAME_MIGRATION = 8;
+  JOB_NAME_NOTIFICATION = 9;
+  JOB_NAME_SEARCH = 10;
+  JOB_NAME_SIDECAR = 11;
+  JOB_NAME_SMART_SEARCH = 12;
+  JOB_NAME_STORAGE_TEMPLATE_MIGRATION = 13;
+  JOB_NAME_THUMBNAIL_GENERATION = 14;
+  JOB_NAME_VIDEO_CONVERSION = 15;
+}
+
+// Clear job request
+message ClearJobRequest {
+  JobName id = 1;
+  JobCommand command = 2;
+  bool force = 3;
+}

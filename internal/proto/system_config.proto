@@ -1,0 +1,261 @@
+syntax = "proto3";
+
+package immich.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+
+option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
+
+// System configuration service
+service SystemConfigService {
+  // Get system configuration
+  rpc GetSystemConfig(google.protobuf.Empty) returns (SystemConfigDto) {
+    option (google.api.http) = {
+      get: "/api/system-config"
+    };
+  }
+
+  // Update system configuration
+  rpc UpdateSystemConfig(SystemConfigDto) returns (SystemConfigDto) {
+    option (google.api.http) = {
+      put: "/api/system-config"
+      body: "*"
+    };
+  }
+
+  // Get default system configuration
+  rpc GetSystemConfigDefaults(google.protobuf.Empty) returns (SystemConfigDto) {
+    option (google.api.http) = {
+      get: "/api/system-config/defaults"
+    };
+  }
+
+  // Get system configuration template
+  rpc GetSystemConfigTemplate(GetSystemConfigTemplateRequest) returns (SystemConfigTemplateStorageOptionDto) {
+    option (google.api.http) = {
+      post: "/api/system-config/storage-template-options"
+      body: "*"
+    };
+  }
+}
+
+// System configuration DTO
+message SystemConfigDto {
+  SystemConfigFFmpegDto ffmpeg = 1;
+  SystemConfigJobDto job = 2;
+  SystemConfigLibraryDto library = 3;
+  SystemConfigLoggingDto logging = 4;
+  SystemConfigMachineLearningDto machine_learning = 5;
+  SystemConfigMapDto map = 6;
+  SystemConfigNewVersionCheckDto new_version_check = 7;
+  SystemConfigNotificationsDto notifications = 8;
+  SystemConfigOAuthDto oauth = 9;
+  SystemConfigPasswordLoginDto password_login = 10;
+  SystemConfigReverseGeocodingDto reverse_geocoding = 11;
+  SystemConfigServerDto server = 12;
+  SystemConfigStorageTemplateDto storage_template = 13;
+  SystemConfigThemeDto theme = 14;
+  SystemConfigTrashDto trash = 15;
+  SystemConfigUserDto user = 16;
+}
+
+// FFmpeg configuration
+message SystemConfigFFmpegDto {
+  string crf = 1;
+  string threads = 2;
+  string preset = 3;
+  string target_video_codec = 4;
+  string accepted_video_codecs = 5;
+  string target_audio_codec = 6;
+  string accepted_audio_codecs = 7;
+  string target_resolution = 8;
+  string max_bitrate = 9;
+  string bframes = 10;
+  string refs = 11;
+  string gop_size = 12;
+  string npl = 13;
+  string temporal_aq = 14;
+  string cq_mode = 15;
+  string two_pass = 16;
+  string preferred_hw_device = 17;
+  string transcode = 18;
+  string tonemap = 19;
+}
+
+// Job configuration
+message SystemConfigJobDto {
+  int32 background_task_concurrency = 1;
+  int32 clip_encoding_concurrency = 2;
+  int32 duplicate_detection_concurrency = 3;
+  int32 face_detection_concurrency = 4;
+  int32 facial_recognition_concurrency = 5;
+  int32 library_concurrency = 6;
+  int32 metadata_extraction_concurrency = 7;
+  int32 migration_concurrency = 8;
+  int32 search_concurrency = 9;
+  int32 sidecar_concurrency = 10;
+  int32 smart_search_concurrency = 11;
+  int32 storage_template_migration_concurrency = 12;
+  int32 thumbnail_generation_concurrency = 13;
+  int32 video_conversion_concurrency = 14;
+}
+
+// Library configuration
+message SystemConfigLibraryDto {
+  SystemConfigLibraryScanDto scan = 1;
+  SystemConfigLibraryWatchDto watch = 2;
+}
+
+// Library scan configuration
+message SystemConfigLibraryScanDto {
+  bool enabled = 1;
+  string cron_expression = 2;
+}
+
+// Library watch configuration
+message SystemConfigLibraryWatchDto {
+  bool enabled = 1;
+}
+
+// Logging configuration
+message SystemConfigLoggingDto {
+  bool enabled = 1;
+  string level = 2;
+}
+
+// Machine learning configuration
+message SystemConfigMachineLearningDto {
+  bool enabled = 1;
+  string url = 2;
+  SystemConfigMachineLearningClipDto clip = 3;
+  SystemConfigMachineLearningDuplicateDetectionDto duplicate_detection = 4;
+  SystemConfigMachineLearningFacialRecognitionDto facial_recognition = 5;
+}
+
+// Machine learning CLIP configuration
+message SystemConfigMachineLearningClipDto {
+  bool enabled = 1;
+  string model_name = 2;
+}
+
+// Machine learning duplicate detection configuration
+message SystemConfigMachineLearningDuplicateDetectionDto {
+  bool enabled = 1;
+  int32 max_distance = 2;
+}
+
+// Machine learning facial recognition configuration
+message SystemConfigMachineLearningFacialRecognitionDto {
+  bool enabled = 1;
+  string model_name = 2;
+  int32 min_score = 3;
+  int32 max_distance = 4;
+  int32 min_faces = 5;
+}
+
+// Map configuration
+message SystemConfigMapDto {
+  bool enabled = 1;
+  string light_style = 2;
+  string dark_style = 3;
+}
+
+// New version check configuration
+message SystemConfigNewVersionCheckDto {
+  bool enabled = 1;
+}
+
+// Notifications configuration
+message SystemConfigNotificationsDto {
+  SystemConfigNotificationsSmtpDto smtp = 1;
+}
+
+// SMTP notifications configuration
+message SystemConfigNotificationsSmtpDto {
+  bool enabled = 1;
+  string from = 2;
+  string reply_to = 3;
+  SystemConfigSmtpTransportDto transport = 4;
+}
+
+// SMTP transport configuration
+message SystemConfigSmtpTransportDto {
+  string host = 1;
+  int32 port = 2;
+  string username = 3;
+  string password = 4;
+  bool ignore_cert = 5;
+}
+
+// OAuth configuration
+message SystemConfigOAuthDto {
+  bool enabled = 1;
+  string issuer_url = 2;
+  string client_id = 3;
+  string client_secret = 4;
+  string scope = 5;
+  string storage_label_claim = 6;
+  string storage_quota_claim = 7;
+  string default_storage_quota = 8;
+  bool auto_register = 9;
+  bool auto_launch = 10;
+  string button_text = 11;
+  bool mobile_override_enabled = 12;
+  string mobile_redirect_uri = 13;
+}
+
+// Password login configuration
+message SystemConfigPasswordLoginDto {
+  bool enabled = 1;
+}
+
+// Reverse geocoding configuration
+message SystemConfigReverseGeocodingDto {
+  bool enabled = 1;
+}
+
+// Server configuration
+message SystemConfigServerDto {
+  string external_domain = 1;
+  string login_page_message = 2;
+}
+
+// Storage template configuration
+message SystemConfigStorageTemplateDto {
+  bool enabled = 1;
+  bool hash_verification_enabled = 2;
+  string template = 3;
+}
+
+// Theme configuration
+message SystemConfigThemeDto {
+  string custom_css = 1;
+}
+
+// Trash configuration
+message SystemConfigTrashDto {
+  bool enabled = 1;
+  int32 days = 2;
+}
+
+// User configuration
+message SystemConfigUserDto {
+  int64 delete_delay = 1;
+}
+
+// Get system config template request
+message GetSystemConfigTemplateRequest {
+  string template = 1;
+}
+
+// System config template storage option DTO
+message SystemConfigTemplateStorageOptionDto {
+  int32 year_options = 1;
+  int32 month_options = 2;
+  int32 day_options = 3;
+  int32 hour_options = 4;
+  int32 minute_options = 5;
+  int32 second_options = 6;
+  repeated string preset_options = 7;
+}

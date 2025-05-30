@@ -1,0 +1,374 @@
+syntax = "proto3";
+
+package immich.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "common.proto";
+import "asset.proto";
+
+option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
+
+// Search service for searching assets and metadata
+service SearchService {
+  // Search cities
+  rpc SearchCities(SearchCitiesRequest) returns (SearchCitiesResponse) {
+    option (google.api.http) = {
+      get: "/api/search/cities"
+    };
+  }
+
+  // Search explore
+  rpc SearchExplore(google.protobuf.Empty) returns (SearchExploreResponse) {
+    option (google.api.http) = {
+      get: "/api/search/explore"
+    };
+  }
+
+  // Search metadata
+  rpc SearchMetadata(SearchMetadataRequest) returns (SearchResponseDto) {
+    option (google.api.http) = {
+      post: "/api/search/metadata"
+      body: "*"
+    };
+  }
+
+  // Search person
+  rpc SearchPerson(SearchPersonRequest) returns (SearchPersonResponse) {
+    option (google.api.http) = {
+      get: "/api/search/person"
+    };
+  }
+
+  // Search places
+  rpc SearchPlaces(SearchPlacesRequest) returns (SearchPlacesResponse) {
+    option (google.api.http) = {
+      get: "/api/search/places"
+    };
+  }
+
+  // Search smart
+  rpc SearchSmart(SearchSmartRequest) returns (SearchSmartResponse) {
+    option (google.api.http) = {
+      post: "/api/search/smart"
+      body: "*"
+    };
+  }
+
+  // Get search suggestions
+  rpc GetSearchSuggestions(GetSearchSuggestionsRequest) returns (GetSearchSuggestionsResponse) {
+    option (google.api.http) = {
+      get: "/api/search/suggestions"
+    };
+  }
+
+  // Search
+  rpc Search(SearchRequest) returns (SearchResponse) {
+    option (google.api.http) = {
+      get: "/api/search"
+    };
+  }
+}
+
+// Search response DTO
+message SearchResponseDto {
+  repeated AssetResponseDto assets = 1;
+  repeated AlbumResponseDto albums = 2;
+  int32 total = 3;
+  int32 count = 4;
+  int32 page = 5;
+  int32 size = 6;
+  SearchFacetResponseDto facets = 7;
+}
+
+// Search facet response DTO
+message SearchFacetResponseDto {
+  repeated SearchFacetCountResponseDto cities = 1;
+  repeated SearchFacetCountResponseDto camera_makes = 2;
+  repeated SearchFacetCountResponseDto camera_models = 3;
+  repeated SearchFacetCountResponseDto tags = 4;
+  repeated SearchFacetCountResponseDto objects = 5;
+}
+
+// Search facet count response DTO
+message SearchFacetCountResponseDto {
+  string value = 1;
+  int32 count = 2;
+}
+
+// Asset response DTO (simplified for search)
+message AssetResponseDto {
+  string id = 1;
+  string device_asset_id = 2;
+  string device_id = 3;
+  AssetType type = 4;
+  string original_path = 5;
+  string original_file_name = 6;
+  bool is_favorite = 7;
+  bool is_archived = 8;
+  bool is_trashed = 9;
+  google.protobuf.Timestamp created_at = 10;
+  google.protobuf.Timestamp updated_at = 11;
+  google.protobuf.Timestamp file_created_at = 12;
+  google.protobuf.Timestamp file_modified_at = 13;
+  ExifInfo exif_info = 14;
+  SmartInfo smart_info = 15;
+  string checksum = 16;
+  string duration = 17;
+  bool is_external = 18;
+  bool is_offline = 19;
+  bool is_read_only = 20;
+  string library_id = 21;
+  User owner = 22;
+  repeated PersonWithFacesResponseDto people = 23;
+  string stack_id = 24;
+  repeated AssetResponseDto stack = 25;
+  repeated TagResponseDto tags = 26;
+  string thumbhash = 27;
+  bool has_metadata = 28;
+  optional string duplicate_id = 29;
+}
+
+// Album response DTO (simplified for search)
+message AlbumResponseDto {
+  string id = 1;
+  string album_name = 2;
+  string description = 3;
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp updated_at = 5;
+  string album_thumbnail_asset_id = 6;
+  User owner = 7;
+  int32 asset_count = 8;
+  bool is_activity_enabled = 9;
+  repeated AlbumUserResponseDto album_users = 10;
+  bool has_shared_link = 11;
+  google.protobuf.Timestamp start_date = 12;
+  google.protobuf.Timestamp end_date = 13;
+  repeated AssetResponseDto assets = 14;
+}
+
+// Album user response DTO
+message AlbumUserResponseDto {
+  User user = 1;
+  string role = 2;
+}
+
+// Person with faces response DTO
+message PersonWithFacesResponseDto {
+  string id = 1;
+  string name = 2;
+  string birth_date = 3;
+  string thumbnail_path = 4;
+  bool is_hidden = 5;
+  repeated AssetFaceResponseDto faces = 6;
+}
+
+// Asset face response DTO
+message AssetFaceResponseDto {
+  string id = 1;
+  BoundingBoxDto bounding_box = 2;
+  string image_height = 3;
+  string image_width = 4;
+  PersonResponseDto person = 5;
+}
+
+// Bounding box DTO
+message BoundingBoxDto {
+  int32 x1 = 1;
+  int32 y1 = 2;
+  int32 x2 = 3;
+  int32 y2 = 4;
+}
+
+// Person response DTO
+message PersonResponseDto {
+  string id = 1;
+  string name = 2;
+  string birth_date = 3;
+  string thumbnail_path = 4;
+  bool is_hidden = 5;
+}
+
+// Tag response DTO
+message TagResponseDto {
+  string id = 1;
+  string name = 2;
+  string type = 3;
+  User user = 4;
+}
+
+// Search explore item response DTO
+message SearchExploreItemResponseDto {
+  string field_name = 1;
+  repeated SearchExploreItemValueResponseDto items = 2;
+}
+
+// Search explore item value response DTO
+message SearchExploreItemValueResponseDto {
+  string value = 1;
+  AssetResponseDto data = 2;
+}
+
+// Search cities request
+message SearchCitiesRequest {
+  optional string country = 1;
+  optional string state = 2;
+}
+
+// Search cities response (wrapper for array)
+message SearchCitiesResponse {
+  repeated string cities = 1;
+}
+
+// Search explore response (wrapper for array)
+message SearchExploreResponse {
+  repeated SearchExploreItemResponseDto items = 1;
+}
+
+// Search metadata request
+message SearchMetadataRequest {
+  optional string city = 1;
+  optional string country = 2;
+  optional string state = 3;
+  optional string make = 4;
+  optional string model = 5;
+  optional string objects = 6;
+  optional string tags = 7;
+  optional bool is_archived = 8;
+  optional bool is_encoded = 9;
+  optional bool is_external = 10;
+  optional bool is_favorite = 11;
+  optional bool is_motion = 12;
+  optional bool is_offline = 13;
+  optional bool is_read_only = 14;
+  optional bool is_visible = 15;
+  optional string library_id = 16;
+  optional string lens_model = 17;
+  optional string original_file_name = 18;
+  optional string original_path = 19;
+  optional bool recently_added = 20;
+  optional int32 size = 21;
+  optional google.protobuf.Timestamp taken_after = 22;
+  optional google.protobuf.Timestamp taken_before = 23;
+  optional google.protobuf.Timestamp trashed_after = 24;
+  optional google.protobuf.Timestamp trashed_before = 25;
+  optional AssetType type = 26;
+  optional google.protobuf.Timestamp updated_after = 27;
+  optional google.protobuf.Timestamp updated_before = 28;
+  optional bool with_archived = 29;
+  optional bool with_deleted = 30;
+  optional bool with_exif = 31;
+  optional bool with_people = 32;
+  optional bool with_partners = 33;
+  optional bool with_stacked = 34;
+  optional int32 page = 35;
+}
+
+// Search person request
+message SearchPersonRequest {
+  string name = 1;
+  optional bool with_hidden = 2;
+}
+
+// Search person response (wrapper for array)
+message SearchPersonResponse {
+  repeated PersonResponseDto people = 1;
+}
+
+// Search places request
+message SearchPlacesRequest {
+  string name = 1;
+}
+
+// Search places response (wrapper for array)
+message SearchPlacesResponse {
+  repeated PlaceResponseDto places = 1;
+}
+
+// Place response DTO
+message PlaceResponseDto {
+  string name = 1;
+  double latitude = 2;
+  double longitude = 3;
+  string admin1 = 4;
+  string admin2 = 5;
+}
+
+// Search smart request
+message SearchSmartRequest {
+  string query = 1;
+  optional string city = 2;
+  optional string country = 3;
+  optional string state = 4;
+  optional string make = 5;
+  optional string model = 6;
+  optional string objects = 7;
+  optional string tags = 8;
+  optional bool is_archived = 9;
+  optional bool is_encoded = 10;
+  optional bool is_external = 11;
+  optional bool is_favorite = 12;
+  optional bool is_motion = 13;
+  optional bool is_offline = 14;
+  optional bool is_read_only = 15;
+  optional bool is_visible = 16;
+  optional string library_id = 17;
+  optional string lens_model = 18;
+  optional string original_file_name = 19;
+  optional string original_path = 20;
+  optional bool recently_added = 21;
+  optional int32 size = 22;
+  optional google.protobuf.Timestamp taken_after = 23;
+  optional google.protobuf.Timestamp taken_before = 24;
+  optional google.protobuf.Timestamp trashed_after = 25;
+  optional google.protobuf.Timestamp trashed_before = 26;
+  optional AssetType type = 27;
+  optional google.protobuf.Timestamp updated_after = 28;
+  optional google.protobuf.Timestamp updated_before = 29;
+  optional bool with_archived = 30;
+  optional bool with_deleted = 31;
+  optional bool with_exif = 32;
+  optional bool with_people = 33;
+  optional bool with_partners = 34;
+  optional bool with_stacked = 35;
+  optional int32 page = 36;
+}
+
+// Search smart response (wrapper for array)
+message SearchSmartResponse {
+  repeated AssetResponseDto assets = 1;
+}
+
+// Get search suggestions request
+message GetSearchSuggestionsRequest {
+  optional string country = 1;
+  optional string make = 2;
+  optional string model = 3;
+  optional string state = 4;
+  optional AssetType type = 5;
+}
+
+// Get search suggestions response (wrapper for array)
+message GetSearchSuggestionsResponse {
+  repeated string suggestions = 1;
+}
+
+// Search request
+message SearchRequest {
+  optional string q = 1;
+  optional string query = 2;
+  optional bool clip = 3;
+  optional AssetType type = 4;
+  optional bool is_favorite = 5;
+  optional bool is_archived = 6;
+  optional int32 page = 7;
+  optional int32 size = 8;
+}
+
+// Search response
+message SearchResponse {
+  repeated AssetResponseDto assets = 1;
+  repeated AlbumResponseDto albums = 2;
+  int32 total = 3;
+}

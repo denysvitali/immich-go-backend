@@ -2,3 +2,13 @@
 /internal/proto/gen
 .vscode
 /internal/proto/*.swagger.json
+
+# Build artifacts
+/server
+/bin/
+
+# Downloaded files
+*.tar.gz
+*.json
+api.swagger.json
+immich-openapi-specs.json
