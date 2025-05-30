@@ -112,6 +112,7 @@ jobs:
   lint:
     name: Code Quality
     runs-on: ubuntu-latest
+    needs: build  # Wait for protobuf generation
     
     steps:
     - name: Checkout code
@@ -121,6 +122,52 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version: ${{ env.GO_VERSION }}
+        cache: true
+
+    - name: Install Nix
+      uses: cachix/install-nix-action@v25
+      with:
+        github_access_token: ${{ secrets.GITHUB_TOKEN }}
+        nix_path: nixpkgs=channel:nixos-25.05
+
+    - name: Setup Nix Cache
+      uses: cachix/cachix-action@v13
+      with:
+        name: devenv
+
+    - name: Cache generated protobuf files
+      uses: actions/cache@v4
+      id: proto-cache
+      with:
+        path: internal/proto/gen
+        key: ${{ runner.os }}-proto-${{ hashFiles('internal/proto/**/*.proto', 'buf.gen.yaml', 'buf.yaml') }}
+        restore-keys: |
+          ${{ runner.os }}-proto-
+
+    - name: Generate Protocol Buffers if not cached
+      if: steps.proto-cache.outputs.cache-hit != 'true'
+      run: |
+        echo "🔨 Generating protocol buffers for linting..."
+        nix develop --command bash -c "
+          echo '🧹 Cleaning previous generated files...'
+          rm -rf internal/proto/gen
+          
+          echo '🔨 Running buf generate...'
+          buf generate
+          
+          echo '✅ Protocol buffer generation complete!'
+        "
+
+    - name: Verify generated files exist
+      run: |
+        if [ ! -d "internal/proto/gen" ] || [ -z "$(ls -A internal/proto/gen)" ]; then
+          echo "❌ No protocol buffer files were generated"
+          exit 1
+        fi
+        echo "✅ Generated $(find internal/proto/gen -name '*.go' | wc -l) Go files"
+
+    - name: Download Go dependencies
+      run: go mod download
 
     - name: Check formatting
       run: |
@@ -181,6 +228,7 @@ jobs:
   security:
     name: Security Scan
     runs-on: ubuntu-latest
+    needs: build  # Wait for protobuf generation
     
     steps:
     - name: Checkout code
@@ -190,6 +238,44 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version: ${{ env.GO_VERSION }}
+        cache: true
+
+    - name: Install Nix
+      uses: cachix/install-nix-action@v25
+      with:
+        github_access_token: ${{ secrets.GITHUB_TOKEN }}
+        nix_path: nixpkgs=channel:nixos-25.05
+
+    - name: Setup Nix Cache
+      uses: cachix/cachix-action@v13
+      with:
+        name: devenv
+
+    - name: Cache generated protobuf files
+      uses: actions/cache@v4
+      id: proto-cache
+      with:
+        path: internal/proto/gen
+        key: ${{ runner.os }}-proto-${{ hashFiles('internal/proto/**/*.proto', 'buf.gen.yaml', 'buf.yaml') }}
+        restore-keys: |
+          ${{ runner.os }}-proto-
+
+    - name: Generate Protocol Buffers if not cached
+      if: steps.proto-cache.outputs.cache-hit != 'true'
+      run: |
+        echo "🔨 Generating protocol buffers for security scanning..."
+        nix develop --command bash -c "
+          echo '🧹 Cleaning previous generated files...'
+          rm -rf internal/proto/gen
+          
+          echo '🔨 Running buf generate...'
+          buf generate
+          
+          echo '✅ Protocol buffer generation complete!'
+        "
+
+    - name: Download Go dependencies
+      run: go mod download
 
     - name: Run Gosec Security Scanner
       uses: securego/gosec@master
