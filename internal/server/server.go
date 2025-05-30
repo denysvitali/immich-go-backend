@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"net"
 	"net/http"
 	"strconv"
@@ -27,6 +28,39 @@ var (
 	SourceRef    = "unknown"
 	SourceUrl    = "unknown"
 )
+
+// CustomMarshaler wraps the default JSONPb marshaler to unwrap single repeated fields
+type CustomMarshaler struct {
+	*runtime.JSONPb
+}
+
+// Marshal implements the Marshaler interface
+func (m *CustomMarshaler) Marshal(v interface{}) ([]byte, error) {
+	// First marshal with the default marshaler
+	data, err := m.JSONPb.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check if this is a message we want to unwrap
+	if msg, ok := v.(proto.Message); ok {
+		msgName := string(msg.ProtoReflect().Descriptor().FullName())
+		
+		// Unwrap GetAllAlbumsResponse to return albums array directly
+		if msgName == "immich.v1.GetAllAlbumsResponse" {
+			var obj map[string]interface{}
+			if err := json.Unmarshal(data, &obj); err != nil {
+				return data, nil // Return original on error
+			}
+			
+			if albums, exists := obj["albums"]; exists {
+				return json.Marshal(albums)
+			}
+		}
+	}
+
+	return data, nil
+}
 
 type Server struct {
 	config      *config.Config
@@ -118,8 +152,10 @@ func httpResponseModifier(ctx context.Context, w http.ResponseWriter, p proto.Me
 // HTTPHandler creates and returns the HTTP handler with grpc-gateway
 func (s *Server) HTTPHandler() http.Handler {
 	mux := runtime.NewServeMux(
-		runtime.WithMarshalerOption(runtime.MIMEWildcard, &runtime.JSONPb{
-			MarshalOptions: protojson.MarshalOptions{},
+		runtime.WithMarshalerOption(runtime.MIMEWildcard, &CustomMarshaler{
+			JSONPb: &runtime.JSONPb{
+				MarshalOptions: protojson.MarshalOptions{},
+			},
 		}),
 		runtime.WithMiddlewares(loggingMiddleware),
 		runtime.WithForwardResponseOption(httpResponseModifier),

@@ -149,7 +149,7 @@ func (c *Client) writePump() {
 		select {
 		case message, ok := <-c.send:
 			if !ok {
-				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				_ = c.conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
 
@@ -218,9 +218,7 @@ func (c *Client) handleMessage(data []byte) {
 		logrus.WithField("sessionID", c.session.ID).Debug("Received ping packet")
 		// Respond with pong
 		pongPacket := engine.EncodePacket(engine.PacketPong, nil)
-		select {
-		case c.send <- pongPacket:
-		}
+		c.send <- pongPacket
 
 	default:
 		logrus.WithFields(logrus.Fields{
