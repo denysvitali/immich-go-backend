@@ -31,14 +31,14 @@ service AlbumService {
   // Get album information
   rpc GetAlbumInfo(GetAlbumInfoRequest) returns (Album) {
     option (google.api.http) = {
-      get: "/api/albums/{album_id}"
+      get: "/api/albums/{id}"
     };
   }
 
   // Update album information
   rpc UpdateAlbumInfo(UpdateAlbumInfoRequest) returns (Album) {
     option (google.api.http) = {
-      patch: "/api/albums/{album_id}"
+      patch: "/api/albums/{id}"
       body: "*"
     };
   }
@@ -46,14 +46,14 @@ service AlbumService {
   // Delete an album
   rpc DeleteAlbum(DeleteAlbumRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {
-      delete: "/api/albums/{album_id}"
+      delete: "/api/albums/{id}"
     };
   }
 
   // Add assets to album
   rpc AddAssetsToAlbum(AddAssetsToAlbumRequest) returns (AddAssetsToAlbumResponse) {
     option (google.api.http) = {
-      put: "/api/albums/{album_id}/assets"
+      put: "/api/albums/{id}/assets"
       body: "*"
     };
   }
@@ -61,7 +61,7 @@ service AlbumService {
   // Remove asset from album
   rpc RemoveAssetFromAlbum(RemoveAssetFromAlbumRequest) returns (RemoveAssetFromAlbumResponse) {
     option (google.api.http) = {
-      delete: "/api/albums/{album_id}/assets"
+      delete: "/api/albums/{id}/assets"
       body: "*"
     };
   }
@@ -69,7 +69,7 @@ service AlbumService {
   // Add users to album
   rpc AddUsersToAlbum(AddUsersToAlbumRequest) returns (Album) {
     option (google.api.http) = {
-      put: "/api/albums/{album_id}/users"
+      put: "/api/albums/{id}/users"
       body: "*"
     };
   }
@@ -77,14 +77,14 @@ service AlbumService {
   // Remove user from album
   rpc RemoveUserFromAlbum(RemoveUserFromAlbumRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {
-      delete: "/api/albums/{album_id}/user/{user_id}"
+      delete: "/api/albums/{id}/user/{user_id}"
     };
   }
 
   // Update album user
   rpc UpdateAlbumUser(UpdateAlbumUserRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {
-      put: "/api/albums/{album_id}/user/{user_id}"
+      put: "/api/albums/{id}/user/{user_id}"
       body: "*"
     };
   }
@@ -151,14 +151,14 @@ message CreateAlbumRequest {
 
 // Get album info request
 message GetAlbumInfoRequest {
-  string album_id = 1;
+  string id = 1;
   optional string key = 2; // For shared albums
   optional bool without_assets = 3;
 }
 
 // Update album info request
 message UpdateAlbumInfoRequest {
-  string album_id = 1;
+  string id = 1;
   optional string album_name = 2;
   optional string description = 3;
   optional string album_thumbnail_asset_id = 4;
@@ -168,7 +168,7 @@ message UpdateAlbumInfoRequest {
 
 // Delete album request
 message DeleteAlbumRequest {
-  string album_id = 1;
+  string id = 1;
 }
 
 // Bulk IDs for asset operations
@@ -185,7 +185,7 @@ message BulkIdResponse {
 
 // Add assets to album request
 message AddAssetsToAlbumRequest {
-  string album_id = 1;
+  string id = 1;
   BulkIds asset_ids = 2;
   optional string key = 3; // For shared albums
 }
@@ -197,7 +197,7 @@ message AddAssetsToAlbumResponse {
 
 // Remove asset from album request
 message RemoveAssetFromAlbumRequest {
-  string album_id = 1;
+  string id = 1;
   BulkIds asset_ids = 2;
 }
 
@@ -208,19 +208,19 @@ message RemoveAssetFromAlbumResponse {
 
 // Add users to album request
 message AddUsersToAlbumRequest {
-  string album_id = 1;
+  string id = 1;
   repeated string shared_user_ids = 2;
 }
 
 // Remove user from album request
 message RemoveUserFromAlbumRequest {
-  string album_id = 1;
+  string id = 1;
   string user_id = 2;
 }
 
 // Update album user request
 message UpdateAlbumUserRequest {
-  string album_id = 1;
+  string id = 1;
   string user_id = 2;
   AlbumUserRole role = 3;
 }

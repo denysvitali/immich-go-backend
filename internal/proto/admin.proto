@@ -1,0 +1,262 @@
+syntax = "proto3";
+
+package immich.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "common.proto";
+
+option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
+
+// Admin service for administrative operations
+service AdminService {
+  // Send notification
+  rpc SendNotification(SendNotificationRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/api/admin/notifications"
+      body: "*"
+    };
+  }
+
+  // Render notification template
+  rpc RenderNotificationTemplate(RenderNotificationTemplateRequest) returns (TemplateResponseDto) {
+    option (google.api.http) = {
+      post: "/api/admin/notifications/templates/{name}"
+      body: "*"
+    };
+  }
+
+  // Test email notification
+  rpc TestEmailNotification(TestEmailNotificationRequest) returns (TestEmailResponseDto) {
+    option (google.api.http) = {
+      post: "/api/admin/notifications/test-email"
+      body: "*"
+    };
+  }
+
+  // Search users (admin)
+  rpc SearchUsersAdmin(SearchUsersAdminRequest) returns (SearchUsersAdminResponse) {
+    option (google.api.http) = {
+      get: "/api/admin/users"
+    };
+  }
+
+  // Create user (admin)
+  rpc CreateUserAdmin(CreateUserAdminRequest) returns (UserAdminResponseDto) {
+    option (google.api.http) = {
+      post: "/api/admin/users"
+      body: "*"
+    };
+  }
+
+  // Delete user (admin)
+  rpc DeleteUserAdmin(DeleteUserAdminRequest) returns (UserAdminResponseDto) {
+    option (google.api.http) = {
+      delete: "/api/admin/users/{id}"
+    };
+  }
+
+  // Get user (admin)
+  rpc GetUserAdmin(GetUserAdminRequest) returns (UserAdminResponseDto) {
+    option (google.api.http) = {
+      get: "/api/admin/users/{id}"
+    };
+  }
+
+  // Update user (admin)
+  rpc UpdateUserAdmin(UpdateUserAdminRequest) returns (UserAdminResponseDto) {
+    option (google.api.http) = {
+      put: "/api/admin/users/{id}"
+      body: "*"
+    };
+  }
+
+  // Get user preferences (admin)
+  rpc GetUserPreferencesAdmin(GetUserPreferencesAdminRequest) returns (UserPreferencesResponseDto) {
+    option (google.api.http) = {
+      get: "/api/admin/users/{id}/preferences"
+    };
+  }
+
+  // Update user preferences (admin)
+  rpc UpdateUserPreferencesAdmin(UpdateUserPreferencesAdminRequest) returns (UserPreferencesResponseDto) {
+    option (google.api.http) = {
+      put: "/api/admin/users/{id}/preferences"
+      body: "*"
+    };
+  }
+
+  // Restore user (admin)
+  rpc RestoreUserAdmin(RestoreUserAdminRequest) returns (UserAdminResponseDto) {
+    option (google.api.http) = {
+      post: "/api/admin/users/{id}/restore"
+      body: "*"
+    };
+  }
+
+  // Get user statistics (admin)
+  rpc GetUserStatisticsAdmin(GetUserStatisticsAdminRequest) returns (UserStatisticsResponseDto) {
+    option (google.api.http) = {
+      get: "/api/admin/users/{id}/statistics"
+    };
+  }
+}
+
+// Template response DTO
+message TemplateResponseDto {
+  string html = 1;
+  string subject = 2;
+}
+
+// Test email response DTO
+message TestEmailResponseDto {
+  string message = 1;
+}
+
+// User admin response DTO
+message UserAdminResponseDto {
+  UserAvatarColor avatar_color = 1;
+  google.protobuf.Timestamp created_at = 2;
+  google.protobuf.Timestamp deleted_at = 3;
+  string email = 4;
+  string id = 5;
+  bool is_admin = 6;
+  string name = 7;
+  string oauth_id = 8;
+  string profile_image_path = 9;
+  google.protobuf.Timestamp profile_changed_at = 10;
+  int64 quota_size_in_bytes = 11;
+  bool should_change_password = 12;
+  string storage_label = 13;
+  google.protobuf.Timestamp updated_at = 14;
+}
+
+// User preferences response DTO
+message UserPreferencesResponseDto {
+  AvatarResponse avatar = 1;
+  DownloadResponse download = 2;
+  EmailNotificationsResponse email_notifications = 3;
+  MemoriesResponse memories = 4;
+  PurchaseResponse purchase = 5;
+}
+
+// User statistics response DTO
+message UserStatisticsResponseDto {
+  int32 photos = 1;
+  int64 usage = 2;
+  int32 videos = 3;
+}
+
+// Avatar response
+message AvatarResponse {
+  UserAvatarColor color = 1;
+}
+
+// Download response
+message DownloadResponse {
+  bool include_embedded_videos = 1;
+}
+
+// Email notifications response
+message EmailNotificationsResponse {
+  bool album_invite = 1;
+  bool album_update = 2;
+  bool enabled = 3;
+}
+
+// Memories response
+message MemoriesResponse {
+  bool enabled = 1;
+}
+
+// Purchase response
+message PurchaseResponse {
+  bool hide_banner = 1;
+  bool show_support_badge = 2;
+}
+
+// Send notification request
+message SendNotificationRequest {
+  string message = 1;
+  string subject = 2;
+  repeated string user_ids = 3;
+}
+
+// Render notification template request
+message RenderNotificationTemplateRequest {
+  string name = 1;
+  map<string, string> data = 2;
+}
+
+// Test email notification request
+message TestEmailNotificationRequest {
+  string recipient = 1;
+}
+
+// Search users admin request
+message SearchUsersAdminRequest {
+  optional string email = 1;
+  optional string name = 2;
+  optional bool with_deleted = 3;
+}
+
+// Search users admin response (wrapper for array)
+message SearchUsersAdminResponse {
+  repeated UserAdminResponseDto users = 1;
+}
+
+// Create user admin request
+message CreateUserAdminRequest {
+  string email = 1;
+  string name = 2;
+  string password = 3;
+  optional int64 quota_size_in_bytes = 4;
+  optional bool should_change_password = 5;
+  optional string storage_label = 6;
+}
+
+// Delete user admin request
+message DeleteUserAdminRequest {
+  string id = 1;
+  optional bool force = 2;
+}
+
+// Get user admin request
+message GetUserAdminRequest {
+  string id = 1;
+}
+
+// Update user admin request
+message UpdateUserAdminRequest {
+  string id = 1;
+  optional UserAvatarColor avatar_color = 2;
+  optional string email = 3;
+  optional bool is_admin = 4;
+  optional string name = 5;
+  optional string password = 6;
+  optional int64 quota_size_in_bytes = 7;
+  optional bool should_change_password = 8;
+  optional string storage_label = 9;
+}
+
+// Get user preferences admin request
+message GetUserPreferencesAdminRequest {
+  string id = 1;
+}
+
+// Update user preferences admin request
+message UpdateUserPreferencesAdminRequest {
+  string id = 1;
+  UserPreferencesResponseDto preferences = 2;
+}
+
+// Restore user admin request
+message RestoreUserAdminRequest {
+  string id = 1;
+}
+
+// Get user statistics admin request
+message GetUserStatisticsAdminRequest {
+  string id = 1;
+}

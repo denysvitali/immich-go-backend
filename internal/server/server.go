@@ -35,12 +35,18 @@ type Server struct {
 	authService *auth.Service
 	wsHub       *websocket.Hub
 
+	immichv1.UnimplementedActivityServiceServer
+	immichv1.UnimplementedAdminServiceServer
 	immichv1.UnimplementedAlbumServiceServer
+	immichv1.UnimplementedApiKeyServiceServer
 	immichv1.UnimplementedAssetServiceServer
 	immichv1.UnimplementedAuthServiceServer
+	immichv1.UnimplementedJobServiceServer
 	immichv1.UnimplementedMemoryServiceServer
 	immichv1.UnimplementedNotificationsServiceServer
+	immichv1.UnimplementedSearchServiceServer
 	immichv1.UnimplementedServerServiceServer
+	immichv1.UnimplementedSystemConfigServiceServer
 	immichv1.UnimplementedTimelineServiceServer
 	immichv1.UnimplementedUsersServiceServer
 }
@@ -124,29 +130,47 @@ func (s *Server) HTTPHandler() http.Handler {
 	ctx := context.Background()
 
 	// Register service handlers directly
-	if err := immichv1.RegisterAuthServiceHandlerServer(ctx, mux, s); err != nil {
-		logrus.WithError(err).Error("Failed to register AuthService handler")
+	if err := immichv1.RegisterActivityServiceHandlerServer(ctx, mux, s); err != nil {
+		logrus.WithError(err).Error("Failed to register ActivityService handler")
+	}
+	if err := immichv1.RegisterAdminServiceHandlerServer(ctx, mux, s); err != nil {
+		logrus.WithError(err).Error("Failed to register AdminService handler")
 	}
 	if err := immichv1.RegisterAlbumServiceHandlerServer(ctx, mux, s); err != nil {
 		logrus.WithError(err).Error("Failed to register AlbumService handler")
 	}
+	if err := immichv1.RegisterApiKeyServiceHandlerServer(ctx, mux, s); err != nil {
+		logrus.WithError(err).Error("Failed to register ApiKeyService handler")
+	}
 	if err := immichv1.RegisterAssetServiceHandlerServer(ctx, mux, s); err != nil {
 		logrus.WithError(err).Error("Failed to register AssetService handler")
+	}
+	if err := immichv1.RegisterAuthServiceHandlerServer(ctx, mux, s); err != nil {
+		logrus.WithError(err).Error("Failed to register AuthService handler")
+	}
+	if err := immichv1.RegisterJobServiceHandlerServer(ctx, mux, s); err != nil {
+		logrus.WithError(err).Error("Failed to register JobService handler")
+	}
+	if err := immichv1.RegisterMemoryServiceHandlerServer(ctx, mux, s); err != nil {
+		logrus.WithError(err).Error("Failed to register MemoryService handler")
+	}
+	if err := immichv1.RegisterNotificationsServiceHandlerServer(ctx, mux, s); err != nil {
+		logrus.WithError(err).Error("Failed to register NotificationsService handler")
+	}
+	if err := immichv1.RegisterSearchServiceHandlerServer(ctx, mux, s); err != nil {
+		logrus.WithError(err).Error("Failed to register SearchService handler")
 	}
 	if err := immichv1.RegisterServerServiceHandlerServer(ctx, mux, s); err != nil {
 		logrus.WithError(err).Error("Failed to register ServerService handler")
 	}
-	if err := immichv1.RegisterNotificationsServiceHandlerServer(ctx, mux, s); err != nil {
-		logrus.WithError(err).Error("Failed to register NotificationsService handler")
+	if err := immichv1.RegisterSystemConfigServiceHandlerServer(ctx, mux, s); err != nil {
+		logrus.WithError(err).Error("Failed to register SystemConfigService handler")
 	}
 	if err := immichv1.RegisterTimelineServiceHandlerServer(ctx, mux, s); err != nil {
 		logrus.WithError(err).Error("Failed to register TimelineService handler")
 	}
 	if err := immichv1.RegisterUsersServiceHandlerServer(ctx, mux, s); err != nil {
 		logrus.WithError(err).Error("Failed to register UsersService handler")
-	}
-	if err := immichv1.RegisterMemoryServiceHandlerServer(ctx, mux, s); err != nil {
-		logrus.WithError(err).Error("Failed to register MemoryService handler")
 	}
 	return s.handleWs(mux)
 }

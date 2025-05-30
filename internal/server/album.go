@@ -62,7 +62,7 @@ func (s *Server) CreateAlbum(ctx context.Context, request *immichv1.CreateAlbumR
 
 func (s *Server) GetAlbumInfo(ctx context.Context, request *immichv1.GetAlbumInfoRequest) (*immichv1.Album, error) {
 	albumID := pgtype.UUID{}
-	if err := albumID.Scan(request.AlbumId); err != nil {
+	if err := albumID.Scan(request.Id); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid album ID: %v", err)
 	}
 
@@ -76,7 +76,7 @@ func (s *Server) GetAlbumInfo(ctx context.Context, request *immichv1.GetAlbumInf
 
 func (s *Server) UpdateAlbumInfo(ctx context.Context, request *immichv1.UpdateAlbumInfoRequest) (*immichv1.Album, error) {
 	albumID := pgtype.UUID{}
-	if err := albumID.Scan(request.AlbumId); err != nil {
+	if err := albumID.Scan(request.Id); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid album ID: %v", err)
 	}
 
@@ -115,7 +115,7 @@ func (s *Server) UpdateAlbumInfo(ctx context.Context, request *immichv1.UpdateAl
 
 func (s *Server) DeleteAlbum(ctx context.Context, request *immichv1.DeleteAlbumRequest) (*emptypb.Empty, error) {
 	albumID := pgtype.UUID{}
-	if err := albumID.Scan(request.AlbumId); err != nil {
+	if err := albumID.Scan(request.Id); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid album ID: %v", err)
 	}
 
@@ -128,7 +128,7 @@ func (s *Server) DeleteAlbum(ctx context.Context, request *immichv1.DeleteAlbumR
 
 func (s *Server) AddAssetsToAlbum(ctx context.Context, request *immichv1.AddAssetsToAlbumRequest) (*immichv1.AddAssetsToAlbumResponse, error) {
 	albumID := pgtype.UUID{}
-	if err := albumID.Scan(request.AlbumId); err != nil {
+	if err := albumID.Scan(request.Id); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid album ID: %v", err)
 	}
 
@@ -163,7 +163,7 @@ func (s *Server) AddAssetsToAlbum(ctx context.Context, request *immichv1.AddAsse
 
 func (s *Server) RemoveAssetFromAlbum(ctx context.Context, request *immichv1.RemoveAssetFromAlbumRequest) (*immichv1.RemoveAssetFromAlbumResponse, error) {
 	albumID := pgtype.UUID{}
-	if err := albumID.Scan(request.AlbumId); err != nil {
+	if err := albumID.Scan(request.Id); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid album ID: %v", err)
 	}
 
@@ -198,7 +198,7 @@ func (s *Server) RemoveAssetFromAlbum(ctx context.Context, request *immichv1.Rem
 
 func (s *Server) AddUsersToAlbum(ctx context.Context, request *immichv1.AddUsersToAlbumRequest) (*immichv1.Album, error) {
 	albumID := pgtype.UUID{}
-	if err := albumID.Scan(request.AlbumId); err != nil {
+	if err := albumID.Scan(request.Id); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid album ID: %v", err)
 	}
 
@@ -225,7 +225,7 @@ func (s *Server) AddUsersToAlbum(ctx context.Context, request *immichv1.AddUsers
 
 func (s *Server) RemoveUserFromAlbum(ctx context.Context, request *immichv1.RemoveUserFromAlbumRequest) (*emptypb.Empty, error) {
 	albumID := pgtype.UUID{}
-	if err := albumID.Scan(request.AlbumId); err != nil {
+	if err := albumID.Scan(request.Id); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid album ID: %v", err)
 	}
 
@@ -246,7 +246,7 @@ func (s *Server) RemoveUserFromAlbum(ctx context.Context, request *immichv1.Remo
 
 func (s *Server) UpdateAlbumUser(ctx context.Context, request *immichv1.UpdateAlbumUserRequest) (*emptypb.Empty, error) {
 	albumID := pgtype.UUID{}
-	if err := albumID.Scan(request.AlbumId); err != nil {
+	if err := albumID.Scan(request.Id); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid album ID: %v", err)
 	}
 

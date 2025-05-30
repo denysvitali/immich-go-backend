@@ -1,0 +1,106 @@
+syntax = "proto3";
+
+package immich.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "common.proto";
+
+option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
+
+// Activity service for managing activities
+service ActivityService {
+  // Get activities
+  rpc GetActivities(GetActivitiesRequest) returns (GetActivitiesResponse) {
+    option (google.api.http) = {
+      get: "/api/activities"
+    };
+  }
+
+  // Create activity
+  rpc CreateActivity(CreateActivityRequest) returns (ActivityResponseDto) {
+    option (google.api.http) = {
+      post: "/api/activities"
+      body: "*"
+    };
+  }
+
+  // Get activity statistics
+  rpc GetActivityStatistics(GetActivityStatisticsRequest) returns (ActivityStatisticsResponseDto) {
+    option (google.api.http) = {
+      get: "/api/activities/statistics"
+    };
+  }
+
+  // Delete activity
+  rpc DeleteActivity(DeleteActivityRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/api/activities/{id}"
+    };
+  }
+}
+
+// Activity response DTO
+message ActivityResponseDto {
+  string asset_id = 1;
+  string comment = 2;
+  google.protobuf.Timestamp created_at = 3;
+  string id = 4;
+  ReactionType type = 5;
+  User user = 6;
+}
+
+// Activity statistics response DTO
+message ActivityStatisticsResponseDto {
+  int32 comments = 1;
+}
+
+// Reaction type enum
+enum ReactionType {
+  REACTION_TYPE_UNSPECIFIED = 0;
+  REACTION_TYPE_COMMENT = 1;
+  REACTION_TYPE_LIKE = 2;
+}
+
+// Reaction level enum
+enum ReactionLevel {
+  REACTION_LEVEL_UNSPECIFIED = 0;
+  REACTION_LEVEL_ALBUM = 1;
+  REACTION_LEVEL_ASSET = 2;
+}
+
+
+
+// Get activities request
+message GetActivitiesRequest {
+  string album_id = 1;
+  optional string asset_id = 2;
+  optional ReactionLevel level = 3;
+  optional ReactionType type = 4;
+  optional string user_id = 5;
+}
+
+// Get activities response (wrapper for array)
+message GetActivitiesResponse {
+  repeated ActivityResponseDto activities = 1;
+}
+
+// Create activity request
+message CreateActivityRequest {
+  string album_id = 1;
+  optional string asset_id = 2;
+  string comment = 3;
+  ReactionType type = 4;
+}
+
+// Get activity statistics request
+message GetActivityStatisticsRequest {
+  string album_id = 1;
+  optional string asset_id = 2;
+}
+
+// Delete activity request
+message DeleteActivityRequest {
+  string id = 1;
+}

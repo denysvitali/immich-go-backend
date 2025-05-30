@@ -1,14 +1,14 @@
-version: v2
+version: v1
 plugins:
-  - local: protoc-gen-go
+  - name: go
     out: internal/proto
     opt: module=github.com/denysvitali/immich-go-backend
-  - local: protoc-gen-go-grpc
+  - name: go-grpc
     out: internal/proto
     opt: module=github.com/denysvitali/immich-go-backend
-  - local: protoc-gen-grpc-gateway
+  - name: grpc-gateway
     out: internal/proto
     opt: module=github.com/denysvitali/immich-go-backend,allow_delete_body=true
-  - local: protoc-gen-openapiv2
+  - name: openapiv2
     out: internal/proto
     opt: allow_delete_body=true
