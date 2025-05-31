@@ -57,11 +57,12 @@
 
 ## Phase 4: Core Services (IN PROGRESS)
 
-### Authentication Service 🔄
-- [ ] JWT token generation and validation
-- [ ] User registration and login
-- [ ] Password hashing and validation
-- [ ] Session management
+### Authentication Service ✅ COMPLETED
+- [x] JWT token generation and validation
+- [x] User registration and login
+- [x] Password hashing and validation
+- [x] Session management
+- [x] Authentication middleware
 - [ ] Rate limiting for login attempts
 - [ ] OAuth integration (Google, GitHub, Microsoft)
 
@@ -71,12 +72,13 @@
 - [ ] User preferences
 - [ ] Admin user management
 
-### Asset Management Service 🔄
-- [ ] Asset upload handling
-- [ ] Asset metadata extraction (EXIF)
-- [ ] Thumbnail generation
+### Asset Management Service ⏳ STARTING
+- [ ] Asset upload handling with S3 pre-signed URLs
+- [ ] Asset metadata extraction (EXIF, video metadata)
+- [ ] Thumbnail generation (multiple sizes)
 - [ ] Asset search and filtering
 - [ ] Asset deletion and cleanup
+- [ ] Asset download with pre-signed URLs
 
 ### Album Management Service 🔄
 - [ ] Album CRUD operations

@@ -167,6 +167,11 @@ func (p *Provider) GetMeter(name string, opts ...metric.MeterOption) metric.Mete
 	return p.metricProvider.Meter(name, opts...)
 }
 
+// GetMeter returns a global meter for the given name
+func GetMeter() metric.Meter {
+	return otel.GetMeterProvider().Meter("immich-go-backend")
+}
+
 // Shutdown gracefully shuts down all telemetry providers
 func (p *Provider) Shutdown(ctx context.Context) error {
 	var errors []error

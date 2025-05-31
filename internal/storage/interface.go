@@ -112,6 +112,12 @@ type LocalConfig struct {
 
 // S3Config represents S3-compatible storage configuration
 type S3Config struct {
+	// Enable S3 storage
+	Enabled bool `yaml:"enabled" env:"S3_ENABLED" default:"false"`
+	
+	// Enable direct upload to S3 via pre-signed URLs
+	DirectUpload bool `yaml:"direct_upload" env:"S3_DIRECT_UPLOAD" default:"false"`
+	
 	// S3 endpoint (leave empty for AWS S3)
 	Endpoint string `yaml:"endpoint" env:"S3_ENDPOINT"`
 	
