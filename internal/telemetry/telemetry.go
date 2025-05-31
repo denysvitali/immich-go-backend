@@ -172,6 +172,11 @@ func GetMeter() metric.Meter {
 	return otel.GetMeterProvider().Meter("immich-go-backend")
 }
 
+// GetTracer returns a global tracer for the given name
+func GetTracer(name string, opts ...trace.TracerOption) trace.Tracer {
+	return otel.GetTracerProvider().Tracer(name, opts...)
+}
+
 // Shutdown gracefully shuts down all telemetry providers
 func (p *Provider) Shutdown(ctx context.Context) error {
 	var errors []error
