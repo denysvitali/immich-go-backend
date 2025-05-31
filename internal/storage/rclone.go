@@ -149,6 +149,61 @@ func (r *RcloneBackend) Upload(ctx context.Context, path string, reader io.Reade
 	return nil
 }
 
+// UploadBytes uploads byte data to the rclone remote
+func (r *RcloneBackend) UploadBytes(ctx context.Context, path string, data []byte, contentType string) error {
+	ctx, span := tracer.Start(ctx, "rclone.UploadBytes",
+		trace.WithAttributes(
+			attribute.String("storage.path", path),
+			attribute.String("storage.content_type", contentType),
+			attribute.Int("storage.size", len(data)),
+		))
+	defer span.End()
+
+	remotePath := r.getRemotePath(path)
+
+	// Create a temporary file for the data
+	tmpFile, err := os.CreateTemp("", "rclone-upload-*")
+	if err != nil {
+		span.RecordError(err)
+		return &StorageError{
+			Op:      "upload bytes",
+			Path:    path,
+			Backend: "rclone",
+			Err:     fmt.Errorf("failed to create temp file: %w", err),
+		}
+	}
+	defer os.Remove(tmpFile.Name())
+	defer tmpFile.Close()
+
+	// Write data to temp file
+	if _, err := tmpFile.Write(data); err != nil {
+		span.RecordError(err)
+		return &StorageError{
+			Op:      "upload bytes",
+			Path:    path,
+			Backend: "rclone",
+			Err:     fmt.Errorf("failed to write to temp file: %w", err),
+		}
+	}
+
+	// Close the file before rclone uses it
+	tmpFile.Close()
+
+	// Use rclone copyto to upload the file
+	cmd := exec.CommandContext(ctx, "rclone", "copyto", tmpFile.Name(), remotePath)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		span.RecordError(err)
+		return &StorageError{
+			Op:      "upload bytes",
+			Path:    path,
+			Backend: "rclone",
+			Err:     fmt.Errorf("rclone copyto failed: %s: %w", string(output), err),
+		}
+	}
+
+	return nil
+}
+
 // Download downloads a file from the rclone remote
 func (r *RcloneBackend) Download(ctx context.Context, path string) (io.ReadCloser, error) {
 	ctx, span := tracer.Start(ctx, "rclone.Download",

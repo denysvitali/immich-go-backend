@@ -117,6 +117,16 @@ type ThumbnailInfo struct {
 	Size   int64         `json:"size"`
 }
 
+// AssetThumbnail represents a database thumbnail record (placeholder for now)
+type AssetThumbnail struct {
+	AssetID uuid.UUID     `json:"assetId"`
+	Type    string        `json:"type"`
+	Path    string        `json:"path"`
+	Width   int32         `json:"width"`
+	Height  int32         `json:"height"`
+	Size    int64         `json:"size"`
+}
+
 // SearchRequest represents asset search parameters
 type SearchRequest struct {
 	UserID      uuid.UUID    `json:"userId"`

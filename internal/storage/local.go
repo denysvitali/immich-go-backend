@@ -146,6 +146,44 @@ func (l *LocalBackend) Upload(ctx context.Context, path string, reader io.Reader
 	return nil
 }
 
+// UploadBytes uploads byte data to the local filesystem
+func (l *LocalBackend) UploadBytes(ctx context.Context, path string, data []byte, contentType string) error {
+	ctx, span := tracer.Start(ctx, "local.UploadBytes",
+		trace.WithAttributes(
+			attribute.String("storage.path", path),
+			attribute.String("storage.content_type", contentType),
+			attribute.Int("storage.size", len(data)),
+		))
+	defer span.End()
+
+	fullPath := l.getFullPath(path)
+
+	// Create directory if it doesn't exist
+	dir := filepath.Dir(fullPath)
+	if err := os.MkdirAll(dir, l.dirMode); err != nil {
+		span.RecordError(err)
+		return &StorageError{
+			Op:      "upload bytes",
+			Path:    path,
+			Backend: "local",
+			Err:     fmt.Errorf("failed to create directory: %w", err),
+		}
+	}
+
+	// Write the file
+	if err := os.WriteFile(fullPath, data, l.fileMode); err != nil {
+		span.RecordError(err)
+		return &StorageError{
+			Op:      "upload bytes",
+			Path:    path,
+			Backend: "local",
+			Err:     fmt.Errorf("failed to write file: %w", err),
+		}
+	}
+
+	return nil
+}
+
 // Download downloads a file from the local filesystem
 func (l *LocalBackend) Download(ctx context.Context, path string) (io.ReadCloser, error) {
 	ctx, span := tracer.Start(ctx, "local.Download",

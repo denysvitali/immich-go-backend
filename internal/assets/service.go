@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/denysvitali/immich-go-backend/internal/config"
-	"github.com/denysvitali/immich-go-backend/internal/db"
+	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/denysvitali/immich-go-backend/internal/storage"
 	"github.com/denysvitali/immich-go-backend/internal/telemetry"
 	"github.com/google/uuid"
@@ -21,7 +21,7 @@ import (
 
 // Service handles asset management operations
 type Service struct {
-	db                *db.Queries
+	db                *sqlc.Queries
 	storage           *storage.Service
 	metadataExtractor *MetadataExtractor
 	thumbnailGen      *ThumbnailGenerator
@@ -35,7 +35,7 @@ type Service struct {
 }
 
 // NewService creates a new asset service
-func NewService(queries *db.Queries, storageService *storage.Service, cfg *config.Config) (*Service, error) {
+func NewService(queries *sqlc.Queries, storageService *storage.Service, cfg *config.Config) (*Service, error) {
 	meter := telemetry.GetMeter()
 	
 	uploadCounter, err := meter.Int64Counter(
@@ -109,28 +109,20 @@ func (s *Service) InitiateUpload(ctx context.Context, req UploadRequest) (*Uploa
 		return nil, fmt.Errorf("invalid user ID: %w", err)
 	}
 
-	assetUUID, err := stringToUUID(assetID.String())
-	if err != nil {
-		span.RecordError(err)
-		return nil, fmt.Errorf("invalid asset ID: %w", err)
-	}
-
-	_, err = s.db.CreateAsset(ctx, db.CreateAssetParams{
-		ID:           assetUUID,
-		UserID:       userUUID,
-		OriginalPath: storagePath,
-		Type:         string(assetType),
+	asset, err := s.db.CreateAsset(ctx, sqlc.CreateAssetParams{
+		DeviceAssetId:    req.Filename, // Use filename as device asset ID for now
+		OwnerId:          userUUID,
+		DeviceId:         "go-backend", // Default device ID
+		Type:             string(assetType),
+		OriginalPath:     storagePath,
+		FileCreatedAt:    pgtype.Timestamptz{Time: time.Now(), Valid: true},
+		FileModifiedAt:   pgtype.Timestamptz{Time: time.Now(), Valid: true},
+		LocalDateTime:    pgtype.Timestamptz{Time: time.Now(), Valid: true},
 		OriginalFileName: req.Filename,
-		MimeType:     req.ContentType,
-		SizeInBytes:  req.Size,
-		Checksum:     pgtype.Text{String: req.Checksum, Valid: req.Checksum != ""},
-		IsVisible:    true,
-		IsArchived:   false,
-		IsFavorite:   false,
-		IsExternal:   false,
-		IsOffline:    false,
-		IsReadOnly:   false,
-		Status:       string(AssetStatusUploading),
+		Checksum:         []byte(req.Checksum),
+		IsFavorite:       false,
+		Visibility:       sqlc.AssetVisibilityEnumTimeline, // Default to timeline
+		Status:           sqlc.AssetsStatusEnumActive,
 	})
 	if err != nil {
 		span.RecordError(err)
@@ -147,7 +139,7 @@ func (s *Service) InitiateUpload(ctx context.Context, req UploadRequest) (*Uploa
 		}
 
 		return &UploadResponse{
-			AssetID:      assetID,
+			AssetID:      asset.ID.Bytes,
 			UploadURL:    uploadURL,
 			UploadFields: uploadFields,
 			DirectUpload: true,
@@ -156,7 +148,7 @@ func (s *Service) InitiateUpload(ctx context.Context, req UploadRequest) (*Uploa
 
 	// For non-S3 or non-direct upload, client uploads to our server
 	return &UploadResponse{
-		AssetID:      assetID,
+		AssetID:      asset.ID.Bytes,
 		DirectUpload: false,
 	}, nil
 }
@@ -190,17 +182,18 @@ func (s *Service) CompleteUpload(ctx context.Context, assetID uuid.UUID, reader 
 
 	// Upload file to storage if not using direct upload
 	if !s.config.Storage.S3.DirectUpload {
-		err = s.storage.Upload(ctx, asset.OriginalPath, reader, asset.MimeType)
+		contentType := s.getMimeTypeFromAssetType(asset.Type)
+		err = s.storage.Upload(ctx, asset.OriginalPath, reader, contentType)
 		if err != nil {
 			span.RecordError(err)
 			return fmt.Errorf("failed to upload file: %w", err)
 		}
 	}
 
-	// Update asset status to processing
-	err = s.db.UpdateAssetStatus(ctx, db.UpdateAssetStatusParams{
-		ID:     assetUUID,
-		Status: string(AssetStatusProcessing),
+	// Update asset status to active
+	_, err = s.db.UpdateAssetStatus(ctx, sqlc.UpdateAssetStatusParams{
+		ID:     asset.ID,
+		Status: sqlc.AssetsStatusEnumActive,
 	})
 	if err != nil {
 		span.RecordError(err)
@@ -212,12 +205,12 @@ func (s *Service) CompleteUpload(ctx context.Context, assetID uuid.UUID, reader 
 
 	s.uploadCounter.Add(ctx, 1,
 		metric.WithAttributes(
-			attribute.String("user_id", uuidToString(asset.UserID)),
+			attribute.String("user_id", uuidToString(asset.OwnerId)),
 			attribute.String("type", asset.Type),
 		))
 
-	s.storageSize.Add(ctx, asset.SizeInBytes,
-		metric.WithAttributes(attribute.String("operation", "upload")))
+	// TODO: Add storage size metric when size is available
+	// s.storageSize.Add(ctx, size, metric.WithAttributes(attribute.String("operation", "upload")))
 
 	return nil
 }
@@ -259,7 +252,9 @@ func (s *Service) processAsset(ctx context.Context, assetID uuid.UUID) {
 	defer reader.Close()
 
 	// Extract metadata
-	metadata, err := s.metadataExtractor.ExtractMetadata(ctx, reader, asset.OriginalFileName, asset.MimeType, asset.SizeInBytes)
+	// TODO: Store MIME type and size in database or derive from file
+	mimeType := s.getMimeTypeFromAssetType(asset.Type)
+	metadata, err := s.metadataExtractor.ExtractMetadata(ctx, reader, asset.OriginalFileName, mimeType, 0)
 	if err != nil {
 		span.RecordError(err)
 		// Continue processing even if metadata extraction fails
@@ -275,7 +270,7 @@ func (s *Service) processAsset(ctx context.Context, assetID uuid.UUID) {
 	}
 
 	// Generate thumbnails for images
-	if s.thumbnailGen.CanGenerateThumbnail(asset.MimeType) {
+	if s.thumbnailGen.CanGenerateThumbnail(mimeType) {
 		err = s.generateAndStoreThumbnails(ctx, assetUUID, asset.OriginalPath, asset.OriginalFileName)
 		if err != nil {
 			span.RecordError(err)
@@ -284,9 +279,9 @@ func (s *Service) processAsset(ctx context.Context, assetID uuid.UUID) {
 	}
 
 	// Mark asset as active
-	err = s.db.UpdateAssetStatus(ctx, db.UpdateAssetStatusParams{
+	_, err = s.db.UpdateAssetStatus(ctx, sqlc.UpdateAssetStatusParams{
 		ID:     assetUUID,
-		Status: string(AssetStatusActive),
+		Status: sqlc.AssetsStatusEnumActive,
 	})
 	if err != nil {
 		span.RecordError(err)
@@ -330,20 +325,20 @@ func (s *Service) generateAndStoreThumbnails(ctx context.Context, assetID pgtype
 			continue // Continue with other thumbnails
 		}
 
-		// Store thumbnail record in database
-		thumbInfo := s.thumbnailGen.GetThumbnailInfo(thumbType, data, thumbPath)
-		_, err = s.db.CreateAssetThumbnail(ctx, db.CreateAssetThumbnailParams{
-			AssetID: assetID,
-			Type:    string(thumbType),
-			Path:    thumbPath,
-			Width:   thumbInfo.Width,
-			Height:  thumbInfo.Height,
-			Size:    thumbInfo.Size,
-		})
-		if err != nil {
-			span.RecordError(err)
-			// Continue with other thumbnails
-		}
+		// TODO: Store thumbnail record in database
+		// thumbInfo := s.thumbnailGen.GetThumbnailInfo(thumbType, data, thumbPath)
+		// _, err = s.db.CreateAssetThumbnail(ctx, sqlc.CreateAssetThumbnailParams{
+		// 	AssetID: assetID,
+		// 	Type:    string(thumbType),
+		// 	Path:    thumbPath,
+		// 	Width:   thumbInfo.Width,
+		// 	Height:  thumbInfo.Height,
+		// 	Size:    thumbInfo.Size,
+		// })
+		// if err != nil {
+		// 	span.RecordError(err)
+		// 	// Continue with other thumbnails
+		// }
 	}
 
 	span.SetAttributes(attribute.Int("thumbnails_created", len(thumbnails)))
@@ -355,8 +350,8 @@ func (s *Service) updateAssetMetadata(ctx context.Context, assetID pgtype.UUID, 
 	ctx, span := tracer.Start(ctx, "assets.update_metadata")
 	defer span.End()
 
-	params := db.UpdateAssetMetadataParams{
-		ID: assetID,
+	params := sqlc.CreateOrUpdateExifParams{
+		AssetId: assetID,
 	}
 
 	// Convert metadata to database format
@@ -376,46 +371,42 @@ func (s *Service) updateAssetMetadata(ctx context.Context, assetID pgtype.UUID, 
 	}
 
 	if metadata.Make != nil {
-		params.ExifMake = pgtype.Text{String: *metadata.Make, Valid: true}
+		params.Make = pgtype.Text{String: *metadata.Make, Valid: true}
 	}
 
 	if metadata.Model != nil {
-		params.ExifModel = pgtype.Text{String: *metadata.Model, Valid: true}
+		params.Model = pgtype.Text{String: *metadata.Model, Valid: true}
 	}
 
 	if metadata.LensModel != nil {
-		params.ExifLensModel = pgtype.Text{String: *metadata.LensModel, Valid: true}
+		params.LensModel = pgtype.Text{String: *metadata.LensModel, Valid: true}
 	}
 
 	if metadata.FNumber != nil {
-		params.ExifFNumber = pgtype.Float8{Float64: *metadata.FNumber, Valid: true}
+		params.FNumber = pgtype.Float8{Float64: *metadata.FNumber, Valid: true}
 	}
 
 	if metadata.FocalLength != nil {
-		params.ExifFocalLength = pgtype.Float8{Float64: *metadata.FocalLength, Valid: true}
+		params.FocalLength = pgtype.Float8{Float64: *metadata.FocalLength, Valid: true}
 	}
 
 	if metadata.ISO != nil {
-		params.ExifISO = pgtype.Int4{Int32: *metadata.ISO, Valid: true}
-	}
-
-	if metadata.ExposureTime != nil {
-		params.ExifExposureTime = pgtype.Text{String: *metadata.ExposureTime, Valid: true}
+		params.Iso = pgtype.Int4{Int32: *metadata.ISO, Valid: true}
 	}
 
 	if metadata.Latitude != nil {
-		params.ExifGpsLatitude = pgtype.Float8{Float64: *metadata.Latitude, Valid: true}
+		params.Latitude = pgtype.Float8{Float64: *metadata.Latitude, Valid: true}
 	}
 
 	if metadata.Longitude != nil {
-		params.ExifGpsLongitude = pgtype.Float8{Float64: *metadata.Longitude, Valid: true}
+		params.Longitude = pgtype.Float8{Float64: *metadata.Longitude, Valid: true}
 	}
 
 	if metadata.Description != nil {
-		params.ExifDescription = pgtype.Text{String: *metadata.Description, Valid: true}
+		params.Description = *metadata.Description
 	}
 
-	err := s.db.UpdateAssetMetadata(ctx, params)
+	_, err := s.db.CreateOrUpdateExif(ctx, params)
 	if err != nil {
 		span.RecordError(err)
 		return fmt.Errorf("failed to update metadata: %w", err)
@@ -428,9 +419,9 @@ func (s *Service) updateAssetMetadata(ctx context.Context, assetID pgtype.UUID, 
 func (s *Service) markAssetFailed(ctx context.Context, assetID pgtype.UUID, errorMsg string) {
 	// In a production system, you'd want to store the error and possibly retry
 	// For now, we'll just log and mark as failed
-	_ = s.db.UpdateAssetStatus(ctx, db.UpdateAssetStatusParams{
+	_, _ = s.db.UpdateAssetStatus(ctx, sqlc.UpdateAssetStatusParams{
 		ID:     assetID,
-		Status: string(AssetStatusDeleted), // Use deleted as failed status for now
+		Status: sqlc.AssetsStatusEnumDeleted, // Use deleted as failed status for now
 	})
 }
 
@@ -456,21 +447,22 @@ func (s *Service) GetAsset(ctx context.Context, assetID uuid.UUID, userID uuid.U
 	}
 
 	// Get asset with user verification
-	asset, err := s.db.GetAssetByIDAndUser(ctx, db.GetAssetByIDAndUserParams{
-		ID:     assetUUID,
-		UserID: userUUID,
+	asset, err := s.db.GetAssetByIDAndUser(ctx, sqlc.GetAssetByIDAndUserParams{
+		ID:      assetUUID,
+		OwnerId: userUUID,
 	})
 	if err != nil {
 		span.RecordError(err)
 		return nil, fmt.Errorf("failed to get asset: %w", err)
 	}
 
-	// Get thumbnails
-	thumbnails, err := s.db.GetAssetThumbnails(ctx, assetUUID)
-	if err != nil {
-		span.RecordError(err)
-		// Continue without thumbnails
-	}
+	// TODO: Get thumbnails
+	// thumbnails, err := s.db.GetAssetThumbnails(ctx, assetUUID)
+	// if err != nil {
+	// 	span.RecordError(err)
+	// 	// Continue without thumbnails
+	// }
+	var thumbnails []AssetThumbnail // Empty for now
 
 	return s.convertToAssetInfo(asset, thumbnails), nil
 }
@@ -562,10 +554,10 @@ func (s *Service) SearchAssets(ctx context.Context, req SearchRequest) (*SearchR
 		offset = 0
 	}
 
-	assets, err := s.db.GetUserAssets(ctx, db.GetUserAssetsParams{
-		UserID: userUUID,
-		Limit:  int32(limit),
-		Offset: int32(offset),
+	assets, err := s.db.GetUserAssets(ctx, sqlc.GetUserAssetsParams{
+		OwnerId: userUUID,
+		Limit:   pgtype.Int4{Int32: int32(limit), Valid: true},
+		Offset:  pgtype.Int4{Int32: int32(offset), Valid: true},
 	})
 	if err != nil {
 		span.RecordError(err)
@@ -575,8 +567,9 @@ func (s *Service) SearchAssets(ctx context.Context, req SearchRequest) (*SearchR
 	// Convert to response format
 	assetInfos := make([]AssetInfo, len(assets))
 	for i, asset := range assets {
-		thumbnails, _ := s.db.GetAssetThumbnails(ctx, asset.ID)
-		assetInfos[i] = *s.convertToAssetInfo(asset, thumbnails)
+		// TODO: Get thumbnails when query is available
+		// thumbnails, _ := s.db.GetAssetThumbnails(ctx, asset.ID)
+		assetInfos[i] = *s.convertToAssetInfo(asset, nil)
 	}
 
 	// Get total count (simplified)
@@ -613,9 +606,9 @@ func (s *Service) DeleteAsset(ctx context.Context, assetID uuid.UUID, userID uui
 	}
 
 	// Mark as deleted (soft delete)
-	err = s.db.UpdateAssetStatus(ctx, db.UpdateAssetStatusParams{
+	_, err = s.db.UpdateAssetStatus(ctx, sqlc.UpdateAssetStatusParams{
 		ID:     assetUUID,
-		Status: string(AssetStatusDeleted),
+		Status: sqlc.AssetsStatusEnumDeleted,
 	})
 	if err != nil {
 		span.RecordError(err)
@@ -655,10 +648,10 @@ func (s *Service) generateStoragePath(userID uuid.UUID, assetID uuid.UUID, filen
 	)
 }
 
-func (s *Service) convertToAssetInfo(asset db.Asset, thumbnails []db.AssetThumbnail) *AssetInfo {
+func (s *Service) convertToAssetInfo(asset sqlc.Asset, thumbnails []AssetThumbnail) *AssetInfo {
 	info := &AssetInfo{
 		ID:           uuid.MustParse(uuidToString(asset.ID)),
-		UserID:       uuid.MustParse(uuidToString(asset.UserID)),
+		UserID:       uuid.MustParse(uuidToString(asset.OwnerId)),
 		Type:         AssetType(asset.Type),
 		Status:       AssetStatus(asset.Status),
 		OriginalPath: asset.OriginalPath,
@@ -666,76 +659,27 @@ func (s *Service) convertToAssetInfo(asset db.Asset, thumbnails []db.AssetThumbn
 		UpdatedAt:    timestamptzToTime(asset.UpdatedAt),
 		Metadata: AssetMetadata{
 			Filename:    asset.OriginalFileName,
-			ContentType: asset.MimeType,
-			Size:        asset.SizeInBytes,
+			ContentType: s.getMimeTypeFromAssetType(asset.Type),
+			Size:        0, // TODO: Store size in database
 		},
 	}
 
 	// Add metadata if available
-	if asset.DateTimeOriginal.Valid {
-		dateTaken := timestamptzToTime(asset.DateTimeOriginal)
+	if asset.LocalDateTime.Valid {
+		dateTaken := timestamptzToTime(asset.LocalDateTime)
 		info.Metadata.DateTaken = &dateTaken
 	}
 
-	if asset.ExifImageWidth.Valid {
-		width := asset.ExifImageWidth.Int32
-		info.Metadata.Width = &width
+	if asset.FileCreatedAt.Valid {
+		info.Metadata.CreatedAt = timestamptzToTime(asset.FileCreatedAt)
 	}
 
-	if asset.ExifImageHeight.Valid {
-		height := asset.ExifImageHeight.Int32
-		info.Metadata.Height = &height
+	if asset.FileModifiedAt.Valid {
+		info.Metadata.ModifiedAt = timestamptzToTime(asset.FileModifiedAt)
 	}
 
-	if asset.ExifMake.Valid {
-		make := asset.ExifMake.String
-		info.Metadata.Make = &make
-	}
-
-	if asset.ExifModel.Valid {
-		model := asset.ExifModel.String
-		info.Metadata.Model = &model
-	}
-
-	if asset.ExifLensModel.Valid {
-		lensModel := asset.ExifLensModel.String
-		info.Metadata.LensModel = &lensModel
-	}
-
-	if asset.ExifFNumber.Valid {
-		fNumber := asset.ExifFNumber.Float64
-		info.Metadata.FNumber = &fNumber
-	}
-
-	if asset.ExifFocalLength.Valid {
-		focalLength := asset.ExifFocalLength.Float64
-		info.Metadata.FocalLength = &focalLength
-	}
-
-	if asset.ExifISO.Valid {
-		iso := asset.ExifISO.Int32
-		info.Metadata.ISO = &iso
-	}
-
-	if asset.ExifExposureTime.Valid {
-		exposureTime := asset.ExifExposureTime.String
-		info.Metadata.ExposureTime = &exposureTime
-	}
-
-	if asset.ExifGpsLatitude.Valid {
-		latitude := asset.ExifGpsLatitude.Float64
-		info.Metadata.Latitude = &latitude
-	}
-
-	if asset.ExifGpsLongitude.Valid {
-		longitude := asset.ExifGpsLongitude.Float64
-		info.Metadata.Longitude = &longitude
-	}
-
-	if asset.ExifDescription.Valid {
-		description := asset.ExifDescription.String
-		info.Metadata.Description = &description
-	}
+	// TODO: Get EXIF data from separate exif table
+	// For now, we'll leave width, height, make, model empty
 
 	// Add thumbnails
 	info.Thumbnails = make([]ThumbnailInfo, len(thumbnails))
@@ -759,6 +703,18 @@ func stringToUUID(s string) (pgtype.UUID, error) {
 		return pgtype.UUID{}, err
 	}
 	return pgtype.UUID{Bytes: id, Valid: true}, nil
+}
+
+// getMimeTypeFromAssetType derives MIME type from asset type
+func (s *Service) getMimeTypeFromAssetType(assetType string) string {
+	switch strings.ToLower(assetType) {
+	case "image":
+		return "image/jpeg" // Default for images
+	case "video":
+		return "video/mp4" // Default for videos
+	default:
+		return "application/octet-stream"
+	}
 }
 
 func uuidToString(u pgtype.UUID) string {

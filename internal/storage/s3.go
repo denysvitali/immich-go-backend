@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -136,6 +137,41 @@ func (s *S3Backend) Upload(ctx context.Context, path string, reader io.Reader, s
 		span.RecordError(err)
 		return &StorageError{
 			Op:      "upload",
+			Path:    path,
+			Backend: "s3",
+			Err:     fmt.Errorf("failed to upload to S3: %w", err),
+		}
+	}
+
+	return nil
+}
+
+// UploadBytes uploads byte data to S3
+func (s *S3Backend) UploadBytes(ctx context.Context, path string, data []byte, contentType string) error {
+	ctx, span := tracer.Start(ctx, "s3.UploadBytes",
+		trace.WithAttributes(
+			attribute.String("storage.path", path),
+			attribute.String("storage.content_type", contentType),
+			attribute.Int("storage.size", len(data)),
+		))
+	defer span.End()
+
+	key := s.getObjectKey(path)
+
+	input := &s3.PutObjectInput{
+		Bucket:      aws.String(s.config.Bucket),
+		Key:         aws.String(key),
+		Body:        bytes.NewReader(data),
+		ContentType: aws.String(contentType),
+	}
+
+	// Note: Server-side encryption can be added here if needed in the config
+
+	_, err := s.client.PutObject(ctx, input)
+	if err != nil {
+		span.RecordError(err)
+		return &StorageError{
+			Op:      "upload bytes",
 			Path:    path,
 			Backend: "s3",
 			Err:     fmt.Errorf("failed to upload to S3: %w", err),

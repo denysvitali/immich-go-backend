@@ -73,10 +73,13 @@ func initConfig() {
 
 func runServer(cmd *cobra.Command, args []string) {
 	// Initialize configuration
-	cfg := config.Load()
+	cfg, err := config.LoadConfig("")
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to load configuration")
+	}
 
 	// Setup logger
-	setupLogger(cfg.Log.Level, cfg.Log.Format)
+	setupLogger(cfg.Logging.Level, cfg.Logging.Format)
 
 	logrus.Info("Starting Immich Go Backend Server")
 
@@ -91,13 +94,13 @@ func runServer(cmd *cobra.Command, args []string) {
 	srv := server.NewServer(cfg, conn)
 
 	// Start gRPC server
-	grpcListener, err := net.Listen("tcp", fmt.Sprintf(":%s", cfg.Server.GRPCPort))
+	grpcListener, err := net.Listen("tcp", cfg.Server.GRPCAddress)
 	if err != nil {
-		logrus.WithError(err).Fatal("Failed to listen on gRPC port")
+		logrus.WithError(err).Fatal("Failed to listen on gRPC address")
 	}
 
 	go func() {
-		logrus.WithField("port", cfg.Server.GRPCPort).Info("Starting gRPC server")
+		logrus.WithField("address", cfg.Server.GRPCAddress).Info("Starting gRPC server")
 		if err := srv.ServeGRPC(grpcListener); err != nil {
 			logrus.WithError(err).Fatal("gRPC server failed")
 		}
@@ -105,12 +108,12 @@ func runServer(cmd *cobra.Command, args []string) {
 
 	// Start HTTP server
 	httpServer := &http.Server{
-		Addr:    fmt.Sprintf(":%s", cfg.Server.Port),
+		Addr:    cfg.Server.Address,
 		Handler: cors(srv.HTTPHandler()),
 	}
 
 	go func() {
-		logrus.WithField("port", cfg.Server.Port).Info("Starting HTTP server")
+		logrus.WithField("address", cfg.Server.Address).Info("Starting HTTP server")
 		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logrus.WithError(err).Fatal("HTTP server failed")
 		}

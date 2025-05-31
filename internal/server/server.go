@@ -86,7 +86,7 @@ type Server struct {
 }
 
 func NewServer(cfg *config.Config, db *db.Conn) *Server {
-	authService := auth.NewService(cfg.JWT.SecretKey)
+	authService := auth.NewService(cfg.Auth, db.Queries)
 	wsHub := websocket.New()
 
 	// Start the websocket hub

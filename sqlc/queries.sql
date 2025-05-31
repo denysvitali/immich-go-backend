@@ -154,6 +154,59 @@ WHERE "ownerId" = $1 AND "deletedAt" IS NULL AND status = 'active'
 ORDER BY RANDOM()
 LIMIT $2;
 
+-- name: UpdateAssetStatus :one
+UPDATE assets
+SET status = $2,
+    "updatedAt" = now(),
+    "updateId" = immich_uuid_v7()
+WHERE id = $1 AND "deletedAt" IS NULL
+RETURNING *;
+
+-- name: GetAssetByID :one
+SELECT * FROM assets
+WHERE id = $1 AND "deletedAt" IS NULL;
+
+-- name: GetAssetByIDAndUser :one
+SELECT * FROM assets
+WHERE id = $1 AND "ownerId" = $2 AND "deletedAt" IS NULL;
+
+-- name: GetUserAssets :many
+SELECT * FROM assets
+WHERE "ownerId" = $1 AND "deletedAt" IS NULL
+AND (sqlc.narg('status')::assets_status_enum IS NULL OR status = sqlc.narg('status')::assets_status_enum)
+ORDER BY "fileCreatedAt" DESC
+LIMIT sqlc.narg('limit')
+OFFSET sqlc.narg('offset');
+
+-- EXIF queries
+-- name: CreateExif :one
+INSERT INTO exif (
+    "assetId", make, model, "exifImageWidth", "exifImageHeight", 
+    "fileSizeInByte", orientation, "dateTimeOriginal", "modifyDate",
+    "lensModel", "fNumber", "focalLength", iso, latitude, longitude,
+    city, state, country, description, fps
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+RETURNING *;
+
+-- name: GetExifByAssetId :one
+SELECT * FROM exif
+WHERE "assetId" = $1;
+
+-- name: UpdateExif :one
+UPDATE exif
+SET make = $2, model = $3, "exifImageWidth" = $4, "exifImageHeight" = $5,
+    "fileSizeInByte" = $6, orientation = $7, "dateTimeOriginal" = $8, "modifyDate" = $9,
+    "lensModel" = $10, "fNumber" = $11, "focalLength" = $12, iso = $13, 
+    latitude = $14, longitude = $15, city = $16, state = $17, country = $18,
+    description = $19, fps = $20
+WHERE "assetId" = $1
+RETURNING *;
+
+-- name: DeleteExif :exec
+DELETE FROM exif
+WHERE "assetId" = $1;
+
 -- User queries
 -- name: GetUser :one
 SELECT * FROM users

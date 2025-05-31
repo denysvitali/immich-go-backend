@@ -422,6 +422,101 @@ func (q *Queries) CreateAssetJobStatus(ctx context.Context, arg CreateAssetJobSt
 	return i, err
 }
 
+const createExif = `-- name: CreateExif :one
+INSERT INTO exif (
+    "assetId", make, model, "exifImageWidth", "exifImageHeight", 
+    "fileSizeInByte", orientation, "dateTimeOriginal", "modifyDate",
+    "lensModel", "fNumber", "focalLength", iso, latitude, longitude,
+    city, state, country, description, fps
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+RETURNING "assetId", make, model, "exifImageWidth", "exifImageHeight", "fileSizeInByte", orientation, "dateTimeOriginal", "modifyDate", "lensModel", "fNumber", "focalLength", iso, latitude, longitude, city, state, country, description, fps, "exposureTime", "livePhotoCID", "timeZone", "projectionType", "profileDescription", colorspace, "bitsPerSample", "autoStackId", rating, "updatedAt", "updateId"
+`
+
+type CreateExifParams struct {
+	AssetId          pgtype.UUID
+	Make             pgtype.Text
+	Model            pgtype.Text
+	ExifImageWidth   pgtype.Int4
+	ExifImageHeight  pgtype.Int4
+	FileSizeInByte   pgtype.Int8
+	Orientation      pgtype.Text
+	DateTimeOriginal pgtype.Timestamptz
+	ModifyDate       pgtype.Timestamptz
+	LensModel        pgtype.Text
+	FNumber          pgtype.Float8
+	FocalLength      pgtype.Float8
+	Iso              pgtype.Int4
+	Latitude         pgtype.Float8
+	Longitude        pgtype.Float8
+	City             pgtype.Text
+	State            pgtype.Text
+	Country          pgtype.Text
+	Description      string
+	Fps              pgtype.Float8
+}
+
+// EXIF queries
+func (q *Queries) CreateExif(ctx context.Context, arg CreateExifParams) (Exif, error) {
+	row := q.db.QueryRow(ctx, createExif,
+		arg.AssetId,
+		arg.Make,
+		arg.Model,
+		arg.ExifImageWidth,
+		arg.ExifImageHeight,
+		arg.FileSizeInByte,
+		arg.Orientation,
+		arg.DateTimeOriginal,
+		arg.ModifyDate,
+		arg.LensModel,
+		arg.FNumber,
+		arg.FocalLength,
+		arg.Iso,
+		arg.Latitude,
+		arg.Longitude,
+		arg.City,
+		arg.State,
+		arg.Country,
+		arg.Description,
+		arg.Fps,
+	)
+	var i Exif
+	err := row.Scan(
+		&i.AssetId,
+		&i.Make,
+		&i.Model,
+		&i.ExifImageWidth,
+		&i.ExifImageHeight,
+		&i.FileSizeInByte,
+		&i.Orientation,
+		&i.DateTimeOriginal,
+		&i.ModifyDate,
+		&i.LensModel,
+		&i.FNumber,
+		&i.FocalLength,
+		&i.Iso,
+		&i.Latitude,
+		&i.Longitude,
+		&i.City,
+		&i.State,
+		&i.Country,
+		&i.Description,
+		&i.Fps,
+		&i.ExposureTime,
+		&i.LivePhotoCID,
+		&i.TimeZone,
+		&i.ProjectionType,
+		&i.ProfileDescription,
+		&i.Colorspace,
+		&i.BitsPerSample,
+		&i.AutoStackId,
+		&i.Rating,
+		&i.UpdatedAt,
+		&i.UpdateId,
+	)
+	return i, err
+}
+
 const createFaceSearch = `-- name: CreateFaceSearch :one
 INSERT INTO face_search ("faceId", embedding)
 VALUES ($1, $2)
@@ -913,6 +1008,16 @@ type DeleteAssetsParams struct {
 
 func (q *Queries) DeleteAssets(ctx context.Context, arg DeleteAssetsParams) error {
 	_, err := q.db.Exec(ctx, deleteAssets, arg.Column1, arg.Column2)
+	return err
+}
+
+const deleteExif = `-- name: DeleteExif :exec
+DELETE FROM exif
+WHERE "assetId" = $1
+`
+
+func (q *Queries) DeleteExif(ctx context.Context, assetid pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteExif, assetid)
 	return err
 }
 
@@ -1492,6 +1597,93 @@ WHERE id = $1 AND "deletedAt" IS NULL
 // Asset queries
 func (q *Queries) GetAsset(ctx context.Context, id pgtype.UUID) (Asset, error) {
 	row := q.db.QueryRow(ctx, getAsset, id)
+	var i Asset
+	err := row.Scan(
+		&i.ID,
+		&i.DeviceAssetId,
+		&i.OwnerId,
+		&i.DeviceId,
+		&i.Type,
+		&i.OriginalPath,
+		&i.FileCreatedAt,
+		&i.FileModifiedAt,
+		&i.IsFavorite,
+		&i.Duration,
+		&i.EncodedVideoPath,
+		&i.Checksum,
+		&i.LivePhotoVideoId,
+		&i.UpdatedAt,
+		&i.CreatedAt,
+		&i.OriginalFileName,
+		&i.SidecarPath,
+		&i.Thumbhash,
+		&i.IsOffline,
+		&i.LibraryId,
+		&i.IsExternal,
+		&i.DeletedAt,
+		&i.LocalDateTime,
+		&i.StackId,
+		&i.DuplicateId,
+		&i.Status,
+		&i.UpdateId,
+		&i.Visibility,
+	)
+	return i, err
+}
+
+const getAssetByID = `-- name: GetAssetByID :one
+SELECT id, "deviceAssetId", "ownerId", "deviceId", type, "originalPath", "fileCreatedAt", "fileModifiedAt", "isFavorite", duration, "encodedVideoPath", checksum, "livePhotoVideoId", "updatedAt", "createdAt", "originalFileName", "sidecarPath", thumbhash, "isOffline", "libraryId", "isExternal", "deletedAt", "localDateTime", "stackId", "duplicateId", status, "updateId", visibility FROM assets
+WHERE id = $1 AND "deletedAt" IS NULL
+`
+
+func (q *Queries) GetAssetByID(ctx context.Context, id pgtype.UUID) (Asset, error) {
+	row := q.db.QueryRow(ctx, getAssetByID, id)
+	var i Asset
+	err := row.Scan(
+		&i.ID,
+		&i.DeviceAssetId,
+		&i.OwnerId,
+		&i.DeviceId,
+		&i.Type,
+		&i.OriginalPath,
+		&i.FileCreatedAt,
+		&i.FileModifiedAt,
+		&i.IsFavorite,
+		&i.Duration,
+		&i.EncodedVideoPath,
+		&i.Checksum,
+		&i.LivePhotoVideoId,
+		&i.UpdatedAt,
+		&i.CreatedAt,
+		&i.OriginalFileName,
+		&i.SidecarPath,
+		&i.Thumbhash,
+		&i.IsOffline,
+		&i.LibraryId,
+		&i.IsExternal,
+		&i.DeletedAt,
+		&i.LocalDateTime,
+		&i.StackId,
+		&i.DuplicateId,
+		&i.Status,
+		&i.UpdateId,
+		&i.Visibility,
+	)
+	return i, err
+}
+
+const getAssetByIDAndUser = `-- name: GetAssetByIDAndUser :one
+SELECT id, "deviceAssetId", "ownerId", "deviceId", type, "originalPath", "fileCreatedAt", "fileModifiedAt", "isFavorite", duration, "encodedVideoPath", checksum, "livePhotoVideoId", "updatedAt", "createdAt", "originalFileName", "sidecarPath", thumbhash, "isOffline", "libraryId", "isExternal", "deletedAt", "localDateTime", "stackId", "duplicateId", status, "updateId", visibility FROM assets
+WHERE id = $1 AND "ownerId" = $2 AND "deletedAt" IS NULL
+`
+
+type GetAssetByIDAndUserParams struct {
+	ID      pgtype.UUID
+	OwnerId pgtype.UUID
+}
+
+func (q *Queries) GetAssetByIDAndUser(ctx context.Context, arg GetAssetByIDAndUserParams) (Asset, error) {
+	row := q.db.QueryRow(ctx, getAssetByIDAndUser, arg.ID, arg.OwnerId)
 	var i Asset
 	err := row.Scan(
 		&i.ID,
@@ -2398,6 +2590,50 @@ func (q *Queries) GetDuplicateAssets(ctx context.Context, ownerid pgtype.UUID) (
 		return nil, err
 	}
 	return items, nil
+}
+
+const getExifByAssetId = `-- name: GetExifByAssetId :one
+SELECT "assetId", make, model, "exifImageWidth", "exifImageHeight", "fileSizeInByte", orientation, "dateTimeOriginal", "modifyDate", "lensModel", "fNumber", "focalLength", iso, latitude, longitude, city, state, country, description, fps, "exposureTime", "livePhotoCID", "timeZone", "projectionType", "profileDescription", colorspace, "bitsPerSample", "autoStackId", rating, "updatedAt", "updateId" FROM exif
+WHERE "assetId" = $1
+`
+
+func (q *Queries) GetExifByAssetId(ctx context.Context, assetid pgtype.UUID) (Exif, error) {
+	row := q.db.QueryRow(ctx, getExifByAssetId, assetid)
+	var i Exif
+	err := row.Scan(
+		&i.AssetId,
+		&i.Make,
+		&i.Model,
+		&i.ExifImageWidth,
+		&i.ExifImageHeight,
+		&i.FileSizeInByte,
+		&i.Orientation,
+		&i.DateTimeOriginal,
+		&i.ModifyDate,
+		&i.LensModel,
+		&i.FNumber,
+		&i.FocalLength,
+		&i.Iso,
+		&i.Latitude,
+		&i.Longitude,
+		&i.City,
+		&i.State,
+		&i.Country,
+		&i.Description,
+		&i.Fps,
+		&i.ExposureTime,
+		&i.LivePhotoCID,
+		&i.TimeZone,
+		&i.ProjectionType,
+		&i.ProfileDescription,
+		&i.Colorspace,
+		&i.BitsPerSample,
+		&i.AutoStackId,
+		&i.Rating,
+		&i.UpdatedAt,
+		&i.UpdateId,
+	)
+	return i, err
 }
 
 const getFaceSearch = `-- name: GetFaceSearch :many
@@ -3469,6 +3705,76 @@ func (q *Queries) GetUser(ctx context.Context, id pgtype.UUID) (User, error) {
 	return i, err
 }
 
+const getUserAssets = `-- name: GetUserAssets :many
+SELECT id, "deviceAssetId", "ownerId", "deviceId", type, "originalPath", "fileCreatedAt", "fileModifiedAt", "isFavorite", duration, "encodedVideoPath", checksum, "livePhotoVideoId", "updatedAt", "createdAt", "originalFileName", "sidecarPath", thumbhash, "isOffline", "libraryId", "isExternal", "deletedAt", "localDateTime", "stackId", "duplicateId", status, "updateId", visibility FROM assets
+WHERE "ownerId" = $1 AND "deletedAt" IS NULL
+AND ($2::assets_status_enum IS NULL OR status = $2::assets_status_enum)
+ORDER BY "fileCreatedAt" DESC
+LIMIT $4
+OFFSET $3
+`
+
+type GetUserAssetsParams struct {
+	OwnerId pgtype.UUID
+	Status  NullAssetsStatusEnum
+	Offset  pgtype.Int4
+	Limit   pgtype.Int4
+}
+
+func (q *Queries) GetUserAssets(ctx context.Context, arg GetUserAssetsParams) ([]Asset, error) {
+	rows, err := q.db.Query(ctx, getUserAssets,
+		arg.OwnerId,
+		arg.Status,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Asset
+	for rows.Next() {
+		var i Asset
+		if err := rows.Scan(
+			&i.ID,
+			&i.DeviceAssetId,
+			&i.OwnerId,
+			&i.DeviceId,
+			&i.Type,
+			&i.OriginalPath,
+			&i.FileCreatedAt,
+			&i.FileModifiedAt,
+			&i.IsFavorite,
+			&i.Duration,
+			&i.EncodedVideoPath,
+			&i.Checksum,
+			&i.LivePhotoVideoId,
+			&i.UpdatedAt,
+			&i.CreatedAt,
+			&i.OriginalFileName,
+			&i.SidecarPath,
+			&i.Thumbhash,
+			&i.IsOffline,
+			&i.LibraryId,
+			&i.IsExternal,
+			&i.DeletedAt,
+			&i.LocalDateTime,
+			&i.StackId,
+			&i.DuplicateId,
+			&i.Status,
+			&i.UpdateId,
+			&i.Visibility,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getUserByEmail = `-- name: GetUserByEmail :one
 SELECT id, email, password, "createdAt", "profileImagePath", "isAdmin", "shouldChangePassword", "deletedAt", "oauthId", "updatedAt", "storageLabel", name, "quotaSizeInBytes", "quotaUsageInBytes", status, "profileChangedAt", "updateId", "avatarColor", "pinCode" FROM users
 WHERE email = $1 AND "deletedAt" IS NULL
@@ -4166,6 +4472,150 @@ func (q *Queries) UpdateAssetJobStatus(ctx context.Context, arg UpdateAssetJobSt
 		&i.DuplicatesDetectedAt,
 		&i.PreviewAt,
 		&i.ThumbnailAt,
+	)
+	return i, err
+}
+
+const updateAssetStatus = `-- name: UpdateAssetStatus :one
+UPDATE assets
+SET status = $2,
+    "updatedAt" = now(),
+    "updateId" = immich_uuid_v7()
+WHERE id = $1 AND "deletedAt" IS NULL
+RETURNING id, "deviceAssetId", "ownerId", "deviceId", type, "originalPath", "fileCreatedAt", "fileModifiedAt", "isFavorite", duration, "encodedVideoPath", checksum, "livePhotoVideoId", "updatedAt", "createdAt", "originalFileName", "sidecarPath", thumbhash, "isOffline", "libraryId", "isExternal", "deletedAt", "localDateTime", "stackId", "duplicateId", status, "updateId", visibility
+`
+
+type UpdateAssetStatusParams struct {
+	ID     pgtype.UUID
+	Status AssetsStatusEnum
+}
+
+func (q *Queries) UpdateAssetStatus(ctx context.Context, arg UpdateAssetStatusParams) (Asset, error) {
+	row := q.db.QueryRow(ctx, updateAssetStatus, arg.ID, arg.Status)
+	var i Asset
+	err := row.Scan(
+		&i.ID,
+		&i.DeviceAssetId,
+		&i.OwnerId,
+		&i.DeviceId,
+		&i.Type,
+		&i.OriginalPath,
+		&i.FileCreatedAt,
+		&i.FileModifiedAt,
+		&i.IsFavorite,
+		&i.Duration,
+		&i.EncodedVideoPath,
+		&i.Checksum,
+		&i.LivePhotoVideoId,
+		&i.UpdatedAt,
+		&i.CreatedAt,
+		&i.OriginalFileName,
+		&i.SidecarPath,
+		&i.Thumbhash,
+		&i.IsOffline,
+		&i.LibraryId,
+		&i.IsExternal,
+		&i.DeletedAt,
+		&i.LocalDateTime,
+		&i.StackId,
+		&i.DuplicateId,
+		&i.Status,
+		&i.UpdateId,
+		&i.Visibility,
+	)
+	return i, err
+}
+
+const updateExif = `-- name: UpdateExif :one
+UPDATE exif
+SET make = $2, model = $3, "exifImageWidth" = $4, "exifImageHeight" = $5,
+    "fileSizeInByte" = $6, orientation = $7, "dateTimeOriginal" = $8, "modifyDate" = $9,
+    "lensModel" = $10, "fNumber" = $11, "focalLength" = $12, iso = $13, 
+    latitude = $14, longitude = $15, city = $16, state = $17, country = $18,
+    description = $19, fps = $20
+WHERE "assetId" = $1
+RETURNING "assetId", make, model, "exifImageWidth", "exifImageHeight", "fileSizeInByte", orientation, "dateTimeOriginal", "modifyDate", "lensModel", "fNumber", "focalLength", iso, latitude, longitude, city, state, country, description, fps, "exposureTime", "livePhotoCID", "timeZone", "projectionType", "profileDescription", colorspace, "bitsPerSample", "autoStackId", rating, "updatedAt", "updateId"
+`
+
+type UpdateExifParams struct {
+	AssetId          pgtype.UUID
+	Make             pgtype.Text
+	Model            pgtype.Text
+	ExifImageWidth   pgtype.Int4
+	ExifImageHeight  pgtype.Int4
+	FileSizeInByte   pgtype.Int8
+	Orientation      pgtype.Text
+	DateTimeOriginal pgtype.Timestamptz
+	ModifyDate       pgtype.Timestamptz
+	LensModel        pgtype.Text
+	FNumber          pgtype.Float8
+	FocalLength      pgtype.Float8
+	Iso              pgtype.Int4
+	Latitude         pgtype.Float8
+	Longitude        pgtype.Float8
+	City             pgtype.Text
+	State            pgtype.Text
+	Country          pgtype.Text
+	Description      string
+	Fps              pgtype.Float8
+}
+
+func (q *Queries) UpdateExif(ctx context.Context, arg UpdateExifParams) (Exif, error) {
+	row := q.db.QueryRow(ctx, updateExif,
+		arg.AssetId,
+		arg.Make,
+		arg.Model,
+		arg.ExifImageWidth,
+		arg.ExifImageHeight,
+		arg.FileSizeInByte,
+		arg.Orientation,
+		arg.DateTimeOriginal,
+		arg.ModifyDate,
+		arg.LensModel,
+		arg.FNumber,
+		arg.FocalLength,
+		arg.Iso,
+		arg.Latitude,
+		arg.Longitude,
+		arg.City,
+		arg.State,
+		arg.Country,
+		arg.Description,
+		arg.Fps,
+	)
+	var i Exif
+	err := row.Scan(
+		&i.AssetId,
+		&i.Make,
+		&i.Model,
+		&i.ExifImageWidth,
+		&i.ExifImageHeight,
+		&i.FileSizeInByte,
+		&i.Orientation,
+		&i.DateTimeOriginal,
+		&i.ModifyDate,
+		&i.LensModel,
+		&i.FNumber,
+		&i.FocalLength,
+		&i.Iso,
+		&i.Latitude,
+		&i.Longitude,
+		&i.City,
+		&i.State,
+		&i.Country,
+		&i.Description,
+		&i.Fps,
+		&i.ExposureTime,
+		&i.LivePhotoCID,
+		&i.TimeZone,
+		&i.ProjectionType,
+		&i.ProfileDescription,
+		&i.Colorspace,
+		&i.BitsPerSample,
+		&i.AutoStackId,
+		&i.Rating,
+		&i.UpdatedAt,
+		&i.UpdateId,
 	)
 	return i, err
 }

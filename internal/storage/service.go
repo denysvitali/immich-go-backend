@@ -339,3 +339,74 @@ type AssetUploadURL struct {
 	AssetPath   string            `json:"asset_path"`
 	ContentType string            `json:"content_type"`
 }
+
+// GeneratePresignedUploadURL generates a presigned URL for uploading
+func (s *Service) GeneratePresignedUploadURL(ctx context.Context, path string, contentType string, expiry time.Duration) (string, map[string]string, error) {
+	ctx, span := tracer.Start(ctx, "storage.GeneratePresignedUploadURL",
+		trace.WithAttributes(
+			attribute.String("storage.path", path),
+			attribute.String("storage.content_type", contentType),
+			attribute.String("storage.expiry", expiry.String()),
+		))
+	defer span.End()
+
+	presignedURL, err := s.backend.GetPresignedUploadURL(ctx, path, contentType, expiry)
+	if err != nil {
+		return "", nil, err
+	}
+	
+	return presignedURL.URL, presignedURL.Fields, nil
+}
+
+// Upload uploads data to the specified path
+func (s *Service) Upload(ctx context.Context, path string, reader io.Reader, contentType string) error {
+	ctx, span := tracer.Start(ctx, "storage.Upload",
+		trace.WithAttributes(
+			attribute.String("storage.path", path),
+			attribute.String("storage.content_type", contentType),
+		))
+	defer span.End()
+
+	// For now, we'll use -1 to indicate unknown size
+	// In a real implementation, we might want to buffer the reader to get the size
+	return s.backend.Upload(ctx, path, reader, -1, contentType)
+}
+
+// Download downloads data from the specified path
+func (s *Service) Download(ctx context.Context, path string) (io.ReadCloser, error) {
+	ctx, span := tracer.Start(ctx, "storage.Download",
+		trace.WithAttributes(attribute.String("storage.path", path)))
+	defer span.End()
+
+	return s.backend.Download(ctx, path)
+}
+
+// UploadBytes uploads byte data to the specified path
+func (s *Service) UploadBytes(ctx context.Context, path string, data []byte, contentType string) error {
+	ctx, span := tracer.Start(ctx, "storage.UploadBytes",
+		trace.WithAttributes(
+			attribute.String("storage.path", path),
+			attribute.String("storage.content_type", contentType),
+			attribute.Int("storage.size", len(data)),
+		))
+	defer span.End()
+
+	return s.backend.UploadBytes(ctx, path, data, contentType)
+}
+
+// GeneratePresignedDownloadURL generates a presigned URL for downloading
+func (s *Service) GeneratePresignedDownloadURL(ctx context.Context, path string, expiry time.Duration) (string, error) {
+	ctx, span := tracer.Start(ctx, "storage.GeneratePresignedDownloadURL",
+		trace.WithAttributes(
+			attribute.String("storage.path", path),
+			attribute.String("storage.expiry", expiry.String()),
+		))
+	defer span.End()
+
+	presignedURL, err := s.backend.GetPresignedDownloadURL(ctx, path, expiry)
+	if err != nil {
+		return "", err
+	}
+	
+	return presignedURL.URL, nil
+}

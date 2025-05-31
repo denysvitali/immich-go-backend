@@ -11,6 +11,9 @@ type StorageBackend interface {
 	// Upload uploads a file to the storage backend
 	Upload(ctx context.Context, path string, reader io.Reader, size int64, contentType string) error
 	
+	// UploadBytes uploads byte data to the storage backend
+	UploadBytes(ctx context.Context, path string, data []byte, contentType string) error
+	
 	// Download downloads a file from the storage backend
 	Download(ctx context.Context, path string) (io.ReadCloser, error)
 	
@@ -56,6 +59,7 @@ type PresignedURL struct {
 	URL       string            `json:"url"`
 	Method    string            `json:"method"`
 	Headers   map[string]string `json:"headers,omitempty"`
+	Fields    map[string]string `json:"fields,omitempty"` // For S3 form uploads
 	ExpiresAt time.Time         `json:"expires_at"`
 }
 
