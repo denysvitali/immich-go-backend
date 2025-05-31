@@ -1,5 +1,5 @@
 # Multi-stage Dockerfile for immich-go-backend
-# Optimized for CI/CD environments with better Nix compatibility
+# Uses Alpine for user creation and Nix for build environment
 
 # Stage 1: Build environment using Nix
 FROM nixos/nix:latest AS builder
@@ -21,7 +21,6 @@ COPY flake.nix flake.lock shell.nix ./
 COPY . .
 
 # Build the application using the Nix development environment
-# Use --impure and --no-sandbox flags for CI compatibility
 RUN nix develop --impure --option sandbox false --command bash -c '\
     echo "🔍 Verifying tools are available..." && \
     which protoc protoc-gen-go protoc-gen-go-grpc buf && \
@@ -35,20 +34,23 @@ RUN nix develop --impure --option sandbox false --command bash -c '\
         . \
 '
 
-# Create a non-root user
+# Stage 2: User creation stage using Alpine
+FROM alpine:latest AS user-creator
+
+# Create a non-root user using Alpine's adduser
 RUN adduser -D -s /bin/sh -u 1001 appuser
 
-# Stage 2: Final minimal runtime image
+# Stage 3: Final minimal runtime image
 FROM scratch
 
-# Copy user information
-COPY --from=builder /etc/passwd /etc/passwd
-COPY --from=builder /etc/group /etc/group
+# Copy user information from Alpine stage
+COPY --from=user-creator /etc/passwd /etc/passwd
+COPY --from=user-creator /etc/group /etc/group
 
-# Copy SSL certificates for HTTPS requests
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+# Copy SSL certificates from Alpine
+COPY --from=user-creator /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
-# Copy the binary
+# Copy the binary from builder stage
 COPY --from=builder /app/immich-go-backend /immich-go-backend
 
 # Switch to non-root user
