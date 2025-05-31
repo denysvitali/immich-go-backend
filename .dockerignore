@@ -1,0 +1,68 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Documentation
+README.md
+*.md
+docs/
+
+# Development files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Nix files (keep these as they're needed for the build)
+# flake.nix
+# flake.lock  
+# shell.nix
+.envrc
+
+# Build artifacts
+bin/
+dist/
+build/
+target/
+
+# Test files
+*_test.go
+testdata/
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+Jenkinsfile
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+*.iml
+.project
+.classpath
+.settings/
+
+# Coverage reports
+coverage.out
+*.cover
+
+# Generated files that will be regenerated in Docker
+# internal/proto/gen/
