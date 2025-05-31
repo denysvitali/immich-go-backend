@@ -1,14 +1,15 @@
 # Multi-stage Dockerfile for immich-go-backend
-# Uses Nix for build environment and creates a statically linked binary
+# Optimized for CI/CD environments with better Nix compatibility
 
 # Stage 1: Build environment using Nix
 FROM nixos/nix:latest AS builder
 
-# Enable flakes and install git (needed for flakes)
-RUN echo "experimental-features = nix-command flakes" >> /etc/nix/nix.conf
-
-# Install git for flake support
-RUN nix-env -iA nixpkgs.git
+# Configure Nix for container environments
+RUN mkdir -p /etc/nix && \
+    echo "sandbox = false" >> /etc/nix/nix.conf && \
+    echo "experimental-features = nix-command flakes" >> /etc/nix/nix.conf && \
+    echo "filter-syscalls = false" >> /etc/nix/nix.conf && \
+    echo "restrict-eval = false" >> /etc/nix/nix.conf
 
 # Set working directory
 WORKDIR /app
@@ -20,7 +21,8 @@ COPY flake.nix flake.lock shell.nix ./
 COPY . .
 
 # Build the application using the Nix development environment
-RUN nix develop --command bash -c '\
+# Use --impure and --no-sandbox flags for CI compatibility
+RUN nix develop --impure --option sandbox false --command bash -c '\
     echo "🔍 Verifying tools are available..." && \
     which protoc protoc-gen-go protoc-gen-go-grpc buf && \
     echo "🔨 Generating protocol buffers..." && \
@@ -33,11 +35,10 @@ RUN nix develop --command bash -c '\
         . \
 '
 
-# Stage 2: Create minimal runtime image
-# Create a non-root user directly in the builder stage
+# Create a non-root user
 RUN adduser -D -s /bin/sh -u 1001 appuser
 
-# Final stage
+# Stage 2: Final minimal runtime image
 FROM scratch
 
 # Copy user information
