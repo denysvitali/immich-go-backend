@@ -20,18 +20,18 @@ COPY flake.nix flake.lock shell.nix ./
 COPY . .
 
 # Build the application using the Nix development environment
-RUN nix develop --command bash -c "
-    echo '🔍 Verifying tools are available...' && \
+RUN nix develop --command bash -c '\
+    echo "🔍 Verifying tools are available..." && \
     which protoc protoc-gen-go protoc-gen-go-grpc buf && \
-    echo '🔨 Generating protocol buffers...' && \
+    echo "🔨 Generating protocol buffers..." && \
     ./scripts/generate-protos.sh && \
-    echo '📦 Building application with static linking...' && \
+    echo "📦 Building application with static linking..." && \
     CGO_ENABLED=0 GOOS=linux go build \
         -a -installsuffix cgo \
-        -ldflags '-extldflags \"-static\" -s -w' \
+        -ldflags "-extldflags \"-static\" -s -w" \
         -o immich-go-backend \
-        .
-"
+        . \
+'
 
 # Stage 2: Create minimal runtime image
 # Create a non-root user directly in the builder stage
