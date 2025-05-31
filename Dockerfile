@@ -34,23 +34,15 @@ RUN nix develop --command bash -c "
 "
 
 # Stage 2: Create minimal runtime image
-FROM scratch
-
-# Create a non-root user (using numeric IDs for scratch)
-# We'll copy the user info from the builder stage
-COPY --from=builder /etc/passwd /etc/passwd
-COPY --from=builder /etc/group /etc/group
-
-# Create a non-root user in the builder stage and copy it
-FROM golang:1.24-alpine AS user-builder
+# Create a non-root user directly in the builder stage
 RUN adduser -D -s /bin/sh -u 1001 appuser
 
 # Final stage
 FROM scratch
 
 # Copy user information
-COPY --from=user-builder /etc/passwd /etc/passwd
-COPY --from=user-builder /etc/group /etc/group
+COPY --from=builder /etc/passwd /etc/passwd
+COPY --from=builder /etc/group /etc/group
 
 # Copy SSL certificates for HTTPS requests
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
