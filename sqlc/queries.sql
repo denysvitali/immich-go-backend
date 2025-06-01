@@ -283,6 +283,54 @@ WHERE "userId" = $1;
 DELETE FROM sessions
 WHERE "expiresAt" IS NOT NULL AND "expiresAt" <= now();
 
+-- Additional User Management queries
+-- name: ListUsers :many
+SELECT * FROM users
+WHERE "deletedAt" IS NULL
+AND (sqlc.narg('include_deleted')::boolean IS NULL OR sqlc.narg('include_deleted')::boolean = false OR "deletedAt" IS NOT NULL)
+ORDER BY "createdAt" DESC
+LIMIT $1 OFFSET $2;
+
+-- name: CountUsers :one
+SELECT COUNT(*) FROM users
+WHERE "deletedAt" IS NULL
+AND (sqlc.narg('include_deleted')::boolean IS NULL OR sqlc.narg('include_deleted')::boolean = false OR "deletedAt" IS NOT NULL);
+
+-- name: UpdateUserAdmin :one
+UPDATE users
+SET "isAdmin" = $2,
+    "updatedAt" = now()
+WHERE id = $1 AND "deletedAt" IS NULL
+RETURNING *;
+
+-- name: SoftDeleteUser :exec
+UPDATE users
+SET "deletedAt" = now(),
+    "updatedAt" = now()
+WHERE id = $1;
+
+-- name: HardDeleteUser :exec
+DELETE FROM users
+WHERE id = $1;
+
+-- name: RestoreUser :one
+UPDATE users
+SET "deletedAt" = NULL,
+    "updatedAt" = now()
+WHERE id = $1
+RETURNING *;
+
+-- User Preferences queries using user_metadata table
+-- name: GetUserPreferencesData :one
+SELECT value FROM user_metadata
+WHERE "userId" = $1 AND key = 'preferences';
+
+-- name: UpdateUserPreferencesData :one
+INSERT INTO user_metadata ("userId", key, value)
+VALUES ($1, 'preferences', $2)
+ON CONFLICT ("userId", key) DO UPDATE SET value = $2
+RETURNING value;
+
 -- EXIF queries
 -- name: GetAssetExif :one
 SELECT * FROM exif

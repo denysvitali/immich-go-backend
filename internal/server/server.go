@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"net"
 	"net/http"
 	"strconv"
@@ -14,10 +13,14 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/denysvitali/immich-go-backend/internal/albums"
+	"github.com/denysvitali/immich-go-backend/internal/assets"
 	"github.com/denysvitali/immich-go-backend/internal/auth"
 	"github.com/denysvitali/immich-go-backend/internal/config"
 	"github.com/denysvitali/immich-go-backend/internal/db"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
+	"github.com/denysvitali/immich-go-backend/internal/storage"
+	"github.com/denysvitali/immich-go-backend/internal/users"
 	"github.com/denysvitali/immich-go-backend/internal/websocket"
 )
 
@@ -29,39 +32,6 @@ var (
 	SourceUrl    = "unknown"
 )
 
-// CustomMarshaler wraps the default JSONPb marshaler to unwrap single repeated fields
-type CustomMarshaler struct {
-	*runtime.JSONPb
-}
-
-// Marshal implements the Marshaler interface
-func (m *CustomMarshaler) Marshal(v interface{}) ([]byte, error) {
-	// First marshal with the default marshaler
-	data, err := m.JSONPb.Marshal(v)
-	if err != nil {
-		return nil, err
-	}
-
-	// Check if this is a message we want to unwrap
-	if msg, ok := v.(proto.Message); ok {
-		msgName := string(msg.ProtoReflect().Descriptor().FullName())
-
-		// Unwrap GetAllAlbumsResponse to return albums array directly
-		if msgName == "immich.v1.GetAllAlbumsResponse" {
-			var obj map[string]interface{}
-			if err := json.Unmarshal(data, &obj); err != nil {
-				return data, nil // Return original on error
-			}
-
-			if albums, exists := obj["albums"]; exists {
-				return json.Marshal(albums)
-			}
-		}
-	}
-
-	return data, nil
-}
-
 type Server struct {
 	config      *config.Config
 	db          *db.Conn
@@ -69,37 +39,58 @@ type Server struct {
 	authService *auth.Service
 	wsHub       *websocket.Hub
 
-	immichv1.UnimplementedActivityServiceServer
-	immichv1.UnimplementedAdminServiceServer
+	// Service layer
+	userService  *users.Service
+	assetService *assets.Service
+	albumService *albums.Service
+
 	immichv1.UnimplementedAlbumServiceServer
-	immichv1.UnimplementedApiKeyServiceServer
 	immichv1.UnimplementedAssetServiceServer
 	immichv1.UnimplementedAuthServiceServer
-	immichv1.UnimplementedJobServiceServer
 	immichv1.UnimplementedMemoryServiceServer
 	immichv1.UnimplementedNotificationsServiceServer
-	immichv1.UnimplementedSearchServiceServer
 	immichv1.UnimplementedServerServiceServer
-	immichv1.UnimplementedSystemConfigServiceServer
 	immichv1.UnimplementedTimelineServiceServer
 	immichv1.UnimplementedUsersServiceServer
 }
 
-func NewServer(cfg *config.Config, db *db.Conn) *Server {
+func NewServer(cfg *config.Config, db *db.Conn) (*Server, error) {
 	authService := auth.NewService(cfg.Auth, db.Queries)
 	wsHub := websocket.New()
 
 	// Start the websocket hub
 	go wsHub.Run()
 
-	s := Server{
-		config:      cfg,
-		db:          db,
-		authService: authService,
-		wsHub:       wsHub,
+	// Initialize services
+	userService, err := users.NewService(db.Queries, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	// Initialize storage service 
+	storageService, err := storage.NewService(cfg.Storage)
+	if err != nil {
+		return nil, err
+	}
+
+	assetService, err := assets.NewService(db.Queries, storageService, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	albumService := albums.NewService(db.Queries)
+
+	s := &Server{
+		config:       cfg,
+		db:           db,
+		authService:  authService,
+		wsHub:        wsHub,
+		userService:  userService,
+		assetService: assetService,
+		albumService: albumService,
 	}
 	s.grpcServer = grpc.NewServer()
-	return &s
+	return s, nil
 }
 
 func (s *Server) ServeGRPC(listener net.Listener) error {
@@ -146,15 +137,16 @@ func httpResponseModifier(ctx context.Context, w http.ResponseWriter, p proto.Me
 		delete(w.Header(), "Grpc-Metadata-X-Http-Code")
 		w.WriteHeader(code)
 	}
+
 	return nil
 }
 
 // HTTPHandler creates and returns the HTTP handler with grpc-gateway
 func (s *Server) HTTPHandler() http.Handler {
 	mux := runtime.NewServeMux(
-		runtime.WithMarshalerOption(runtime.MIMEWildcard, &CustomMarshaler{
-			JSONPb: &runtime.JSONPb{
-				MarshalOptions: protojson.MarshalOptions{},
+		runtime.WithMarshalerOption(runtime.MIMEWildcard, &runtime.JSONPb{
+			MarshalOptions: protojson.MarshalOptions{
+				EmitDefaultValues: true,
 			},
 		}),
 		runtime.WithMiddlewares(loggingMiddleware),
@@ -166,47 +158,29 @@ func (s *Server) HTTPHandler() http.Handler {
 	ctx := context.Background()
 
 	// Register service handlers directly
-	if err := immichv1.RegisterActivityServiceHandlerServer(ctx, mux, s); err != nil {
-		logrus.WithError(err).Error("Failed to register ActivityService handler")
-	}
-	if err := immichv1.RegisterAdminServiceHandlerServer(ctx, mux, s); err != nil {
-		logrus.WithError(err).Error("Failed to register AdminService handler")
+	if err := immichv1.RegisterAuthServiceHandlerServer(ctx, mux, s); err != nil {
+		logrus.WithError(err).Error("Failed to register AuthService handler")
 	}
 	if err := immichv1.RegisterAlbumServiceHandlerServer(ctx, mux, s); err != nil {
 		logrus.WithError(err).Error("Failed to register AlbumService handler")
 	}
-	if err := immichv1.RegisterApiKeyServiceHandlerServer(ctx, mux, s); err != nil {
-		logrus.WithError(err).Error("Failed to register ApiKeyService handler")
-	}
 	if err := immichv1.RegisterAssetServiceHandlerServer(ctx, mux, s); err != nil {
 		logrus.WithError(err).Error("Failed to register AssetService handler")
-	}
-	if err := immichv1.RegisterAuthServiceHandlerServer(ctx, mux, s); err != nil {
-		logrus.WithError(err).Error("Failed to register AuthService handler")
-	}
-	if err := immichv1.RegisterJobServiceHandlerServer(ctx, mux, s); err != nil {
-		logrus.WithError(err).Error("Failed to register JobService handler")
-	}
-	if err := immichv1.RegisterMemoryServiceHandlerServer(ctx, mux, s); err != nil {
-		logrus.WithError(err).Error("Failed to register MemoryService handler")
-	}
-	if err := immichv1.RegisterNotificationsServiceHandlerServer(ctx, mux, s); err != nil {
-		logrus.WithError(err).Error("Failed to register NotificationsService handler")
-	}
-	if err := immichv1.RegisterSearchServiceHandlerServer(ctx, mux, s); err != nil {
-		logrus.WithError(err).Error("Failed to register SearchService handler")
 	}
 	if err := immichv1.RegisterServerServiceHandlerServer(ctx, mux, s); err != nil {
 		logrus.WithError(err).Error("Failed to register ServerService handler")
 	}
-	if err := immichv1.RegisterSystemConfigServiceHandlerServer(ctx, mux, s); err != nil {
-		logrus.WithError(err).Error("Failed to register SystemConfigService handler")
+	if err := immichv1.RegisterNotificationsServiceHandlerServer(ctx, mux, s); err != nil {
+		logrus.WithError(err).Error("Failed to register NotificationsService handler")
 	}
 	if err := immichv1.RegisterTimelineServiceHandlerServer(ctx, mux, s); err != nil {
 		logrus.WithError(err).Error("Failed to register TimelineService handler")
 	}
 	if err := immichv1.RegisterUsersServiceHandlerServer(ctx, mux, s); err != nil {
 		logrus.WithError(err).Error("Failed to register UsersService handler")
+	}
+	if err := immichv1.RegisterMemoryServiceHandlerServer(ctx, mux, s); err != nil {
+		logrus.WithError(err).Error("Failed to register MemoryService handler")
 	}
 	return s.handleWs(mux)
 }

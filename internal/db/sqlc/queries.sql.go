@@ -163,6 +163,19 @@ func (q *Queries) CountPersonAssets(ctx context.Context, personid pgtype.UUID) (
 	return count, err
 }
 
+const countUsers = `-- name: CountUsers :one
+SELECT COUNT(*) FROM users
+WHERE "deletedAt" IS NULL
+AND ($1::boolean IS NULL OR $1::boolean = false OR "deletedAt" IS NOT NULL)
+`
+
+func (q *Queries) CountUsers(ctx context.Context, includeDeleted pgtype.Bool) (int64, error) {
+	row := q.db.QueryRow(ctx, countUsers, includeDeleted)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createActivity = `-- name: CreateActivity :one
 INSERT INTO activity ("userId", "albumId", "assetId", comment, "isLiked")
 VALUES ($1, $2, $3, $4, $5)
@@ -3881,6 +3894,19 @@ func (q *Queries) GetUserPreferences(ctx context.Context, userid pgtype.UUID) ([
 	return items, nil
 }
 
+const getUserPreferencesData = `-- name: GetUserPreferencesData :one
+SELECT value FROM user_metadata
+WHERE "userId" = $1 AND key = 'preferences'
+`
+
+// User Preferences queries using user_metadata table
+func (q *Queries) GetUserPreferencesData(ctx context.Context, userid pgtype.UUID) ([]byte, error) {
+	row := q.db.QueryRow(ctx, getUserPreferencesData, userid)
+	var value []byte
+	err := row.Scan(&value)
+	return value, err
+}
+
 const getUsers = `-- name: GetUsers :many
 SELECT id, email, password, "createdAt", "profileImagePath", "isAdmin", "shouldChangePassword", "deletedAt", "oauthId", "updatedAt", "storageLabel", name, "quotaSizeInBytes", "quotaUsageInBytes", status, "profileChangedAt", "updateId", "avatarColor", "pinCode" FROM users
 WHERE "deletedAt" IS NULL
@@ -3889,6 +3915,71 @@ ORDER BY "createdAt" DESC
 
 func (q *Queries) GetUsers(ctx context.Context) ([]User, error) {
 	rows, err := q.db.Query(ctx, getUsers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []User
+	for rows.Next() {
+		var i User
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.Password,
+			&i.CreatedAt,
+			&i.ProfileImagePath,
+			&i.IsAdmin,
+			&i.ShouldChangePassword,
+			&i.DeletedAt,
+			&i.OauthId,
+			&i.UpdatedAt,
+			&i.StorageLabel,
+			&i.Name,
+			&i.QuotaSizeInBytes,
+			&i.QuotaUsageInBytes,
+			&i.Status,
+			&i.ProfileChangedAt,
+			&i.UpdateId,
+			&i.AvatarColor,
+			&i.PinCode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const hardDeleteUser = `-- name: HardDeleteUser :exec
+DELETE FROM users
+WHERE id = $1
+`
+
+func (q *Queries) HardDeleteUser(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, hardDeleteUser, id)
+	return err
+}
+
+const listUsers = `-- name: ListUsers :many
+SELECT id, email, password, "createdAt", "profileImagePath", "isAdmin", "shouldChangePassword", "deletedAt", "oauthId", "updatedAt", "storageLabel", name, "quotaSizeInBytes", "quotaUsageInBytes", status, "profileChangedAt", "updateId", "avatarColor", "pinCode" FROM users
+WHERE "deletedAt" IS NULL
+AND ($3::boolean IS NULL OR $3::boolean = false OR "deletedAt" IS NOT NULL)
+ORDER BY "createdAt" DESC
+LIMIT $1 OFFSET $2
+`
+
+type ListUsersParams struct {
+	Limit          int32
+	Offset         int32
+	IncludeDeleted pgtype.Bool
+}
+
+// Additional User Management queries
+func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, error) {
+	rows, err := q.db.Query(ctx, listUsers, arg.Limit, arg.Offset, arg.IncludeDeleted)
 	if err != nil {
 		return nil, err
 	}
@@ -4019,6 +4110,41 @@ type RestoreAssetsParams struct {
 func (q *Queries) RestoreAssets(ctx context.Context, arg RestoreAssetsParams) error {
 	_, err := q.db.Exec(ctx, restoreAssets, arg.Column1, arg.OwnerId)
 	return err
+}
+
+const restoreUser = `-- name: RestoreUser :one
+UPDATE users
+SET "deletedAt" = NULL,
+    "updatedAt" = now()
+WHERE id = $1
+RETURNING id, email, password, "createdAt", "profileImagePath", "isAdmin", "shouldChangePassword", "deletedAt", "oauthId", "updatedAt", "storageLabel", name, "quotaSizeInBytes", "quotaUsageInBytes", status, "profileChangedAt", "updateId", "avatarColor", "pinCode"
+`
+
+func (q *Queries) RestoreUser(ctx context.Context, id pgtype.UUID) (User, error) {
+	row := q.db.QueryRow(ctx, restoreUser, id)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.Password,
+		&i.CreatedAt,
+		&i.ProfileImagePath,
+		&i.IsAdmin,
+		&i.ShouldChangePassword,
+		&i.DeletedAt,
+		&i.OauthId,
+		&i.UpdatedAt,
+		&i.StorageLabel,
+		&i.Name,
+		&i.QuotaSizeInBytes,
+		&i.QuotaUsageInBytes,
+		&i.Status,
+		&i.ProfileChangedAt,
+		&i.UpdateId,
+		&i.AvatarColor,
+		&i.PinCode,
+	)
+	return i, err
 }
 
 const searchAssetsByEmbedding = `-- name: SearchAssetsByEmbedding :many
@@ -4283,6 +4409,18 @@ func (q *Queries) SetUserMetadata(ctx context.Context, arg SetUserMetadataParams
 	var i UserMetadatum
 	err := row.Scan(&i.UserId, &i.Key, &i.Value)
 	return i, err
+}
+
+const softDeleteUser = `-- name: SoftDeleteUser :exec
+UPDATE users
+SET "deletedAt" = now(),
+    "updatedAt" = now()
+WHERE id = $1
+`
+
+func (q *Queries) SoftDeleteUser(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, softDeleteUser, id)
+	return err
 }
 
 const updateAlbum = `-- name: UpdateAlbum :one
@@ -4909,6 +5047,46 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 	return i, err
 }
 
+const updateUserAdmin = `-- name: UpdateUserAdmin :one
+UPDATE users
+SET "isAdmin" = $2,
+    "updatedAt" = now()
+WHERE id = $1 AND "deletedAt" IS NULL
+RETURNING id, email, password, "createdAt", "profileImagePath", "isAdmin", "shouldChangePassword", "deletedAt", "oauthId", "updatedAt", "storageLabel", name, "quotaSizeInBytes", "quotaUsageInBytes", status, "profileChangedAt", "updateId", "avatarColor", "pinCode"
+`
+
+type UpdateUserAdminParams struct {
+	ID      pgtype.UUID
+	IsAdmin bool
+}
+
+func (q *Queries) UpdateUserAdmin(ctx context.Context, arg UpdateUserAdminParams) (User, error) {
+	row := q.db.QueryRow(ctx, updateUserAdmin, arg.ID, arg.IsAdmin)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.Password,
+		&i.CreatedAt,
+		&i.ProfileImagePath,
+		&i.IsAdmin,
+		&i.ShouldChangePassword,
+		&i.DeletedAt,
+		&i.OauthId,
+		&i.UpdatedAt,
+		&i.StorageLabel,
+		&i.Name,
+		&i.QuotaSizeInBytes,
+		&i.QuotaUsageInBytes,
+		&i.Status,
+		&i.ProfileChangedAt,
+		&i.UpdateId,
+		&i.AvatarColor,
+		&i.PinCode,
+	)
+	return i, err
+}
+
 const updateUserLastLogin = `-- name: UpdateUserLastLogin :exec
 UPDATE users
 SET "updatedAt" = now()
@@ -4936,4 +5114,23 @@ type UpdateUserPasswordParams struct {
 func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error {
 	_, err := q.db.Exec(ctx, updateUserPassword, arg.ID, arg.Password)
 	return err
+}
+
+const updateUserPreferencesData = `-- name: UpdateUserPreferencesData :one
+INSERT INTO user_metadata ("userId", key, value)
+VALUES ($1, 'preferences', $2)
+ON CONFLICT ("userId", key) DO UPDATE SET value = $2
+RETURNING value
+`
+
+type UpdateUserPreferencesDataParams struct {
+	UserId pgtype.UUID
+	Value  []byte
+}
+
+func (q *Queries) UpdateUserPreferencesData(ctx context.Context, arg UpdateUserPreferencesDataParams) ([]byte, error) {
+	row := q.db.QueryRow(ctx, updateUserPreferencesData, arg.UserId, arg.Value)
+	var value []byte
+	err := row.Scan(&value)
+	return value, err
 }

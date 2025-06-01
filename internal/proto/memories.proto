@@ -14,9 +14,6 @@ option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immi
 // Memory service
 service MemoryService {
   // Search memories
-  // TODO: Find a better return type as SearchMemoriesResponse is not directly an array as Immich expects it to be.
-  // ListValue looks promising, but it's not really typed. Alternatively we can try to create a custom marshaler:
-  // https://grpc-ecosystem.github.io/grpc-gateway/docs/mapping/custom_marshalers/
   rpc SearchMemories(SearchMemoriesRequest) returns (SearchMemoriesResponse) {
     option (google.api.http) = {
       get: "/api/memories"
@@ -108,7 +105,7 @@ message SearchMemoriesRequest {
 
 // Search memories response
 message SearchMemoriesResponse {
-  repeated Memory memories = 1;
+  repeated Memory memories = 1 [json_name = ""];
 }
 
 // Create memory request
