@@ -90,7 +90,7 @@ func parseFileMode(modeStr string, defaultMode os.FileMode) (os.FileMode, error)
 func (l *LocalBackend) getFullPath(path string) string {
 	// Clean the path and remove leading slash
 	path = filepath.Clean(strings.TrimPrefix(path, "/"))
-	
+
 	// Join with root path
 	return filepath.Join(l.rootPath, path)
 }
@@ -106,7 +106,7 @@ func (l *LocalBackend) Upload(ctx context.Context, path string, reader io.Reader
 	defer span.End()
 
 	fullPath := l.getFullPath(path)
-	
+
 	// Create directory if it doesn't exist
 	dir := filepath.Dir(fullPath)
 	if err := os.MkdirAll(dir, l.dirMode); err != nil {
@@ -191,7 +191,7 @@ func (l *LocalBackend) Download(ctx context.Context, path string) (io.ReadCloser
 	defer span.End()
 
 	fullPath := l.getFullPath(path)
-	
+
 	file, err := os.Open(fullPath)
 	if err != nil {
 		span.RecordError(err)
@@ -221,7 +221,7 @@ func (l *LocalBackend) Delete(ctx context.Context, path string) error {
 	defer span.End()
 
 	fullPath := l.getFullPath(path)
-	
+
 	if err := os.Remove(fullPath); err != nil {
 		span.RecordError(err)
 		if os.IsNotExist(err) {
@@ -250,7 +250,7 @@ func (l *LocalBackend) Exists(ctx context.Context, path string) (bool, error) {
 	defer span.End()
 
 	fullPath := l.getFullPath(path)
-	
+
 	_, err := os.Stat(fullPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -275,7 +275,7 @@ func (l *LocalBackend) GetSize(ctx context.Context, path string) (int64, error) 
 	defer span.End()
 
 	fullPath := l.getFullPath(path)
-	
+
 	info, err := os.Stat(fullPath)
 	if err != nil {
 		span.RecordError(err)
@@ -344,7 +344,7 @@ func (l *LocalBackend) Copy(ctx context.Context, srcPath, dstPath string) error 
 
 	srcFullPath := l.getFullPath(srcPath)
 	dstFullPath := l.getFullPath(dstPath)
-	
+
 	// Create destination directory if it doesn't exist
 	dstDir := filepath.Dir(dstFullPath)
 	if err := os.MkdirAll(dstDir, l.dirMode); err != nil {
@@ -408,7 +408,7 @@ func (l *LocalBackend) Move(ctx context.Context, srcPath, dstPath string) error 
 
 	srcFullPath := l.getFullPath(srcPath)
 	dstFullPath := l.getFullPath(dstPath)
-	
+
 	// Create destination directory if it doesn't exist
 	dstDir := filepath.Dir(dstFullPath)
 	if err := os.MkdirAll(dstDir, l.dirMode); err != nil {
@@ -428,7 +428,7 @@ func (l *LocalBackend) Move(ctx context.Context, srcPath, dstPath string) error 
 			span.RecordError(err)
 			return err
 		}
-		
+
 		if err := l.Delete(ctx, srcPath); err != nil {
 			span.RecordError(err)
 			return err
@@ -448,29 +448,29 @@ func (l *LocalBackend) List(ctx context.Context, prefix string, recursive bool) 
 	defer span.End()
 
 	fullPath := l.getFullPath(prefix)
-	
+
 	var files []FileInfo
-	
+
 	if recursive {
 		err := filepath.Walk(fullPath, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
 				return err
 			}
-			
+
 			// Skip the root directory itself
 			if path == fullPath {
 				return nil
 			}
-			
+
 			// Get relative path from root
 			relPath, err := filepath.Rel(l.rootPath, path)
 			if err != nil {
 				return err
 			}
-			
+
 			// Convert to forward slashes for consistency
 			relPath = filepath.ToSlash(relPath)
-			
+
 			files = append(files, FileInfo{
 				Path:        relPath,
 				Size:        info.Size(),
@@ -478,10 +478,10 @@ func (l *LocalBackend) List(ctx context.Context, prefix string, recursive bool) 
 				IsDir:       info.IsDir(),
 				ContentType: mime.TypeByExtension(filepath.Ext(path)),
 			})
-			
+
 			return nil
 		})
-		
+
 		if err != nil {
 			span.RecordError(err)
 			return nil, &StorageError{
@@ -502,23 +502,23 @@ func (l *LocalBackend) List(ctx context.Context, prefix string, recursive bool) 
 				Err:     fmt.Errorf("failed to read directory: %w", err),
 			}
 		}
-		
+
 		for _, entry := range entries {
 			info, err := entry.Info()
 			if err != nil {
 				continue
 			}
-			
+
 			// Get relative path from root
 			entryPath := filepath.Join(fullPath, entry.Name())
 			relPath, err := filepath.Rel(l.rootPath, entryPath)
 			if err != nil {
 				continue
 			}
-			
+
 			// Convert to forward slashes for consistency
 			relPath = filepath.ToSlash(relPath)
-			
+
 			files = append(files, FileInfo{
 				Path:        relPath,
 				Size:        info.Size(),
@@ -539,7 +539,7 @@ func (l *LocalBackend) GetMetadata(ctx context.Context, path string) (*FileMetad
 	defer span.End()
 
 	fullPath := l.getFullPath(path)
-	
+
 	info, err := os.Stat(fullPath)
 	if err != nil {
 		span.RecordError(err)

@@ -26,18 +26,18 @@ type Service struct {
 	metadataExtractor *MetadataExtractor
 	thumbnailGen      *ThumbnailGenerator
 	config            *config.Config
-	
+
 	// Metrics
-	uploadCounter    metric.Int64Counter
-	downloadCounter  metric.Int64Counter
-	processingTime   metric.Float64Histogram
-	storageSize      metric.Int64UpDownCounter
+	uploadCounter   metric.Int64Counter
+	downloadCounter metric.Int64Counter
+	processingTime  metric.Float64Histogram
+	storageSize     metric.Int64UpDownCounter
 }
 
 // NewService creates a new asset service
 func NewService(queries *sqlc.Queries, storageService *storage.Service, cfg *config.Config) (*Service, error) {
 	meter := telemetry.GetMeter()
-	
+
 	uploadCounter, err := meter.Int64Counter(
 		"assets_uploads_total",
 		metric.WithDescription("Total number of asset uploads"),
@@ -45,7 +45,7 @@ func NewService(queries *sqlc.Queries, storageService *storage.Service, cfg *con
 	if err != nil {
 		return nil, fmt.Errorf("failed to create upload counter: %w", err)
 	}
-	
+
 	downloadCounter, err := meter.Int64Counter(
 		"assets_downloads_total",
 		metric.WithDescription("Total number of asset downloads"),
@@ -53,7 +53,7 @@ func NewService(queries *sqlc.Queries, storageService *storage.Service, cfg *con
 	if err != nil {
 		return nil, fmt.Errorf("failed to create download counter: %w", err)
 	}
-	
+
 	processingTime, err := meter.Float64Histogram(
 		"assets_processing_duration_seconds",
 		metric.WithDescription("Time spent processing assets"),
@@ -61,7 +61,7 @@ func NewService(queries *sqlc.Queries, storageService *storage.Service, cfg *con
 	if err != nil {
 		return nil, fmt.Errorf("failed to create processing time histogram: %w", err)
 	}
-	
+
 	storageSize, err := meter.Int64UpDownCounter(
 		"assets_storage_bytes",
 		metric.WithDescription("Total storage used by assets"),
@@ -101,7 +101,7 @@ func (s *Service) InitiateUpload(ctx context.Context, req UploadRequest) (*Uploa
 	// Generate storage path
 	assetType := s.getAssetTypeFromContentType(req.ContentType)
 	storagePath := s.generateStoragePath(req.UserID, assetID, req.Filename, assetType)
-	
+
 	// Create asset record in database with uploading status
 	userUUID, err := stringToUUID(req.UserID.String())
 	if err != nil {
@@ -318,7 +318,7 @@ func (s *Service) generateAndStoreThumbnails(ctx context.Context, assetID pgtype
 	// Store each thumbnail
 	for thumbType, data := range thumbnails {
 		thumbPath := s.thumbnailGen.GetThumbnailPath(originalPath, thumbType)
-		
+
 		err = s.storage.UploadBytes(ctx, thumbPath, data, "image/jpeg")
 		if err != nil {
 			span.RecordError(err)

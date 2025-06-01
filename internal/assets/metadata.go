@@ -66,7 +66,7 @@ func (e *MetadataExtractor) ExtractMetadata(ctx context.Context, reader io.Reade
 // getAssetTypeFromContentType determines asset type from MIME type
 func (e *MetadataExtractor) getAssetTypeFromContentType(contentType string) AssetType {
 	contentType = strings.ToLower(contentType)
-	
+
 	switch {
 	case strings.HasPrefix(contentType, "image/"):
 		return AssetTypeImage
@@ -82,25 +82,25 @@ func (e *MetadataExtractor) getAssetTypeFromContentType(contentType string) Asse
 // getAssetTypeFromExtension determines asset type from file extension
 func (e *MetadataExtractor) getAssetTypeFromExtension(filename string) AssetType {
 	ext := strings.ToLower(filepath.Ext(filename))
-	
+
 	imageExts := map[string]bool{
 		".jpg": true, ".jpeg": true, ".png": true, ".gif": true,
 		".bmp": true, ".tiff": true, ".tif": true, ".webp": true,
 		".heic": true, ".heif": true, ".avif": true, ".raw": true,
 		".cr2": true, ".nef": true, ".arw": true, ".dng": true,
 	}
-	
+
 	videoExts := map[string]bool{
 		".mp4": true, ".avi": true, ".mov": true, ".mkv": true,
 		".wmv": true, ".flv": true, ".webm": true, ".m4v": true,
 		".3gp": true, ".mts": true, ".m2ts": true,
 	}
-	
+
 	audioExts := map[string]bool{
 		".mp3": true, ".wav": true, ".flac": true, ".aac": true,
 		".ogg": true, ".wma": true, ".m4a": true,
 	}
-	
+
 	switch {
 	case imageExts[ext]:
 		return AssetTypeImage
@@ -125,7 +125,7 @@ func (e *MetadataExtractor) extractImageMetadata(ctx context.Context, reader io.
 		span.SetAttributes(attribute.Bool("has_exif", false))
 		return nil
 	}
-	
+
 	span.SetAttributes(attribute.Bool("has_exif", true))
 
 	// Extract camera make and model
@@ -134,7 +134,7 @@ func (e *MetadataExtractor) extractImageMetadata(ctx context.Context, reader io.
 			metadata.Make = &makeStr
 		}
 	}
-	
+
 	if model, err := x.Get(exif.Model); err == nil {
 		if modelStr, err := model.StringVal(); err == nil {
 			metadata.Model = &modelStr
@@ -155,7 +155,7 @@ func (e *MetadataExtractor) extractImageMetadata(ctx context.Context, reader io.
 			metadata.Width = &w32
 		}
 	}
-	
+
 	if height, err := x.Get(exif.PixelYDimension); err == nil {
 		if h, err := height.Int(0); err == nil {
 			h32 := int32(h)
@@ -170,21 +170,21 @@ func (e *MetadataExtractor) extractImageMetadata(ctx context.Context, reader io.
 			metadata.FNumber = &fVal
 		}
 	}
-	
+
 	if focalLength, err := x.Get(exif.FocalLength); err == nil {
 		if num, denom, err := focalLength.Rat2(0); err == nil && denom != 0 {
 			flVal := float64(num) / float64(denom)
 			metadata.FocalLength = &flVal
 		}
 	}
-	
+
 	if iso, err := x.Get(exif.ISOSpeedRatings); err == nil {
 		if isoVal, err := iso.Int(0); err == nil {
 			iso32 := int32(isoVal)
 			metadata.ISO = &iso32
 		}
 	}
-	
+
 	if exposureTime, err := x.Get(exif.ExposureTime); err == nil {
 		if expStr, err := exposureTime.StringVal(); err == nil {
 			metadata.ExposureTime = &expStr
@@ -224,7 +224,7 @@ func (e *MetadataExtractor) extractVideoMetadata(ctx context.Context, reader io.
 	// For now, we'll implement basic video metadata extraction
 	// In a production system, you'd use ffmpeg or similar
 	// This is a placeholder for video metadata extraction
-	
+
 	// TODO: Implement video metadata extraction using ffmpeg
 	// This would extract:
 	// - Duration
@@ -233,7 +233,7 @@ func (e *MetadataExtractor) extractVideoMetadata(ctx context.Context, reader io.
 	// - Creation date
 	// - GPS coordinates (if available)
 	// - Camera make/model (if available)
-	
+
 	span.SetAttributes(attribute.String("status", "not_implemented"))
 	return nil
 }
@@ -245,6 +245,6 @@ func (e *MetadataExtractor) CalculateChecksum(ctx context.Context, reader io.Rea
 
 	// TODO: Implement checksum calculation (SHA256 or similar)
 	// This is important for deduplication
-	
+
 	return "", fmt.Errorf("checksum calculation not implemented")
 }

@@ -15,9 +15,9 @@ type CreateAlbumRequest struct {
 
 // UpdateAlbumRequest represents a request to update an album
 type UpdateAlbumRequest struct {
-	Name              string     `json:"name" binding:"required"`
-	Description       string     `json:"description"`
-	ThumbnailAssetID  *uuid.UUID `json:"thumbnailAssetId,omitempty"`
+	Name             string     `json:"name" binding:"required"`
+	Description      string     `json:"description"`
+	ThumbnailAssetID *uuid.UUID `json:"thumbnailAssetId,omitempty"`
 }
 
 // AlbumInfo represents detailed information about an album
@@ -90,7 +90,7 @@ type AlbumActivity struct {
 
 // AlbumStatistics represents statistics about albums
 type AlbumStatistics struct {
-	TotalAlbums      int64 `json:"totalAlbums"`
+	TotalAlbums       int64 `json:"totalAlbums"`
 	TotalSharedAlbums int64 `json:"totalSharedAlbums"`
-	TotalAssets      int64 `json:"totalAssets"`
+	TotalAssets       int64 `json:"totalAssets"`
 }

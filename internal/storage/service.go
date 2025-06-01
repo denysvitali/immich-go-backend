@@ -273,13 +273,13 @@ func (s *Service) generateAssetPath(userID string, filename string) string {
 	// Generate a hash-based directory structure for better distribution
 	hash := md5.Sum([]byte(userID + filename + time.Now().String()))
 	hashStr := fmt.Sprintf("%x", hash)
-	
+
 	// Create a directory structure: users/{userID}/{year}/{month}/{day}/{hash[0:2]}/{hash[2:4]}/{filename}
 	now := time.Now()
 	year := now.Format("2006")
 	month := now.Format("01")
 	day := now.Format("02")
-	
+
 	return fmt.Sprintf("users/%s/%s/%s/%s/%s/%s/%s",
 		userID, year, month, day, hashStr[0:2], hashStr[2:4], filename)
 }
@@ -354,7 +354,7 @@ func (s *Service) GeneratePresignedUploadURL(ctx context.Context, path string, c
 	if err != nil {
 		return "", nil, err
 	}
-	
+
 	return presignedURL.URL, presignedURL.Fields, nil
 }
 
@@ -407,6 +407,6 @@ func (s *Service) GeneratePresignedDownloadURL(ctx context.Context, path string,
 	if err != nil {
 		return "", err
 	}
-	
+
 	return presignedURL.URL, nil
 }

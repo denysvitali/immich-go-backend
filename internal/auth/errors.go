@@ -7,30 +7,30 @@ type AuthErrorType string
 
 const (
 	// Authentication errors
-	ErrInvalidCredentials   AuthErrorType = "invalid_credentials"
-	ErrInvalidToken         AuthErrorType = "invalid_token"
-	ErrTokenExpired         AuthErrorType = "token_expired"
-	ErrTokenGeneration      AuthErrorType = "token_generation"
-	ErrTokenStorage         AuthErrorType = "token_storage"
-	ErrTokenDeletion        AuthErrorType = "token_deletion"
-	
+	ErrInvalidCredentials AuthErrorType = "invalid_credentials"
+	ErrInvalidToken       AuthErrorType = "invalid_token"
+	ErrTokenExpired       AuthErrorType = "token_expired"
+	ErrTokenGeneration    AuthErrorType = "token_generation"
+	ErrTokenStorage       AuthErrorType = "token_storage"
+	ErrTokenDeletion      AuthErrorType = "token_deletion"
+
 	// User errors
-	ErrUserNotFound         AuthErrorType = "user_not_found"
-	ErrUserExists           AuthErrorType = "user_exists"
-	ErrUserDeleted          AuthErrorType = "user_deleted"
-	ErrUserCreation         AuthErrorType = "user_creation"
-	
+	ErrUserNotFound AuthErrorType = "user_not_found"
+	ErrUserExists   AuthErrorType = "user_exists"
+	ErrUserDeleted  AuthErrorType = "user_deleted"
+	ErrUserCreation AuthErrorType = "user_creation"
+
 	// Password errors
-	ErrInvalidPassword      AuthErrorType = "invalid_password"
-	ErrPasswordHashing      AuthErrorType = "password_hashing"
-	ErrPasswordUpdate       AuthErrorType = "password_update"
-	
+	ErrInvalidPassword AuthErrorType = "invalid_password"
+	ErrPasswordHashing AuthErrorType = "password_hashing"
+	ErrPasswordUpdate  AuthErrorType = "password_update"
+
 	// Registration errors
 	ErrRegistrationDisabled AuthErrorType = "registration_disabled"
-	
+
 	// Permission errors
 	ErrInsufficientPermissions AuthErrorType = "insufficient_permissions"
-	ErrUnauthorized           AuthErrorType = "unauthorized"
+	ErrUnauthorized            AuthErrorType = "unauthorized"
 )
 
 // AuthError represents an authentication error

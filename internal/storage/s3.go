@@ -100,12 +100,12 @@ func (s *S3Backend) testConnection(ctx context.Context) error {
 func (s *S3Backend) getObjectKey(path string) string {
 	// Remove leading slash
 	path = strings.TrimPrefix(path, "/")
-	
+
 	if s.config.PathPrefix != "" {
 		prefix := strings.TrimSuffix(s.config.PathPrefix, "/")
 		return prefix + "/" + path
 	}
-	
+
 	return path
 }
 
@@ -120,14 +120,14 @@ func (s *S3Backend) Upload(ctx context.Context, path string, reader io.Reader, s
 	defer span.End()
 
 	key := s.getObjectKey(path)
-	
+
 	uploadInput := &s3.PutObjectInput{
 		Bucket:        aws.String(s.config.Bucket),
 		Key:           aws.String(key),
 		Body:          reader,
 		ContentLength: aws.Int64(size),
 	}
-	
+
 	if contentType != "" {
 		uploadInput.ContentType = aws.String(contentType)
 	}
@@ -188,7 +188,7 @@ func (s *S3Backend) Download(ctx context.Context, path string) (io.ReadCloser, e
 	defer span.End()
 
 	key := s.getObjectKey(path)
-	
+
 	result, err := s.client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(s.config.Bucket),
 		Key:    aws.String(key),
@@ -213,7 +213,7 @@ func (s *S3Backend) Delete(ctx context.Context, path string) error {
 	defer span.End()
 
 	key := s.getObjectKey(path)
-	
+
 	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
 		Bucket: aws.String(s.config.Bucket),
 		Key:    aws.String(key),
@@ -238,7 +238,7 @@ func (s *S3Backend) Exists(ctx context.Context, path string) (bool, error) {
 	defer span.End()
 
 	key := s.getObjectKey(path)
-	
+
 	_, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket: aws.String(s.config.Bucket),
 		Key:    aws.String(key),
@@ -249,7 +249,7 @@ func (s *S3Backend) Exists(ctx context.Context, path string) (bool, error) {
 		if errors.As(err, &notFound) {
 			return false, nil
 		}
-		
+
 		span.RecordError(err)
 		return false, &StorageError{
 			Op:      "exists",
@@ -269,7 +269,7 @@ func (s *S3Backend) GetSize(ctx context.Context, path string) (int64, error) {
 	defer span.End()
 
 	key := s.getObjectKey(path)
-	
+
 	result, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket: aws.String(s.config.Bucket),
 		Key:    aws.String(key),
@@ -298,14 +298,14 @@ func (s *S3Backend) GetPresignedUploadURL(ctx context.Context, path string, cont
 	defer span.End()
 
 	key := s.getObjectKey(path)
-	
+
 	presigner := s3.NewPresignClient(s.client)
-	
+
 	putObjectInput := &s3.PutObjectInput{
 		Bucket: aws.String(s.config.Bucket),
 		Key:    aws.String(key),
 	}
-	
+
 	if contentType != "" {
 		putObjectInput.ContentType = aws.String(contentType)
 	}
@@ -348,9 +348,9 @@ func (s *S3Backend) GetPresignedDownloadURL(ctx context.Context, path string, ex
 	defer span.End()
 
 	key := s.getObjectKey(path)
-	
+
 	presigner := s3.NewPresignClient(s.client)
-	
+
 	request, err := presigner.PresignGetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(s.config.Bucket),
 		Key:    aws.String(key),
@@ -382,7 +382,7 @@ func (s *S3Backend) SupportsPresignedURLs() bool {
 // GetPublicURL returns a public URL for accessing the file (if bucket is public)
 func (s *S3Backend) GetPublicURL(ctx context.Context, path string) (string, error) {
 	key := s.getObjectKey(path)
-	
+
 	// Construct public URL
 	var url string
 	if s.config.Endpoint != "" {
@@ -391,7 +391,7 @@ func (s *S3Backend) GetPublicURL(ctx context.Context, path string) (string, erro
 		if !s.config.UseSSL {
 			scheme = "http"
 		}
-		
+
 		if s.config.ForcePathStyle {
 			url = fmt.Sprintf("%s://%s/%s/%s", scheme, s.config.Endpoint, s.config.Bucket, key)
 		} else {
@@ -416,9 +416,9 @@ func (s *S3Backend) Copy(ctx context.Context, srcPath, dstPath string) error {
 
 	srcKey := s.getObjectKey(srcPath)
 	dstKey := s.getObjectKey(dstPath)
-	
+
 	copySource := fmt.Sprintf("%s/%s", s.config.Bucket, srcKey)
-	
+
 	_, err := s.client.CopyObject(ctx, &s3.CopyObjectInput{
 		Bucket:     aws.String(s.config.Bucket),
 		Key:        aws.String(dstKey),
@@ -471,19 +471,19 @@ func (s *S3Backend) List(ctx context.Context, prefix string, recursive bool) ([]
 	defer span.End()
 
 	keyPrefix := s.getObjectKey(prefix)
-	
+
 	input := &s3.ListObjectsV2Input{
 		Bucket: aws.String(s.config.Bucket),
 		Prefix: aws.String(keyPrefix),
 	}
-	
+
 	if !recursive {
 		// Use delimiter to only get immediate children
 		input.Delimiter = aws.String("/")
 	}
 
 	var files []FileInfo
-	
+
 	paginator := s3.NewListObjectsV2Paginator(s.client, input)
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(ctx)
@@ -504,7 +504,7 @@ func (s *S3Backend) List(ctx context.Context, prefix string, recursive bool) ([]
 			if s.config.PathPrefix != "" {
 				path = strings.TrimPrefix(path, strings.TrimSuffix(s.config.PathPrefix, "/")+"/")
 			}
-			
+
 			files = append(files, FileInfo{
 				Path:    path,
 				Size:    aws.ToInt64(obj.Size),
@@ -522,10 +522,10 @@ func (s *S3Backend) List(ctx context.Context, prefix string, recursive bool) ([]
 				if s.config.PathPrefix != "" {
 					path = strings.TrimPrefix(path, strings.TrimSuffix(s.config.PathPrefix, "/")+"/")
 				}
-				
+
 				// Remove trailing slash
 				path = strings.TrimSuffix(path, "/")
-				
+
 				files = append(files, FileInfo{
 					Path:  path,
 					IsDir: true,
@@ -544,7 +544,7 @@ func (s *S3Backend) GetMetadata(ctx context.Context, path string) (*FileMetadata
 	defer span.End()
 
 	key := s.getObjectKey(path)
-	
+
 	result, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket: aws.String(s.config.Bucket),
 		Key:    aws.String(key),

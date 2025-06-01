@@ -8,17 +8,17 @@ import (
 // NewStorageBackend creates a new storage backend based on the configuration
 func NewStorageBackend(config StorageConfig) (StorageBackend, error) {
 	backend := strings.ToLower(config.Backend)
-	
+
 	switch backend {
 	case "local", "filesystem", "fs":
 		return NewLocalBackend(config.Local)
-		
+
 	case "s3", "aws":
 		return NewS3Backend(config.S3)
-		
+
 	case "rclone":
 		return NewRcloneBackend(config.Rclone)
-		
+
 	default:
 		return nil, &StorageError{
 			Op:      "create storage backend",
@@ -31,17 +31,17 @@ func NewStorageBackend(config StorageConfig) (StorageBackend, error) {
 // ValidateStorageConfig validates the storage configuration
 func ValidateStorageConfig(config StorageConfig) error {
 	backend := strings.ToLower(config.Backend)
-	
+
 	switch backend {
 	case "local", "filesystem", "fs":
 		return validateLocalConfig(config.Local)
-		
+
 	case "s3", "aws":
 		return validateS3Config(config.S3)
-		
+
 	case "rclone":
 		return validateRcloneConfig(config.Rclone)
-		
+
 	default:
 		return &StorageError{
 			Op:      "validate storage config",
@@ -60,7 +60,7 @@ func validateLocalConfig(config LocalConfig) error {
 			Err:     fmt.Errorf("root_path is required"),
 		}
 	}
-	
+
 	return nil
 }
 
@@ -73,7 +73,7 @@ func validateS3Config(config S3Config) error {
 			Err:     fmt.Errorf("bucket is required"),
 		}
 	}
-	
+
 	if config.AccessKeyID == "" {
 		return &StorageError{
 			Op:      "validate s3 config",
@@ -81,7 +81,7 @@ func validateS3Config(config S3Config) error {
 			Err:     fmt.Errorf("access_key_id is required"),
 		}
 	}
-	
+
 	if config.SecretAccessKey == "" {
 		return &StorageError{
 			Op:      "validate s3 config",
@@ -89,7 +89,7 @@ func validateS3Config(config S3Config) error {
 			Err:     fmt.Errorf("secret_access_key is required"),
 		}
 	}
-	
+
 	if config.Region == "" {
 		return &StorageError{
 			Op:      "validate s3 config",
@@ -97,7 +97,7 @@ func validateS3Config(config S3Config) error {
 			Err:     fmt.Errorf("region is required"),
 		}
 	}
-	
+
 	return nil
 }
 
@@ -110,7 +110,7 @@ func validateRcloneConfig(config RcloneConfig) error {
 			Err:     fmt.Errorf("remote is required"),
 		}
 	}
-	
+
 	return nil
 }
 
@@ -136,7 +136,7 @@ func GetDefaultStorageConfig() StorageConfig {
 				"image/heic", "image/heif", "image/x-adobe-dng", "image/x-canon-cr2", "image/x-nikon-nef",
 			},
 			VirusScanEnabled: false,
-			TempDir:         "/tmp/immich-uploads",
+			TempDir:          "/tmp/immich-uploads",
 		},
 	}
 }

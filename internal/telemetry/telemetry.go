@@ -22,26 +22,26 @@ type Config struct {
 	ServiceName    string `yaml:"service_name" env:"OTEL_SERVICE_NAME" default:"immich-go-backend"`
 	ServiceVersion string `yaml:"service_version" env:"OTEL_SERVICE_VERSION" default:"1.0.0"`
 	Environment    string `yaml:"environment" env:"OTEL_ENVIRONMENT" default:"development"`
-	
+
 	// Tracing configuration
 	TracingEnabled bool `yaml:"tracing_enabled" env:"OTEL_TRACING_ENABLED" default:"true"`
-	
+
 	// Metrics configuration
 	MetricsEnabled bool `yaml:"metrics_enabled" env:"OTEL_METRICS_ENABLED" default:"true"`
-	
+
 	// Sampling configuration
 	TraceSampleRate float64 `yaml:"trace_sample_rate" env:"OTEL_TRACE_SAMPLE_RATE" default:"1.0"`
-	
+
 	// Resource attributes
 	ResourceAttributes map[string]string `yaml:"resource_attributes" env:"OTEL_RESOURCE_ATTRIBUTES"`
 }
 
 // Provider manages OpenTelemetry providers
 type Provider struct {
-	config          Config
-	traceProvider   *sdktrace.TracerProvider
-	metricProvider  *sdkmetric.MeterProvider
-	shutdownFuncs   []func(context.Context) error
+	config         Config
+	traceProvider  *sdktrace.TracerProvider
+	metricProvider *sdkmetric.MeterProvider
+	shutdownFuncs  []func(context.Context) error
 }
 
 // NewProvider creates a new telemetry provider
@@ -198,32 +198,32 @@ func (p *Provider) Shutdown(ctx context.Context) error {
 // Metrics holds application-specific metrics
 type Metrics struct {
 	// HTTP metrics
-	HTTPRequestsTotal     metric.Int64Counter
-	HTTPRequestDuration   metric.Float64Histogram
-	HTTPRequestSize       metric.Int64Histogram
-	HTTPResponseSize      metric.Int64Histogram
+	HTTPRequestsTotal   metric.Int64Counter
+	HTTPRequestDuration metric.Float64Histogram
+	HTTPRequestSize     metric.Int64Histogram
+	HTTPResponseSize    metric.Int64Histogram
 
 	// Storage metrics
-	StorageOperationsTotal metric.Int64Counter
+	StorageOperationsTotal   metric.Int64Counter
 	StorageOperationDuration metric.Float64Histogram
-	StorageSize           metric.Int64Histogram
+	StorageSize              metric.Int64Histogram
 
 	// Database metrics
-	DBConnectionsActive   metric.Int64UpDownCounter
-	DBConnectionsIdle     metric.Int64UpDownCounter
-	DBQueriesTotal        metric.Int64Counter
-	DBQueryDuration       metric.Float64Histogram
+	DBConnectionsActive metric.Int64UpDownCounter
+	DBConnectionsIdle   metric.Int64UpDownCounter
+	DBQueriesTotal      metric.Int64Counter
+	DBQueryDuration     metric.Float64Histogram
 
 	// Asset metrics
-	AssetsTotal           metric.Int64UpDownCounter
-	AssetUploadsTotal     metric.Int64Counter
-	AssetDownloadsTotal   metric.Int64Counter
+	AssetsTotal             metric.Int64UpDownCounter
+	AssetUploadsTotal       metric.Int64Counter
+	AssetDownloadsTotal     metric.Int64Counter
 	AssetProcessingDuration metric.Float64Histogram
 
 	// User metrics
-	UsersTotal            metric.Int64UpDownCounter
-	UserSessionsActive    metric.Int64UpDownCounter
-	UserLoginTotal        metric.Int64Counter
+	UsersTotal         metric.Int64UpDownCounter
+	UserSessionsActive metric.Int64UpDownCounter
+	UserLoginTotal     metric.Int64Counter
 }
 
 // NewMetrics creates application-specific metrics

@@ -78,18 +78,18 @@ func (r *RcloneBackend) testConnection(ctx context.Context) error {
 // buildCommand builds an rclone command with common flags
 func (r *RcloneBackend) buildCommand(ctx context.Context, args ...string) *exec.Cmd {
 	cmdArgs := []string{}
-	
+
 	// Add config file if specified
 	if r.config.ConfigFile != "" {
 		cmdArgs = append(cmdArgs, "--config", r.config.ConfigFile)
 	}
-	
+
 	// Add custom flags
 	cmdArgs = append(cmdArgs, r.config.Flags...)
-	
+
 	// Add the actual command arguments
 	cmdArgs = append(cmdArgs, args...)
-	
+
 	cmd := exec.CommandContext(ctx, "rclone", cmdArgs...)
 	return cmd
 }
@@ -105,7 +105,7 @@ func (r *RcloneBackend) Upload(ctx context.Context, path string, reader io.Reade
 	defer span.End()
 
 	remotePath := r.getRemotePath(path)
-	
+
 	// Create a temporary file to write the data
 	tempFile, err := os.CreateTemp("", "rclone-upload-*")
 	if err != nil {
@@ -211,10 +211,10 @@ func (r *RcloneBackend) Download(ctx context.Context, path string) (io.ReadClose
 	defer span.End()
 
 	remotePath := r.getRemotePath(path)
-	
+
 	// Use rclone cat to stream the file
 	cmd := r.buildCommand(ctx, "cat", remotePath)
-	
+
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		span.RecordError(err)
@@ -254,7 +254,7 @@ func (r *rcloneReadCloser) Close() error {
 	if err := r.ReadCloser.Close(); err != nil {
 		return err
 	}
-	
+
 	// Wait for the command to finish
 	return r.cmd.Wait()
 }
@@ -266,7 +266,7 @@ func (r *RcloneBackend) Delete(ctx context.Context, path string) error {
 	defer span.End()
 
 	remotePath := r.getRemotePath(path)
-	
+
 	cmd := r.buildCommand(ctx, "deletefile", remotePath)
 	if err := cmd.Run(); err != nil {
 		span.RecordError(err)
@@ -288,15 +288,15 @@ func (r *RcloneBackend) Exists(ctx context.Context, path string) (bool, error) {
 	defer span.End()
 
 	remotePath := r.getRemotePath(path)
-	
+
 	cmd := r.buildCommand(ctx, "lsf", remotePath)
 	err := cmd.Run()
-	
+
 	if err != nil {
 		// If the command fails, the file doesn't exist
 		return false, nil
 	}
-	
+
 	return true, nil
 }
 
@@ -311,7 +311,7 @@ func (r *RcloneBackend) GetSize(ctx context.Context, path string) (int64, error)
 		span.RecordError(err)
 		return 0, err
 	}
-	
+
 	return metadata.Size, nil
 }
 
@@ -361,7 +361,7 @@ func (r *RcloneBackend) Copy(ctx context.Context, srcPath, dstPath string) error
 
 	srcRemotePath := r.getRemotePath(srcPath)
 	dstRemotePath := r.getRemotePath(dstPath)
-	
+
 	cmd := r.buildCommand(ctx, "copyto", srcRemotePath, dstRemotePath)
 	if err := cmd.Run(); err != nil {
 		span.RecordError(err)
@@ -387,7 +387,7 @@ func (r *RcloneBackend) Move(ctx context.Context, srcPath, dstPath string) error
 
 	srcRemotePath := r.getRemotePath(srcPath)
 	dstRemotePath := r.getRemotePath(dstPath)
-	
+
 	cmd := r.buildCommand(ctx, "moveto", srcRemotePath, dstRemotePath)
 	if err := cmd.Run(); err != nil {
 		span.RecordError(err)
@@ -412,13 +412,13 @@ func (r *RcloneBackend) List(ctx context.Context, prefix string, recursive bool)
 	defer span.End()
 
 	remotePath := r.getRemotePath(prefix)
-	
+
 	args := []string{"lsjson"}
 	if recursive {
 		args = append(args, "--recursive")
 	}
 	args = append(args, remotePath)
-	
+
 	cmd := r.buildCommand(ctx, args...)
 	output, err := cmd.Output()
 	if err != nil {
@@ -432,12 +432,12 @@ func (r *RcloneBackend) List(ctx context.Context, prefix string, recursive bool)
 	}
 
 	var rcloneFiles []struct {
-		Path    string    `json:"Path"`
-		Name    string    `json:"Name"`
-		Size    int64     `json:"Size"`
-		ModTime time.Time `json:"ModTime"`
-		IsDir   bool      `json:"IsDir"`
-		MimeType string   `json:"MimeType"`
+		Path     string    `json:"Path"`
+		Name     string    `json:"Name"`
+		Size     int64     `json:"Size"`
+		ModTime  time.Time `json:"ModTime"`
+		IsDir    bool      `json:"IsDir"`
+		MimeType string    `json:"MimeType"`
 	}
 
 	if err := json.Unmarshal(output, &rcloneFiles); err != nil {
@@ -471,7 +471,7 @@ func (r *RcloneBackend) GetMetadata(ctx context.Context, path string) (*FileMeta
 	defer span.End()
 
 	remotePath := r.getRemotePath(path)
-	
+
 	cmd := r.buildCommand(ctx, "lsjson", remotePath)
 	output, err := cmd.Output()
 	if err != nil {
@@ -485,10 +485,10 @@ func (r *RcloneBackend) GetMetadata(ctx context.Context, path string) (*FileMeta
 	}
 
 	var rcloneFiles []struct {
-		Path     string    `json:"Path"`
-		Size     int64     `json:"Size"`
-		ModTime  time.Time `json:"ModTime"`
-		MimeType string    `json:"MimeType"`
+		Path     string            `json:"Path"`
+		Size     int64             `json:"Size"`
+		ModTime  time.Time         `json:"ModTime"`
+		MimeType string            `json:"MimeType"`
 		Hashes   map[string]string `json:"Hashes"`
 	}
 
@@ -541,10 +541,10 @@ func (r *RcloneBackend) Close() error {
 func (r *RcloneBackend) getRemotePath(path string) string {
 	// Remove leading slash if present
 	path = strings.TrimPrefix(path, "/")
-	
+
 	if path == "" {
 		return r.remote
 	}
-	
+
 	return r.remote + "/" + path
 }

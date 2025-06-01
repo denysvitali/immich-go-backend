@@ -109,7 +109,7 @@ func (s *Service) AuthMiddleware() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-		
+
 		user, err := s.queries.GetUserByID(ctx, userID)
 		if err != nil {
 			span.RecordError(err)
@@ -242,7 +242,7 @@ func (s *Service) OptionalAuthMiddleware() gin.HandlerFunc {
 			c.Next()
 			return
 		}
-		
+
 		user, err := s.queries.GetUserByID(ctx, userID)
 		if err != nil {
 			span.SetAttributes(attribute.String("auth.status", "user_not_found"))

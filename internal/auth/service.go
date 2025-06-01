@@ -34,9 +34,9 @@ func NewService(config config.AuthConfig, queries *sqlc.Queries) *Service {
 
 // Claims represents JWT claims
 type Claims struct {
-	UserID   string `json:"user_id"`
-	Email    string `json:"email"`
-	IsAdmin  bool   `json:"is_admin"`
+	UserID  string `json:"user_id"`
+	Email   string `json:"email"`
+	IsAdmin bool   `json:"is_admin"`
 	jwt.RegisteredClaims
 }
 
@@ -234,7 +234,7 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest) (*AuthRespo
 			Err:     err,
 		}
 	}
-	
+
 	createUserParams := sqlc.CreateUserParams{
 		ID:       userUUID,
 		Email:    req.Email,
@@ -334,7 +334,7 @@ func (s *Service) RefreshToken(ctx context.Context, req RefreshRequest) (*AuthRe
 			Err:     err,
 		}
 	}
-	
+
 	user, err := s.queries.GetUserByID(ctx, userUUID)
 	if err != nil {
 		span.RecordError(err)
@@ -431,7 +431,7 @@ func (s *Service) ChangePassword(ctx context.Context, userID string, req ChangeP
 			Err:     err,
 		}
 	}
-	
+
 	user, err := s.queries.GetUserByID(ctx, userUUID)
 	if err != nil {
 		span.RecordError(err)
@@ -573,12 +573,12 @@ func (s *Service) storeRefreshToken(ctx context.Context, userID, token string) e
 	if err != nil {
 		return err
 	}
-	
+
 	expiresAt, err := timeToTimestamptz(time.Now().Add(s.config.JWTRefreshExpiry))
 	if err != nil {
 		return err
 	}
-	
+
 	params := sqlc.CreateRefreshTokenParams{
 		Token:     token,
 		UserId:    userUUID,
@@ -663,5 +663,3 @@ func (s *Service) validatePassword(password string) error {
 
 	return nil
 }
-
-

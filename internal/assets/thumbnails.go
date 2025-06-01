@@ -25,7 +25,7 @@ type ThumbnailGenerator struct {
 type ThumbnailConfig struct {
 	MaxWidth  int
 	MaxHeight int
-	Quality   int // JPEG quality (1-100)
+	Quality   int    // JPEG quality (1-100)
 	Format    string // "jpeg", "webp", "png"
 }
 
@@ -109,7 +109,7 @@ func (g *ThumbnailGenerator) generateThumbnail(ctx context.Context, img image.Im
 	originalHeight := bounds.Dy()
 
 	newWidth, newHeight := g.calculateDimensions(originalWidth, originalHeight, config.MaxWidth, config.MaxHeight)
-	
+
 	span.SetAttributes(
 		attribute.Int("new_width", newWidth),
 		attribute.Int("new_height", newHeight),
@@ -149,7 +149,7 @@ func (g *ThumbnailGenerator) generateThumbnail(ctx context.Context, img image.Im
 
 	data := []byte(buf.String())
 	span.SetAttributes(attribute.Int("thumbnail_size", len(data)))
-	
+
 	return data, nil
 }
 
@@ -198,7 +198,7 @@ func (g *ThumbnailGenerator) GetThumbnailPath(originalPath string, thumbType Thu
 // CanGenerateThumbnail checks if thumbnails can be generated for a file type
 func (g *ThumbnailGenerator) CanGenerateThumbnail(contentType string) bool {
 	contentType = strings.ToLower(contentType)
-	
+
 	supportedTypes := map[string]bool{
 		"image/jpeg": true,
 		"image/jpg":  true,
@@ -209,14 +209,14 @@ func (g *ThumbnailGenerator) CanGenerateThumbnail(contentType string) bool {
 		"image/webp": true,
 		// Add more supported types as needed
 	}
-	
+
 	return supportedTypes[contentType]
 }
 
 // GetThumbnailInfo returns information about a generated thumbnail
 func (g *ThumbnailGenerator) GetThumbnailInfo(thumbType ThumbnailType, data []byte, path string) ThumbnailInfo {
 	config := g.sizes[thumbType]
-	
+
 	// For a more accurate implementation, you'd decode the thumbnail
 	// to get actual dimensions. For now, we'll use the max dimensions.
 	return ThumbnailInfo{
