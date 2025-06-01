@@ -58,7 +58,7 @@ func (s *Service) CreateAlbum(ctx context.Context, req *CreateAlbumRequest) (*Al
 
 	// Convert to response format
 	albumInfo := s.convertToAlbumInfo(album, nil, nil)
-	
+
 	span.SetAttributes(
 		attribute.String("album_id", uuidToString(album.ID)),
 	)
@@ -531,7 +531,7 @@ func uuidToString(u pgtype.UUID) string {
 	if !u.Valid {
 		return ""
 	}
-	return string(u.Bytes)
+	return uuid.UUID(u.Bytes).String()
 }
 
 func timestamptzToTime(ts pgtype.Timestamptz) time.Time {
