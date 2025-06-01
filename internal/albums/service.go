@@ -531,7 +531,7 @@ func uuidToString(u pgtype.UUID) string {
 	if !u.Valid {
 		return ""
 	}
-	return u.Bytes.String()
+	return string(u.Bytes)
 }
 
 func timestamptzToTime(ts pgtype.Timestamptz) time.Time {
