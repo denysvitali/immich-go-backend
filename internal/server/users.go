@@ -160,12 +160,12 @@ func (s *Server) GetProfileImage(ctx context.Context, request *immichv1.GetProfi
 	return nil, status.Errorf(codes.Unimplemented, "get profile image not implemented")
 }
 
-// Helper functions to convert database user to proto
-func (s *Server) convertUserToAdminProto(user sqlc.User) *immichv1.UserAdminResponse {
+// Helper functions to convert user service types to proto
+func (s *Server) convertUserToAdminProto(user *users.UserInfo) *immichv1.UserAdminResponse {
 	avatarColor := immichv1.UserAvatarColor_USER_AVATAR_COLOR_BLUE
-	if user.AvatarColor.Valid {
+	if user.AvatarColor != nil {
 		// Map avatar color string to enum
-		switch user.AvatarColor.String {
+		switch *user.AvatarColor {
 		case "red":
 			avatarColor = immichv1.UserAvatarColor_USER_AVATAR_COLOR_RED
 		case "green":
@@ -194,40 +194,35 @@ func (s *Server) convertUserToAdminProto(user sqlc.User) *immichv1.UserAdminResp
 		Name:                 user.Name,
 		IsAdmin:              user.IsAdmin,
 		AvatarColor:          avatarColor,
-		ProfileImagePath:     user.ProfileImagePath,
 		ShouldChangePassword: user.ShouldChangePassword,
 		Status:               status,
-		CreatedAt:            timestamppb.New(user.CreatedAt.Time),
-		UpdatedAt:            timestamppb.New(user.UpdatedAt.Time),
-		OauthId:              user.OauthId,
+		CreatedAt:            timestamppb.New(user.CreatedAt),
+		UpdatedAt:            timestamppb.New(user.UpdatedAt),
+		OauthId:              user.OAuthID,
 	}
 
-	if user.QuotaSizeInBytes.Valid {
-		response.QuotaSizeInBytes = &user.QuotaSizeInBytes.Int64
+	if user.ProfileImagePath != nil {
+		response.ProfileImagePath = *user.ProfileImagePath
 	}
 
-	response.QuotaUsageInBytes = &user.QuotaUsageInBytes
-
-	if user.StorageLabel.Valid {
-		response.StorageLabel = &user.StorageLabel.String
+	if user.QuotaSizeInBytes != nil {
+		response.QuotaSizeInBytes = *user.QuotaSizeInBytes
 	}
 
-	if user.ProfileChangedAt.Valid {
-		response.ProfileChangedAt = timestamppb.New(user.ProfileChangedAt.Time)
-	}
+	response.QuotaUsageInBytes = user.QuotaUsageInBytes
 
-	if user.DeletedAt.Valid {
-		response.DeletedAt = timestamppb.New(user.DeletedAt.Time)
+	if user.StorageLabel != nil {
+		response.StorageLabel = *user.StorageLabel
 	}
 
 	return response
 }
 
-func (s *Server) convertUserToProto(user sqlc.User) *immichv1.UserResponse {
+func (s *Server) convertUserToProto(user *users.UserInfo) *immichv1.UserResponse {
 	avatarColor := immichv1.UserAvatarColor_USER_AVATAR_COLOR_BLUE
-	if user.AvatarColor.Valid {
+	if user.AvatarColor != nil {
 		// Map avatar color string to enum
-		switch user.AvatarColor.String {
+		switch *user.AvatarColor {
 		case "red":
 			avatarColor = immichv1.UserAvatarColor_USER_AVATAR_COLOR_RED
 		case "green":
@@ -244,15 +239,18 @@ func (s *Server) convertUserToProto(user sqlc.User) *immichv1.UserResponse {
 	}
 
 	response := &immichv1.UserResponse{
-		Id:               user.ID.String(),
-		Email:            user.Email,
-		Name:             user.Name,
-		AvatarColor:      avatarColor,
-		ProfileImagePath: user.ProfileImagePath,
+		Id:          user.ID.String(),
+		Email:       user.Email,
+		Name:        user.Name,
+		AvatarColor: avatarColor,
 	}
 
-	if user.ProfileChangedAt.Valid {
-		response.ProfileChangedAt = timestamppb.New(user.ProfileChangedAt.Time)
+	if user.ProfileImagePath != nil {
+		response.ProfileImagePath = *user.ProfileImagePath
+	}
+
+	if user.ProfileChangedAt != nil {
+		response.ProfileChangedAt = timestamppb.New(*user.ProfileChangedAt)
 	}
 
 	return response
