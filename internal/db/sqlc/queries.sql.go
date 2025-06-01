@@ -27,6 +27,38 @@ func (q *Queries) AddAssetToAlbum(ctx context.Context, arg AddAssetToAlbumParams
 	return err
 }
 
+const addAssetToSharedLink = `-- name: AddAssetToSharedLink :exec
+INSERT INTO shared_link__asset ("sharedLinksId", "assetsId")
+VALUES ($1, $2)
+ON CONFLICT DO NOTHING
+`
+
+type AddAssetToSharedLinkParams struct {
+	SharedLinksId pgtype.UUID
+	AssetsId      pgtype.UUID
+}
+
+func (q *Queries) AddAssetToSharedLink(ctx context.Context, arg AddAssetToSharedLinkParams) error {
+	_, err := q.db.Exec(ctx, addAssetToSharedLink, arg.SharedLinksId, arg.AssetsId)
+	return err
+}
+
+const addTagToAsset = `-- name: AddTagToAsset :exec
+INSERT INTO tag_asset ("tagsId", "assetsId")
+VALUES ($1, $2)
+ON CONFLICT DO NOTHING
+`
+
+type AddTagToAssetParams struct {
+	TagsId   pgtype.UUID
+	AssetsId pgtype.UUID
+}
+
+func (q *Queries) AddTagToAsset(ctx context.Context, arg AddTagToAssetParams) error {
+	_, err := q.db.Exec(ctx, addTagToAsset, arg.TagsId, arg.AssetsId)
+	return err
+}
+
 const addUserToAlbum = `-- name: AddUserToAlbum :exec
 INSERT INTO albums_shared_users_users ("albumsId", "usersId", role)
 VALUES ($1, $2, $3)
@@ -104,6 +136,68 @@ func (q *Queries) CountAssets(ctx context.Context, arg CountAssetsParams) (int64
 	var count int64
 	err := row.Scan(&count)
 	return count, err
+}
+
+const countLibraryAssets = `-- name: CountLibraryAssets :one
+SELECT COUNT(*) FROM assets
+WHERE "libraryId" = $1 AND "deletedAt" IS NULL
+`
+
+func (q *Queries) CountLibraryAssets(ctx context.Context, libraryid pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countLibraryAssets, libraryid)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countPersonAssets = `-- name: CountPersonAssets :one
+SELECT COUNT(DISTINCT a.id) FROM assets a
+JOIN asset_faces af ON a.id = af."assetId"
+WHERE af."personId" = $1 AND a."deletedAt" IS NULL
+`
+
+func (q *Queries) CountPersonAssets(ctx context.Context, personid pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countPersonAssets, personid)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const createActivity = `-- name: CreateActivity :one
+INSERT INTO activity ("userId", "albumId", "assetId", comment, "isLiked")
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, "createdAt", "updatedAt", "albumId", "userId", "assetId", comment, "isLiked", "updateId"
+`
+
+type CreateActivityParams struct {
+	UserId  pgtype.UUID
+	AlbumId pgtype.UUID
+	AssetId pgtype.UUID
+	Comment pgtype.Text
+	IsLiked bool
+}
+
+func (q *Queries) CreateActivity(ctx context.Context, arg CreateActivityParams) (Activity, error) {
+	row := q.db.QueryRow(ctx, createActivity,
+		arg.UserId,
+		arg.AlbumId,
+		arg.AssetId,
+		arg.Comment,
+		arg.IsLiked,
+	)
+	var i Activity
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.AlbumId,
+		&i.UserId,
+		&i.AssetId,
+		&i.Comment,
+		&i.IsLiked,
+		&i.UpdateId,
+	)
+	return i, err
 }
 
 const createAlbum = `-- name: CreateAlbum :one
@@ -243,6 +337,236 @@ func (q *Queries) CreateAsset(ctx context.Context, arg CreateAssetParams) (Asset
 		&i.Status,
 		&i.UpdateId,
 		&i.Visibility,
+	)
+	return i, err
+}
+
+const createAssetFace = `-- name: CreateAssetFace :one
+INSERT INTO asset_faces ("assetId", "personId", "imageWidth", "imageHeight", "boundingBoxX1", "boundingBoxY1", "boundingBoxX2", "boundingBoxY2")
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING "assetId", "personId", "imageWidth", "imageHeight", "boundingBoxX1", "boundingBoxY1", "boundingBoxX2", "boundingBoxY2", id, "sourceType", "deletedAt"
+`
+
+type CreateAssetFaceParams struct {
+	AssetId       pgtype.UUID
+	PersonId      pgtype.UUID
+	ImageWidth    int32
+	ImageHeight   int32
+	BoundingBoxX1 int32
+	BoundingBoxY1 int32
+	BoundingBoxX2 int32
+	BoundingBoxY2 int32
+}
+
+func (q *Queries) CreateAssetFace(ctx context.Context, arg CreateAssetFaceParams) (AssetFace, error) {
+	row := q.db.QueryRow(ctx, createAssetFace,
+		arg.AssetId,
+		arg.PersonId,
+		arg.ImageWidth,
+		arg.ImageHeight,
+		arg.BoundingBoxX1,
+		arg.BoundingBoxY1,
+		arg.BoundingBoxX2,
+		arg.BoundingBoxY2,
+	)
+	var i AssetFace
+	err := row.Scan(
+		&i.AssetId,
+		&i.PersonId,
+		&i.ImageWidth,
+		&i.ImageHeight,
+		&i.BoundingBoxX1,
+		&i.BoundingBoxY1,
+		&i.BoundingBoxX2,
+		&i.BoundingBoxY2,
+		&i.ID,
+		&i.SourceType,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const createAssetJobStatus = `-- name: CreateAssetJobStatus :one
+INSERT INTO asset_job_status ("assetId", "facesRecognizedAt", "metadataExtractedAt", "duplicatesDetectedAt", "previewAt", "thumbnailAt")
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING "assetId", "facesRecognizedAt", "metadataExtractedAt", "duplicatesDetectedAt", "previewAt", "thumbnailAt"
+`
+
+type CreateAssetJobStatusParams struct {
+	AssetId              pgtype.UUID
+	FacesRecognizedAt    pgtype.Timestamptz
+	MetadataExtractedAt  pgtype.Timestamptz
+	DuplicatesDetectedAt pgtype.Timestamptz
+	PreviewAt            pgtype.Timestamptz
+	ThumbnailAt          pgtype.Timestamptz
+}
+
+func (q *Queries) CreateAssetJobStatus(ctx context.Context, arg CreateAssetJobStatusParams) (AssetJobStatus, error) {
+	row := q.db.QueryRow(ctx, createAssetJobStatus,
+		arg.AssetId,
+		arg.FacesRecognizedAt,
+		arg.MetadataExtractedAt,
+		arg.DuplicatesDetectedAt,
+		arg.PreviewAt,
+		arg.ThumbnailAt,
+	)
+	var i AssetJobStatus
+	err := row.Scan(
+		&i.AssetId,
+		&i.FacesRecognizedAt,
+		&i.MetadataExtractedAt,
+		&i.DuplicatesDetectedAt,
+		&i.PreviewAt,
+		&i.ThumbnailAt,
+	)
+	return i, err
+}
+
+const createExif = `-- name: CreateExif :one
+INSERT INTO exif (
+    "assetId", make, model, "exifImageWidth", "exifImageHeight", 
+    "fileSizeInByte", orientation, "dateTimeOriginal", "modifyDate",
+    "lensModel", "fNumber", "focalLength", iso, latitude, longitude,
+    city, state, country, description, fps
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+RETURNING "assetId", make, model, "exifImageWidth", "exifImageHeight", "fileSizeInByte", orientation, "dateTimeOriginal", "modifyDate", "lensModel", "fNumber", "focalLength", iso, latitude, longitude, city, state, country, description, fps, "exposureTime", "livePhotoCID", "timeZone", "projectionType", "profileDescription", colorspace, "bitsPerSample", "autoStackId", rating, "updatedAt", "updateId"
+`
+
+type CreateExifParams struct {
+	AssetId          pgtype.UUID
+	Make             pgtype.Text
+	Model            pgtype.Text
+	ExifImageWidth   pgtype.Int4
+	ExifImageHeight  pgtype.Int4
+	FileSizeInByte   pgtype.Int8
+	Orientation      pgtype.Text
+	DateTimeOriginal pgtype.Timestamptz
+	ModifyDate       pgtype.Timestamptz
+	LensModel        pgtype.Text
+	FNumber          pgtype.Float8
+	FocalLength      pgtype.Float8
+	Iso              pgtype.Int4
+	Latitude         pgtype.Float8
+	Longitude        pgtype.Float8
+	City             pgtype.Text
+	State            pgtype.Text
+	Country          pgtype.Text
+	Description      string
+	Fps              pgtype.Float8
+}
+
+// EXIF queries
+func (q *Queries) CreateExif(ctx context.Context, arg CreateExifParams) (Exif, error) {
+	row := q.db.QueryRow(ctx, createExif,
+		arg.AssetId,
+		arg.Make,
+		arg.Model,
+		arg.ExifImageWidth,
+		arg.ExifImageHeight,
+		arg.FileSizeInByte,
+		arg.Orientation,
+		arg.DateTimeOriginal,
+		arg.ModifyDate,
+		arg.LensModel,
+		arg.FNumber,
+		arg.FocalLength,
+		arg.Iso,
+		arg.Latitude,
+		arg.Longitude,
+		arg.City,
+		arg.State,
+		arg.Country,
+		arg.Description,
+		arg.Fps,
+	)
+	var i Exif
+	err := row.Scan(
+		&i.AssetId,
+		&i.Make,
+		&i.Model,
+		&i.ExifImageWidth,
+		&i.ExifImageHeight,
+		&i.FileSizeInByte,
+		&i.Orientation,
+		&i.DateTimeOriginal,
+		&i.ModifyDate,
+		&i.LensModel,
+		&i.FNumber,
+		&i.FocalLength,
+		&i.Iso,
+		&i.Latitude,
+		&i.Longitude,
+		&i.City,
+		&i.State,
+		&i.Country,
+		&i.Description,
+		&i.Fps,
+		&i.ExposureTime,
+		&i.LivePhotoCID,
+		&i.TimeZone,
+		&i.ProjectionType,
+		&i.ProfileDescription,
+		&i.Colorspace,
+		&i.BitsPerSample,
+		&i.AutoStackId,
+		&i.Rating,
+		&i.UpdatedAt,
+		&i.UpdateId,
+	)
+	return i, err
+}
+
+const createFaceSearch = `-- name: CreateFaceSearch :one
+INSERT INTO face_search ("faceId", embedding)
+VALUES ($1, $2)
+RETURNING "faceId", embedding
+`
+
+type CreateFaceSearchParams struct {
+	FaceId    pgtype.UUID
+	Embedding interface{}
+}
+
+func (q *Queries) CreateFaceSearch(ctx context.Context, arg CreateFaceSearchParams) (FaceSearch, error) {
+	row := q.db.QueryRow(ctx, createFaceSearch, arg.FaceId, arg.Embedding)
+	var i FaceSearch
+	err := row.Scan(&i.FaceId, &i.Embedding)
+	return i, err
+}
+
+const createLibrary = `-- name: CreateLibrary :one
+INSERT INTO libraries ("ownerId", name, "importPaths", "exclusionPatterns")
+VALUES ($1, $2, $3, $4)
+RETURNING id, name, "ownerId", "importPaths", "exclusionPatterns", "createdAt", "updatedAt", "deletedAt", "refreshedAt", "updateId"
+`
+
+type CreateLibraryParams struct {
+	OwnerId           pgtype.UUID
+	Name              string
+	ImportPaths       []string
+	ExclusionPatterns []string
+}
+
+func (q *Queries) CreateLibrary(ctx context.Context, arg CreateLibraryParams) (Library, error) {
+	row := q.db.QueryRow(ctx, createLibrary,
+		arg.OwnerId,
+		arg.Name,
+		arg.ImportPaths,
+		arg.ExclusionPatterns,
+	)
+	var i Library
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.OwnerId,
+		&i.ImportPaths,
+		&i.ExclusionPatterns,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.RefreshedAt,
+		&i.UpdateId,
 	)
 	return i, err
 }
@@ -393,13 +717,194 @@ func (q *Queries) CreateOrUpdateExif(ctx context.Context, arg CreateOrUpdateExif
 	return i, err
 }
 
+const createPartnership = `-- name: CreatePartnership :one
+INSERT INTO partners ("sharedById", "sharedWithId")
+VALUES ($1, $2)
+RETURNING "sharedById", "sharedWithId", "createdAt", "updatedAt", "inTimeline", "updateId"
+`
+
+type CreatePartnershipParams struct {
+	SharedById   pgtype.UUID
+	SharedWithId pgtype.UUID
+}
+
+func (q *Queries) CreatePartnership(ctx context.Context, arg CreatePartnershipParams) (Partner, error) {
+	row := q.db.QueryRow(ctx, createPartnership, arg.SharedById, arg.SharedWithId)
+	var i Partner
+	err := row.Scan(
+		&i.SharedById,
+		&i.SharedWithId,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.InTimeline,
+		&i.UpdateId,
+	)
+	return i, err
+}
+
+const createPerson = `-- name: CreatePerson :one
+INSERT INTO person ("ownerId", name, "birthDate", "thumbnailPath", "faceAssetId", "isHidden")
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, "createdAt", "updatedAt", "ownerId", name, "thumbnailPath", "isHidden", "birthDate", "faceAssetId", "isFavorite", color, "updateId"
+`
+
+type CreatePersonParams struct {
+	OwnerId       pgtype.UUID
+	Name          string
+	BirthDate     pgtype.Date
+	ThumbnailPath string
+	FaceAssetId   pgtype.UUID
+	IsHidden      bool
+}
+
+func (q *Queries) CreatePerson(ctx context.Context, arg CreatePersonParams) (Person, error) {
+	row := q.db.QueryRow(ctx, createPerson,
+		arg.OwnerId,
+		arg.Name,
+		arg.BirthDate,
+		arg.ThumbnailPath,
+		arg.FaceAssetId,
+		arg.IsHidden,
+	)
+	var i Person
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.OwnerId,
+		&i.Name,
+		&i.ThumbnailPath,
+		&i.IsHidden,
+		&i.BirthDate,
+		&i.FaceAssetId,
+		&i.IsFavorite,
+		&i.Color,
+		&i.UpdateId,
+	)
+	return i, err
+}
+
+const createRefreshToken = `-- name: CreateRefreshToken :exec
+INSERT INTO sessions (token, "userId", "expiresAt")
+VALUES ($1, $2, $3)
+`
+
+type CreateRefreshTokenParams struct {
+	Token     string
+	UserId    pgtype.UUID
+	ExpiresAt pgtype.Timestamptz
+}
+
+// Session/Refresh Token queries
+func (q *Queries) CreateRefreshToken(ctx context.Context, arg CreateRefreshTokenParams) error {
+	_, err := q.db.Exec(ctx, createRefreshToken, arg.Token, arg.UserId, arg.ExpiresAt)
+	return err
+}
+
+const createSharedLink = `-- name: CreateSharedLink :one
+INSERT INTO shared_links ("userId", key, type, "albumId", "expiresAt", "allowUpload", "allowDownload", description, password, "showExif")
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+RETURNING id, description, "userId", key, type, "createdAt", "expiresAt", "allowUpload", "albumId", "allowDownload", "showExif", password
+`
+
+type CreateSharedLinkParams struct {
+	UserId        pgtype.UUID
+	Key           []byte
+	Type          string
+	AlbumId       pgtype.UUID
+	ExpiresAt     pgtype.Timestamptz
+	AllowUpload   bool
+	AllowDownload bool
+	Description   pgtype.Text
+	Password      pgtype.Text
+	ShowExif      bool
+}
+
+func (q *Queries) CreateSharedLink(ctx context.Context, arg CreateSharedLinkParams) (SharedLink, error) {
+	row := q.db.QueryRow(ctx, createSharedLink,
+		arg.UserId,
+		arg.Key,
+		arg.Type,
+		arg.AlbumId,
+		arg.ExpiresAt,
+		arg.AllowUpload,
+		arg.AllowDownload,
+		arg.Description,
+		arg.Password,
+		arg.ShowExif,
+	)
+	var i SharedLink
+	err := row.Scan(
+		&i.ID,
+		&i.Description,
+		&i.UserId,
+		&i.Key,
+		&i.Type,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.AllowUpload,
+		&i.AlbumId,
+		&i.AllowDownload,
+		&i.ShowExif,
+		&i.Password,
+	)
+	return i, err
+}
+
+const createSmartSearch = `-- name: CreateSmartSearch :one
+INSERT INTO smart_search ("assetId", embedding)
+VALUES ($1, $2)
+RETURNING "assetId", embedding
+`
+
+type CreateSmartSearchParams struct {
+	AssetId   pgtype.UUID
+	Embedding interface{}
+}
+
+func (q *Queries) CreateSmartSearch(ctx context.Context, arg CreateSmartSearchParams) (SmartSearch, error) {
+	row := q.db.QueryRow(ctx, createSmartSearch, arg.AssetId, arg.Embedding)
+	var i SmartSearch
+	err := row.Scan(&i.AssetId, &i.Embedding)
+	return i, err
+}
+
+const createTag = `-- name: CreateTag :one
+INSERT INTO tags ("userId", value, color)
+VALUES ($1, $2, $3)
+RETURNING id, "userId", value, "createdAt", "updatedAt", color, "parentId", "updateId"
+`
+
+type CreateTagParams struct {
+	UserId pgtype.UUID
+	Value  string
+	Color  pgtype.Text
+}
+
+func (q *Queries) CreateTag(ctx context.Context, arg CreateTagParams) (Tag, error) {
+	row := q.db.QueryRow(ctx, createTag, arg.UserId, arg.Value, arg.Color)
+	var i Tag
+	err := row.Scan(
+		&i.ID,
+		&i.UserId,
+		&i.Value,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Color,
+		&i.ParentId,
+		&i.UpdateId,
+	)
+	return i, err
+}
+
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (email, name, password, "isAdmin")
-VALUES ($1, $2, $3, $4)
+INSERT INTO users (id, email, name, password, "isAdmin")
+VALUES ($1, $2, $3, $4, $5)
 RETURNING id, email, password, "createdAt", "profileImagePath", "isAdmin", "shouldChangePassword", "deletedAt", "oauthId", "updatedAt", "storageLabel", name, "quotaSizeInBytes", "quotaUsageInBytes", status, "profileChangedAt", "updateId", "avatarColor", "pinCode"
 `
 
 type CreateUserParams struct {
+	ID       pgtype.UUID
 	Email    string
 	Name     string
 	Password string
@@ -408,6 +913,7 @@ type CreateUserParams struct {
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
 	row := q.db.QueryRow(ctx, createUser,
+		arg.ID,
 		arg.Email,
 		arg.Name,
 		arg.Password,
@@ -438,6 +944,16 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 	return i, err
 }
 
+const deleteActivity = `-- name: DeleteActivity :exec
+DELETE FROM activity
+WHERE id = $1
+`
+
+func (q *Queries) DeleteActivity(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteActivity, id)
+	return err
+}
+
 const deleteAlbum = `-- name: DeleteAlbum :exec
 UPDATE albums
 SET "deletedAt" = now(),
@@ -466,6 +982,16 @@ func (q *Queries) DeleteApiKey(ctx context.Context, arg DeleteApiKeyParams) erro
 	return err
 }
 
+const deleteAssetFace = `-- name: DeleteAssetFace :exec
+DELETE FROM asset_faces
+WHERE id = $1
+`
+
+func (q *Queries) DeleteAssetFace(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteAssetFace, id)
+	return err
+}
+
 const deleteAssets = `-- name: DeleteAssets :exec
 UPDATE assets
 SET status = CASE WHEN $2::boolean THEN 'deleted'::assets_status_enum ELSE 'trashed'::assets_status_enum END,
@@ -485,6 +1011,38 @@ func (q *Queries) DeleteAssets(ctx context.Context, arg DeleteAssetsParams) erro
 	return err
 }
 
+const deleteExif = `-- name: DeleteExif :exec
+DELETE FROM exif
+WHERE "assetId" = $1
+`
+
+func (q *Queries) DeleteExif(ctx context.Context, assetid pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteExif, assetid)
+	return err
+}
+
+const deleteExpiredRefreshTokens = `-- name: DeleteExpiredRefreshTokens :exec
+DELETE FROM sessions
+WHERE "expiresAt" IS NOT NULL AND "expiresAt" <= now()
+`
+
+func (q *Queries) DeleteExpiredRefreshTokens(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, deleteExpiredRefreshTokens)
+	return err
+}
+
+const deleteLibrary = `-- name: DeleteLibrary :exec
+UPDATE libraries
+SET "deletedAt" = now(),
+    "updatedAt" = now()
+WHERE id = $1
+`
+
+func (q *Queries) DeleteLibrary(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteLibrary, id)
+	return err
+}
+
 const deleteMemory = `-- name: DeleteMemory :exec
 UPDATE memories
 SET "deletedAt" = now(),
@@ -494,6 +1052,61 @@ WHERE id = $1
 
 func (q *Queries) DeleteMemory(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deleteMemory, id)
+	return err
+}
+
+const deletePartnership = `-- name: DeletePartnership :exec
+DELETE FROM partners
+WHERE ("sharedById" = $1 AND "sharedWithId" = $2) OR ("sharedById" = $2 AND "sharedWithId" = $1)
+`
+
+type DeletePartnershipParams struct {
+	SharedById   pgtype.UUID
+	SharedWithId pgtype.UUID
+}
+
+func (q *Queries) DeletePartnership(ctx context.Context, arg DeletePartnershipParams) error {
+	_, err := q.db.Exec(ctx, deletePartnership, arg.SharedById, arg.SharedWithId)
+	return err
+}
+
+const deletePerson = `-- name: DeletePerson :exec
+DELETE FROM person
+WHERE id = $1
+`
+
+func (q *Queries) DeletePerson(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deletePerson, id)
+	return err
+}
+
+const deleteRefreshToken = `-- name: DeleteRefreshToken :exec
+DELETE FROM sessions
+WHERE token = $1
+`
+
+func (q *Queries) DeleteRefreshToken(ctx context.Context, token string) error {
+	_, err := q.db.Exec(ctx, deleteRefreshToken, token)
+	return err
+}
+
+const deleteSharedLink = `-- name: DeleteSharedLink :exec
+DELETE FROM shared_links
+WHERE id = $1
+`
+
+func (q *Queries) DeleteSharedLink(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteSharedLink, id)
+	return err
+}
+
+const deleteTag = `-- name: DeleteTag :exec
+DELETE FROM tags
+WHERE id = $1
+`
+
+func (q *Queries) DeleteTag(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteTag, id)
 	return err
 }
 
@@ -507,6 +1120,42 @@ WHERE id = $1
 func (q *Queries) DeleteUser(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deleteUser, id)
 	return err
+}
+
+const deleteUserRefreshTokens = `-- name: DeleteUserRefreshTokens :exec
+DELETE FROM sessions
+WHERE "userId" = $1
+`
+
+func (q *Queries) DeleteUserRefreshTokens(ctx context.Context, userid pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteUserRefreshTokens, userid)
+	return err
+}
+
+const getActivity = `-- name: GetActivity :one
+
+SELECT id, "createdAt", "updatedAt", "albumId", "userId", "assetId", comment, "isLiked", "updateId" FROM activity
+WHERE id = $1
+`
+
+// ============================================================================
+// ACTIVITY QUERIES
+// ============================================================================
+func (q *Queries) GetActivity(ctx context.Context, id pgtype.UUID) (Activity, error) {
+	row := q.db.QueryRow(ctx, getActivity, id)
+	var i Activity
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.AlbumId,
+		&i.UserId,
+		&i.AssetId,
+		&i.Comment,
+		&i.IsLiked,
+		&i.UpdateId,
+	)
+	return i, err
 }
 
 const getAlbum = `-- name: GetAlbum :one
@@ -532,6 +1181,66 @@ func (q *Queries) GetAlbum(ctx context.Context, id pgtype.UUID) (Album, error) {
 		&i.UpdateId,
 	)
 	return i, err
+}
+
+const getAlbumActivity = `-- name: GetAlbumActivity :many
+SELECT a.id, a."createdAt", a."updatedAt", a."albumId", a."userId", a."assetId", a.comment, a."isLiked", a."updateId", u.name as user_name, u.email as user_email FROM activity a
+JOIN users u ON a."userId" = u.id
+WHERE a."albumId" = $1
+ORDER BY a."createdAt" DESC
+LIMIT $2 OFFSET $3
+`
+
+type GetAlbumActivityParams struct {
+	AlbumId pgtype.UUID
+	Limit   int32
+	Offset  int32
+}
+
+type GetAlbumActivityRow struct {
+	ID        pgtype.UUID
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+	AlbumId   pgtype.UUID
+	UserId    pgtype.UUID
+	AssetId   pgtype.UUID
+	Comment   pgtype.Text
+	IsLiked   bool
+	UpdateId  pgtype.UUID
+	UserName  string
+	UserEmail string
+}
+
+func (q *Queries) GetAlbumActivity(ctx context.Context, arg GetAlbumActivityParams) ([]GetAlbumActivityRow, error) {
+	rows, err := q.db.Query(ctx, getAlbumActivity, arg.AlbumId, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetAlbumActivityRow
+	for rows.Next() {
+		var i GetAlbumActivityRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.AlbumId,
+			&i.UserId,
+			&i.AssetId,
+			&i.Comment,
+			&i.IsLiked,
+			&i.UpdateId,
+			&i.UserName,
+			&i.UserEmail,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getAlbumAssets = `-- name: GetAlbumAssets :many
@@ -816,6 +1525,70 @@ func (q *Queries) GetApiKeysByUser(ctx context.Context, userid pgtype.UUID) ([]A
 	return items, nil
 }
 
+const getArchivedAssets = `-- name: GetArchivedAssets :many
+SELECT id, "deviceAssetId", "ownerId", "deviceId", type, "originalPath", "fileCreatedAt", "fileModifiedAt", "isFavorite", duration, "encodedVideoPath", checksum, "livePhotoVideoId", "updatedAt", "createdAt", "originalFileName", "sidecarPath", thumbhash, "isOffline", "libraryId", "isExternal", "deletedAt", "localDateTime", "stackId", "duplicateId", status, "updateId", visibility FROM assets
+WHERE "ownerId" = $1 
+AND "deletedAt" IS NULL
+AND visibility = 'archive'
+ORDER BY "localDateTime" DESC
+LIMIT $2 OFFSET $3
+`
+
+type GetArchivedAssetsParams struct {
+	OwnerId pgtype.UUID
+	Limit   int32
+	Offset  int32
+}
+
+func (q *Queries) GetArchivedAssets(ctx context.Context, arg GetArchivedAssetsParams) ([]Asset, error) {
+	rows, err := q.db.Query(ctx, getArchivedAssets, arg.OwnerId, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Asset
+	for rows.Next() {
+		var i Asset
+		if err := rows.Scan(
+			&i.ID,
+			&i.DeviceAssetId,
+			&i.OwnerId,
+			&i.DeviceId,
+			&i.Type,
+			&i.OriginalPath,
+			&i.FileCreatedAt,
+			&i.FileModifiedAt,
+			&i.IsFavorite,
+			&i.Duration,
+			&i.EncodedVideoPath,
+			&i.Checksum,
+			&i.LivePhotoVideoId,
+			&i.UpdatedAt,
+			&i.CreatedAt,
+			&i.OriginalFileName,
+			&i.SidecarPath,
+			&i.Thumbhash,
+			&i.IsOffline,
+			&i.LibraryId,
+			&i.IsExternal,
+			&i.DeletedAt,
+			&i.LocalDateTime,
+			&i.StackId,
+			&i.DuplicateId,
+			&i.Status,
+			&i.UpdateId,
+			&i.Visibility,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getAsset = `-- name: GetAsset :one
 SELECT id, "deviceAssetId", "ownerId", "deviceId", type, "originalPath", "fileCreatedAt", "fileModifiedAt", "isFavorite", duration, "encodedVideoPath", checksum, "livePhotoVideoId", "updatedAt", "createdAt", "originalFileName", "sidecarPath", thumbhash, "isOffline", "libraryId", "isExternal", "deletedAt", "localDateTime", "stackId", "duplicateId", status, "updateId", visibility FROM assets
 WHERE id = $1 AND "deletedAt" IS NULL
@@ -824,6 +1597,93 @@ WHERE id = $1 AND "deletedAt" IS NULL
 // Asset queries
 func (q *Queries) GetAsset(ctx context.Context, id pgtype.UUID) (Asset, error) {
 	row := q.db.QueryRow(ctx, getAsset, id)
+	var i Asset
+	err := row.Scan(
+		&i.ID,
+		&i.DeviceAssetId,
+		&i.OwnerId,
+		&i.DeviceId,
+		&i.Type,
+		&i.OriginalPath,
+		&i.FileCreatedAt,
+		&i.FileModifiedAt,
+		&i.IsFavorite,
+		&i.Duration,
+		&i.EncodedVideoPath,
+		&i.Checksum,
+		&i.LivePhotoVideoId,
+		&i.UpdatedAt,
+		&i.CreatedAt,
+		&i.OriginalFileName,
+		&i.SidecarPath,
+		&i.Thumbhash,
+		&i.IsOffline,
+		&i.LibraryId,
+		&i.IsExternal,
+		&i.DeletedAt,
+		&i.LocalDateTime,
+		&i.StackId,
+		&i.DuplicateId,
+		&i.Status,
+		&i.UpdateId,
+		&i.Visibility,
+	)
+	return i, err
+}
+
+const getAssetByID = `-- name: GetAssetByID :one
+SELECT id, "deviceAssetId", "ownerId", "deviceId", type, "originalPath", "fileCreatedAt", "fileModifiedAt", "isFavorite", duration, "encodedVideoPath", checksum, "livePhotoVideoId", "updatedAt", "createdAt", "originalFileName", "sidecarPath", thumbhash, "isOffline", "libraryId", "isExternal", "deletedAt", "localDateTime", "stackId", "duplicateId", status, "updateId", visibility FROM assets
+WHERE id = $1 AND "deletedAt" IS NULL
+`
+
+func (q *Queries) GetAssetByID(ctx context.Context, id pgtype.UUID) (Asset, error) {
+	row := q.db.QueryRow(ctx, getAssetByID, id)
+	var i Asset
+	err := row.Scan(
+		&i.ID,
+		&i.DeviceAssetId,
+		&i.OwnerId,
+		&i.DeviceId,
+		&i.Type,
+		&i.OriginalPath,
+		&i.FileCreatedAt,
+		&i.FileModifiedAt,
+		&i.IsFavorite,
+		&i.Duration,
+		&i.EncodedVideoPath,
+		&i.Checksum,
+		&i.LivePhotoVideoId,
+		&i.UpdatedAt,
+		&i.CreatedAt,
+		&i.OriginalFileName,
+		&i.SidecarPath,
+		&i.Thumbhash,
+		&i.IsOffline,
+		&i.LibraryId,
+		&i.IsExternal,
+		&i.DeletedAt,
+		&i.LocalDateTime,
+		&i.StackId,
+		&i.DuplicateId,
+		&i.Status,
+		&i.UpdateId,
+		&i.Visibility,
+	)
+	return i, err
+}
+
+const getAssetByIDAndUser = `-- name: GetAssetByIDAndUser :one
+SELECT id, "deviceAssetId", "ownerId", "deviceId", type, "originalPath", "fileCreatedAt", "fileModifiedAt", "isFavorite", duration, "encodedVideoPath", checksum, "livePhotoVideoId", "updatedAt", "createdAt", "originalFileName", "sidecarPath", thumbhash, "isOffline", "libraryId", "isExternal", "deletedAt", "localDateTime", "stackId", "duplicateId", status, "updateId", visibility FROM assets
+WHERE id = $1 AND "ownerId" = $2 AND "deletedAt" IS NULL
+`
+
+type GetAssetByIDAndUserParams struct {
+	ID      pgtype.UUID
+	OwnerId pgtype.UUID
+}
+
+func (q *Queries) GetAssetByIDAndUser(ctx context.Context, arg GetAssetByIDAndUserParams) (Asset, error) {
+	row := q.db.QueryRow(ctx, getAssetByIDAndUser, arg.ID, arg.OwnerId)
 	var i Asset
 	err := row.Scan(
 		&i.ID,
@@ -903,6 +1763,83 @@ func (q *Queries) GetAssetExif(ctx context.Context, assetid pgtype.UUID) (Exif, 
 	return i, err
 }
 
+const getAssetFaces = `-- name: GetAssetFaces :many
+SELECT af."assetId", af."personId", af."imageWidth", af."imageHeight", af."boundingBoxX1", af."boundingBoxY1", af."boundingBoxX2", af."boundingBoxY2", af.id, af."sourceType", af."deletedAt", p.name as person_name FROM asset_faces af
+LEFT JOIN person p ON af."personId" = p.id
+WHERE af."assetId" = $1
+`
+
+type GetAssetFacesRow struct {
+	AssetId       pgtype.UUID
+	PersonId      pgtype.UUID
+	ImageWidth    int32
+	ImageHeight   int32
+	BoundingBoxX1 int32
+	BoundingBoxY1 int32
+	BoundingBoxX2 int32
+	BoundingBoxY2 int32
+	ID            pgtype.UUID
+	SourceType    Sourcetype
+	DeletedAt     pgtype.Timestamptz
+	PersonName    pgtype.Text
+}
+
+func (q *Queries) GetAssetFaces(ctx context.Context, assetid pgtype.UUID) ([]GetAssetFacesRow, error) {
+	rows, err := q.db.Query(ctx, getAssetFaces, assetid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetAssetFacesRow
+	for rows.Next() {
+		var i GetAssetFacesRow
+		if err := rows.Scan(
+			&i.AssetId,
+			&i.PersonId,
+			&i.ImageWidth,
+			&i.ImageHeight,
+			&i.BoundingBoxX1,
+			&i.BoundingBoxY1,
+			&i.BoundingBoxX2,
+			&i.BoundingBoxY2,
+			&i.ID,
+			&i.SourceType,
+			&i.DeletedAt,
+			&i.PersonName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAssetJobStatus = `-- name: GetAssetJobStatus :one
+
+SELECT "assetId", "facesRecognizedAt", "metadataExtractedAt", "duplicatesDetectedAt", "previewAt", "thumbnailAt" FROM asset_job_status
+WHERE "assetId" = $1
+`
+
+// ============================================================================
+// JOBS & PROCESSING QUERIES
+// ============================================================================
+func (q *Queries) GetAssetJobStatus(ctx context.Context, assetid pgtype.UUID) (AssetJobStatus, error) {
+	row := q.db.QueryRow(ctx, getAssetJobStatus, assetid)
+	var i AssetJobStatus
+	err := row.Scan(
+		&i.AssetId,
+		&i.FacesRecognizedAt,
+		&i.MetadataExtractedAt,
+		&i.DuplicatesDetectedAt,
+		&i.PreviewAt,
+		&i.ThumbnailAt,
+	)
+	return i, err
+}
+
 const getAssetStatistics = `-- name: GetAssetStatistics :one
 SELECT 
     COUNT(CASE WHEN type = 'IMAGE' THEN 1 END) as images,
@@ -923,6 +1860,79 @@ func (q *Queries) GetAssetStatistics(ctx context.Context, ownerid pgtype.UUID) (
 	var i GetAssetStatisticsRow
 	err := row.Scan(&i.Images, &i.Videos, &i.Total)
 	return i, err
+}
+
+const getAssetStatsByUser = `-- name: GetAssetStatsByUser :one
+SELECT 
+    COUNT(*) as total,
+    COUNT(CASE WHEN type = 'IMAGE' THEN 1 END) as images,
+    COUNT(CASE WHEN type = 'VIDEO' THEN 1 END) as videos,
+    COUNT(CASE WHEN "isFavorite" = true THEN 1 END) as favorites,
+    COUNT(CASE WHEN visibility = 'archive' THEN 1 END) as archived,
+    COUNT(CASE WHEN status = 'trashed' THEN 1 END) as trashed,
+    SUM("originalFileSize") as total_size
+FROM assets
+WHERE "ownerId" = $1 AND "deletedAt" IS NULL
+`
+
+type GetAssetStatsByUserRow struct {
+	Total     int64
+	Images    int64
+	Videos    int64
+	Favorites int64
+	Archived  int64
+	Trashed   int64
+	TotalSize int64
+}
+
+func (q *Queries) GetAssetStatsByUser(ctx context.Context, ownerid pgtype.UUID) (GetAssetStatsByUserRow, error) {
+	row := q.db.QueryRow(ctx, getAssetStatsByUser, ownerid)
+	var i GetAssetStatsByUserRow
+	err := row.Scan(
+		&i.Total,
+		&i.Images,
+		&i.Videos,
+		&i.Favorites,
+		&i.Archived,
+		&i.Trashed,
+		&i.TotalSize,
+	)
+	return i, err
+}
+
+const getAssetTags = `-- name: GetAssetTags :many
+SELECT t.id, t."userId", t.value, t."createdAt", t."updatedAt", t.color, t."parentId", t."updateId" FROM tags t
+JOIN tag_asset ta ON t.id = ta."tagsId"
+WHERE ta."assetsId" = $1
+`
+
+func (q *Queries) GetAssetTags(ctx context.Context, assetsid pgtype.UUID) ([]Tag, error) {
+	rows, err := q.db.Query(ctx, getAssetTags, assetsid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Tag
+	for rows.Next() {
+		var i Tag
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserId,
+			&i.Value,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Color,
+			&i.ParentId,
+			&i.UpdateId,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getAssets = `-- name: GetAssets :many
@@ -1004,6 +2014,132 @@ func (q *Queries) GetAssets(ctx context.Context, arg GetAssetsParams) ([]Asset, 
 	return items, nil
 }
 
+const getAssetsByChecksum = `-- name: GetAssetsByChecksum :many
+SELECT id, "deviceAssetId", "ownerId", "deviceId", type, "originalPath", "fileCreatedAt", "fileModifiedAt", "isFavorite", duration, "encodedVideoPath", checksum, "livePhotoVideoId", "updatedAt", "createdAt", "originalFileName", "sidecarPath", thumbhash, "isOffline", "libraryId", "isExternal", "deletedAt", "localDateTime", "stackId", "duplicateId", status, "updateId", visibility FROM assets
+WHERE checksum = $1 AND "deletedAt" IS NULL
+`
+
+func (q *Queries) GetAssetsByChecksum(ctx context.Context, checksum []byte) ([]Asset, error) {
+	rows, err := q.db.Query(ctx, getAssetsByChecksum, checksum)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Asset
+	for rows.Next() {
+		var i Asset
+		if err := rows.Scan(
+			&i.ID,
+			&i.DeviceAssetId,
+			&i.OwnerId,
+			&i.DeviceId,
+			&i.Type,
+			&i.OriginalPath,
+			&i.FileCreatedAt,
+			&i.FileModifiedAt,
+			&i.IsFavorite,
+			&i.Duration,
+			&i.EncodedVideoPath,
+			&i.Checksum,
+			&i.LivePhotoVideoId,
+			&i.UpdatedAt,
+			&i.CreatedAt,
+			&i.OriginalFileName,
+			&i.SidecarPath,
+			&i.Thumbhash,
+			&i.IsOffline,
+			&i.LibraryId,
+			&i.IsExternal,
+			&i.DeletedAt,
+			&i.LocalDateTime,
+			&i.StackId,
+			&i.DuplicateId,
+			&i.Status,
+			&i.UpdateId,
+			&i.Visibility,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAssetsByDateRange = `-- name: GetAssetsByDateRange :many
+SELECT id, "deviceAssetId", "ownerId", "deviceId", type, "originalPath", "fileCreatedAt", "fileModifiedAt", "isFavorite", duration, "encodedVideoPath", checksum, "livePhotoVideoId", "updatedAt", "createdAt", "originalFileName", "sidecarPath", thumbhash, "isOffline", "libraryId", "isExternal", "deletedAt", "localDateTime", "stackId", "duplicateId", status, "updateId", visibility FROM assets
+WHERE "ownerId" = $1 
+AND "deletedAt" IS NULL
+AND "localDateTime" BETWEEN $2 AND $3
+ORDER BY "localDateTime" DESC
+LIMIT $4 OFFSET $5
+`
+
+type GetAssetsByDateRangeParams struct {
+	OwnerId         pgtype.UUID
+	LocalDateTime   pgtype.Timestamptz
+	LocalDateTime_2 pgtype.Timestamptz
+	Limit           int32
+	Offset          int32
+}
+
+func (q *Queries) GetAssetsByDateRange(ctx context.Context, arg GetAssetsByDateRangeParams) ([]Asset, error) {
+	rows, err := q.db.Query(ctx, getAssetsByDateRange,
+		arg.OwnerId,
+		arg.LocalDateTime,
+		arg.LocalDateTime_2,
+		arg.Limit,
+		arg.Offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Asset
+	for rows.Next() {
+		var i Asset
+		if err := rows.Scan(
+			&i.ID,
+			&i.DeviceAssetId,
+			&i.OwnerId,
+			&i.DeviceId,
+			&i.Type,
+			&i.OriginalPath,
+			&i.FileCreatedAt,
+			&i.FileModifiedAt,
+			&i.IsFavorite,
+			&i.Duration,
+			&i.EncodedVideoPath,
+			&i.Checksum,
+			&i.LivePhotoVideoId,
+			&i.UpdatedAt,
+			&i.CreatedAt,
+			&i.OriginalFileName,
+			&i.SidecarPath,
+			&i.Thumbhash,
+			&i.IsOffline,
+			&i.LibraryId,
+			&i.IsExternal,
+			&i.DeletedAt,
+			&i.LocalDateTime,
+			&i.StackId,
+			&i.DuplicateId,
+			&i.Status,
+			&i.UpdateId,
+			&i.Visibility,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getAssetsByDeviceId = `-- name: GetAssetsByDeviceId :many
 SELECT id FROM assets
 WHERE "ownerId" = $1 AND "deviceId" = $2 AND "deletedAt" IS NULL
@@ -1027,6 +2163,687 @@ func (q *Queries) GetAssetsByDeviceId(ctx context.Context, arg GetAssetsByDevice
 			return nil, err
 		}
 		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAssetsByLocation = `-- name: GetAssetsByLocation :many
+
+SELECT a.id, a."deviceAssetId", a."ownerId", a."deviceId", a.type, a."originalPath", a."fileCreatedAt", a."fileModifiedAt", a."isFavorite", a.duration, a."encodedVideoPath", a.checksum, a."livePhotoVideoId", a."updatedAt", a."createdAt", a."originalFileName", a."sidecarPath", a.thumbhash, a."isOffline", a."libraryId", a."isExternal", a."deletedAt", a."localDateTime", a."stackId", a."duplicateId", a.status, a."updateId", a.visibility FROM assets a
+JOIN exif e ON a.id = e."assetId"
+WHERE a."ownerId" = $1 
+AND a."deletedAt" IS NULL
+AND e.latitude IS NOT NULL 
+AND e.longitude IS NOT NULL
+AND e.latitude BETWEEN $2 AND $3
+AND e.longitude BETWEEN $4 AND $5
+ORDER BY a."localDateTime" DESC
+LIMIT $6 OFFSET $7
+`
+
+type GetAssetsByLocationParams struct {
+	OwnerId     pgtype.UUID
+	Latitude    pgtype.Float8
+	Latitude_2  pgtype.Float8
+	Longitude   pgtype.Float8
+	Longitude_2 pgtype.Float8
+	Limit       int32
+	Offset      int32
+}
+
+// ============================================================================
+// ADVANCED ASSET QUERIES
+// ============================================================================
+func (q *Queries) GetAssetsByLocation(ctx context.Context, arg GetAssetsByLocationParams) ([]Asset, error) {
+	rows, err := q.db.Query(ctx, getAssetsByLocation,
+		arg.OwnerId,
+		arg.Latitude,
+		arg.Latitude_2,
+		arg.Longitude,
+		arg.Longitude_2,
+		arg.Limit,
+		arg.Offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Asset
+	for rows.Next() {
+		var i Asset
+		if err := rows.Scan(
+			&i.ID,
+			&i.DeviceAssetId,
+			&i.OwnerId,
+			&i.DeviceId,
+			&i.Type,
+			&i.OriginalPath,
+			&i.FileCreatedAt,
+			&i.FileModifiedAt,
+			&i.IsFavorite,
+			&i.Duration,
+			&i.EncodedVideoPath,
+			&i.Checksum,
+			&i.LivePhotoVideoId,
+			&i.UpdatedAt,
+			&i.CreatedAt,
+			&i.OriginalFileName,
+			&i.SidecarPath,
+			&i.Thumbhash,
+			&i.IsOffline,
+			&i.LibraryId,
+			&i.IsExternal,
+			&i.DeletedAt,
+			&i.LocalDateTime,
+			&i.StackId,
+			&i.DuplicateId,
+			&i.Status,
+			&i.UpdateId,
+			&i.Visibility,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAssetsByTimeBucket = `-- name: GetAssetsByTimeBucket :many
+SELECT id, "deviceAssetId", "ownerId", "deviceId", type, "originalPath", "fileCreatedAt", "fileModifiedAt", "isFavorite", duration, "encodedVideoPath", checksum, "livePhotoVideoId", "updatedAt", "createdAt", "originalFileName", "sidecarPath", thumbhash, "isOffline", "libraryId", "isExternal", "deletedAt", "localDateTime", "stackId", "duplicateId", status, "updateId", visibility FROM assets
+WHERE "ownerId" = $1 
+AND "deletedAt" IS NULL
+AND status = 'active'
+AND visibility = 'timeline'
+AND date_trunc($2, "localDateTime") = $3
+ORDER BY "localDateTime" DESC
+LIMIT $4 OFFSET $5
+`
+
+type GetAssetsByTimeBucketParams struct {
+	OwnerId       pgtype.UUID
+	DateTrunc     string
+	LocalDateTime pgtype.Timestamptz
+	Limit         int32
+	Offset        int32
+}
+
+func (q *Queries) GetAssetsByTimeBucket(ctx context.Context, arg GetAssetsByTimeBucketParams) ([]Asset, error) {
+	rows, err := q.db.Query(ctx, getAssetsByTimeBucket,
+		arg.OwnerId,
+		arg.DateTrunc,
+		arg.LocalDateTime,
+		arg.Limit,
+		arg.Offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Asset
+	for rows.Next() {
+		var i Asset
+		if err := rows.Scan(
+			&i.ID,
+			&i.DeviceAssetId,
+			&i.OwnerId,
+			&i.DeviceId,
+			&i.Type,
+			&i.OriginalPath,
+			&i.FileCreatedAt,
+			&i.FileModifiedAt,
+			&i.IsFavorite,
+			&i.Duration,
+			&i.EncodedVideoPath,
+			&i.Checksum,
+			&i.LivePhotoVideoId,
+			&i.UpdatedAt,
+			&i.CreatedAt,
+			&i.OriginalFileName,
+			&i.SidecarPath,
+			&i.Thumbhash,
+			&i.IsOffline,
+			&i.LibraryId,
+			&i.IsExternal,
+			&i.DeletedAt,
+			&i.LocalDateTime,
+			&i.StackId,
+			&i.DuplicateId,
+			&i.Status,
+			&i.UpdateId,
+			&i.Visibility,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAssetsNeedingFaceDetection = `-- name: GetAssetsNeedingFaceDetection :many
+SELECT a.id, a."deviceAssetId", a."ownerId", a."deviceId", a.type, a."originalPath", a."fileCreatedAt", a."fileModifiedAt", a."isFavorite", a.duration, a."encodedVideoPath", a.checksum, a."livePhotoVideoId", a."updatedAt", a."createdAt", a."originalFileName", a."sidecarPath", a.thumbhash, a."isOffline", a."libraryId", a."isExternal", a."deletedAt", a."localDateTime", a."stackId", a."duplicateId", a.status, a."updateId", a.visibility FROM assets a
+LEFT JOIN asset_job_status ajs ON a.id = ajs."assetId"
+WHERE a."deletedAt" IS NULL 
+AND a.type = 'IMAGE'
+AND (ajs."facesRecognizedAt" IS NULL OR ajs."facesRecognizedAt" < a."updatedAt")
+ORDER BY a."createdAt" DESC
+LIMIT $1
+`
+
+func (q *Queries) GetAssetsNeedingFaceDetection(ctx context.Context, limit int32) ([]Asset, error) {
+	rows, err := q.db.Query(ctx, getAssetsNeedingFaceDetection, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Asset
+	for rows.Next() {
+		var i Asset
+		if err := rows.Scan(
+			&i.ID,
+			&i.DeviceAssetId,
+			&i.OwnerId,
+			&i.DeviceId,
+			&i.Type,
+			&i.OriginalPath,
+			&i.FileCreatedAt,
+			&i.FileModifiedAt,
+			&i.IsFavorite,
+			&i.Duration,
+			&i.EncodedVideoPath,
+			&i.Checksum,
+			&i.LivePhotoVideoId,
+			&i.UpdatedAt,
+			&i.CreatedAt,
+			&i.OriginalFileName,
+			&i.SidecarPath,
+			&i.Thumbhash,
+			&i.IsOffline,
+			&i.LibraryId,
+			&i.IsExternal,
+			&i.DeletedAt,
+			&i.LocalDateTime,
+			&i.StackId,
+			&i.DuplicateId,
+			&i.Status,
+			&i.UpdateId,
+			&i.Visibility,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAssetsNeedingMetadata = `-- name: GetAssetsNeedingMetadata :many
+SELECT a.id, a."deviceAssetId", a."ownerId", a."deviceId", a.type, a."originalPath", a."fileCreatedAt", a."fileModifiedAt", a."isFavorite", a.duration, a."encodedVideoPath", a.checksum, a."livePhotoVideoId", a."updatedAt", a."createdAt", a."originalFileName", a."sidecarPath", a.thumbhash, a."isOffline", a."libraryId", a."isExternal", a."deletedAt", a."localDateTime", a."stackId", a."duplicateId", a.status, a."updateId", a.visibility FROM assets a
+LEFT JOIN asset_job_status ajs ON a.id = ajs."assetId"
+WHERE a."deletedAt" IS NULL 
+AND (ajs."metadataExtractedAt" IS NULL OR ajs."metadataExtractedAt" < a."updatedAt")
+ORDER BY a."createdAt" DESC
+LIMIT $1
+`
+
+func (q *Queries) GetAssetsNeedingMetadata(ctx context.Context, limit int32) ([]Asset, error) {
+	rows, err := q.db.Query(ctx, getAssetsNeedingMetadata, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Asset
+	for rows.Next() {
+		var i Asset
+		if err := rows.Scan(
+			&i.ID,
+			&i.DeviceAssetId,
+			&i.OwnerId,
+			&i.DeviceId,
+			&i.Type,
+			&i.OriginalPath,
+			&i.FileCreatedAt,
+			&i.FileModifiedAt,
+			&i.IsFavorite,
+			&i.Duration,
+			&i.EncodedVideoPath,
+			&i.Checksum,
+			&i.LivePhotoVideoId,
+			&i.UpdatedAt,
+			&i.CreatedAt,
+			&i.OriginalFileName,
+			&i.SidecarPath,
+			&i.Thumbhash,
+			&i.IsOffline,
+			&i.LibraryId,
+			&i.IsExternal,
+			&i.DeletedAt,
+			&i.LocalDateTime,
+			&i.StackId,
+			&i.DuplicateId,
+			&i.Status,
+			&i.UpdateId,
+			&i.Visibility,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAssetsNeedingThumbnails = `-- name: GetAssetsNeedingThumbnails :many
+SELECT a.id, a."deviceAssetId", a."ownerId", a."deviceId", a.type, a."originalPath", a."fileCreatedAt", a."fileModifiedAt", a."isFavorite", a.duration, a."encodedVideoPath", a.checksum, a."livePhotoVideoId", a."updatedAt", a."createdAt", a."originalFileName", a."sidecarPath", a.thumbhash, a."isOffline", a."libraryId", a."isExternal", a."deletedAt", a."localDateTime", a."stackId", a."duplicateId", a.status, a."updateId", a.visibility FROM assets a
+LEFT JOIN asset_job_status ajs ON a.id = ajs."assetId"
+WHERE a."deletedAt" IS NULL 
+AND (ajs."thumbnailGeneratedAt" IS NULL OR ajs."thumbnailGeneratedAt" < a."updatedAt")
+ORDER BY a."createdAt" DESC
+LIMIT $1
+`
+
+func (q *Queries) GetAssetsNeedingThumbnails(ctx context.Context, limit int32) ([]Asset, error) {
+	rows, err := q.db.Query(ctx, getAssetsNeedingThumbnails, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Asset
+	for rows.Next() {
+		var i Asset
+		if err := rows.Scan(
+			&i.ID,
+			&i.DeviceAssetId,
+			&i.OwnerId,
+			&i.DeviceId,
+			&i.Type,
+			&i.OriginalPath,
+			&i.FileCreatedAt,
+			&i.FileModifiedAt,
+			&i.IsFavorite,
+			&i.Duration,
+			&i.EncodedVideoPath,
+			&i.Checksum,
+			&i.LivePhotoVideoId,
+			&i.UpdatedAt,
+			&i.CreatedAt,
+			&i.OriginalFileName,
+			&i.SidecarPath,
+			&i.Thumbhash,
+			&i.IsOffline,
+			&i.LibraryId,
+			&i.IsExternal,
+			&i.DeletedAt,
+			&i.LocalDateTime,
+			&i.StackId,
+			&i.DuplicateId,
+			&i.Status,
+			&i.UpdateId,
+			&i.Visibility,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getDuplicateAssets = `-- name: GetDuplicateAssets :many
+SELECT a1.id, a1."deviceAssetId", a1."ownerId", a1."deviceId", a1.type, a1."originalPath", a1."fileCreatedAt", a1."fileModifiedAt", a1."isFavorite", a1.duration, a1."encodedVideoPath", a1.checksum, a1."livePhotoVideoId", a1."updatedAt", a1."createdAt", a1."originalFileName", a1."sidecarPath", a1.thumbhash, a1."isOffline", a1."libraryId", a1."isExternal", a1."deletedAt", a1."localDateTime", a1."stackId", a1."duplicateId", a1.status, a1."updateId", a1.visibility, a2.id as duplicate_id FROM assets a1
+JOIN assets a2 ON a1.checksum = a2.checksum AND a1.id < a2.id
+WHERE a1."ownerId" = $1 AND a1."deletedAt" IS NULL AND a2."deletedAt" IS NULL
+ORDER BY a1."localDateTime" DESC
+`
+
+type GetDuplicateAssetsRow struct {
+	ID               pgtype.UUID
+	DeviceAssetId    string
+	OwnerId          pgtype.UUID
+	DeviceId         string
+	Type             string
+	OriginalPath     string
+	FileCreatedAt    pgtype.Timestamptz
+	FileModifiedAt   pgtype.Timestamptz
+	IsFavorite       bool
+	Duration         pgtype.Text
+	EncodedVideoPath pgtype.Text
+	Checksum         []byte
+	LivePhotoVideoId pgtype.UUID
+	UpdatedAt        pgtype.Timestamptz
+	CreatedAt        pgtype.Timestamptz
+	OriginalFileName string
+	SidecarPath      pgtype.Text
+	Thumbhash        []byte
+	IsOffline        bool
+	LibraryId        pgtype.UUID
+	IsExternal       bool
+	DeletedAt        pgtype.Timestamptz
+	LocalDateTime    pgtype.Timestamptz
+	StackId          pgtype.UUID
+	DuplicateId      pgtype.UUID
+	Status           AssetsStatusEnum
+	UpdateId         pgtype.UUID
+	Visibility       AssetVisibilityEnum
+	DuplicateID      pgtype.UUID
+}
+
+func (q *Queries) GetDuplicateAssets(ctx context.Context, ownerid pgtype.UUID) ([]GetDuplicateAssetsRow, error) {
+	rows, err := q.db.Query(ctx, getDuplicateAssets, ownerid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetDuplicateAssetsRow
+	for rows.Next() {
+		var i GetDuplicateAssetsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.DeviceAssetId,
+			&i.OwnerId,
+			&i.DeviceId,
+			&i.Type,
+			&i.OriginalPath,
+			&i.FileCreatedAt,
+			&i.FileModifiedAt,
+			&i.IsFavorite,
+			&i.Duration,
+			&i.EncodedVideoPath,
+			&i.Checksum,
+			&i.LivePhotoVideoId,
+			&i.UpdatedAt,
+			&i.CreatedAt,
+			&i.OriginalFileName,
+			&i.SidecarPath,
+			&i.Thumbhash,
+			&i.IsOffline,
+			&i.LibraryId,
+			&i.IsExternal,
+			&i.DeletedAt,
+			&i.LocalDateTime,
+			&i.StackId,
+			&i.DuplicateId,
+			&i.Status,
+			&i.UpdateId,
+			&i.Visibility,
+			&i.DuplicateID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getExifByAssetId = `-- name: GetExifByAssetId :one
+SELECT "assetId", make, model, "exifImageWidth", "exifImageHeight", "fileSizeInByte", orientation, "dateTimeOriginal", "modifyDate", "lensModel", "fNumber", "focalLength", iso, latitude, longitude, city, state, country, description, fps, "exposureTime", "livePhotoCID", "timeZone", "projectionType", "profileDescription", colorspace, "bitsPerSample", "autoStackId", rating, "updatedAt", "updateId" FROM exif
+WHERE "assetId" = $1
+`
+
+func (q *Queries) GetExifByAssetId(ctx context.Context, assetid pgtype.UUID) (Exif, error) {
+	row := q.db.QueryRow(ctx, getExifByAssetId, assetid)
+	var i Exif
+	err := row.Scan(
+		&i.AssetId,
+		&i.Make,
+		&i.Model,
+		&i.ExifImageWidth,
+		&i.ExifImageHeight,
+		&i.FileSizeInByte,
+		&i.Orientation,
+		&i.DateTimeOriginal,
+		&i.ModifyDate,
+		&i.LensModel,
+		&i.FNumber,
+		&i.FocalLength,
+		&i.Iso,
+		&i.Latitude,
+		&i.Longitude,
+		&i.City,
+		&i.State,
+		&i.Country,
+		&i.Description,
+		&i.Fps,
+		&i.ExposureTime,
+		&i.LivePhotoCID,
+		&i.TimeZone,
+		&i.ProjectionType,
+		&i.ProfileDescription,
+		&i.Colorspace,
+		&i.BitsPerSample,
+		&i.AutoStackId,
+		&i.Rating,
+		&i.UpdatedAt,
+		&i.UpdateId,
+	)
+	return i, err
+}
+
+const getFaceSearch = `-- name: GetFaceSearch :many
+SELECT "faceId", embedding FROM face_search
+WHERE "faceId" = $1
+`
+
+func (q *Queries) GetFaceSearch(ctx context.Context, faceid pgtype.UUID) ([]FaceSearch, error) {
+	rows, err := q.db.Query(ctx, getFaceSearch, faceid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []FaceSearch
+	for rows.Next() {
+		var i FaceSearch
+		if err := rows.Scan(&i.FaceId, &i.Embedding); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getFavoriteAssets = `-- name: GetFavoriteAssets :many
+SELECT id, "deviceAssetId", "ownerId", "deviceId", type, "originalPath", "fileCreatedAt", "fileModifiedAt", "isFavorite", duration, "encodedVideoPath", checksum, "livePhotoVideoId", "updatedAt", "createdAt", "originalFileName", "sidecarPath", thumbhash, "isOffline", "libraryId", "isExternal", "deletedAt", "localDateTime", "stackId", "duplicateId", status, "updateId", visibility FROM assets
+WHERE "ownerId" = $1 
+AND "deletedAt" IS NULL
+AND "isFavorite" = true
+ORDER BY "localDateTime" DESC
+LIMIT $2 OFFSET $3
+`
+
+type GetFavoriteAssetsParams struct {
+	OwnerId pgtype.UUID
+	Limit   int32
+	Offset  int32
+}
+
+func (q *Queries) GetFavoriteAssets(ctx context.Context, arg GetFavoriteAssetsParams) ([]Asset, error) {
+	rows, err := q.db.Query(ctx, getFavoriteAssets, arg.OwnerId, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Asset
+	for rows.Next() {
+		var i Asset
+		if err := rows.Scan(
+			&i.ID,
+			&i.DeviceAssetId,
+			&i.OwnerId,
+			&i.DeviceId,
+			&i.Type,
+			&i.OriginalPath,
+			&i.FileCreatedAt,
+			&i.FileModifiedAt,
+			&i.IsFavorite,
+			&i.Duration,
+			&i.EncodedVideoPath,
+			&i.Checksum,
+			&i.LivePhotoVideoId,
+			&i.UpdatedAt,
+			&i.CreatedAt,
+			&i.OriginalFileName,
+			&i.SidecarPath,
+			&i.Thumbhash,
+			&i.IsOffline,
+			&i.LibraryId,
+			&i.IsExternal,
+			&i.DeletedAt,
+			&i.LocalDateTime,
+			&i.StackId,
+			&i.DuplicateId,
+			&i.Status,
+			&i.UpdateId,
+			&i.Visibility,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getLibraries = `-- name: GetLibraries :many
+SELECT id, name, "ownerId", "importPaths", "exclusionPatterns", "createdAt", "updatedAt", "deletedAt", "refreshedAt", "updateId" FROM libraries
+WHERE "ownerId" = $1 AND "deletedAt" IS NULL
+ORDER BY "createdAt" DESC
+`
+
+func (q *Queries) GetLibraries(ctx context.Context, ownerid pgtype.UUID) ([]Library, error) {
+	rows, err := q.db.Query(ctx, getLibraries, ownerid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Library
+	for rows.Next() {
+		var i Library
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.OwnerId,
+			&i.ImportPaths,
+			&i.ExclusionPatterns,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+			&i.RefreshedAt,
+			&i.UpdateId,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getLibrary = `-- name: GetLibrary :one
+
+SELECT id, name, "ownerId", "importPaths", "exclusionPatterns", "createdAt", "updatedAt", "deletedAt", "refreshedAt", "updateId" FROM libraries
+WHERE id = $1 AND "deletedAt" IS NULL
+`
+
+// ============================================================================
+// LIBRARIES QUERIES
+// ============================================================================
+func (q *Queries) GetLibrary(ctx context.Context, id pgtype.UUID) (Library, error) {
+	row := q.db.QueryRow(ctx, getLibrary, id)
+	var i Library
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.OwnerId,
+		&i.ImportPaths,
+		&i.ExclusionPatterns,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.RefreshedAt,
+		&i.UpdateId,
+	)
+	return i, err
+}
+
+const getLibraryAssets = `-- name: GetLibraryAssets :many
+SELECT id, "deviceAssetId", "ownerId", "deviceId", type, "originalPath", "fileCreatedAt", "fileModifiedAt", "isFavorite", duration, "encodedVideoPath", checksum, "livePhotoVideoId", "updatedAt", "createdAt", "originalFileName", "sidecarPath", thumbhash, "isOffline", "libraryId", "isExternal", "deletedAt", "localDateTime", "stackId", "duplicateId", status, "updateId", visibility FROM assets
+WHERE "libraryId" = $1 AND "deletedAt" IS NULL
+ORDER BY "localDateTime" DESC
+LIMIT $2 OFFSET $3
+`
+
+type GetLibraryAssetsParams struct {
+	LibraryId pgtype.UUID
+	Limit     int32
+	Offset    int32
+}
+
+func (q *Queries) GetLibraryAssets(ctx context.Context, arg GetLibraryAssetsParams) ([]Asset, error) {
+	rows, err := q.db.Query(ctx, getLibraryAssets, arg.LibraryId, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Asset
+	for rows.Next() {
+		var i Asset
+		if err := rows.Scan(
+			&i.ID,
+			&i.DeviceAssetId,
+			&i.OwnerId,
+			&i.DeviceId,
+			&i.Type,
+			&i.OriginalPath,
+			&i.FileCreatedAt,
+			&i.FileModifiedAt,
+			&i.IsFavorite,
+			&i.Duration,
+			&i.EncodedVideoPath,
+			&i.Checksum,
+			&i.LivePhotoVideoId,
+			&i.UpdatedAt,
+			&i.CreatedAt,
+			&i.OriginalFileName,
+			&i.SidecarPath,
+			&i.Thumbhash,
+			&i.IsOffline,
+			&i.LibraryId,
+			&i.IsExternal,
+			&i.DeletedAt,
+			&i.LocalDateTime,
+			&i.StackId,
+			&i.DuplicateId,
+			&i.Status,
+			&i.UpdateId,
+			&i.Visibility,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -1101,6 +2918,213 @@ func (q *Queries) GetMemory(ctx context.Context, id pgtype.UUID) (Memory, error)
 	return i, err
 }
 
+const getPartners = `-- name: GetPartners :many
+
+SELECT u.id, u.email, u.password, u."createdAt", u."profileImagePath", u."isAdmin", u."shouldChangePassword", u."deletedAt", u."oauthId", u."updatedAt", u."storageLabel", u.name, u."quotaSizeInBytes", u."quotaUsageInBytes", u.status, u."profileChangedAt", u."updateId", u."avatarColor", u."pinCode", p."sharedById", p."sharedWithId" FROM partners p
+JOIN users u ON (u.id = p."sharedById" OR u.id = p."sharedWithId")
+WHERE (p."sharedById" = $1 OR p."sharedWithId" = $1) AND u.id != $1
+`
+
+type GetPartnersRow struct {
+	ID                   pgtype.UUID
+	Email                string
+	Password             string
+	CreatedAt            pgtype.Timestamptz
+	ProfileImagePath     string
+	IsAdmin              bool
+	ShouldChangePassword bool
+	DeletedAt            pgtype.Timestamptz
+	OauthId              string
+	UpdatedAt            pgtype.Timestamptz
+	StorageLabel         pgtype.Text
+	Name                 string
+	QuotaSizeInBytes     pgtype.Int8
+	QuotaUsageInBytes    int64
+	Status               string
+	ProfileChangedAt     pgtype.Timestamptz
+	UpdateId             pgtype.UUID
+	AvatarColor          pgtype.Text
+	PinCode              pgtype.Text
+	SharedById           pgtype.UUID
+	SharedWithId         pgtype.UUID
+}
+
+// ============================================================================
+// PARTNERS QUERIES
+// ============================================================================
+func (q *Queries) GetPartners(ctx context.Context, sharedbyid pgtype.UUID) ([]GetPartnersRow, error) {
+	rows, err := q.db.Query(ctx, getPartners, sharedbyid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetPartnersRow
+	for rows.Next() {
+		var i GetPartnersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.Password,
+			&i.CreatedAt,
+			&i.ProfileImagePath,
+			&i.IsAdmin,
+			&i.ShouldChangePassword,
+			&i.DeletedAt,
+			&i.OauthId,
+			&i.UpdatedAt,
+			&i.StorageLabel,
+			&i.Name,
+			&i.QuotaSizeInBytes,
+			&i.QuotaUsageInBytes,
+			&i.Status,
+			&i.ProfileChangedAt,
+			&i.UpdateId,
+			&i.AvatarColor,
+			&i.PinCode,
+			&i.SharedById,
+			&i.SharedWithId,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getPeople = `-- name: GetPeople :many
+SELECT id, "createdAt", "updatedAt", "ownerId", name, "thumbnailPath", "isHidden", "birthDate", "faceAssetId", "isFavorite", color, "updateId" FROM person
+WHERE "ownerId" = $1
+ORDER BY "updatedAt" DESC
+`
+
+func (q *Queries) GetPeople(ctx context.Context, ownerid pgtype.UUID) ([]Person, error) {
+	rows, err := q.db.Query(ctx, getPeople, ownerid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Person
+	for rows.Next() {
+		var i Person
+		if err := rows.Scan(
+			&i.ID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.OwnerId,
+			&i.Name,
+			&i.ThumbnailPath,
+			&i.IsHidden,
+			&i.BirthDate,
+			&i.FaceAssetId,
+			&i.IsFavorite,
+			&i.Color,
+			&i.UpdateId,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getPerson = `-- name: GetPerson :one
+
+SELECT id, "createdAt", "updatedAt", "ownerId", name, "thumbnailPath", "isHidden", "birthDate", "faceAssetId", "isFavorite", color, "updateId" FROM person
+WHERE id = $1
+`
+
+// ============================================================================
+// PEOPLE & FACES QUERIES
+// ============================================================================
+func (q *Queries) GetPerson(ctx context.Context, id pgtype.UUID) (Person, error) {
+	row := q.db.QueryRow(ctx, getPerson, id)
+	var i Person
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.OwnerId,
+		&i.Name,
+		&i.ThumbnailPath,
+		&i.IsHidden,
+		&i.BirthDate,
+		&i.FaceAssetId,
+		&i.IsFavorite,
+		&i.Color,
+		&i.UpdateId,
+	)
+	return i, err
+}
+
+const getPersonAssets = `-- name: GetPersonAssets :many
+SELECT DISTINCT a.id, a."deviceAssetId", a."ownerId", a."deviceId", a.type, a."originalPath", a."fileCreatedAt", a."fileModifiedAt", a."isFavorite", a.duration, a."encodedVideoPath", a.checksum, a."livePhotoVideoId", a."updatedAt", a."createdAt", a."originalFileName", a."sidecarPath", a.thumbhash, a."isOffline", a."libraryId", a."isExternal", a."deletedAt", a."localDateTime", a."stackId", a."duplicateId", a.status, a."updateId", a.visibility FROM assets a
+JOIN asset_faces af ON a.id = af."assetId"
+WHERE af."personId" = $1 AND a."deletedAt" IS NULL
+ORDER BY a."localDateTime" DESC
+LIMIT $2 OFFSET $3
+`
+
+type GetPersonAssetsParams struct {
+	PersonId pgtype.UUID
+	Limit    int32
+	Offset   int32
+}
+
+func (q *Queries) GetPersonAssets(ctx context.Context, arg GetPersonAssetsParams) ([]Asset, error) {
+	rows, err := q.db.Query(ctx, getPersonAssets, arg.PersonId, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Asset
+	for rows.Next() {
+		var i Asset
+		if err := rows.Scan(
+			&i.ID,
+			&i.DeviceAssetId,
+			&i.OwnerId,
+			&i.DeviceId,
+			&i.Type,
+			&i.OriginalPath,
+			&i.FileCreatedAt,
+			&i.FileModifiedAt,
+			&i.IsFavorite,
+			&i.Duration,
+			&i.EncodedVideoPath,
+			&i.Checksum,
+			&i.LivePhotoVideoId,
+			&i.UpdatedAt,
+			&i.CreatedAt,
+			&i.OriginalFileName,
+			&i.SidecarPath,
+			&i.Thumbhash,
+			&i.IsOffline,
+			&i.LibraryId,
+			&i.IsExternal,
+			&i.DeletedAt,
+			&i.LocalDateTime,
+			&i.StackId,
+			&i.DuplicateId,
+			&i.Status,
+			&i.UpdateId,
+			&i.Visibility,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getRandomAssets = `-- name: GetRandomAssets :many
 SELECT id, "deviceAssetId", "ownerId", "deviceId", type, "originalPath", "fileCreatedAt", "fileModifiedAt", "isFavorite", duration, "encodedVideoPath", checksum, "livePhotoVideoId", "updatedAt", "createdAt", "originalFileName", "sidecarPath", thumbhash, "isOffline", "libraryId", "isExternal", "deletedAt", "localDateTime", "stackId", "duplicateId", status, "updateId", visibility FROM assets
 WHERE "ownerId" = $1 AND "deletedAt" IS NULL AND status = 'active'
@@ -1115,6 +3139,492 @@ type GetRandomAssetsParams struct {
 
 func (q *Queries) GetRandomAssets(ctx context.Context, arg GetRandomAssetsParams) ([]Asset, error) {
 	rows, err := q.db.Query(ctx, getRandomAssets, arg.OwnerId, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Asset
+	for rows.Next() {
+		var i Asset
+		if err := rows.Scan(
+			&i.ID,
+			&i.DeviceAssetId,
+			&i.OwnerId,
+			&i.DeviceId,
+			&i.Type,
+			&i.OriginalPath,
+			&i.FileCreatedAt,
+			&i.FileModifiedAt,
+			&i.IsFavorite,
+			&i.Duration,
+			&i.EncodedVideoPath,
+			&i.Checksum,
+			&i.LivePhotoVideoId,
+			&i.UpdatedAt,
+			&i.CreatedAt,
+			&i.OriginalFileName,
+			&i.SidecarPath,
+			&i.Thumbhash,
+			&i.IsOffline,
+			&i.LibraryId,
+			&i.IsExternal,
+			&i.DeletedAt,
+			&i.LocalDateTime,
+			&i.StackId,
+			&i.DuplicateId,
+			&i.Status,
+			&i.UpdateId,
+			&i.Visibility,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getRecentAssets = `-- name: GetRecentAssets :many
+SELECT id, "deviceAssetId", "ownerId", "deviceId", type, "originalPath", "fileCreatedAt", "fileModifiedAt", "isFavorite", duration, "encodedVideoPath", checksum, "livePhotoVideoId", "updatedAt", "createdAt", "originalFileName", "sidecarPath", thumbhash, "isOffline", "libraryId", "isExternal", "deletedAt", "localDateTime", "stackId", "duplicateId", status, "updateId", visibility FROM assets
+WHERE "ownerId" = $1 
+AND "deletedAt" IS NULL
+AND status = 'active'
+AND visibility = 'timeline'
+ORDER BY "createdAt" DESC
+LIMIT $2
+`
+
+type GetRecentAssetsParams struct {
+	OwnerId pgtype.UUID
+	Limit   int32
+}
+
+func (q *Queries) GetRecentAssets(ctx context.Context, arg GetRecentAssetsParams) ([]Asset, error) {
+	rows, err := q.db.Query(ctx, getRecentAssets, arg.OwnerId, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Asset
+	for rows.Next() {
+		var i Asset
+		if err := rows.Scan(
+			&i.ID,
+			&i.DeviceAssetId,
+			&i.OwnerId,
+			&i.DeviceId,
+			&i.Type,
+			&i.OriginalPath,
+			&i.FileCreatedAt,
+			&i.FileModifiedAt,
+			&i.IsFavorite,
+			&i.Duration,
+			&i.EncodedVideoPath,
+			&i.Checksum,
+			&i.LivePhotoVideoId,
+			&i.UpdatedAt,
+			&i.CreatedAt,
+			&i.OriginalFileName,
+			&i.SidecarPath,
+			&i.Thumbhash,
+			&i.IsOffline,
+			&i.LibraryId,
+			&i.IsExternal,
+			&i.DeletedAt,
+			&i.LocalDateTime,
+			&i.StackId,
+			&i.DuplicateId,
+			&i.Status,
+			&i.UpdateId,
+			&i.Visibility,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getRefreshToken = `-- name: GetRefreshToken :one
+SELECT id, token, "createdAt", "updatedAt", "userId", "deviceType", "deviceOS", "updateId", "pinExpiresAt", "expiresAt", "parentId" FROM sessions
+WHERE token = $1 AND ("expiresAt" IS NULL OR "expiresAt" > now())
+`
+
+func (q *Queries) GetRefreshToken(ctx context.Context, token string) (Session, error) {
+	row := q.db.QueryRow(ctx, getRefreshToken, token)
+	var i Session
+	err := row.Scan(
+		&i.ID,
+		&i.Token,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.UserId,
+		&i.DeviceType,
+		&i.DeviceOS,
+		&i.UpdateId,
+		&i.PinExpiresAt,
+		&i.ExpiresAt,
+		&i.ParentId,
+	)
+	return i, err
+}
+
+const getSharedLink = `-- name: GetSharedLink :one
+
+SELECT id, description, "userId", key, type, "createdAt", "expiresAt", "allowUpload", "albumId", "allowDownload", "showExif", password FROM shared_links
+WHERE id = $1 AND "deletedAt" IS NULL
+`
+
+// ============================================================================
+// SHARED LINKS QUERIES
+// ============================================================================
+func (q *Queries) GetSharedLink(ctx context.Context, id pgtype.UUID) (SharedLink, error) {
+	row := q.db.QueryRow(ctx, getSharedLink, id)
+	var i SharedLink
+	err := row.Scan(
+		&i.ID,
+		&i.Description,
+		&i.UserId,
+		&i.Key,
+		&i.Type,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.AllowUpload,
+		&i.AlbumId,
+		&i.AllowDownload,
+		&i.ShowExif,
+		&i.Password,
+	)
+	return i, err
+}
+
+const getSharedLinkAssets = `-- name: GetSharedLinkAssets :many
+SELECT a.id, a."deviceAssetId", a."ownerId", a."deviceId", a.type, a."originalPath", a."fileCreatedAt", a."fileModifiedAt", a."isFavorite", a.duration, a."encodedVideoPath", a.checksum, a."livePhotoVideoId", a."updatedAt", a."createdAt", a."originalFileName", a."sidecarPath", a.thumbhash, a."isOffline", a."libraryId", a."isExternal", a."deletedAt", a."localDateTime", a."stackId", a."duplicateId", a.status, a."updateId", a.visibility FROM assets a
+JOIN shared_link__asset sla ON a.id = sla."assetsId"
+WHERE sla."sharedLinksId" = $1 AND a."deletedAt" IS NULL
+ORDER BY a."localDateTime" DESC
+`
+
+func (q *Queries) GetSharedLinkAssets(ctx context.Context, sharedlinksid pgtype.UUID) ([]Asset, error) {
+	rows, err := q.db.Query(ctx, getSharedLinkAssets, sharedlinksid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Asset
+	for rows.Next() {
+		var i Asset
+		if err := rows.Scan(
+			&i.ID,
+			&i.DeviceAssetId,
+			&i.OwnerId,
+			&i.DeviceId,
+			&i.Type,
+			&i.OriginalPath,
+			&i.FileCreatedAt,
+			&i.FileModifiedAt,
+			&i.IsFavorite,
+			&i.Duration,
+			&i.EncodedVideoPath,
+			&i.Checksum,
+			&i.LivePhotoVideoId,
+			&i.UpdatedAt,
+			&i.CreatedAt,
+			&i.OriginalFileName,
+			&i.SidecarPath,
+			&i.Thumbhash,
+			&i.IsOffline,
+			&i.LibraryId,
+			&i.IsExternal,
+			&i.DeletedAt,
+			&i.LocalDateTime,
+			&i.StackId,
+			&i.DuplicateId,
+			&i.Status,
+			&i.UpdateId,
+			&i.Visibility,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getSharedLinkByKey = `-- name: GetSharedLinkByKey :one
+SELECT id, description, "userId", key, type, "createdAt", "expiresAt", "allowUpload", "albumId", "allowDownload", "showExif", password FROM shared_links
+WHERE key = $1 AND "deletedAt" IS NULL
+`
+
+func (q *Queries) GetSharedLinkByKey(ctx context.Context, key []byte) (SharedLink, error) {
+	row := q.db.QueryRow(ctx, getSharedLinkByKey, key)
+	var i SharedLink
+	err := row.Scan(
+		&i.ID,
+		&i.Description,
+		&i.UserId,
+		&i.Key,
+		&i.Type,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.AllowUpload,
+		&i.AlbumId,
+		&i.AllowDownload,
+		&i.ShowExif,
+		&i.Password,
+	)
+	return i, err
+}
+
+const getSharedLinks = `-- name: GetSharedLinks :many
+SELECT id, description, "userId", key, type, "createdAt", "expiresAt", "allowUpload", "albumId", "allowDownload", "showExif", password FROM shared_links
+WHERE "userId" = $1 AND "deletedAt" IS NULL
+ORDER BY "createdAt" DESC
+`
+
+func (q *Queries) GetSharedLinks(ctx context.Context, userid pgtype.UUID) ([]SharedLink, error) {
+	rows, err := q.db.Query(ctx, getSharedLinks, userid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SharedLink
+	for rows.Next() {
+		var i SharedLink
+		if err := rows.Scan(
+			&i.ID,
+			&i.Description,
+			&i.UserId,
+			&i.Key,
+			&i.Type,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.AllowUpload,
+			&i.AlbumId,
+			&i.AllowDownload,
+			&i.ShowExif,
+			&i.Password,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getSmartSearch = `-- name: GetSmartSearch :many
+
+SELECT "assetId", embedding FROM smart_search
+WHERE "assetId" = $1
+`
+
+// ============================================================================
+// SEARCH & SMART SEARCH QUERIES
+// ============================================================================
+func (q *Queries) GetSmartSearch(ctx context.Context, assetid pgtype.UUID) ([]SmartSearch, error) {
+	rows, err := q.db.Query(ctx, getSmartSearch, assetid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SmartSearch
+	for rows.Next() {
+		var i SmartSearch
+		if err := rows.Scan(&i.AssetId, &i.Embedding); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getStorageUsageByUser = `-- name: GetStorageUsageByUser :one
+SELECT 
+    "ownerId",
+    COUNT(*) as asset_count,
+    SUM("originalFileSize") as total_size,
+    SUM(CASE WHEN type = 'IMAGE' THEN "originalFileSize" ELSE 0 END) as image_size,
+    SUM(CASE WHEN type = 'VIDEO' THEN "originalFileSize" ELSE 0 END) as video_size
+FROM assets
+WHERE "ownerId" = $1 AND "deletedAt" IS NULL
+GROUP BY "ownerId"
+`
+
+type GetStorageUsageByUserRow struct {
+	OwnerId    pgtype.UUID
+	AssetCount int64
+	TotalSize  int64
+	ImageSize  int64
+	VideoSize  int64
+}
+
+func (q *Queries) GetStorageUsageByUser(ctx context.Context, ownerid pgtype.UUID) (GetStorageUsageByUserRow, error) {
+	row := q.db.QueryRow(ctx, getStorageUsageByUser, ownerid)
+	var i GetStorageUsageByUserRow
+	err := row.Scan(
+		&i.OwnerId,
+		&i.AssetCount,
+		&i.TotalSize,
+		&i.ImageSize,
+		&i.VideoSize,
+	)
+	return i, err
+}
+
+const getSystemMetadata = `-- name: GetSystemMetadata :one
+
+SELECT key, value FROM system_metadata
+WHERE key = $1
+`
+
+// ============================================================================
+// SYSTEM & METADATA QUERIES
+// ============================================================================
+func (q *Queries) GetSystemMetadata(ctx context.Context, key string) (SystemMetadatum, error) {
+	row := q.db.QueryRow(ctx, getSystemMetadata, key)
+	var i SystemMetadatum
+	err := row.Scan(&i.Key, &i.Value)
+	return i, err
+}
+
+const getTag = `-- name: GetTag :one
+
+SELECT id, "userId", value, "createdAt", "updatedAt", color, "parentId", "updateId" FROM tags
+WHERE id = $1
+`
+
+// ============================================================================
+// TAGS QUERIES
+// ============================================================================
+func (q *Queries) GetTag(ctx context.Context, id pgtype.UUID) (Tag, error) {
+	row := q.db.QueryRow(ctx, getTag, id)
+	var i Tag
+	err := row.Scan(
+		&i.ID,
+		&i.UserId,
+		&i.Value,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Color,
+		&i.ParentId,
+		&i.UpdateId,
+	)
+	return i, err
+}
+
+const getTags = `-- name: GetTags :many
+SELECT id, "userId", value, "createdAt", "updatedAt", color, "parentId", "updateId" FROM tags
+WHERE "userId" = $1
+ORDER BY value ASC
+`
+
+func (q *Queries) GetTags(ctx context.Context, userid pgtype.UUID) ([]Tag, error) {
+	rows, err := q.db.Query(ctx, getTags, userid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Tag
+	for rows.Next() {
+		var i Tag
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserId,
+			&i.Value,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Color,
+			&i.ParentId,
+			&i.UpdateId,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getTimelineBuckets = `-- name: GetTimelineBuckets :many
+
+SELECT 
+    date_trunc($2, "localDateTime") as time_bucket,
+    COUNT(*) as count
+FROM assets
+WHERE "ownerId" = $1 
+AND "deletedAt" IS NULL
+AND status = 'active'
+AND visibility = 'timeline'
+GROUP BY date_trunc($2, "localDateTime")
+ORDER BY time_bucket DESC
+`
+
+type GetTimelineBucketsParams struct {
+	OwnerId   pgtype.UUID
+	DateTrunc string
+}
+
+type GetTimelineBucketsRow struct {
+	TimeBucket pgtype.Interval
+	Count      int64
+}
+
+// ============================================================================
+// TIMELINE & STATISTICS QUERIES
+// ============================================================================
+func (q *Queries) GetTimelineBuckets(ctx context.Context, arg GetTimelineBucketsParams) ([]GetTimelineBucketsRow, error) {
+	rows, err := q.db.Query(ctx, getTimelineBuckets, arg.OwnerId, arg.DateTrunc)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetTimelineBucketsRow
+	for rows.Next() {
+		var i GetTimelineBucketsRow
+		if err := rows.Scan(&i.TimeBucket, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getTrashedAssets = `-- name: GetTrashedAssets :many
+SELECT id, "deviceAssetId", "ownerId", "deviceId", type, "originalPath", "fileCreatedAt", "fileModifiedAt", "isFavorite", duration, "encodedVideoPath", checksum, "livePhotoVideoId", "updatedAt", "createdAt", "originalFileName", "sidecarPath", thumbhash, "isOffline", "libraryId", "isExternal", "deletedAt", "localDateTime", "stackId", "duplicateId", status, "updateId", visibility FROM assets
+WHERE "ownerId" = $1 
+AND "deletedAt" IS NULL
+AND status = 'trashed'
+ORDER BY "updatedAt" DESC
+LIMIT $2 OFFSET $3
+`
+
+type GetTrashedAssetsParams struct {
+	OwnerId pgtype.UUID
+	Limit   int32
+	Offset  int32
+}
+
+func (q *Queries) GetTrashedAssets(ctx context.Context, arg GetTrashedAssetsParams) ([]Asset, error) {
+	rows, err := q.db.Query(ctx, getTrashedAssets, arg.OwnerId, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -1195,6 +3705,76 @@ func (q *Queries) GetUser(ctx context.Context, id pgtype.UUID) (User, error) {
 	return i, err
 }
 
+const getUserAssets = `-- name: GetUserAssets :many
+SELECT id, "deviceAssetId", "ownerId", "deviceId", type, "originalPath", "fileCreatedAt", "fileModifiedAt", "isFavorite", duration, "encodedVideoPath", checksum, "livePhotoVideoId", "updatedAt", "createdAt", "originalFileName", "sidecarPath", thumbhash, "isOffline", "libraryId", "isExternal", "deletedAt", "localDateTime", "stackId", "duplicateId", status, "updateId", visibility FROM assets
+WHERE "ownerId" = $1 AND "deletedAt" IS NULL
+AND ($2::assets_status_enum IS NULL OR status = $2::assets_status_enum)
+ORDER BY "fileCreatedAt" DESC
+LIMIT $4
+OFFSET $3
+`
+
+type GetUserAssetsParams struct {
+	OwnerId pgtype.UUID
+	Status  NullAssetsStatusEnum
+	Offset  pgtype.Int4
+	Limit   pgtype.Int4
+}
+
+func (q *Queries) GetUserAssets(ctx context.Context, arg GetUserAssetsParams) ([]Asset, error) {
+	rows, err := q.db.Query(ctx, getUserAssets,
+		arg.OwnerId,
+		arg.Status,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Asset
+	for rows.Next() {
+		var i Asset
+		if err := rows.Scan(
+			&i.ID,
+			&i.DeviceAssetId,
+			&i.OwnerId,
+			&i.DeviceId,
+			&i.Type,
+			&i.OriginalPath,
+			&i.FileCreatedAt,
+			&i.FileModifiedAt,
+			&i.IsFavorite,
+			&i.Duration,
+			&i.EncodedVideoPath,
+			&i.Checksum,
+			&i.LivePhotoVideoId,
+			&i.UpdatedAt,
+			&i.CreatedAt,
+			&i.OriginalFileName,
+			&i.SidecarPath,
+			&i.Thumbhash,
+			&i.IsOffline,
+			&i.LibraryId,
+			&i.IsExternal,
+			&i.DeletedAt,
+			&i.LocalDateTime,
+			&i.StackId,
+			&i.DuplicateId,
+			&i.Status,
+			&i.UpdateId,
+			&i.Visibility,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getUserByEmail = `-- name: GetUserByEmail :one
 SELECT id, email, password, "createdAt", "profileImagePath", "isAdmin", "shouldChangePassword", "deletedAt", "oauthId", "updatedAt", "storageLabel", name, "quotaSizeInBytes", "quotaUsageInBytes", status, "profileChangedAt", "updateId", "avatarColor", "pinCode" FROM users
 WHERE email = $1 AND "deletedAt" IS NULL
@@ -1225,6 +3805,80 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.PinCode,
 	)
 	return i, err
+}
+
+const getUserByID = `-- name: GetUserByID :one
+SELECT id, email, password, "createdAt", "profileImagePath", "isAdmin", "shouldChangePassword", "deletedAt", "oauthId", "updatedAt", "storageLabel", name, "quotaSizeInBytes", "quotaUsageInBytes", status, "profileChangedAt", "updateId", "avatarColor", "pinCode" FROM users
+WHERE id = $1 AND "deletedAt" IS NULL
+`
+
+func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (User, error) {
+	row := q.db.QueryRow(ctx, getUserByID, id)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.Password,
+		&i.CreatedAt,
+		&i.ProfileImagePath,
+		&i.IsAdmin,
+		&i.ShouldChangePassword,
+		&i.DeletedAt,
+		&i.OauthId,
+		&i.UpdatedAt,
+		&i.StorageLabel,
+		&i.Name,
+		&i.QuotaSizeInBytes,
+		&i.QuotaUsageInBytes,
+		&i.Status,
+		&i.ProfileChangedAt,
+		&i.UpdateId,
+		&i.AvatarColor,
+		&i.PinCode,
+	)
+	return i, err
+}
+
+const getUserMetadata = `-- name: GetUserMetadata :one
+SELECT "userId", key, value FROM user_metadata
+WHERE "userId" = $1 AND key = $2
+`
+
+type GetUserMetadataParams struct {
+	UserId pgtype.UUID
+	Key    string
+}
+
+func (q *Queries) GetUserMetadata(ctx context.Context, arg GetUserMetadataParams) (UserMetadatum, error) {
+	row := q.db.QueryRow(ctx, getUserMetadata, arg.UserId, arg.Key)
+	var i UserMetadatum
+	err := row.Scan(&i.UserId, &i.Key, &i.Value)
+	return i, err
+}
+
+const getUserPreferences = `-- name: GetUserPreferences :many
+SELECT "userId", key, value FROM user_metadata
+WHERE "userId" = $1
+`
+
+func (q *Queries) GetUserPreferences(ctx context.Context, userid pgtype.UUID) ([]UserMetadatum, error) {
+	rows, err := q.db.Query(ctx, getUserPreferences, userid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []UserMetadatum
+	for rows.Next() {
+		var i UserMetadatum
+		if err := rows.Scan(&i.UserId, &i.Key, &i.Value); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getUsers = `-- name: GetUsers :many
@@ -1273,6 +3927,23 @@ func (q *Queries) GetUsers(ctx context.Context) ([]User, error) {
 	return items, nil
 }
 
+const permanentlyDeleteAssets = `-- name: PermanentlyDeleteAssets :exec
+UPDATE assets
+SET "deletedAt" = now(),
+    "updatedAt" = now()
+WHERE id = ANY($1::uuid[]) AND "ownerId" = $2
+`
+
+type PermanentlyDeleteAssetsParams struct {
+	Column1 []pgtype.UUID
+	OwnerId pgtype.UUID
+}
+
+func (q *Queries) PermanentlyDeleteAssets(ctx context.Context, arg PermanentlyDeleteAssetsParams) error {
+	_, err := q.db.Exec(ctx, permanentlyDeleteAssets, arg.Column1, arg.OwnerId)
+	return err
+}
+
 const removeAssetFromAlbum = `-- name: RemoveAssetFromAlbum :exec
 DELETE FROM albums_assets_assets
 WHERE "albumsId" = $1 AND "assetsId" = $2
@@ -1285,6 +3956,36 @@ type RemoveAssetFromAlbumParams struct {
 
 func (q *Queries) RemoveAssetFromAlbum(ctx context.Context, arg RemoveAssetFromAlbumParams) error {
 	_, err := q.db.Exec(ctx, removeAssetFromAlbum, arg.AlbumsId, arg.AssetsId)
+	return err
+}
+
+const removeAssetFromSharedLink = `-- name: RemoveAssetFromSharedLink :exec
+DELETE FROM shared_link__asset
+WHERE "sharedLinksId" = $1 AND "assetsId" = $2
+`
+
+type RemoveAssetFromSharedLinkParams struct {
+	SharedLinksId pgtype.UUID
+	AssetsId      pgtype.UUID
+}
+
+func (q *Queries) RemoveAssetFromSharedLink(ctx context.Context, arg RemoveAssetFromSharedLinkParams) error {
+	_, err := q.db.Exec(ctx, removeAssetFromSharedLink, arg.SharedLinksId, arg.AssetsId)
+	return err
+}
+
+const removeTagFromAsset = `-- name: RemoveTagFromAsset :exec
+DELETE FROM tag_asset
+WHERE "tagsId" = $1 AND "assetsId" = $2
+`
+
+type RemoveTagFromAssetParams struct {
+	TagsId   pgtype.UUID
+	AssetsId pgtype.UUID
+}
+
+func (q *Queries) RemoveTagFromAsset(ctx context.Context, arg RemoveTagFromAssetParams) error {
+	_, err := q.db.Exec(ctx, removeTagFromAsset, arg.TagsId, arg.AssetsId)
 	return err
 }
 
@@ -1301,6 +4002,287 @@ type RemoveUserFromAlbumParams struct {
 func (q *Queries) RemoveUserFromAlbum(ctx context.Context, arg RemoveUserFromAlbumParams) error {
 	_, err := q.db.Exec(ctx, removeUserFromAlbum, arg.AlbumsId, arg.UsersId)
 	return err
+}
+
+const restoreAssets = `-- name: RestoreAssets :exec
+UPDATE assets
+SET status = 'active',
+    "updatedAt" = now()
+WHERE id = ANY($1::uuid[]) AND "ownerId" = $2
+`
+
+type RestoreAssetsParams struct {
+	Column1 []pgtype.UUID
+	OwnerId pgtype.UUID
+}
+
+func (q *Queries) RestoreAssets(ctx context.Context, arg RestoreAssetsParams) error {
+	_, err := q.db.Exec(ctx, restoreAssets, arg.Column1, arg.OwnerId)
+	return err
+}
+
+const searchAssetsByEmbedding = `-- name: SearchAssetsByEmbedding :many
+SELECT ss."assetId", ss.embedding, a.id, a."deviceAssetId", a."ownerId", a."deviceId", a.type, a."originalPath", a."fileCreatedAt", a."fileModifiedAt", a."isFavorite", a.duration, a."encodedVideoPath", a.checksum, a."livePhotoVideoId", a."updatedAt", a."createdAt", a."originalFileName", a."sidecarPath", a.thumbhash, a."isOffline", a."libraryId", a."isExternal", a."deletedAt", a."localDateTime", a."stackId", a."duplicateId", a.status, a."updateId", a.visibility FROM smart_search ss
+JOIN assets a ON ss."assetId" = a.id
+WHERE a."ownerId" = $1 
+AND a."deletedAt" IS NULL
+AND ss.embedding <-> $2 < $3
+ORDER BY ss.embedding <-> $2
+LIMIT $4
+`
+
+type SearchAssetsByEmbeddingParams struct {
+	OwnerId     pgtype.UUID
+	Embedding   interface{}
+	Embedding_2 interface{}
+	Limit       int32
+}
+
+type SearchAssetsByEmbeddingRow struct {
+	AssetId          pgtype.UUID
+	Embedding        interface{}
+	ID               pgtype.UUID
+	DeviceAssetId    string
+	OwnerId          pgtype.UUID
+	DeviceId         string
+	Type             string
+	OriginalPath     string
+	FileCreatedAt    pgtype.Timestamptz
+	FileModifiedAt   pgtype.Timestamptz
+	IsFavorite       bool
+	Duration         pgtype.Text
+	EncodedVideoPath pgtype.Text
+	Checksum         []byte
+	LivePhotoVideoId pgtype.UUID
+	UpdatedAt        pgtype.Timestamptz
+	CreatedAt        pgtype.Timestamptz
+	OriginalFileName string
+	SidecarPath      pgtype.Text
+	Thumbhash        []byte
+	IsOffline        bool
+	LibraryId        pgtype.UUID
+	IsExternal       bool
+	DeletedAt        pgtype.Timestamptz
+	LocalDateTime    pgtype.Timestamptz
+	StackId          pgtype.UUID
+	DuplicateId      pgtype.UUID
+	Status           AssetsStatusEnum
+	UpdateId         pgtype.UUID
+	Visibility       AssetVisibilityEnum
+}
+
+func (q *Queries) SearchAssetsByEmbedding(ctx context.Context, arg SearchAssetsByEmbeddingParams) ([]SearchAssetsByEmbeddingRow, error) {
+	rows, err := q.db.Query(ctx, searchAssetsByEmbedding,
+		arg.OwnerId,
+		arg.Embedding,
+		arg.Embedding_2,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SearchAssetsByEmbeddingRow
+	for rows.Next() {
+		var i SearchAssetsByEmbeddingRow
+		if err := rows.Scan(
+			&i.AssetId,
+			&i.Embedding,
+			&i.ID,
+			&i.DeviceAssetId,
+			&i.OwnerId,
+			&i.DeviceId,
+			&i.Type,
+			&i.OriginalPath,
+			&i.FileCreatedAt,
+			&i.FileModifiedAt,
+			&i.IsFavorite,
+			&i.Duration,
+			&i.EncodedVideoPath,
+			&i.Checksum,
+			&i.LivePhotoVideoId,
+			&i.UpdatedAt,
+			&i.CreatedAt,
+			&i.OriginalFileName,
+			&i.SidecarPath,
+			&i.Thumbhash,
+			&i.IsOffline,
+			&i.LibraryId,
+			&i.IsExternal,
+			&i.DeletedAt,
+			&i.LocalDateTime,
+			&i.StackId,
+			&i.DuplicateId,
+			&i.Status,
+			&i.UpdateId,
+			&i.Visibility,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const searchAssetsByText = `-- name: SearchAssetsByText :many
+SELECT DISTINCT a.id, a."deviceAssetId", a."ownerId", a."deviceId", a.type, a."originalPath", a."fileCreatedAt", a."fileModifiedAt", a."isFavorite", a.duration, a."encodedVideoPath", a.checksum, a."livePhotoVideoId", a."updatedAt", a."createdAt", a."originalFileName", a."sidecarPath", a.thumbhash, a."isOffline", a."libraryId", a."isExternal", a."deletedAt", a."localDateTime", a."stackId", a."duplicateId", a.status, a."updateId", a.visibility FROM assets a
+LEFT JOIN exif e ON a.id = e."assetId"
+WHERE a."ownerId" = $1 
+AND a."deletedAt" IS NULL
+AND (
+    a."originalFileName" ILIKE '%' || $2 || '%'
+    OR e.description ILIKE '%' || $2 || '%'
+    OR e."imageName" ILIKE '%' || $2 || '%'
+    OR e.city ILIKE '%' || $2 || '%'
+    OR e.state ILIKE '%' || $2 || '%'
+    OR e.country ILIKE '%' || $2 || '%'
+)
+ORDER BY a."localDateTime" DESC
+LIMIT $3 OFFSET $4
+`
+
+type SearchAssetsByTextParams struct {
+	OwnerId pgtype.UUID
+	Column2 pgtype.Text
+	Limit   int32
+	Offset  int32
+}
+
+func (q *Queries) SearchAssetsByText(ctx context.Context, arg SearchAssetsByTextParams) ([]Asset, error) {
+	rows, err := q.db.Query(ctx, searchAssetsByText,
+		arg.OwnerId,
+		arg.Column2,
+		arg.Limit,
+		arg.Offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Asset
+	for rows.Next() {
+		var i Asset
+		if err := rows.Scan(
+			&i.ID,
+			&i.DeviceAssetId,
+			&i.OwnerId,
+			&i.DeviceId,
+			&i.Type,
+			&i.OriginalPath,
+			&i.FileCreatedAt,
+			&i.FileModifiedAt,
+			&i.IsFavorite,
+			&i.Duration,
+			&i.EncodedVideoPath,
+			&i.Checksum,
+			&i.LivePhotoVideoId,
+			&i.UpdatedAt,
+			&i.CreatedAt,
+			&i.OriginalFileName,
+			&i.SidecarPath,
+			&i.Thumbhash,
+			&i.IsOffline,
+			&i.LibraryId,
+			&i.IsExternal,
+			&i.DeletedAt,
+			&i.LocalDateTime,
+			&i.StackId,
+			&i.DuplicateId,
+			&i.Status,
+			&i.UpdateId,
+			&i.Visibility,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const searchFacesByEmbedding = `-- name: SearchFacesByEmbedding :many
+SELECT fs."faceId", fs.embedding, p.name as person_name
+FROM face_search fs
+JOIN person p ON fs."personId" = p.id
+WHERE fs.embedding <-> $1 < $2
+ORDER BY fs.embedding <-> $1
+LIMIT $3
+`
+
+type SearchFacesByEmbeddingParams struct {
+	Embedding   interface{}
+	Embedding_2 interface{}
+	Limit       int32
+}
+
+type SearchFacesByEmbeddingRow struct {
+	FaceId     pgtype.UUID
+	Embedding  interface{}
+	PersonName string
+}
+
+func (q *Queries) SearchFacesByEmbedding(ctx context.Context, arg SearchFacesByEmbeddingParams) ([]SearchFacesByEmbeddingRow, error) {
+	rows, err := q.db.Query(ctx, searchFacesByEmbedding, arg.Embedding, arg.Embedding_2, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SearchFacesByEmbeddingRow
+	for rows.Next() {
+		var i SearchFacesByEmbeddingRow
+		if err := rows.Scan(&i.FaceId, &i.Embedding, &i.PersonName); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const setSystemMetadata = `-- name: SetSystemMetadata :one
+INSERT INTO system_metadata (key, value)
+VALUES ($1, $2)
+ON CONFLICT (key) DO UPDATE SET value = $2, "updatedAt" = now()
+RETURNING key, value
+`
+
+type SetSystemMetadataParams struct {
+	Key   string
+	Value []byte
+}
+
+func (q *Queries) SetSystemMetadata(ctx context.Context, arg SetSystemMetadataParams) (SystemMetadatum, error) {
+	row := q.db.QueryRow(ctx, setSystemMetadata, arg.Key, arg.Value)
+	var i SystemMetadatum
+	err := row.Scan(&i.Key, &i.Value)
+	return i, err
+}
+
+const setUserMetadata = `-- name: SetUserMetadata :one
+INSERT INTO user_metadata ("userId", key, value)
+VALUES ($1, $2, $3)
+ON CONFLICT ("userId", key) DO UPDATE SET value = $3, "updatedAt" = now()
+RETURNING "userId", key, value
+`
+
+type SetUserMetadataParams struct {
+	UserId pgtype.UUID
+	Key    string
+	Value  []byte
+}
+
+func (q *Queries) SetUserMetadata(ctx context.Context, arg SetUserMetadataParams) (UserMetadatum, error) {
+	row := q.db.QueryRow(ctx, setUserMetadata, arg.UserId, arg.Key, arg.Value)
+	var i UserMetadatum
+	err := row.Scan(&i.UserId, &i.Key, &i.Value)
+	return i, err
 }
 
 const updateAlbum = `-- name: UpdateAlbum :one
@@ -1407,6 +4389,277 @@ func (q *Queries) UpdateAsset(ctx context.Context, arg UpdateAssetParams) (Asset
 	return i, err
 }
 
+const updateAssetFace = `-- name: UpdateAssetFace :one
+UPDATE asset_faces
+SET "personId" = COALESCE($2, "personId"),
+    "boundingBoxX1" = COALESCE($3, "boundingBoxX1"),
+    "boundingBoxY1" = COALESCE($4, "boundingBoxY1"),
+    "boundingBoxX2" = COALESCE($5, "boundingBoxX2"),
+    "boundingBoxY2" = COALESCE($6, "boundingBoxY2")
+WHERE id = $1
+RETURNING "assetId", "personId", "imageWidth", "imageHeight", "boundingBoxX1", "boundingBoxY1", "boundingBoxX2", "boundingBoxY2", id, "sourceType", "deletedAt"
+`
+
+type UpdateAssetFaceParams struct {
+	ID            pgtype.UUID
+	PersonID      pgtype.UUID
+	BoundingBoxX1 pgtype.Int4
+	BoundingBoxY1 pgtype.Int4
+	BoundingBoxX2 pgtype.Int4
+	BoundingBoxY2 pgtype.Int4
+}
+
+func (q *Queries) UpdateAssetFace(ctx context.Context, arg UpdateAssetFaceParams) (AssetFace, error) {
+	row := q.db.QueryRow(ctx, updateAssetFace,
+		arg.ID,
+		arg.PersonID,
+		arg.BoundingBoxX1,
+		arg.BoundingBoxY1,
+		arg.BoundingBoxX2,
+		arg.BoundingBoxY2,
+	)
+	var i AssetFace
+	err := row.Scan(
+		&i.AssetId,
+		&i.PersonId,
+		&i.ImageWidth,
+		&i.ImageHeight,
+		&i.BoundingBoxX1,
+		&i.BoundingBoxY1,
+		&i.BoundingBoxX2,
+		&i.BoundingBoxY2,
+		&i.ID,
+		&i.SourceType,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const updateAssetJobStatus = `-- name: UpdateAssetJobStatus :one
+UPDATE asset_job_status
+SET "facesRecognizedAt" = COALESCE($2, "facesRecognizedAt"),
+    "metadataExtractedAt" = COALESCE($3, "metadataExtractedAt"),
+    "duplicatesDetectedAt" = COALESCE($4, "duplicatesDetectedAt"),
+    "previewAt" = COALESCE($5, "previewAt"),
+    "thumbnailAt" = COALESCE($6, "thumbnailAt")
+WHERE "assetId" = $1
+RETURNING "assetId", "facesRecognizedAt", "metadataExtractedAt", "duplicatesDetectedAt", "previewAt", "thumbnailAt"
+`
+
+type UpdateAssetJobStatusParams struct {
+	AssetId              pgtype.UUID
+	FacesRecognizedAt    pgtype.Timestamptz
+	MetadataExtractedAt  pgtype.Timestamptz
+	DuplicatesDetectedAt pgtype.Timestamptz
+	PreviewAt            pgtype.Timestamptz
+	ThumbnailAt          pgtype.Timestamptz
+}
+
+func (q *Queries) UpdateAssetJobStatus(ctx context.Context, arg UpdateAssetJobStatusParams) (AssetJobStatus, error) {
+	row := q.db.QueryRow(ctx, updateAssetJobStatus,
+		arg.AssetId,
+		arg.FacesRecognizedAt,
+		arg.MetadataExtractedAt,
+		arg.DuplicatesDetectedAt,
+		arg.PreviewAt,
+		arg.ThumbnailAt,
+	)
+	var i AssetJobStatus
+	err := row.Scan(
+		&i.AssetId,
+		&i.FacesRecognizedAt,
+		&i.MetadataExtractedAt,
+		&i.DuplicatesDetectedAt,
+		&i.PreviewAt,
+		&i.ThumbnailAt,
+	)
+	return i, err
+}
+
+const updateAssetStatus = `-- name: UpdateAssetStatus :one
+UPDATE assets
+SET status = $2,
+    "updatedAt" = now(),
+    "updateId" = immich_uuid_v7()
+WHERE id = $1 AND "deletedAt" IS NULL
+RETURNING id, "deviceAssetId", "ownerId", "deviceId", type, "originalPath", "fileCreatedAt", "fileModifiedAt", "isFavorite", duration, "encodedVideoPath", checksum, "livePhotoVideoId", "updatedAt", "createdAt", "originalFileName", "sidecarPath", thumbhash, "isOffline", "libraryId", "isExternal", "deletedAt", "localDateTime", "stackId", "duplicateId", status, "updateId", visibility
+`
+
+type UpdateAssetStatusParams struct {
+	ID     pgtype.UUID
+	Status AssetsStatusEnum
+}
+
+func (q *Queries) UpdateAssetStatus(ctx context.Context, arg UpdateAssetStatusParams) (Asset, error) {
+	row := q.db.QueryRow(ctx, updateAssetStatus, arg.ID, arg.Status)
+	var i Asset
+	err := row.Scan(
+		&i.ID,
+		&i.DeviceAssetId,
+		&i.OwnerId,
+		&i.DeviceId,
+		&i.Type,
+		&i.OriginalPath,
+		&i.FileCreatedAt,
+		&i.FileModifiedAt,
+		&i.IsFavorite,
+		&i.Duration,
+		&i.EncodedVideoPath,
+		&i.Checksum,
+		&i.LivePhotoVideoId,
+		&i.UpdatedAt,
+		&i.CreatedAt,
+		&i.OriginalFileName,
+		&i.SidecarPath,
+		&i.Thumbhash,
+		&i.IsOffline,
+		&i.LibraryId,
+		&i.IsExternal,
+		&i.DeletedAt,
+		&i.LocalDateTime,
+		&i.StackId,
+		&i.DuplicateId,
+		&i.Status,
+		&i.UpdateId,
+		&i.Visibility,
+	)
+	return i, err
+}
+
+const updateExif = `-- name: UpdateExif :one
+UPDATE exif
+SET make = $2, model = $3, "exifImageWidth" = $4, "exifImageHeight" = $5,
+    "fileSizeInByte" = $6, orientation = $7, "dateTimeOriginal" = $8, "modifyDate" = $9,
+    "lensModel" = $10, "fNumber" = $11, "focalLength" = $12, iso = $13, 
+    latitude = $14, longitude = $15, city = $16, state = $17, country = $18,
+    description = $19, fps = $20
+WHERE "assetId" = $1
+RETURNING "assetId", make, model, "exifImageWidth", "exifImageHeight", "fileSizeInByte", orientation, "dateTimeOriginal", "modifyDate", "lensModel", "fNumber", "focalLength", iso, latitude, longitude, city, state, country, description, fps, "exposureTime", "livePhotoCID", "timeZone", "projectionType", "profileDescription", colorspace, "bitsPerSample", "autoStackId", rating, "updatedAt", "updateId"
+`
+
+type UpdateExifParams struct {
+	AssetId          pgtype.UUID
+	Make             pgtype.Text
+	Model            pgtype.Text
+	ExifImageWidth   pgtype.Int4
+	ExifImageHeight  pgtype.Int4
+	FileSizeInByte   pgtype.Int8
+	Orientation      pgtype.Text
+	DateTimeOriginal pgtype.Timestamptz
+	ModifyDate       pgtype.Timestamptz
+	LensModel        pgtype.Text
+	FNumber          pgtype.Float8
+	FocalLength      pgtype.Float8
+	Iso              pgtype.Int4
+	Latitude         pgtype.Float8
+	Longitude        pgtype.Float8
+	City             pgtype.Text
+	State            pgtype.Text
+	Country          pgtype.Text
+	Description      string
+	Fps              pgtype.Float8
+}
+
+func (q *Queries) UpdateExif(ctx context.Context, arg UpdateExifParams) (Exif, error) {
+	row := q.db.QueryRow(ctx, updateExif,
+		arg.AssetId,
+		arg.Make,
+		arg.Model,
+		arg.ExifImageWidth,
+		arg.ExifImageHeight,
+		arg.FileSizeInByte,
+		arg.Orientation,
+		arg.DateTimeOriginal,
+		arg.ModifyDate,
+		arg.LensModel,
+		arg.FNumber,
+		arg.FocalLength,
+		arg.Iso,
+		arg.Latitude,
+		arg.Longitude,
+		arg.City,
+		arg.State,
+		arg.Country,
+		arg.Description,
+		arg.Fps,
+	)
+	var i Exif
+	err := row.Scan(
+		&i.AssetId,
+		&i.Make,
+		&i.Model,
+		&i.ExifImageWidth,
+		&i.ExifImageHeight,
+		&i.FileSizeInByte,
+		&i.Orientation,
+		&i.DateTimeOriginal,
+		&i.ModifyDate,
+		&i.LensModel,
+		&i.FNumber,
+		&i.FocalLength,
+		&i.Iso,
+		&i.Latitude,
+		&i.Longitude,
+		&i.City,
+		&i.State,
+		&i.Country,
+		&i.Description,
+		&i.Fps,
+		&i.ExposureTime,
+		&i.LivePhotoCID,
+		&i.TimeZone,
+		&i.ProjectionType,
+		&i.ProfileDescription,
+		&i.Colorspace,
+		&i.BitsPerSample,
+		&i.AutoStackId,
+		&i.Rating,
+		&i.UpdatedAt,
+		&i.UpdateId,
+	)
+	return i, err
+}
+
+const updateLibrary = `-- name: UpdateLibrary :one
+UPDATE libraries
+SET name = COALESCE($2, name),
+    "importPaths" = COALESCE($3, "importPaths"),
+    "exclusionPatterns" = COALESCE($4, "exclusionPatterns"),
+    "updatedAt" = now()
+WHERE id = $1 AND "deletedAt" IS NULL
+RETURNING id, name, "ownerId", "importPaths", "exclusionPatterns", "createdAt", "updatedAt", "deletedAt", "refreshedAt", "updateId"
+`
+
+type UpdateLibraryParams struct {
+	ID                pgtype.UUID
+	Name              pgtype.Text
+	ImportPaths       []string
+	ExclusionPatterns []string
+}
+
+func (q *Queries) UpdateLibrary(ctx context.Context, arg UpdateLibraryParams) (Library, error) {
+	row := q.db.QueryRow(ctx, updateLibrary,
+		arg.ID,
+		arg.Name,
+		arg.ImportPaths,
+		arg.ExclusionPatterns,
+	)
+	var i Library
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.OwnerId,
+		&i.ImportPaths,
+		&i.ExclusionPatterns,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.RefreshedAt,
+		&i.UpdateId,
+	)
+	return i, err
+}
+
 const updateMemory = `-- name: UpdateMemory :one
 UPDATE memories
 SET type = COALESCE($2, type),
@@ -1438,6 +4691,155 @@ func (q *Queries) UpdateMemory(ctx context.Context, arg UpdateMemoryParams) (Mem
 		&i.SeenAt,
 		&i.ShowAt,
 		&i.HideAt,
+		&i.UpdateId,
+	)
+	return i, err
+}
+
+const updatePerson = `-- name: UpdatePerson :one
+UPDATE person
+SET name = COALESCE($2, name),
+    "birthDate" = COALESCE($3, "birthDate"),
+    "thumbnailPath" = COALESCE($4, "thumbnailPath"),
+    "faceAssetId" = COALESCE($5, "faceAssetId"),
+    "isHidden" = COALESCE($6, "isHidden"),
+    "updatedAt" = now()
+WHERE id = $1
+RETURNING id, "createdAt", "updatedAt", "ownerId", name, "thumbnailPath", "isHidden", "birthDate", "faceAssetId", "isFavorite", color, "updateId"
+`
+
+type UpdatePersonParams struct {
+	ID            pgtype.UUID
+	Name          pgtype.Text
+	BirthDate     pgtype.Date
+	ThumbnailPath pgtype.Text
+	FaceAssetID   pgtype.UUID
+	IsHidden      pgtype.Bool
+}
+
+func (q *Queries) UpdatePerson(ctx context.Context, arg UpdatePersonParams) (Person, error) {
+	row := q.db.QueryRow(ctx, updatePerson,
+		arg.ID,
+		arg.Name,
+		arg.BirthDate,
+		arg.ThumbnailPath,
+		arg.FaceAssetID,
+		arg.IsHidden,
+	)
+	var i Person
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.OwnerId,
+		&i.Name,
+		&i.ThumbnailPath,
+		&i.IsHidden,
+		&i.BirthDate,
+		&i.FaceAssetId,
+		&i.IsFavorite,
+		&i.Color,
+		&i.UpdateId,
+	)
+	return i, err
+}
+
+const updateSharedLink = `-- name: UpdateSharedLink :one
+UPDATE shared_links
+SET "expiresAt" = COALESCE($2, "expiresAt"),
+    "allowUpload" = COALESCE($3, "allowUpload"),
+    "allowDownload" = COALESCE($4, "allowDownload"),
+    description = COALESCE($5, description),
+    password = COALESCE($6, password),
+    "showExif" = COALESCE($7, "showExif")
+WHERE id = $1
+RETURNING id, description, "userId", key, type, "createdAt", "expiresAt", "allowUpload", "albumId", "allowDownload", "showExif", password
+`
+
+type UpdateSharedLinkParams struct {
+	ID            pgtype.UUID
+	ExpiresAt     pgtype.Timestamptz
+	AllowUpload   pgtype.Bool
+	AllowDownload pgtype.Bool
+	Description   pgtype.Text
+	Password      pgtype.Text
+	ShowExif      pgtype.Bool
+}
+
+func (q *Queries) UpdateSharedLink(ctx context.Context, arg UpdateSharedLinkParams) (SharedLink, error) {
+	row := q.db.QueryRow(ctx, updateSharedLink,
+		arg.ID,
+		arg.ExpiresAt,
+		arg.AllowUpload,
+		arg.AllowDownload,
+		arg.Description,
+		arg.Password,
+		arg.ShowExif,
+	)
+	var i SharedLink
+	err := row.Scan(
+		&i.ID,
+		&i.Description,
+		&i.UserId,
+		&i.Key,
+		&i.Type,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.AllowUpload,
+		&i.AlbumId,
+		&i.AllowDownload,
+		&i.ShowExif,
+		&i.Password,
+	)
+	return i, err
+}
+
+const updateSmartSearch = `-- name: UpdateSmartSearch :one
+UPDATE smart_search
+SET embedding = $2,
+    "updatedAt" = now()
+WHERE "assetId" = $1
+RETURNING "assetId", embedding
+`
+
+type UpdateSmartSearchParams struct {
+	AssetId   pgtype.UUID
+	Embedding interface{}
+}
+
+func (q *Queries) UpdateSmartSearch(ctx context.Context, arg UpdateSmartSearchParams) (SmartSearch, error) {
+	row := q.db.QueryRow(ctx, updateSmartSearch, arg.AssetId, arg.Embedding)
+	var i SmartSearch
+	err := row.Scan(&i.AssetId, &i.Embedding)
+	return i, err
+}
+
+const updateTag = `-- name: UpdateTag :one
+UPDATE tags
+SET value = COALESCE($2, value),
+    color = COALESCE($3, color),
+    "updatedAt" = now()
+WHERE id = $1
+RETURNING id, "userId", value, "createdAt", "updatedAt", color, "parentId", "updateId"
+`
+
+type UpdateTagParams struct {
+	ID    pgtype.UUID
+	Value pgtype.Text
+	Color pgtype.Text
+}
+
+func (q *Queries) UpdateTag(ctx context.Context, arg UpdateTagParams) (Tag, error) {
+	row := q.db.QueryRow(ctx, updateTag, arg.ID, arg.Value, arg.Color)
+	var i Tag
+	err := row.Scan(
+		&i.ID,
+		&i.UserId,
+		&i.Value,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Color,
+		&i.ParentId,
 		&i.UpdateId,
 	)
 	return i, err
@@ -1505,6 +4907,17 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 		&i.PinCode,
 	)
 	return i, err
+}
+
+const updateUserLastLogin = `-- name: UpdateUserLastLogin :exec
+UPDATE users
+SET "updatedAt" = now()
+WHERE id = $1
+`
+
+func (q *Queries) UpdateUserLastLogin(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, updateUserLastLogin, id)
+	return err
 }
 
 const updateUserPassword = `-- name: UpdateUserPassword :exec

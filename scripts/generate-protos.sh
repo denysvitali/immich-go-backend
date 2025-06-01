@@ -101,9 +101,8 @@ echo ""
 
 # Final verification - check if files compile
 echo -e "${BLUE}🔍 Verifying generated code compiles...${NC}"
-if go build -o /tmp/immich-go-backend-test ./...; then
+if go build ./...; then
     echo -e "${GREEN}   ✅ Generated code compiles successfully${NC}"
-    rm -f /tmp/immich-go-backend-test
 else
     echo -e "${YELLOW}   ⚠️  Generated code compilation check failed (this may be normal if main.go has missing dependencies)${NC}"
 fi
@@ -112,7 +111,7 @@ echo ""
 echo -e "${GREEN}🎉 Protocol buffer generation completed!${NC}"
 echo "================================================"
 echo ""
-echo -e "${BLUE}📁 Generated files location:${NC} src/proto/generated/"
+echo -e "${BLUE}📁 Generated files location:${NC} internal/proto/"
 echo -e "${BLUE}🔧 Next steps:${NC}"
 echo "   - Review generated Go files"
 echo "   - Update import paths in your Go code if needed"
