@@ -399,6 +399,34 @@ func (q *Queries) CreateAssetFace(ctx context.Context, arg CreateAssetFaceParams
 	return i, err
 }
 
+const createAssetFile = `-- name: CreateAssetFile :one
+INSERT INTO asset_files ("assetId", "type", "path")
+VALUES ($1, $2, $3)
+RETURNING id, "assetId", "createdAt", "updatedAt", type, path, "updateId"
+`
+
+type CreateAssetFileParams struct {
+	AssetId pgtype.UUID
+	Type    string
+	Path    string
+}
+
+// Asset Files queries
+func (q *Queries) CreateAssetFile(ctx context.Context, arg CreateAssetFileParams) (AssetFile, error) {
+	row := q.db.QueryRow(ctx, createAssetFile, arg.AssetId, arg.Type, arg.Path)
+	var i AssetFile
+	err := row.Scan(
+		&i.ID,
+		&i.AssetId,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Type,
+		&i.Path,
+		&i.UpdateId,
+	)
+	return i, err
+}
+
 const createAssetJobStatus = `-- name: CreateAssetJobStatus :one
 INSERT INTO asset_job_status ("assetId", "facesRecognizedAt", "metadataExtractedAt", "duplicatesDetectedAt", "previewAt", "thumbnailAt")
 VALUES ($1, $2, $3, $4, $5, $6)
@@ -1002,6 +1030,31 @@ WHERE id = $1
 
 func (q *Queries) DeleteAssetFace(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deleteAssetFace, id)
+	return err
+}
+
+const deleteAssetFile = `-- name: DeleteAssetFile :exec
+DELETE FROM asset_files
+WHERE "assetId" = $1 AND "type" = $2
+`
+
+type DeleteAssetFileParams struct {
+	AssetId pgtype.UUID
+	Type    string
+}
+
+func (q *Queries) DeleteAssetFile(ctx context.Context, arg DeleteAssetFileParams) error {
+	_, err := q.db.Exec(ctx, deleteAssetFile, arg.AssetId, arg.Type)
+	return err
+}
+
+const deleteAssetFiles = `-- name: DeleteAssetFiles :exec
+DELETE FROM asset_files
+WHERE "assetId" = $1
+`
+
+func (q *Queries) DeleteAssetFiles(ctx context.Context, assetid pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteAssetFiles, assetid)
 	return err
 }
 
@@ -1819,6 +1872,105 @@ func (q *Queries) GetAssetFaces(ctx context.Context, assetid pgtype.UUID) ([]Get
 			&i.SourceType,
 			&i.DeletedAt,
 			&i.PersonName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAssetFile = `-- name: GetAssetFile :one
+SELECT id, "assetId", "createdAt", "updatedAt", type, path, "updateId" FROM asset_files
+WHERE "assetId" = $1 AND "type" = $2
+LIMIT 1
+`
+
+type GetAssetFileParams struct {
+	AssetId pgtype.UUID
+	Type    string
+}
+
+func (q *Queries) GetAssetFile(ctx context.Context, arg GetAssetFileParams) (AssetFile, error) {
+	row := q.db.QueryRow(ctx, getAssetFile, arg.AssetId, arg.Type)
+	var i AssetFile
+	err := row.Scan(
+		&i.ID,
+		&i.AssetId,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Type,
+		&i.Path,
+		&i.UpdateId,
+	)
+	return i, err
+}
+
+const getAssetFiles = `-- name: GetAssetFiles :many
+SELECT id, "assetId", "createdAt", "updatedAt", type, path, "updateId" FROM asset_files
+WHERE "assetId" = $1
+ORDER BY "createdAt" ASC
+`
+
+func (q *Queries) GetAssetFiles(ctx context.Context, assetid pgtype.UUID) ([]AssetFile, error) {
+	rows, err := q.db.Query(ctx, getAssetFiles, assetid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AssetFile
+	for rows.Next() {
+		var i AssetFile
+		if err := rows.Scan(
+			&i.ID,
+			&i.AssetId,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Type,
+			&i.Path,
+			&i.UpdateId,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAssetFilesByType = `-- name: GetAssetFilesByType :many
+SELECT id, "assetId", "createdAt", "updatedAt", type, path, "updateId" FROM asset_files
+WHERE "assetId" = $1 AND "type" = $2
+ORDER BY "createdAt" ASC
+`
+
+type GetAssetFilesByTypeParams struct {
+	AssetId pgtype.UUID
+	Type    string
+}
+
+func (q *Queries) GetAssetFilesByType(ctx context.Context, arg GetAssetFilesByTypeParams) ([]AssetFile, error) {
+	rows, err := q.db.Query(ctx, getAssetFilesByType, arg.AssetId, arg.Type)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AssetFile
+	for rows.Next() {
+		var i AssetFile
+		if err := rows.Scan(
+			&i.ID,
+			&i.AssetId,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Type,
+			&i.Path,
+			&i.UpdateId,
 		); err != nil {
 			return nil, err
 		}

@@ -325,20 +325,16 @@ func (s *Service) generateAndStoreThumbnails(ctx context.Context, assetID pgtype
 			continue // Continue with other thumbnails
 		}
 
-		// TODO: Store thumbnail record in database
-		// thumbInfo := s.thumbnailGen.GetThumbnailInfo(thumbType, data, thumbPath)
-		// _, err = s.db.CreateAssetThumbnail(ctx, sqlc.CreateAssetThumbnailParams{
-		// 	AssetID: assetID,
-		// 	Type:    string(thumbType),
-		// 	Path:    thumbPath,
-		// 	Width:   thumbInfo.Width,
-		// 	Height:  thumbInfo.Height,
-		// 	Size:    thumbInfo.Size,
-		// })
-		// if err != nil {
-		// 	span.RecordError(err)
-		// 	// Continue with other thumbnails
-		// }
+		// Store thumbnail record in database
+		_, err = s.db.CreateAssetFile(ctx, sqlc.CreateAssetFileParams{
+			AssetId: assetID,
+			Type:    string(thumbType),
+			Path:    thumbPath,
+		})
+		if err != nil {
+			span.RecordError(err)
+			// Continue with other thumbnails
+		}
 	}
 
 	span.SetAttributes(attribute.Int("thumbnails_created", len(thumbnails)))
@@ -456,13 +452,28 @@ func (s *Service) GetAsset(ctx context.Context, assetID uuid.UUID, userID uuid.U
 		return nil, fmt.Errorf("failed to get asset: %w", err)
 	}
 
-	// TODO: Get thumbnails
-	// thumbnails, err := s.db.GetAssetThumbnails(ctx, assetUUID)
-	// if err != nil {
-	// 	span.RecordError(err)
-	// 	// Continue without thumbnails
-	// }
-	var thumbnails []AssetThumbnail // Empty for now
+	// Get thumbnails from asset_files table
+	assetFiles, err := s.db.GetAssetFiles(ctx, assetUUID)
+	if err != nil {
+		span.RecordError(err)
+		// Continue without thumbnails
+	}
+
+	// Convert asset files to thumbnails
+	var thumbnails []AssetThumbnail
+	for _, file := range assetFiles {
+		// Only include thumbnail files
+		if file.Type == string(ThumbnailTypePreview) || file.Type == string(ThumbnailTypeWebp) || file.Type == string(ThumbnailTypeThumb) {
+			thumbnails = append(thumbnails, AssetThumbnail{
+				AssetID: uuid.MustParse(uuidToString(file.AssetId)),
+				Type:    file.Type,
+				Path:    file.Path,
+				Width:   0, // TODO: Store dimensions in asset_files or calculate
+				Height:  0,
+				Size:    0, // TODO: Store size in asset_files or calculate
+			})
+		}
+	}
 
 	return s.convertToAssetInfo(asset, thumbnails), nil
 }
@@ -567,9 +578,30 @@ func (s *Service) SearchAssets(ctx context.Context, req SearchRequest) (*SearchR
 	// Convert to response format
 	assetInfos := make([]AssetInfo, len(assets))
 	for i, asset := range assets {
-		// TODO: Get thumbnails when query is available
-		// thumbnails, _ := s.db.GetAssetThumbnails(ctx, asset.ID)
-		assetInfos[i] = *s.convertToAssetInfo(asset, nil)
+		// Get thumbnails for each asset
+		assetFiles, err := s.db.GetAssetFiles(ctx, asset.ID)
+		if err != nil {
+			span.RecordError(err)
+			// Continue without thumbnails
+		}
+
+		// Convert asset files to thumbnails
+		var thumbnails []AssetThumbnail
+		for _, file := range assetFiles {
+			// Only include thumbnail files
+			if file.Type == string(ThumbnailTypePreview) || file.Type == string(ThumbnailTypeWebp) || file.Type == string(ThumbnailTypeThumb) {
+				thumbnails = append(thumbnails, AssetThumbnail{
+					AssetID: uuid.MustParse(uuidToString(file.AssetId)),
+					Type:    file.Type,
+					Path:    file.Path,
+					Width:   0, // TODO: Store dimensions in asset_files or calculate
+					Height:  0,
+					Size:    0, // TODO: Store size in asset_files or calculate
+				})
+			}
+		}
+
+		assetInfos[i] = *s.convertToAssetInfo(asset, thumbnails)
 	}
 
 	// Get total count (simplified)

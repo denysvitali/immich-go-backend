@@ -2,6 +2,7 @@ package assets
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -238,13 +239,25 @@ func (e *MetadataExtractor) extractVideoMetadata(ctx context.Context, reader io.
 	return nil
 }
 
-// CalculateChecksum calculates a checksum for the file content
+// CalculateChecksum calculates a SHA256 checksum for the file content
 func (e *MetadataExtractor) CalculateChecksum(ctx context.Context, reader io.Reader) (string, error) {
 	ctx, span := tracer.Start(ctx, "metadata.calculate_checksum")
 	defer span.End()
 
-	// TODO: Implement checksum calculation (SHA256 or similar)
-	// This is important for deduplication
+	hasher := sha256.New()
+	
+	// Copy data from reader to hasher
+	bytesRead, err := io.Copy(hasher, reader)
+	if err != nil {
+		span.RecordError(err)
+		return "", fmt.Errorf("failed to read data for checksum: %w", err)
+	}
 
-	return "", fmt.Errorf("checksum calculation not implemented")
+	span.SetAttributes(attribute.Int64("bytes_read", bytesRead))
+
+	// Calculate the checksum
+	checksum := fmt.Sprintf("%x", hasher.Sum(nil))
+	span.SetAttributes(attribute.String("checksum", checksum))
+
+	return checksum, nil
 }

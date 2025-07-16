@@ -930,3 +930,32 @@ UPDATE assets
 SET "deletedAt" = now(),
     "updatedAt" = now()
 WHERE id = ANY($1::uuid[]) AND "ownerId" = $2;
+
+-- Asset Files queries
+-- name: CreateAssetFile :one
+INSERT INTO asset_files ("assetId", "type", "path")
+VALUES ($1, $2, $3)
+RETURNING *;
+
+-- name: GetAssetFiles :many
+SELECT * FROM asset_files
+WHERE "assetId" = $1
+ORDER BY "createdAt" ASC;
+
+-- name: GetAssetFilesByType :many
+SELECT * FROM asset_files
+WHERE "assetId" = $1 AND "type" = $2
+ORDER BY "createdAt" ASC;
+
+-- name: GetAssetFile :one
+SELECT * FROM asset_files
+WHERE "assetId" = $1 AND "type" = $2
+LIMIT 1;
+
+-- name: DeleteAssetFile :exec
+DELETE FROM asset_files
+WHERE "assetId" = $1 AND "type" = $2;
+
+-- name: DeleteAssetFiles :exec
+DELETE FROM asset_files
+WHERE "assetId" = $1;
