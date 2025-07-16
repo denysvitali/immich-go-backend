@@ -510,11 +510,39 @@ func (s *Service) DownloadAsset(ctx context.Context, req DownloadRequest) (*Down
 		downloadPath = asset.OriginalPath
 	}
 
-	// Generate download URL
-	url, err := s.storage.GeneratePresignedDownloadURL(ctx, downloadPath, time.Hour)
+	// Determine expiry time based on file type
+	var expiry time.Duration
+	if req.ThumbnailType != nil {
+		// Thumbnails can have longer expiry since they're smaller and cached
+		expiry = 24 * time.Hour
+	} else {
+		// Original files get shorter expiry
+		expiry = time.Hour
+	}
+
+	// Generate download URL with appropriate expiry
+	url, err := s.storage.GeneratePresignedDownloadURL(ctx, downloadPath, expiry)
 	if err != nil {
 		span.RecordError(err)
 		return nil, fmt.Errorf("failed to generate download URL: %w", err)
+	}
+
+	// Add cache control headers for thumbnails
+	headers := make(map[string]string)
+	if req.ThumbnailType != nil {
+		headers["Cache-Control"] = "public, max-age=86400" // 24 hours
+		headers["Content-Type"] = "image/jpeg"
+	} else {
+		headers["Cache-Control"] = "private, max-age=3600" // 1 hour
+		// Set content type based on asset type
+		switch asset.Type {
+		case AssetTypeImage:
+			headers["Content-Type"] = "image/jpeg"
+		case AssetTypeVideo:
+			headers["Content-Type"] = "video/mp4"
+		default:
+			headers["Content-Type"] = "application/octet-stream"
+		}
 	}
 
 	s.downloadCounter.Add(ctx, 1,
@@ -524,9 +552,10 @@ func (s *Service) DownloadAsset(ctx context.Context, req DownloadRequest) (*Down
 			attribute.Bool("is_thumbnail", req.ThumbnailType != nil),
 		))
 
-	expiresAt := time.Now().Add(time.Hour)
+	expiresAt := time.Now().Add(expiry)
 	return &DownloadResponse{
 		URL:       url,
+		Headers:   headers,
 		ExpiresAt: &expiresAt,
 	}, nil
 }
@@ -540,21 +569,13 @@ func (s *Service) SearchAssets(ctx context.Context, req SearchRequest) (*SearchR
 		))
 	defer span.End()
 
-	// TODO: Implement comprehensive search
-	// This would include:
-	// - Text search in metadata
-	// - Date range filtering
-	// - Location-based search
-	// - Camera/device filtering
-	// - Sorting and pagination
-
 	userUUID, err := stringToUUID(req.UserID.String())
 	if err != nil {
 		span.RecordError(err)
 		return nil, fmt.Errorf("invalid user ID: %w", err)
 	}
 
-	// For now, implement basic pagination
+	// Set up pagination
 	limit := req.Limit
 	if limit <= 0 || limit > 100 {
 		limit = 20
@@ -565,14 +586,107 @@ func (s *Service) SearchAssets(ctx context.Context, req SearchRequest) (*SearchR
 		offset = 0
 	}
 
-	assets, err := s.db.GetUserAssets(ctx, sqlc.GetUserAssetsParams{
-		OwnerId: userUUID,
-		Limit:   pgtype.Int4{Int32: int32(limit), Valid: true},
-		Offset:  pgtype.Int4{Int32: int32(offset), Valid: true},
-	})
-	if err != nil {
-		span.RecordError(err)
-		return nil, fmt.Errorf("failed to search assets: %w", err)
+	var assets []sqlc.Asset
+
+	// Choose search strategy based on request parameters
+	switch {
+	case req.Query != "":
+		// Text search across metadata
+		span.SetAttributes(attribute.String("search_type", "text"))
+		textAssets, err := s.db.SearchAssetsByText(ctx, sqlc.SearchAssetsByTextParams{
+			OwnerId: userUUID,
+			Query:   req.Query,
+			Limit:   pgtype.Int4{Int32: int32(limit), Valid: true},
+			Offset:  pgtype.Int4{Int32: int32(offset), Valid: true},
+		})
+		if err != nil {
+			span.RecordError(err)
+			return nil, fmt.Errorf("failed to search assets by text: %w", err)
+		}
+		assets = textAssets
+
+	case req.StartDate != nil && req.EndDate != nil:
+		// Date range search
+		span.SetAttributes(attribute.String("search_type", "date_range"))
+		startTime, err := timeToTimestamptz(*req.StartDate)
+		if err != nil {
+			span.RecordError(err)
+			return nil, fmt.Errorf("invalid start date: %w", err)
+		}
+		endTime, err := timeToTimestamptz(*req.EndDate)
+		if err != nil {
+			span.RecordError(err)
+			return nil, fmt.Errorf("invalid end date: %w", err)
+		}
+
+		dateAssets, err := s.db.GetAssetsByDateRange(ctx, sqlc.GetAssetsByDateRangeParams{
+			OwnerId:   userUUID,
+			StartDate: startTime,
+			EndDate:   endTime,
+			Limit:     pgtype.Int4{Int32: int32(limit), Valid: true},
+			Offset:    pgtype.Int4{Int32: int32(offset), Valid: true},
+		})
+		if err != nil {
+			span.RecordError(err)
+			return nil, fmt.Errorf("failed to search assets by date range: %w", err)
+		}
+		assets = dateAssets
+
+	case req.City != nil || req.State != nil || req.Country != nil:
+		// Location-based search (using text search for now)
+		span.SetAttributes(attribute.String("search_type", "location"))
+		var locationQuery string
+		if req.City != nil {
+			locationQuery = *req.City
+		} else if req.State != nil {
+			locationQuery = *req.State
+		} else if req.Country != nil {
+			locationQuery = *req.Country
+		}
+
+		locationAssets, err := s.db.SearchAssetsByText(ctx, sqlc.SearchAssetsByTextParams{
+			OwnerId: userUUID,
+			Query:   locationQuery,
+			Limit:   pgtype.Int4{Int32: int32(limit), Valid: true},
+			Offset:  pgtype.Int4{Int32: int32(offset), Valid: true},
+		})
+		if err != nil {
+			span.RecordError(err)
+			return nil, fmt.Errorf("failed to search assets by location: %w", err)
+		}
+		assets = locationAssets
+
+	case req.Type != nil:
+		// Filter by asset type
+		span.SetAttributes(attribute.String("search_type", "type"))
+		typeAssets, err := s.db.GetAssets(ctx, sqlc.GetAssetsParams{
+			OwnerId:     userUUID,
+			Type:        pgtype.Text{String: string(*req.Type), Valid: true},
+			IsFavorite:  pgtype.Bool{Bool: false, Valid: false},
+			IsArchived:  pgtype.Bool{Bool: false, Valid: false},
+			IsTrashed:   pgtype.Bool{Bool: false, Valid: false},
+			Limit:       pgtype.Int4{Int32: int32(limit), Valid: true},
+			Offset:      pgtype.Int4{Int32: int32(offset), Valid: true},
+		})
+		if err != nil {
+			span.RecordError(err)
+			return nil, fmt.Errorf("failed to search assets by type: %w", err)
+		}
+		assets = typeAssets
+
+	default:
+		// Default: get all user assets
+		span.SetAttributes(attribute.String("search_type", "default"))
+		userAssets, err := s.db.GetUserAssets(ctx, sqlc.GetUserAssetsParams{
+			OwnerId: userUUID,
+			Limit:   pgtype.Int4{Int32: int32(limit), Valid: true},
+			Offset:  pgtype.Int4{Int32: int32(offset), Valid: true},
+		})
+		if err != nil {
+			span.RecordError(err)
+			return nil, fmt.Errorf("failed to get user assets: %w", err)
+		}
+		assets = userAssets
 	}
 
 	// Convert to response format
@@ -651,11 +765,141 @@ func (s *Service) DeleteAsset(ctx context.Context, assetID uuid.UUID, userID uui
 	s.storageSize.Add(ctx, -asset.Metadata.Size,
 		metric.WithAttributes(attribute.String("operation", "delete")))
 
-	// TODO: Schedule background cleanup of files
-	// In a production system, you'd want to:
-	// 1. Keep files for a grace period
-	// 2. Clean up files and thumbnails after the grace period
-	// 3. Handle cleanup failures gracefully
+	// Schedule background cleanup if this is a hard delete
+	// For now, just do immediate cleanup
+	// In production, you'd want to use a job queue for this
+	go s.cleanupAssetFiles(context.Background(), assetUUID, asset.OriginalPath)
+
+	return nil
+}
+
+// HardDeleteAsset permanently deletes an asset and its files
+func (s *Service) HardDeleteAsset(ctx context.Context, assetID uuid.UUID, userID uuid.UUID) error {
+	ctx, span := tracer.Start(ctx, "assets.hard_delete_asset",
+		trace.WithAttributes(
+			attribute.String("asset_id", assetID.String()),
+			attribute.String("user_id", userID.String()),
+		))
+	defer span.End()
+
+	// Verify ownership
+	asset, err := s.GetAsset(ctx, assetID, userID)
+	if err != nil {
+		span.RecordError(err)
+		return fmt.Errorf("failed to get asset: %w", err)
+	}
+
+	assetUUID, err := stringToUUID(assetID.String())
+	if err != nil {
+		span.RecordError(err)
+		return fmt.Errorf("invalid asset ID: %w", err)
+	}
+
+	// Delete all associated files immediately
+	err = s.cleanupAssetFiles(ctx, assetUUID, asset.OriginalPath)
+	if err != nil {
+		span.RecordError(err)
+		// Continue with database deletion even if file cleanup fails
+	}
+
+	// Delete EXIF data
+	err = s.db.DeleteExif(ctx, assetUUID)
+	if err != nil {
+		span.RecordError(err)
+		// Continue even if EXIF deletion fails
+	}
+
+	// Delete all asset files from database
+	err = s.db.DeleteAssetFiles(ctx, assetUUID)
+	if err != nil {
+		span.RecordError(err)
+		// Continue even if asset files deletion fails
+	}
+
+	// Permanently delete the asset record
+	err = s.db.PermanentlyDeleteAssets(ctx, []pgtype.UUID{assetUUID}, stringToUUIDUnsafe(userID.String()))
+	if err != nil {
+		span.RecordError(err)
+		return fmt.Errorf("failed to permanently delete asset: %w", err)
+	}
+
+	// Update storage metrics
+	s.storageSize.Add(ctx, -asset.Metadata.Size,
+		metric.WithAttributes(attribute.String("operation", "hard_delete")))
+
+	return nil
+}
+
+// cleanupAssetFiles removes the asset files from storage
+func (s *Service) cleanupAssetFiles(ctx context.Context, assetID pgtype.UUID, originalPath string) error {
+	ctx, span := tracer.Start(ctx, "assets.cleanup_files",
+		trace.WithAttributes(
+			attribute.String("asset_id", uuidToString(assetID)),
+		))
+	defer span.End()
+
+	var cleanupErrors []error
+
+	// Delete original file
+	err := s.storage.Delete(ctx, originalPath)
+	if err != nil {
+		span.RecordError(err)
+		cleanupErrors = append(cleanupErrors, fmt.Errorf("failed to delete original file: %w", err))
+	}
+
+	// Get all associated files from database
+	assetFiles, err := s.db.GetAssetFiles(ctx, assetID)
+	if err != nil {
+		span.RecordError(err)
+		cleanupErrors = append(cleanupErrors, fmt.Errorf("failed to get asset files: %w", err))
+	} else {
+		// Delete each associated file (thumbnails, etc.)
+		for _, file := range assetFiles {
+			err := s.storage.Delete(ctx, file.Path)
+			if err != nil {
+				span.RecordError(err)
+				cleanupErrors = append(cleanupErrors, fmt.Errorf("failed to delete file %s: %w", file.Path, err))
+			}
+		}
+	}
+
+	if len(cleanupErrors) > 0 {
+		span.SetAttributes(attribute.Int("cleanup_errors", len(cleanupErrors)))
+		// Return the first error, but log all of them
+		return cleanupErrors[0]
+	}
+
+	span.SetAttributes(attribute.String("status", "success"))
+	return nil
+}
+
+// RestoreAsset restores a soft-deleted asset
+func (s *Service) RestoreAsset(ctx context.Context, assetID uuid.UUID, userID uuid.UUID) error {
+	ctx, span := tracer.Start(ctx, "assets.restore_asset",
+		trace.WithAttributes(
+			attribute.String("asset_id", assetID.String()),
+			attribute.String("user_id", userID.String()),
+		))
+	defer span.End()
+
+	assetUUID, err := stringToUUID(assetID.String())
+	if err != nil {
+		span.RecordError(err)
+		return fmt.Errorf("invalid asset ID: %w", err)
+	}
+
+	userUUID, err := stringToUUID(userID.String())
+	if err != nil {
+		span.RecordError(err)
+		return fmt.Errorf("invalid user ID: %w", err)
+	}
+
+	// Restore the asset by changing its status back to active
+	err = s.db.RestoreAssets(ctx, []pgtype.UUID{assetUUID}, userUUID)
+	if err != nil {
+		span.RecordError(err)
+		return fmt.Errorf("failed to restore asset: %w", err)
+	}
 
 	return nil
 }
@@ -768,4 +1012,9 @@ func timeToTimestamptz(t time.Time) (pgtype.Timestamptz, error) {
 		Time:  t,
 		Valid: true,
 	}, nil
+}
+
+func stringToUUIDUnsafe(s string) pgtype.UUID {
+	id, _ := uuid.Parse(s)
+	return pgtype.UUID{Bytes: id, Valid: true}
 }

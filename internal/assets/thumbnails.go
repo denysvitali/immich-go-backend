@@ -1,6 +1,7 @@
 package assets
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"image"
@@ -119,18 +120,17 @@ func (g *ThumbnailGenerator) generateThumbnail(ctx context.Context, img image.Im
 	resized := imaging.Resize(img, newWidth, newHeight, imaging.Lanczos)
 
 	// Encode to bytes
-	var buf strings.Builder
-	writer := &stringWriter{&buf}
+	var buf bytes.Buffer
 
 	switch config.Format {
 	case "jpeg":
-		err := jpeg.Encode(writer, resized, &jpeg.Options{Quality: config.Quality})
+		err := jpeg.Encode(&buf, resized, &jpeg.Options{Quality: config.Quality})
 		if err != nil {
 			span.RecordError(err)
 			return nil, fmt.Errorf("failed to encode JPEG: %w", err)
 		}
 	case "png":
-		err := png.Encode(writer, resized)
+		err := png.Encode(&buf, resized)
 		if err != nil {
 			span.RecordError(err)
 			return nil, fmt.Errorf("failed to encode PNG: %w", err)
@@ -138,7 +138,7 @@ func (g *ThumbnailGenerator) generateThumbnail(ctx context.Context, img image.Im
 	case "webp":
 		// For WebP, we'd need a WebP encoder library
 		// For now, fall back to JPEG
-		err := jpeg.Encode(writer, resized, &jpeg.Options{Quality: config.Quality})
+		err := jpeg.Encode(&buf, resized, &jpeg.Options{Quality: config.Quality})
 		if err != nil {
 			span.RecordError(err)
 			return nil, fmt.Errorf("failed to encode WebP (fallback JPEG): %w", err)
@@ -147,7 +147,7 @@ func (g *ThumbnailGenerator) generateThumbnail(ctx context.Context, img image.Im
 		return nil, fmt.Errorf("unsupported thumbnail format: %s", config.Format)
 	}
 
-	data := []byte(buf.String())
+	data := buf.Bytes()
 	span.SetAttributes(attribute.Int("thumbnail_size", len(data)))
 
 	return data, nil
@@ -228,11 +228,3 @@ func (g *ThumbnailGenerator) GetThumbnailInfo(thumbType ThumbnailType, data []by
 	}
 }
 
-// stringWriter is a helper to write to strings.Builder
-type stringWriter struct {
-	*strings.Builder
-}
-
-func (sw *stringWriter) Write(p []byte) (n int, err error) {
-	return sw.Builder.Write(p)
-}
