@@ -54,11 +54,11 @@ type Server struct {
 	immichv1.UnimplementedApiKeyServiceServer
 	immichv1.UnimplementedAssetServiceServer
 	immichv1.UnimplementedAuthServiceServer
-	immichv1.UnimplementedLibrariesServiceServer
+	// immichv1.UnimplementedLibrariesServiceServer // TODO: Re-enable when proto is updated
 	immichv1.UnimplementedMemoryServiceServer
 	immichv1.UnimplementedNotificationsServiceServer
 	immichv1.UnimplementedOAuthServiceServer
-	immichv1.UnimplementedSearchServiceServer
+	// immichv1.UnimplementedSearchServiceServer // TODO: Re-enable when proto is updated
 	immichv1.UnimplementedServerServiceServer
 	immichv1.UnimplementedTimelineServiceServer
 	immichv1.UnimplementedUsersServiceServer
@@ -91,7 +91,7 @@ func NewServer(cfg *config.Config, db *db.Conn) (*Server, error) {
 	albumService := albums.NewService(db.Queries)
 	apiKeyService := apikeys.NewService(db.Queries)
 	libraryService := libraries.NewService(db.Queries, cfg, storageService)
-	searchService := search.NewService(db.Queries, assetService)
+	searchService := search.NewService(db.Queries)
 
 	s := &Server{
 		config:         cfg,
@@ -183,12 +183,13 @@ func (s *Server) HTTPHandler() http.Handler {
 	if err := immichv1.RegisterApiKeyServiceHandlerServer(ctx, mux, s); err != nil {
 		logrus.WithError(err).Error("Failed to register ApiKeyService handler")
 	}
-	if err := immichv1.RegisterLibrariesServiceHandlerServer(ctx, mux, s); err != nil {
-		logrus.WithError(err).Error("Failed to register LibrariesService handler")
-	}
-	if err := immichv1.RegisterSearchServiceHandlerServer(ctx, mux, s); err != nil {
-		logrus.WithError(err).Error("Failed to register SearchService handler")
-	}
+	// TODO: Re-enable when proto definitions are updated
+	// if err := immichv1.RegisterLibrariesServiceHandlerServer(ctx, mux, s); err != nil {
+	// 	logrus.WithError(err).Error("Failed to register LibrariesService handler")
+	// }
+	// if err := immichv1.RegisterSearchServiceHandlerServer(ctx, mux, s); err != nil {
+	// 	logrus.WithError(err).Error("Failed to register SearchService handler")
+	// }
 	if err := immichv1.RegisterAssetServiceHandlerServer(ctx, mux, s); err != nil {
 		logrus.WithError(err).Error("Failed to register AssetService handler")
 	}

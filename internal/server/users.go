@@ -206,13 +206,13 @@ func (s *Server) convertUserToAdminProto(user *users.UserInfo) *immichv1.UserAdm
 	}
 
 	if user.QuotaSizeInBytes != nil {
-		response.QuotaSizeInBytes = *user.QuotaSizeInBytes
+		response.QuotaSizeInBytes = user.QuotaSizeInBytes
 	}
 
-	response.QuotaUsageInBytes = user.QuotaUsageInBytes
+	response.QuotaUsageInBytes = &user.QuotaUsageInBytes
 
 	if user.StorageLabel != nil {
-		response.StorageLabel = *user.StorageLabel
+		response.StorageLabel = user.StorageLabel
 	}
 
 	return response

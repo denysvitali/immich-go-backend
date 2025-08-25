@@ -91,7 +91,10 @@ func runServer(cmd *cobra.Command, args []string) {
 	defer conn.Close()
 
 	// Create server
-	srv := server.NewServer(cfg, conn)
+	srv, err := server.NewServer(cfg, conn)
+	if err != nil {
+		logrus.WithError(err).Fatal("Failed to create server")
+	}
 
 	// Start gRPC server
 	grpcListener, err := net.Listen("tcp", cfg.Server.GRPCAddress)

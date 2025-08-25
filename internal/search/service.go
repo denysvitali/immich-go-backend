@@ -3,7 +3,6 @@ package search
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
@@ -63,7 +62,7 @@ func (s *Service) SearchMetadata(ctx context.Context, userID uuid.UUID, req Meta
 			UpdatedAt:    PgtypeToTime(asset.UpdatedAt),
 			IsFavorite:   asset.IsFavorite,
 			IsArchived:   false, // Not in current schema
-			Duration:     asset.Duration.String,
+			Duration:     &asset.Duration.String,
 			// Add more fields as needed
 		}
 	}
@@ -190,31 +189,33 @@ func (s *Service) GetSearchSuggestions(ctx context.Context, userID uuid.UUID, re
 	}
 	
 	// Get place suggestions
-	if req.IncludePlaces {
-		places, err := s.db.GetTopPlaces(ctx, sqlc.GetTopPlacesParams{
-			UserID: userID,
-			Limit:  10,
-		})
-		if err == nil {
-			for _, p := range places {
-				if p.City != "" {
-					suggestions.Places = append(suggestions.Places, p.City)
-				}
-			}
-		}
-	}
+	// TODO: Implement GetTopPlaces query
+	// if req.IncludePlaces {
+	// 	places, err := s.db.GetTopPlaces(ctx, sqlc.GetTopPlacesParams{
+	// 		UserID: userID,
+	// 		Limit:  10,
+	// 	})
+	// 	if err == nil {
+	// 		for _, p := range places {
+	// 			if p.City != "" {
+	// 				suggestions.Places = append(suggestions.Places, p.City)
+	// 			}
+	// 		}
+	// 	}
+	// }
 	
 	// Get camera make/model suggestions
-	if req.IncludeCameras {
-		cameras, err := s.db.GetDistinctCameras(ctx, userID)
-		if err == nil {
-			for _, c := range cameras {
-				if c.Make != "" && c.Model != "" {
-					suggestions.Cameras = append(suggestions.Cameras, fmt.Sprintf("%s %s", c.Make, c.Model))
-				}
-			}
-		}
-	}
+	// TODO: Implement GetDistinctCameras query
+	// if req.IncludeCameras {
+	// 	cameras, err := s.db.GetDistinctCameras(ctx, userID)
+	// 	if err == nil {
+	// 		for _, c := range cameras {
+	// 			if c.Make != "" && c.Model != "" {
+	// 				suggestions.Cameras = append(suggestions.Cameras, fmt.Sprintf("%s %s", c.Make, c.Model))
+	// 			}
+	// 		}
+	// 	}
+	// }
 	
 	return suggestions, nil
 }
@@ -236,6 +237,10 @@ func (s *Service) SearchExplore(ctx context.Context, userID uuid.UUID) (*Explore
 		Categories: []ExploreCategory{},
 	}
 	
+	// TODO: Implement explore categories when queries are available
+	return result, nil
+	
+	/* TODO: Uncomment when queries are implemented
 	// This Year category
 	thisYear := time.Now().Year()
 	thisYearAssets, err := s.db.GetAssetsByYear(ctx, sqlc.GetAssetsByYearParams{
@@ -291,13 +296,14 @@ func (s *Service) SearchExplore(ctx context.Context, userID uuid.UUID) (*Explore
 	}
 	
 	return result, nil
+	*/
 }
 
 // Helper function to convert asset IDs to strings
 func assetIDsToStrings(assets []sqlc.Asset) []string {
 	ids := make([]string, len(assets))
 	for i, asset := range assets {
-		ids[i] = asset.ID.String()
+		ids[i] = PgtypeToUUID(asset.ID).String()
 	}
 	return ids
 }

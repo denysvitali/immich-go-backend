@@ -34,12 +34,18 @@ func (s *Server) getUserIDFromContext(ctx context.Context) (uuid.UUID, error) {
 	token := strings.TrimPrefix(authHeader, "Bearer ")
 	
 	// Validate token and get user info
-	userInfo, err := s.authService.ValidateToken(ctx, token)
+	userInfo, err := s.authService.ValidateToken(token)
 	if err != nil {
 		return uuid.UUID{}, status.Error(codes.Unauthenticated, "invalid token")
 	}
 
-	return userInfo.ID, nil
+	// Parse user ID string to UUID
+	userID, err := uuid.Parse(userInfo.ID)
+	if err != nil {
+		return uuid.UUID{}, status.Error(codes.Internal, "invalid user ID format")
+	}
+
+	return userID, nil
 }
 
 // timestampFromTime converts a Go time.Time to a protobuf timestamp
