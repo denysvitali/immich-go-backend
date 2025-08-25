@@ -595,9 +595,9 @@ func (s *Service) SearchAssets(ctx context.Context, req SearchRequest) (*SearchR
 		span.SetAttributes(attribute.String("search_type", "text"))
 		textAssets, err := s.db.SearchAssetsByText(ctx, sqlc.SearchAssetsByTextParams{
 			OwnerId: userUUID,
-			Query:   req.Query,
-			Limit:   pgtype.Int4{Int32: int32(limit), Valid: true},
-			Offset:  pgtype.Int4{Int32: int32(offset), Valid: true},
+			Column2: pgtype.Text{String: req.Query, Valid: true},
+			Limit:   int32(limit),
+			Offset:  int32(offset),
 		})
 		if err != nil {
 			span.RecordError(err)
@@ -620,11 +620,11 @@ func (s *Service) SearchAssets(ctx context.Context, req SearchRequest) (*SearchR
 		}
 
 		dateAssets, err := s.db.GetAssetsByDateRange(ctx, sqlc.GetAssetsByDateRangeParams{
-			OwnerId:   userUUID,
-			StartDate: startTime,
-			EndDate:   endTime,
-			Limit:     pgtype.Int4{Int32: int32(limit), Valid: true},
-			Offset:    pgtype.Int4{Int32: int32(offset), Valid: true},
+			OwnerId:         userUUID,
+			LocalDateTime:   startTime,
+			LocalDateTime_2: endTime,
+			Limit:           int32(limit),
+			Offset:          int32(offset),
 		})
 		if err != nil {
 			span.RecordError(err)
@@ -646,9 +646,9 @@ func (s *Service) SearchAssets(ctx context.Context, req SearchRequest) (*SearchR
 
 		locationAssets, err := s.db.SearchAssetsByText(ctx, sqlc.SearchAssetsByTextParams{
 			OwnerId: userUUID,
-			Query:   locationQuery,
-			Limit:   pgtype.Int4{Int32: int32(limit), Valid: true},
-			Offset:  pgtype.Int4{Int32: int32(offset), Valid: true},
+			Column2: pgtype.Text{String: locationQuery, Valid: true},
+			Limit:   int32(limit),
+			Offset:  int32(offset),
 		})
 		if err != nil {
 			span.RecordError(err)
@@ -665,8 +665,8 @@ func (s *Service) SearchAssets(ctx context.Context, req SearchRequest) (*SearchR
 			IsFavorite:  pgtype.Bool{Bool: false, Valid: false},
 			IsArchived:  pgtype.Bool{Bool: false, Valid: false},
 			IsTrashed:   pgtype.Bool{Bool: false, Valid: false},
-			Limit:       pgtype.Int4{Int32: int32(limit), Valid: true},
-			Offset:      pgtype.Int4{Int32: int32(offset), Valid: true},
+			Limit:       int32(limit),
+			Offset:      int32(offset),
 		})
 		if err != nil {
 			span.RecordError(err)
@@ -817,7 +817,10 @@ func (s *Service) HardDeleteAsset(ctx context.Context, assetID uuid.UUID, userID
 	}
 
 	// Permanently delete the asset record
-	err = s.db.PermanentlyDeleteAssets(ctx, []pgtype.UUID{assetUUID}, stringToUUIDUnsafe(userID.String()))
+	err = s.db.PermanentlyDeleteAssets(ctx, sqlc.PermanentlyDeleteAssetsParams{
+		Column1: []pgtype.UUID{assetUUID},
+		OwnerId: stringToUUIDUnsafe(userID.String()),
+	})
 	if err != nil {
 		span.RecordError(err)
 		return fmt.Errorf("failed to permanently delete asset: %w", err)
@@ -841,7 +844,7 @@ func (s *Service) cleanupAssetFiles(ctx context.Context, assetID pgtype.UUID, or
 	var cleanupErrors []error
 
 	// Delete original file
-	err := s.storage.Delete(ctx, originalPath)
+	err := s.storage.DeleteAsset(ctx, originalPath)
 	if err != nil {
 		span.RecordError(err)
 		cleanupErrors = append(cleanupErrors, fmt.Errorf("failed to delete original file: %w", err))
@@ -855,7 +858,7 @@ func (s *Service) cleanupAssetFiles(ctx context.Context, assetID pgtype.UUID, or
 	} else {
 		// Delete each associated file (thumbnails, etc.)
 		for _, file := range assetFiles {
-			err := s.storage.Delete(ctx, file.Path)
+			err := s.storage.DeleteAsset(ctx, file.Path)
 			if err != nil {
 				span.RecordError(err)
 				cleanupErrors = append(cleanupErrors, fmt.Errorf("failed to delete file %s: %w", file.Path, err))
@@ -895,7 +898,10 @@ func (s *Service) RestoreAsset(ctx context.Context, assetID uuid.UUID, userID uu
 	}
 
 	// Restore the asset by changing its status back to active
-	err = s.db.RestoreAssets(ctx, []pgtype.UUID{assetUUID}, userUUID)
+	err = s.db.RestoreAssets(ctx, sqlc.RestoreAssetsParams{
+		Column1: []pgtype.UUID{assetUUID},
+		OwnerId: userUUID,
+	})
 	if err != nil {
 		span.RecordError(err)
 		return fmt.Errorf("failed to restore asset: %w", err)

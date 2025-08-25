@@ -34,10 +34,31 @@ Always run these commands in the Nix development environment. The typical workfl
 
 ## Architecture Overview
 
+### Project Structure
+```
+immich-go-backend/
+├── cmd/                    # CLI commands and entry point (Cobra)
+├── internal/              # Core application code
+│   ├── albums/           # Album management service
+│   ├── assets/           # Asset management with metadata extraction
+│   ├── auth/             # JWT authentication and middleware
+│   ├── config/           # Configuration management (Viper)
+│   ├── db/sqlc/          # Generated database code
+│   ├── proto/            # Protocol buffer definitions and generated code
+│   ├── server/           # gRPC server and HTTP handlers
+│   ├── storage/          # Storage abstraction layer
+│   ├── telemetry/        # OpenTelemetry setup
+│   ├── users/            # User management service
+│   └── websocket/        # WebSocket support
+├── sqlc/                 # SQL schema and queries
+│   ├── queries.sql       # All database queries (116+)
+│   └── schema.sql        # Database schema definition
+└── scripts/              # Build and development scripts
+
 ### Core Components
 - **Storage Abstraction Layer** (`internal/storage/`) - Universal storage interface supporting local filesystem, S3, and rclone backends with pre-signed URL support
 - **Service Layer** (`internal/*/service.go`) - Domain-specific business logic (auth, users, assets, albums)
-- **Database Layer** (`internal/db/`) - SQLC-generated type-safe PostgreSQL operations with 116 queries
+- **Database Layer** (`internal/db/`) - SQLC-generated type-safe PostgreSQL operations with 116+ queries
 - **Protocol Buffers** (`internal/proto/`) - gRPC service definitions with automatic REST gateway generation
 - **Configuration** (`internal/config/`) - YAML and environment variable configuration with Viper
 - **Telemetry** (`internal/telemetry/`) - OpenTelemetry observability with autoexport
@@ -51,10 +72,13 @@ Always run these commands in the Nix development environment. The typical workfl
 - **AWS SDK v2** for S3 backend support
 
 ### Database Schema
-The project uses SQLC to generate type-safe Go code from SQL queries. Database operations are in `internal/db/sqlc/` with:
-- `queries.sql` - SQL query definitions
-- `schema.sql` - Database schema
-- Generated Go files for type-safe database operations
+The project uses SQLC to generate type-safe Go code from SQL queries. Key locations:
+- `sqlc/queries.sql` - All SQL query definitions (116+ queries)
+- `sqlc/schema.sql` - Database schema with custom UUID v7 function
+- `internal/db/sqlc/` - Generated Go files for type-safe database operations
+- `sqlc.yaml` - SQLC configuration
+
+Run `make sqlc-gen` after modifying SQL files to regenerate Go code.
 
 ### Storage Backends
 Three storage backends are supported through a unified interface:
@@ -85,18 +109,18 @@ Services follow clean architecture principles:
 - ✅ Configuration and telemetry systems
 - ✅ Authentication service with JWT tokens
 - ✅ User management service with full CRUD operations
+- ✅ Asset management service with comprehensive search, deletion, and download features
 
 **In Progress:**
-- 🔄 Asset management service (metadata extraction, thumbnails)
 - 🔄 Album management service completion
 - 🔄 HTTP/gRPC controllers
 
 **Next Priorities:**
-1. Complete asset management service
-2. Finish album management service
-3. Add job queue system for background processing
-4. Complete HTTP REST API endpoints
-5. Add comprehensive testing infrastructure
+1. Finish album management service
+2. Add job queue system for background processing
+3. Complete HTTP REST API endpoints
+4. Add comprehensive testing infrastructure
+5. Implement advanced features (face recognition, search, etc.)
 
 ## Configuration
 
@@ -134,7 +158,15 @@ Run `make test` for unit tests and `make test-verbose` for detailed output. The 
 
 The project uses a Makefile with Nix integration. Key build artifacts:
 - `bin/immich-go-backend` - Main application binary
-- Generated protobuf Go files
-- Generated SQLC database code
+- Generated protobuf Go files in `internal/proto/`
+- Generated SQLC database code in `internal/db/sqlc/`
 
 Always ensure you're in the Nix development environment before running build commands.
+
+## Important Files
+
+- `buf.yaml`, `buf.gen.yaml` - Protocol buffer configuration
+- `sqlc.yaml` - SQLC code generation configuration
+- `flake.nix` - Nix flake for development environment
+- `docker/Dockerfile` - Multi-stage Docker build
+- `ROADMAP.md` - Detailed implementation phases and progress

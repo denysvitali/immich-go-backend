@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -22,7 +24,7 @@ func (s *Server) Login(ctx context.Context, req *immichv1.LoginRequest) (*immich
 		Password: req.Password,
 	}
 
-	loginResponse, err := s.authService.Login(ctx, loginRequest)
+	loginResponse, err := s.authService.Login(ctx, *loginRequest)
 	if err != nil {
 		return nil, status.Errorf(codes.Unauthenticated, "login failed: %v", err)
 	}
@@ -31,7 +33,7 @@ func (s *Server) Login(ctx context.Context, req *immichv1.LoginRequest) (*immich
 	_ = grpc.SetHeader(ctx, metadata.Pairs("x-http-code", "201"))
 	
 	// Set secure cookies
-	cookieMaxAge := fmt.Sprintf("Max-Age=%d", int(loginResponse.ExpiresIn.Seconds()))
+	cookieMaxAge := fmt.Sprintf("Max-Age=%d", 86400) // 24 hours
 	accessTokenCookie := fmt.Sprintf("immich_access_token=%s; %s; Path=/; HttpOnly; Secure; SameSite=Lax", 
 		loginResponse.AccessToken, cookieMaxAge)
 	authTypeCookie := fmt.Sprintf("immich_auth_type=password; %s; Path=/; HttpOnly; Secure; SameSite=Lax", 
@@ -45,12 +47,12 @@ func (s *Server) Login(ctx context.Context, req *immichv1.LoginRequest) (*immich
 
 	return &immichv1.LoginResponse{
 		AccessToken:          loginResponse.AccessToken,
-		UserId:               loginResponse.User.ID.String(),
+		UserId:               loginResponse.User.ID,
 		UserEmail:            loginResponse.User.Email,
 		Name:                 loginResponse.User.Name,
-		ProfileImagePath:     loginResponse.User.ProfileImagePath,
+		ProfileImagePath:     "", // Not available in current UserInfo
 		IsAdmin:              loginResponse.User.IsAdmin,
-		ShouldChangePassword: loginResponse.User.ShouldChangePassword,
+		ShouldChangePassword: false, // Not available in current UserInfo
 	}, nil
 }
 
@@ -62,7 +64,7 @@ func (s *Server) Logout(ctx context.Context, req *emptypb.Empty) (*immichv1.Logo
 	}
 
 	// Invalidate the session
-	err = s.authService.Logout(ctx, userID)
+	err = s.authService.Logout(ctx, userID.String())
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "logout failed: %v", err)
 	}
@@ -78,52 +80,31 @@ func (s *Server) Logout(ctx context.Context, req *emptypb.Empty) (*immichv1.Logo
 	}, nil
 }
 
-func (s *Server) SignUpAdmin(ctx context.Context, req *immichv1.SignUpAdminRequest) (*immichv1.UserResponse, error) {
+func (s *Server) AdminSignUp(ctx context.Context, req *immichv1.AdminSignUpRequest) (*immichv1.LoginResponse, error) {
 	// Use the auth service to register an admin user
-	registerRequest := &auth.RegisterRequest{
-		Email:           req.Email,
-		Password:        req.Password,
-		Name:            req.Name,
-		IsAdmin:         true,
+	registerRequest := auth.RegisterRequest{
+		Email:    req.Email,
+		Password: req.Password,
+		Name:     req.Name,
 	}
 
-	user, err := s.authService.Register(ctx, registerRequest)
+	// Register the user (they'll be admin if this is the first user)
+	response, err := s.authService.Register(ctx, registerRequest)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "admin registration failed: %v", err)
 	}
 
-	return &immichv1.UserResponse{
-		Id:                   user.ID.String(),
-		Email:                user.Email,
-		Name:                 user.Name,
-		ProfileImagePath:     user.ProfileImagePath,
-		IsAdmin:              user.IsAdmin,
-		ShouldChangePassword: user.ShouldChangePassword,
-		CreatedAt:            timestampFromTime(user.CreatedAt),
-		UpdatedAt:            timestampFromTime(user.UpdatedAt),
+	// The Register method already returns the token in AuthResponse
+	return &immichv1.LoginResponse{
+		AccessToken:          response.AccessToken,
+		UserId:               response.User.ID,
+		UserEmail:            response.User.Email,
+		Name:                 response.User.Name,
+		ProfileImagePath:     "", // Not available in current implementation
+		IsAdmin:              response.User.IsAdmin,
+		ShouldChangePassword: false, // Not available in current implementation
 	}, nil
 }
 
-func (s *Server) ValidateAccessToken(ctx context.Context, req *immichv1.ValidateAccessTokenRequest) (*immichv1.ValidateAccessTokenResponse, error) {
-	// Validate the provided access token
-	userInfo, err := s.authService.ValidateToken(ctx, req.AccessToken)
-	if err != nil {
-		return &immichv1.ValidateAccessTokenResponse{
-			AuthStatus: false,
-		}, nil
-	}
-
-	return &immichv1.ValidateAccessTokenResponse{
-		AuthStatus: true,
-		User: &immichv1.UserResponse{
-			Id:                   userInfo.ID.String(),
-			Email:                userInfo.Email,
-			Name:                 userInfo.Name,
-			ProfileImagePath:     userInfo.ProfileImagePath,
-			IsAdmin:              userInfo.IsAdmin,
-			ShouldChangePassword: userInfo.ShouldChangePassword,
-			CreatedAt:            timestampFromTime(userInfo.CreatedAt),
-			UpdatedAt:            timestampFromTime(userInfo.UpdatedAt),
-		},
-	}, nil
-}
+// ValidateAccessToken would go here if it was defined in the proto
+// Currently not part of the auth.proto definition
