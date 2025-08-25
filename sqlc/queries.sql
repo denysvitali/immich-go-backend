@@ -959,3 +959,74 @@ WHERE "assetId" = $1 AND "type" = $2;
 -- name: DeleteAssetFiles :exec
 DELETE FROM asset_files
 WHERE "assetId" = $1;
+
+-- Search queries for basic functionality
+-- name: SearchAssets :many
+SELECT * FROM assets
+WHERE "ownerId" = $1 
+  AND "deletedAt" IS NULL
+  AND (
+    "originalFileName" ILIKE '%' || $2 || '%' OR
+    description ILIKE '%' || $2 || '%'
+  )
+ORDER BY "createdAt" DESC
+LIMIT $3 OFFSET $4;
+
+-- name: CountSearchAssets :one
+SELECT COUNT(*) FROM assets
+WHERE "ownerId" = $1 
+  AND "deletedAt" IS NULL
+  AND (
+    "originalFileName" ILIKE '%' || $2 || '%' OR
+    description ILIKE '%' || $2 || '%'
+  );
+
+-- name: SearchPeople :many
+SELECT * FROM person
+WHERE "ownerId" = $1
+  AND name ILIKE '%' || $2 || '%'
+ORDER BY name
+LIMIT $3 OFFSET $4;
+
+-- name: SearchPlaces :many
+SELECT DISTINCT city, state, country FROM exif
+WHERE "assetId" IN (
+  SELECT id FROM assets WHERE "ownerId" = $1 AND "deletedAt" IS NULL
+)
+  AND (
+    city ILIKE '%' || $2 || '%' OR
+    state ILIKE '%' || $2 || '%' OR
+    country ILIKE '%' || $2 || '%'
+  )
+LIMIT $3 OFFSET $4;
+
+-- name: GetDistinctCities :many
+SELECT DISTINCT city FROM exif
+WHERE "assetId" IN (
+  SELECT id FROM assets WHERE "ownerId" = $1 AND "deletedAt" IS NULL
+)
+  AND city IS NOT NULL
+  AND city != ''
+ORDER BY city
+LIMIT $2;
+
+-- name: GetTopPeople :many
+SELECT p.*, COUNT(f."personId") as face_count
+FROM person p
+LEFT JOIN asset_faces f ON p.id = f."personId"
+WHERE p."ownerId" = $1
+GROUP BY p.id
+ORDER BY face_count DESC
+LIMIT $2;
+
+-- name: CheckAssetExistsByPath :one
+SELECT EXISTS(
+  SELECT 1 FROM assets
+  WHERE "originalPath" = $1
+    AND "deletedAt" IS NULL
+);
+
+-- name: GetLibraryAssetCount :one
+SELECT COUNT(*) FROM assets
+WHERE "libraryId" = $1
+  AND "deletedAt" IS NULL;

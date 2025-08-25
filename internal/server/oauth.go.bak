@@ -7,6 +7,7 @@ import (
 
 	"github.com/denysvitali/immich-go-backend/internal/oauth"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -70,7 +71,7 @@ func (s *Server) CallbackOAuth(ctx context.Context, req *immichv1.CallbackOAuthR
 	}
 	
 	// Generate JWT token for the user
-	token, err := s.authService.GenerateToken(user.ID, user.Email, 24*time.Hour)
+	token, err := s.authService.GenerateToken(user.ID.String(), user.Email, 24*time.Hour)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to generate token: %v", err)
 	}

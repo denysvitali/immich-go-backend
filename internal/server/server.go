@@ -14,10 +14,13 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/denysvitali/immich-go-backend/internal/albums"
+	"github.com/denysvitali/immich-go-backend/internal/apikeys"
 	"github.com/denysvitali/immich-go-backend/internal/assets"
 	"github.com/denysvitali/immich-go-backend/internal/auth"
 	"github.com/denysvitali/immich-go-backend/internal/config"
 	"github.com/denysvitali/immich-go-backend/internal/db"
+	"github.com/denysvitali/immich-go-backend/internal/libraries"
+	"github.com/denysvitali/immich-go-backend/internal/search"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 	"github.com/denysvitali/immich-go-backend/internal/storage"
 	"github.com/denysvitali/immich-go-backend/internal/users"
@@ -40,17 +43,22 @@ type Server struct {
 	wsHub       *websocket.Hub
 
 	// Service layer
-	userService  *users.Service
-	assetService *assets.Service
-	albumService *albums.Service
+	userService    *users.Service
+	assetService   *assets.Service
+	albumService   *albums.Service
+	apiKeyService  *apikeys.Service
+	libraryService *libraries.Service
+	searchService  *search.Service
 
 	immichv1.UnimplementedAlbumServiceServer
 	immichv1.UnimplementedApiKeyServiceServer
 	immichv1.UnimplementedAssetServiceServer
 	immichv1.UnimplementedAuthServiceServer
+	immichv1.UnimplementedLibrariesServiceServer
 	immichv1.UnimplementedMemoryServiceServer
 	immichv1.UnimplementedNotificationsServiceServer
 	immichv1.UnimplementedOAuthServiceServer
+	immichv1.UnimplementedSearchServiceServer
 	immichv1.UnimplementedServerServiceServer
 	immichv1.UnimplementedTimelineServiceServer
 	immichv1.UnimplementedUsersServiceServer
@@ -81,15 +89,21 @@ func NewServer(cfg *config.Config, db *db.Conn) (*Server, error) {
 	}
 
 	albumService := albums.NewService(db.Queries)
+	apiKeyService := apikeys.NewService(db.Queries)
+	libraryService := libraries.NewService(db.Queries, cfg, storageService)
+	searchService := search.NewService(db.Queries, assetService)
 
 	s := &Server{
-		config:       cfg,
-		db:           db,
-		authService:  authService,
-		wsHub:        wsHub,
-		userService:  userService,
-		assetService: assetService,
-		albumService: albumService,
+		config:         cfg,
+		db:             db,
+		authService:    authService,
+		wsHub:          wsHub,
+		userService:    userService,
+		assetService:   assetService,
+		albumService:   albumService,
+		apiKeyService:  apiKeyService,
+		libraryService: libraryService,
+		searchService:  searchService,
 	}
 	s.grpcServer = grpc.NewServer()
 	return s, nil
@@ -168,6 +182,12 @@ func (s *Server) HTTPHandler() http.Handler {
 	}
 	if err := immichv1.RegisterApiKeyServiceHandlerServer(ctx, mux, s); err != nil {
 		logrus.WithError(err).Error("Failed to register ApiKeyService handler")
+	}
+	if err := immichv1.RegisterLibrariesServiceHandlerServer(ctx, mux, s); err != nil {
+		logrus.WithError(err).Error("Failed to register LibrariesService handler")
+	}
+	if err := immichv1.RegisterSearchServiceHandlerServer(ctx, mux, s); err != nil {
+		logrus.WithError(err).Error("Failed to register SearchService handler")
 	}
 	if err := immichv1.RegisterAssetServiceHandlerServer(ctx, mux, s); err != nil {
 		logrus.WithError(err).Error("Failed to register AssetService handler")

@@ -53,6 +53,7 @@ service OAuthService {
 // Request to authorize OAuth
 message AuthorizeOAuthRequest {
   string redirect_uri = 1;
+  string provider = 2;  // OAuth provider (google, github, microsoft)
 }
 
 // Response for OAuth authorization
@@ -64,17 +65,24 @@ message AuthorizeOAuthResponse {
 // Request for OAuth callback
 message CallbackOAuthRequest {
   string url = 1;
+  string state = 2;
+  string code = 3;
+  string provider = 4;
 }
 
 // Response for OAuth callback
 message CallbackOAuthResponse {
   string access_token = 1;
   string user_id = 2;
+  string user_email = 3;
+  bool is_admin = 4;
+  string name = 5;
 }
 
 // Request to generate OAuth config
 message GenerateOAuthConfigRequest {
   string redirect_uri = 1;
+  string provider = 2;
 }
 
 // Response for OAuth config generation
@@ -87,11 +95,14 @@ message GenerateOAuthConfigResponse {
 // Request to link OAuth account
 message LinkOAuthAccountRequest {
   string url = 1;
+  string provider = 2;
+  string provider_id = 3;
 }
 
 // Response for linking OAuth account
 message LinkOAuthAccountResponse {
   bool linked = 1;
+  bool success = 2;
 }
 
 // Response for unlinking OAuth account

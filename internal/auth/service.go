@@ -497,6 +497,30 @@ func (s *Service) ChangePassword(ctx context.Context, userID string, req ChangeP
 	return nil
 }
 
+// GenerateToken generates an access token for OAuth authentication
+func (s *Service) GenerateToken(userID, email string, duration time.Duration) (string, error) {
+	now := time.Now()
+	expiresAt := now.Add(duration)
+
+	// Create access token claims
+	accessClaims := &Claims{
+		UserID:  userID,
+		Email:   email,
+		IsAdmin: false, // OAuth users are not admin by default
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(expiresAt),
+			IssuedAt:  jwt.NewNumericDate(now),
+			NotBefore: jwt.NewNumericDate(now),
+			Issuer:    s.config.JWTIssuer,
+			Subject:   userID,
+		},
+	}
+
+	// Generate access token
+	accessToken := jwt.NewWithClaims(jwt.SigningMethodHS256, accessClaims)
+	return accessToken.SignedString([]byte(s.config.JWTSecret))
+}
+
 // generateTokens generates access and refresh tokens
 func (s *Service) generateTokens(userID, email string, isAdmin bool) (string, string, time.Time, error) {
 	now := time.Now()

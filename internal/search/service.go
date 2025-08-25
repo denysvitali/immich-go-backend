@@ -26,55 +26,14 @@ func NewService(db *sqlc.Queries) *Service {
 func (s *Service) SearchMetadata(ctx context.Context, userID uuid.UUID, req MetadataSearchRequest) (*SearchResult, error) {
 	// Build query parameters
 	params := sqlc.SearchAssetsParams{
-		UserID: userID,
-		Limit:  int32(req.Size),
-		Offset: int32(req.Page * req.Size),
+		OwnerID: UUIDToPgtype(userID),
+		Query:   req.Query,
+		Limit:   int32(req.Size),
+		Offset:  int32(req.Page * req.Size),
 	}
 	
-	// Apply filters
-	if req.Query != "" {
-		params.Query = &req.Query
-	}
-	
-	if req.Type != "" {
-		params.Type = &req.Type
-	}
-	
-	if req.IsFavorite != nil {
-		params.IsFavorite = req.IsFavorite
-	}
-	
-	if req.IsArchived != nil {
-		params.IsArchived = req.IsArchived
-	}
-	
-	if req.City != "" {
-		params.City = &req.City
-	}
-	
-	if req.State != "" {
-		params.State = &req.State
-	}
-	
-	if req.Country != "" {
-		params.Country = &req.Country
-	}
-	
-	if req.Make != "" {
-		params.Make = &req.Make
-	}
-	
-	if req.Model != "" {
-		params.Model = &req.Model
-	}
-	
-	if !req.TakenAfter.IsZero() {
-		params.TakenAfter = &req.TakenAfter
-	}
-	
-	if !req.TakenBefore.IsZero() {
-		params.TakenBefore = &req.TakenBefore
-	}
+	// Note: Our basic search only supports text search for now
+	// TODO: Add support for other metadata filters
 	
 	// Execute search
 	assets, err := s.db.SearchAssets(ctx, params)
@@ -83,7 +42,11 @@ func (s *Service) SearchMetadata(ctx context.Context, userID uuid.UUID, req Meta
 	}
 	
 	// Get total count
-	count, err := s.db.CountSearchAssets(ctx, params)
+	countParams := sqlc.CountSearchAssetsParams{
+		OwnerID: params.OwnerID,
+		Query:   params.Query,
+	}
+	count, err := s.db.CountSearchAssets(ctx, countParams)
 	if err != nil {
 		return nil, fmt.Errorf("failed to count search results: %w", err)
 	}
@@ -92,15 +55,15 @@ func (s *Service) SearchMetadata(ctx context.Context, userID uuid.UUID, req Meta
 	items := make([]*SearchResultItem, len(assets))
 	for i, asset := range assets {
 		items[i] = &SearchResultItem{
-			ID:           asset.ID.String(),
+			ID:           PgtypeToUUID(asset.ID).String(),
 			Type:         asset.Type,
 			OriginalPath: asset.OriginalPath,
 			OriginalName: asset.OriginalFileName,
-			CreatedAt:    asset.CreatedAt,
-			UpdatedAt:    asset.UpdatedAt,
+			CreatedAt:    PgtypeToTime(asset.CreatedAt),
+			UpdatedAt:    PgtypeToTime(asset.UpdatedAt),
 			IsFavorite:   asset.IsFavorite,
-			IsArchived:   asset.IsArchived,
-			Duration:     asset.Duration,
+			IsArchived:   false, // Not in current schema
+			Duration:     asset.Duration.String,
 			// Add more fields as needed
 		}
 	}
@@ -117,10 +80,10 @@ func (s *Service) SearchMetadata(ctx context.Context, userID uuid.UUID, req Meta
 func (s *Service) SearchPeople(ctx context.Context, userID uuid.UUID, req PeopleSearchRequest) (*PeopleSearchResult, error) {
 	// Search for people
 	people, err := s.db.SearchPeople(ctx, sqlc.SearchPeopleParams{
-		UserID: userID,
-		Query:  &req.Query,
-		Limit:  int32(req.Size),
-		Offset: int32(req.Page * req.Size),
+		OwnerID: UUIDToPgtype(userID),
+		Query:   req.Query,
+		Limit:   int32(req.Size),
+		Offset:  int32(req.Page * req.Size),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to search people: %w", err)
@@ -130,10 +93,10 @@ func (s *Service) SearchPeople(ctx context.Context, userID uuid.UUID, req People
 	items := make([]*PersonResult, len(people))
 	for i, person := range people {
 		items[i] = &PersonResult{
-			ID:         person.ID.String(),
+			ID:         PgtypeToUUID(person.ID).String(),
 			Name:       person.Name,
-			AssetCount: int(person.AssetCount),
-			Thumbnail:  person.ThumbnailPath,
+			AssetCount: 0, // Not returned by basic query
+			Thumbnail:  "", // Not returned by basic query
 		}
 	}
 	
@@ -147,10 +110,10 @@ func (s *Service) SearchPeople(ctx context.Context, userID uuid.UUID, req People
 func (s *Service) SearchPlaces(ctx context.Context, userID uuid.UUID, req PlacesSearchRequest) (*PlacesSearchResult, error) {
 	// Search for places
 	places, err := s.db.SearchPlaces(ctx, sqlc.SearchPlacesParams{
-		UserID: userID,
-		Query:  &req.Query,
-		Limit:  int32(req.Size),
-		Offset: int32(req.Page * req.Size),
+		OwnerID: UUIDToPgtype(userID),
+		Query:   req.Query,
+		Limit:   int32(req.Size),
+		Offset:  int32(req.Page * req.Size),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to search places: %w", err)
@@ -159,11 +122,21 @@ func (s *Service) SearchPlaces(ctx context.Context, userID uuid.UUID, req Places
 	// Convert to search results
 	items := make([]*PlaceResult, len(places))
 	for i, place := range places {
+		var city, state, country string
+		if place.City != nil {
+			city = *place.City
+		}
+		if place.State != nil {
+			state = *place.State
+		}
+		if place.Country != nil {
+			country = *place.Country
+		}
 		items[i] = &PlaceResult{
-			City:       place.City,
-			State:      place.State,
-			Country:    place.Country,
-			AssetCount: int(place.AssetCount),
+			City:       city,
+			State:      state,
+			Country:    country,
+			AssetCount: 0, // Not returned by our query
 		}
 	}
 	
@@ -176,8 +149,8 @@ func (s *Service) SearchPlaces(ctx context.Context, userID uuid.UUID, req Places
 // SearchCities searches for cities
 func (s *Service) SearchCities(ctx context.Context, userID uuid.UUID, req CitiesSearchRequest) ([]*CityResult, error) {
 	cities, err := s.db.GetDistinctCities(ctx, sqlc.GetDistinctCitiesParams{
-		UserID: userID,
-		Limit:  int32(req.Size),
+		OwnerID: UUIDToPgtype(userID),
+		Limit:   int32(req.Size),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get cities: %w", err)
@@ -186,9 +159,9 @@ func (s *Service) SearchCities(ctx context.Context, userID uuid.UUID, req Cities
 	results := make([]*CityResult, len(cities))
 	for i, city := range cities {
 		results[i] = &CityResult{
-			City:    city.City,
-			State:   city.State,
-			Country: city.Country,
+			City:    city,
+			State:   "", // Not returned by our query
+			Country: "", // Not returned by our query
 		}
 	}
 	
@@ -208,10 +181,7 @@ func (s *Service) GetSearchSuggestions(ctx context.Context, userID uuid.UUID, re
 	
 	// Get people suggestions
 	if req.IncludePeople {
-		people, err := s.db.GetTopPeople(ctx, sqlc.GetTopPeopleParams{
-			UserID: userID,
-			Limit:  10,
-		})
+		people, err := s.db.GetTopPeople(ctx, UUIDToPgtype(userID), 10)
 		if err == nil {
 			for _, p := range people {
 				suggestions.People = append(suggestions.People, p.Name)
