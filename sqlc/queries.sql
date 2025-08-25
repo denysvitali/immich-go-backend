@@ -1094,3 +1094,22 @@ DELETE FROM shared_link_assets WHERE "sharedLinkId" = $1;
 -- name: GetSharedLinkAssets :many
 SELECT "assetId" FROM shared_link_assets
 WHERE "sharedLinkId" = $1;
+
+-- ================== SYSTEM CONFIGURATION ==================
+
+-- name: GetAllSystemConfig :many
+SELECT key, value FROM system_config
+ORDER BY key;
+
+-- name: GetSystemConfig :one
+SELECT value FROM system_config
+WHERE key = $1;
+
+-- name: UpsertSystemConfig :exec
+INSERT INTO system_config (key, value)
+VALUES ($1, $2)
+ON CONFLICT (key) DO UPDATE
+SET value = $2, "updatedAt" = NOW();
+
+-- name: DeleteSystemConfig :exec
+DELETE FROM system_config WHERE key = $1;
