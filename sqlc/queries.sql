@@ -1030,3 +1030,67 @@ SELECT EXISTS(
 SELECT COUNT(*) FROM assets
 WHERE "libraryId" = $1
   AND "deletedAt" IS NULL;
+
+-- ================== SHARED LINKS ==================
+
+-- name: CreateSharedLink :one
+INSERT INTO shared_links (
+  id, "userId", key, type, description, password,
+  "expiresAt", "allowDownload", "allowUpload", "showMetadata",
+  "albumId", "createdAt", "updatedAt"
+) VALUES (
+  $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW()
+) RETURNING *;
+
+-- name: GetSharedLink :one
+SELECT sl.*, COUNT(sla."assetId") as asset_count
+FROM shared_links sl
+LEFT JOIN shared_link_assets sla ON sl.id = sla."sharedLinkId"
+WHERE sl.id = $1
+GROUP BY sl.id;
+
+-- name: GetSharedLinkByKey :one
+SELECT sl.*, COUNT(sla."assetId") as asset_count
+FROM shared_links sl
+LEFT JOIN shared_link_assets sla ON sl.id = sla."sharedLinkId"
+WHERE sl.key = $1
+GROUP BY sl.id;
+
+-- name: ListSharedLinks :many
+SELECT sl.*, COUNT(sla."assetId") as asset_count
+FROM shared_links sl
+LEFT JOIN shared_link_assets sla ON sl.id = sla."sharedLinkId"
+WHERE sl."userId" = $1
+GROUP BY sl.id
+ORDER BY sl."createdAt" DESC;
+
+-- name: UpdateSharedLink :one
+UPDATE shared_links
+SET description = $2,
+    password = $3,
+    "expiresAt" = $4,
+    "allowDownload" = $5,
+    "allowUpload" = $6,
+    "showMetadata" = $7,
+    "updatedAt" = NOW()
+WHERE id = $1
+RETURNING *;
+
+-- name: DeleteSharedLink :exec
+DELETE FROM shared_links WHERE id = $1;
+
+-- name: AddAssetToSharedLink :exec
+INSERT INTO shared_link_assets ("sharedLinkId", "assetId")
+VALUES ($1, $2)
+ON CONFLICT DO NOTHING;
+
+-- name: RemoveAssetFromSharedLink :exec
+DELETE FROM shared_link_assets
+WHERE "sharedLinkId" = $1 AND "assetId" = $2;
+
+-- name: RemoveAllAssetsFromSharedLink :exec
+DELETE FROM shared_link_assets WHERE "sharedLinkId" = $1;
+
+-- name: GetSharedLinkAssets :many
+SELECT "assetId" FROM shared_link_assets
+WHERE "sharedLinkId" = $1;
