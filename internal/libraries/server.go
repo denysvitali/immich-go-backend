@@ -9,8 +9,8 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 	"github.com/denysvitali/immich-go-backend/internal/auth"
+	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 )
 
 // Server implements the LibrariesServiceServer interface
@@ -199,7 +199,6 @@ func (s *Server) ValidateLibrary(ctx context.Context, req *immichv1.ValidateLibr
 		ImportPaths: []string{},
 	}, nil
 }
-
 
 // Helper function to convert database library to proto
 func (s *Server) libraryToProto(lib *Library) *immichv1.LibraryResponse {

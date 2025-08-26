@@ -42,13 +42,13 @@ func (s *Server) GetAssetDuplicates(ctx context.Context, request *immichv1.GetAs
 		assets := make([]*immichv1.DuplicateAsset, len(group.Assets))
 		for j, asset := range group.Assets {
 			assets[j] = &immichv1.DuplicateAsset{
-				AssetId:         asset.AssetID,
-				DeviceAssetId:   asset.DeviceAssetID,
-				DeviceId:        asset.DeviceID,
-				Checksum:        asset.Checksum,
-				Type:            immichv1.AssetType(asset.Type),
-				OriginalPath:    asset.OriginalPath,
-				FileSizeInByte:  asset.FileSizeInByte,
+				AssetId:        asset.AssetID,
+				DeviceAssetId:  asset.DeviceAssetID,
+				DeviceId:       asset.DeviceID,
+				Checksum:       asset.Checksum,
+				Type:           immichv1.AssetType(asset.Type),
+				OriginalPath:   asset.OriginalPath,
+				FileSizeInByte: asset.FileSizeInByte,
 			}
 		}
 

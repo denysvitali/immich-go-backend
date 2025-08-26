@@ -227,4 +227,3 @@ func (g *ThumbnailGenerator) GetThumbnailInfo(thumbType ThumbnailType, data []by
 		Size:   int64(len(data)),
 	}
 }
-

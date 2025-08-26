@@ -57,12 +57,12 @@ type ListUsersResponse struct {
 
 // UpdateUserRequest represents a request to update user information
 type UpdateUserRequest struct {
-	Name              *string `json:"name,omitempty"`
-	Email             *string `json:"email,omitempty"`
-	AvatarColor       *string `json:"avatarColor,omitempty"`
-	ProfileImagePath  *string `json:"profileImagePath,omitempty"`
-	QuotaSizeInBytes  *int64  `json:"quotaSizeInBytes,omitempty"`
-	StorageLabel      *string `json:"storageLabel,omitempty"`
+	Name             *string `json:"name,omitempty"`
+	Email            *string `json:"email,omitempty"`
+	AvatarColor      *string `json:"avatarColor,omitempty"`
+	ProfileImagePath *string `json:"profileImagePath,omitempty"`
+	QuotaSizeInBytes *int64  `json:"quotaSizeInBytes,omitempty"`
+	StorageLabel     *string `json:"storageLabel,omitempty"`
 }
 
 // UpdatePasswordRequest represents a request to update a user's password
@@ -105,15 +105,15 @@ func (e *UserError) Unwrap() error {
 type UserErrorType string
 
 const (
-	ErrInvalidUserID      UserErrorType = "invalid_user_id"
-	ErrUserNotFound       UserErrorType = "user_not_found"
-	ErrUserDeleted        UserErrorType = "user_deleted"
-	ErrUserExists         UserErrorType = "user_exists"
-	ErrInvalidPassword    UserErrorType = "invalid_password"
-	ErrPasswordHashing    UserErrorType = "password_hashing"
-	ErrDatabaseError      UserErrorType = "database_error"
-	ErrUnauthorized       UserErrorType = "unauthorized"
-	ErrInvalidInput       UserErrorType = "invalid_input"
+	ErrInvalidUserID   UserErrorType = "invalid_user_id"
+	ErrUserNotFound    UserErrorType = "user_not_found"
+	ErrUserDeleted     UserErrorType = "user_deleted"
+	ErrUserExists      UserErrorType = "user_exists"
+	ErrInvalidPassword UserErrorType = "invalid_password"
+	ErrPasswordHashing UserErrorType = "password_hashing"
+	ErrDatabaseError   UserErrorType = "database_error"
+	ErrUnauthorized    UserErrorType = "unauthorized"
+	ErrInvalidInput    UserErrorType = "invalid_input"
 )
 
 // NewUserError creates a new user error

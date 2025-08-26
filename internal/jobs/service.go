@@ -19,19 +19,19 @@ const (
 	JobTypeMetadataExtraction  JobType = "metadata_extraction"
 	JobTypeVideoTranscode      JobType = "video_transcode"
 	JobTypeAssetOptimization   JobType = "asset_optimization"
-	
+
 	// Machine learning jobs
 	JobTypeFaceDetection   JobType = "face_detection"
 	JobTypeFaceRecognition JobType = "face_recognition"
 	JobTypeSmartSearch     JobType = "smart_search_indexing"
 	JobTypeObjectDetection JobType = "object_detection"
-	
+
 	// Library jobs
-	JobTypeLibraryScan      JobType = "library_scan"
-	JobTypeLibraryWatch     JobType = "library_watch"
-	JobTypeDuplicateDetect  JobType = "duplicate_detection"
-	JobTypeSidecarProcess   JobType = "sidecar_processing"
-	
+	JobTypeLibraryScan     JobType = "library_scan"
+	JobTypeLibraryWatch    JobType = "library_watch"
+	JobTypeDuplicateDetect JobType = "duplicate_detection"
+	JobTypeSidecarProcess  JobType = "sidecar_processing"
+
 	// System jobs
 	JobTypeStorageMigration JobType = "storage_migration"
 	JobTypeCleanup          JobType = "cleanup"
@@ -42,9 +42,9 @@ const (
 type JobPriority int
 
 const (
-	PriorityLow    JobPriority = 1
-	PriorityNormal JobPriority = 5
-	PriorityHigh   JobPriority = 10
+	PriorityLow      JobPriority = 1
+	PriorityNormal   JobPriority = 5
+	PriorityHigh     JobPriority = 10
 	PriorityCritical JobPriority = 20
 )
 
@@ -75,7 +75,7 @@ func NewService(cfg *Config) (*Service, error) {
 	}
 
 	client := asynq.NewClient(redisOpt)
-	
+
 	serverCfg := asynq.Config{
 		Concurrency: cfg.Concurrency,
 		Queues: map[string]int{
@@ -121,7 +121,7 @@ func (s *Service) EnqueueJob(ctx context.Context, jobType JobType, payload *JobP
 	}
 
 	task := asynq.NewTask(string(jobType), data)
-	
+
 	info, err := s.client.EnqueueContext(ctx, task, opts...)
 	if err != nil {
 		return fmt.Errorf("failed to enqueue job: %w", err)
@@ -144,7 +144,7 @@ func (s *Service) EnqueueJobWithPriority(ctx context.Context, jobType JobType, p
 		asynq.MaxRetry(3),
 		asynq.Timeout(30 * time.Minute),
 	}
-	
+
 	return s.EnqueueJob(ctx, jobType, payload, opts...)
 }
 
@@ -154,7 +154,7 @@ func (s *Service) ScheduleJob(ctx context.Context, jobType JobType, payload *Job
 		asynq.ProcessAt(processAt),
 		asynq.MaxRetry(3),
 	}
-	
+
 	return s.EnqueueJob(ctx, jobType, payload, opts...)
 }
 
@@ -192,12 +192,12 @@ func (s *Service) GetJobStatus(ctx context.Context, jobID string) (*JobStatus, e
 
 // JobStatus represents the current status of a job
 type JobStatus struct {
-	ID          string    `json:"id"`
-	Type        string    `json:"type"`
-	State       string    `json:"state"`
-	Progress    int       `json:"progress"`
-	Error       string    `json:"error,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID          string     `json:"id"`
+	Type        string     `json:"type"`
+	State       string     `json:"state"`
+	Progress    int        `json:"progress"`
+	Error       string     `json:"error,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
 	StartedAt   *time.Time `json:"started_at,omitempty"`
 	CompletedAt *time.Time `json:"completed_at,omitempty"`
 }
@@ -265,7 +265,7 @@ func (s *Service) ClearQueue(ctx context.Context, queue string) error {
 	if err != nil {
 		return fmt.Errorf("failed to clear queue: %w", err)
 	}
-	
+
 	// Delete archived tasks
 	_, err = s.inspector.DeleteAllArchivedTasks(queue)
 	return err
@@ -311,7 +311,7 @@ func (s *Service) processJob(ctx context.Context, task *asynq.Task) error {
 
 	// Job processing logic would be implemented here based on job type
 	// For now, we'll just log that we're processing it
-	
+
 	return nil
 }
 

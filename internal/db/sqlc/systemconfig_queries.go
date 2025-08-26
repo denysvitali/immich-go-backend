@@ -15,7 +15,7 @@ type SystemConfig struct {
 // GetAllSystemConfig retrieves all system configuration entries
 func (q *Queries) GetAllSystemConfig(ctx context.Context) ([]SystemConfig, error) {
 	query := `SELECT key, value FROM system_config ORDER BY key`
-	
+
 	rows, err := q.db.Query(ctx, query)
 	if err != nil {
 		return nil, err
@@ -37,7 +37,7 @@ func (q *Queries) GetAllSystemConfig(ctx context.Context) ([]SystemConfig, error
 // GetSystemConfig retrieves a specific system configuration value
 func (q *Queries) GetSystemConfig(ctx context.Context, key string) (pgtype.Text, error) {
 	query := `SELECT value FROM system_config WHERE key = $1`
-	
+
 	var value pgtype.Text
 	err := q.db.QueryRow(ctx, query, key).Scan(&value)
 	return value, err
@@ -56,7 +56,7 @@ func (q *Queries) UpsertSystemConfig(ctx context.Context, arg UpsertSystemConfig
 	VALUES ($1, $2, NOW(), NOW())
 	ON CONFLICT (key) DO UPDATE
 	SET value = $2, "updatedAt" = NOW()`
-	
+
 	_, err := q.db.Exec(ctx, query, arg.Key, arg.Value)
 	return err
 }

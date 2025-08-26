@@ -151,7 +151,7 @@ func (s *Server) GetFullSyncForUser(ctx context.Context, req *immichv1.GetFullSy
 // GetSyncStream returns a stream of sync events (for real-time updates)
 func (s *Server) GetSyncStream(req *immichv1.GetSyncStreamRequest, stream immichv1.SyncService_GetSyncStreamServer) error {
 	ctx := stream.Context()
-	
+
 	userID, err := auth.GetUserIDFromContext(ctx)
 	if err != nil {
 		return err
@@ -189,6 +189,6 @@ func (s *Server) GetSyncStream(req *immichv1.GetSyncStreamRequest, stream immich
 
 	// Keep the stream open until context is cancelled
 	<-ctx.Done()
-	
+
 	return ctx.Err()
 }

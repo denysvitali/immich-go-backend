@@ -86,7 +86,7 @@ func initConfig() {
 
 func runServer(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
-	
+
 	// Connect to database
 	database, err := db.New(ctx, cfg.Database.URL)
 	if err != nil {
@@ -153,7 +153,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 
 func runMigrations(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
-	
+
 	// Connect to database
 	database, err := db.New(ctx, cfg.Database.URL)
 	if err != nil {
@@ -162,12 +162,12 @@ func runMigrations(cmd *cobra.Command, args []string) error {
 	defer database.Close()
 
 	logrus.Info("Running database migrations...")
-	
+
 	// Run migrations using the migration system
 	if err := db.RunMigrations(ctx, database.DB()); err != nil {
 		return fmt.Errorf("failed to run migrations: %w", err)
 	}
-	
+
 	logrus.Info("Migrations completed successfully")
 
 	return nil

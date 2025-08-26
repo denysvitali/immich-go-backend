@@ -35,10 +35,10 @@ func NewService(db *sqlc.Queries, storageService *storage.Service) *Service {
 
 // DownloadInfo represents download information
 type DownloadInfo struct {
-	TotalSize    int64    `json:"totalSize"`
-	ArchiveSize  int64    `json:"archiveSize"`
-	AssetCount   int      `json:"assetCount"`
-	AssetIDs     []string `json:"assetIds"`
+	TotalSize   int64    `json:"totalSize"`
+	ArchiveSize int64    `json:"archiveSize"`
+	AssetCount  int      `json:"assetCount"`
+	AssetIDs    []string `json:"assetIds"`
 }
 
 // DownloadRequest represents a download request
@@ -50,7 +50,7 @@ type DownloadRequest struct {
 // GetDownloadInfo retrieves information about a potential download
 func (s *Service) GetDownloadInfo(ctx context.Context, userID uuid.UUID, req *DownloadRequest) (*DownloadInfo, error) {
 	var assetIDs []uuid.UUID
-	
+
 	// If album ID is provided, get all assets from the album
 	if req.AlbumID != nil {
 		albumID, err := uuid.Parse(*req.AlbumID)
@@ -183,7 +183,7 @@ func (s *Service) DownloadArchive(ctx context.Context, userID uuid.UUID, req *Do
 
 		// Generate archive path
 		archivePath := s.generateArchivePath(&asset)
-		
+
 		// Ensure unique filename in archive
 		basePath := archivePath
 		counter := 1
@@ -275,7 +275,7 @@ func (s *Service) GetThumbnail(ctx context.Context, userID uuid.UUID, assetID uu
 
 	// Determine thumbnail path based on size
 	thumbnailPath := fmt.Sprintf("thumbnails/%s/%s.webp", assetID.String(), size)
-	
+
 	// Get thumbnail from storage
 	reader, err := s.storageService.Download(ctx, thumbnailPath)
 	if err != nil {
@@ -352,7 +352,7 @@ func (s *Service) generateArchivePath(asset *sqlc.Asset) string {
 func (s *Service) checkSharedAccess(ctx context.Context, userID uuid.UUID, assetID uuid.UUID) (bool, error) {
 	// For now, we'll check by iterating through user's shared albums
 	// TODO: Add a more efficient query for checking asset access
-	
+
 	// Check if asset is shared via shared link
 	// TODO: Implement shared link checking once SharedLinks service is fixed
 

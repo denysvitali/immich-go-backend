@@ -9,8 +9,8 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 	"github.com/denysvitali/immich-go-backend/internal/auth"
+	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 )
 
 // Server implements the SearchServiceServer interface
@@ -44,15 +44,15 @@ func (s *Server) SearchMetadata(ctx context.Context, req *immichv1.SearchMetadat
 	}
 
 	searchReq := MetadataSearchRequest{
-		City:           stringValue(req.City),
-		State:          stringValue(req.State),
-		Country:        stringValue(req.Country),
-		Make:           stringValue(req.Make),
-		Model:          stringValue(req.Model),
-		IsFavorite:     isFavorite,
-		IsArchived:     isArchived,
-		Page:           0, // default page
-		Size:           30, // default page size
+		City:       stringValue(req.City),
+		State:      stringValue(req.State),
+		Country:    stringValue(req.Country),
+		Make:       stringValue(req.Make),
+		Model:      stringValue(req.Model),
+		IsFavorite: isFavorite,
+		IsArchived: isArchived,
+		Page:       0,  // default page
+		Size:       30, // default page size
 	}
 
 	// Parse date filters
@@ -102,9 +102,9 @@ func (s *Server) SearchSmart(ctx context.Context, req *immichv1.SearchSmartReque
 	}
 
 	searchReq := SmartSearchRequest{
-		Query:    req.Query,
-		Page:     0,
-		Size:     30,
+		Query: req.Query,
+		Page:  0,
+		Size:  30,
 	}
 
 	result, err := s.service.SearchSmart(ctx, userID, searchReq)
@@ -278,14 +278,14 @@ func (s *Server) SearchExplore(ctx context.Context, req *emptypb.Empty) (*immich
 	for _, category := range result.Categories {
 		items = append(items, &immichv1.SearchExploreItemResponseDto{
 			FieldName: category.Name,
-		Items: []*immichv1.SearchExploreItemValueResponseDto{
-			{
-				Value: "example",
-				Data: &immichv1.AssetResponseDto{
-					Id: uuid.New().String(),
+			Items: []*immichv1.SearchExploreItemValueResponseDto{
+				{
+					Value: "example",
+					Data: &immichv1.AssetResponseDto{
+						Id: uuid.New().String(),
+					},
 				},
 			},
-		},
 		})
 	}
 

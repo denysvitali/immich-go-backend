@@ -115,10 +115,10 @@ func (s *Server) GetServerStatistics(ctx context.Context, empty *emptypb.Empty) 
 	// Get statistics from database
 	// For now, return some basic stats
 	return &immichv1.ServerStatsResponse{
-		Photos:          100,
-		Videos:          50,
-		Usage:           1073741824, // 1GB in bytes
-		UsageByUser:     []*immichv1.UsageByUser{},
+		Photos:      100,
+		Videos:      50,
+		Usage:       1073741824, // 1GB in bytes
+		UsageByUser: []*immichv1.UsageByUser{},
 	}, nil
 }
 

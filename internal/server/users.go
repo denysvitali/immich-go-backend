@@ -42,7 +42,7 @@ func (s *Server) UpdateMyUser(ctx context.Context, request *immichv1.UserUpdateM
 
 	// Build update request
 	updateReq := &users.UpdateUserRequest{}
-	
+
 	if request.Name != nil {
 		updateReq.Name = request.Name
 	}
@@ -186,9 +186,9 @@ func (s *Server) CreateProfileImage(ctx context.Context, request *immichv1.Creat
 	}
 
 	return &immichv1.CreateProfileImageResponse{
-		UserId:            userID.String(),
-		ProfileImagePath:  profilePath,
-		ProfileChangedAt:  timestamppb.New(now),
+		UserId:           userID.String(),
+		ProfileImagePath: profilePath,
+		ProfileChangedAt: timestamppb.New(now),
 	}, nil
 }
 

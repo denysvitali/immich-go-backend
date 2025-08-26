@@ -32,7 +32,7 @@ func (s *Server) getUserIDFromContext(ctx context.Context) (uuid.UUID, error) {
 	}
 
 	token := strings.TrimPrefix(authHeader, "Bearer ")
-	
+
 	// Validate token and get user info
 	userInfo, err := s.authService.ValidateToken(token)
 	if err != nil {

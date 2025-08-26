@@ -64,11 +64,11 @@ func (s *Service) CreateLibrary(ctx context.Context, userID uuid.UUID, req Creat
 	if req.Name == "" {
 		return nil, fmt.Errorf("library name is required")
 	}
-	
+
 	if req.Type == "" {
 		req.Type = LibraryTypeExternal
 	}
-	
+
 	// Create library in database
 	library, err := s.db.CreateLibrary(ctx, sqlc.CreateLibraryParams{
 		OwnerId:           UUIDToPgtype(userID),
@@ -79,7 +79,7 @@ func (s *Service) CreateLibrary(ctx context.Context, userID uuid.UUID, req Creat
 	if err != nil {
 		return nil, fmt.Errorf("failed to create library: %w", err)
 	}
-	
+
 	return &Library{
 		ID:                PgtypeToUUID(library.ID),
 		OwnerID:           PgtypeToUUID(library.OwnerId),
@@ -91,8 +91,14 @@ func (s *Service) CreateLibrary(ctx context.Context, userID uuid.UUID, req Creat
 		IsVisible:         req.IsVisible,
 		CreatedAt:         PgtypeToTime(library.CreatedAt),
 		UpdatedAt:         PgtypeToTime(library.UpdatedAt),
-		RefreshedAt:       func() *time.Time { t := PgtypeToTime(library.RefreshedAt); if t.IsZero() { return nil }; return &t }(),
-		AssetCount:        0,
+		RefreshedAt: func() *time.Time {
+			t := PgtypeToTime(library.RefreshedAt)
+			if t.IsZero() {
+				return nil
+			}
+			return &t
+		}(),
+		AssetCount: 0,
 	}, nil
 }
 
@@ -102,7 +108,7 @@ func (s *Service) GetLibrary(ctx context.Context, userID, libraryID uuid.UUID) (
 	if err != nil {
 		return nil, fmt.Errorf("failed to get library: %w", err)
 	}
-	
+
 	// Get asset count
 	var count int64
 	if countResult, err := s.db.CountLibraryAssets(ctx, UUIDToPgtype(libraryID)); err == nil {
@@ -111,7 +117,7 @@ func (s *Service) GetLibrary(ctx context.Context, userID, libraryID uuid.UUID) (
 		logrus.WithError(err).Warn("Failed to get library asset count")
 		count = 0
 	}
-	
+
 	return &Library{
 		ID:                PgtypeToUUID(library.ID),
 		OwnerID:           PgtypeToUUID(library.OwnerId),
@@ -123,8 +129,14 @@ func (s *Service) GetLibrary(ctx context.Context, userID, libraryID uuid.UUID) (
 		IsVisible:         true,
 		CreatedAt:         PgtypeToTime(library.CreatedAt),
 		UpdatedAt:         PgtypeToTime(library.UpdatedAt),
-		RefreshedAt:       func() *time.Time { t := PgtypeToTime(library.RefreshedAt); if t.IsZero() { return nil }; return &t }(),
-		AssetCount:        count,
+		RefreshedAt: func() *time.Time {
+			t := PgtypeToTime(library.RefreshedAt)
+			if t.IsZero() {
+				return nil
+			}
+			return &t
+		}(),
+		AssetCount: count,
 	}, nil
 }
 
@@ -134,7 +146,7 @@ func (s *Service) GetLibraries(ctx context.Context, userID uuid.UUID) ([]*Librar
 	if err != nil {
 		return nil, fmt.Errorf("failed to get libraries: %w", err)
 	}
-	
+
 	libraries := make([]*Library, len(dbLibraries))
 	for i, dbLib := range dbLibraries {
 		// Get asset count for each library
@@ -143,7 +155,7 @@ func (s *Service) GetLibraries(ctx context.Context, userID uuid.UUID) ([]*Librar
 			logrus.WithError(err).Warn("Failed to get library asset count")
 			count = 0
 		}
-		
+
 		libraries[i] = &Library{
 			ID:                PgtypeToUUID(dbLib.ID),
 			OwnerID:           PgtypeToUUID(dbLib.OwnerId),
@@ -152,14 +164,20 @@ func (s *Service) GetLibraries(ctx context.Context, userID uuid.UUID) ([]*Librar
 			ImportPaths:       dbLib.ImportPaths,
 			ExclusionPatterns: dbLib.ExclusionPatterns,
 			IsWatched:         false, // Default value
-			IsVisible:         true, // Default value
+			IsVisible:         true,  // Default value
 			CreatedAt:         PgtypeToTime(dbLib.CreatedAt),
 			UpdatedAt:         PgtypeToTime(dbLib.UpdatedAt),
-			RefreshedAt:       func() *time.Time { t := PgtypeToTime(dbLib.RefreshedAt); if t.IsZero() { return nil }; return &t }(),
-			AssetCount:        count,
+			RefreshedAt: func() *time.Time {
+				t := PgtypeToTime(dbLib.RefreshedAt)
+				if t.IsZero() {
+					return nil
+				}
+				return &t
+			}(),
+			AssetCount: count,
 		}
 	}
-	
+
 	return libraries, nil
 }
 
@@ -170,7 +188,7 @@ func (s *Service) UpdateLibrary(ctx context.Context, userID, libraryID uuid.UUID
 	if err != nil {
 		return nil, fmt.Errorf("failed to get library: %w", err)
 	}
-	
+
 	// Update fields if provided
 	name := library.Name
 	if req.Name != nil {
@@ -184,7 +202,7 @@ func (s *Service) UpdateLibrary(ctx context.Context, userID, libraryID uuid.UUID
 	if req.ExclusionPatterns != nil {
 		exclusionPatterns = req.ExclusionPatterns
 	}
-	
+
 	// Update in database
 	updatedLibrary, err := s.db.UpdateLibrary(ctx, sqlc.UpdateLibraryParams{
 		ID:                UUIDToPgtype(libraryID),
@@ -195,7 +213,7 @@ func (s *Service) UpdateLibrary(ctx context.Context, userID, libraryID uuid.UUID
 	if err != nil {
 		return nil, fmt.Errorf("failed to update library: %w", err)
 	}
-	
+
 	// Get asset count
 	var count int64
 	if countResult, err := s.db.CountLibraryAssets(ctx, UUIDToPgtype(libraryID)); err == nil {
@@ -204,7 +222,7 @@ func (s *Service) UpdateLibrary(ctx context.Context, userID, libraryID uuid.UUID
 		logrus.WithError(err).Warn("Failed to get library asset count")
 		count = 0
 	}
-	
+
 	return &Library{
 		ID:                PgtypeToUUID(updatedLibrary.ID),
 		OwnerID:           PgtypeToUUID(updatedLibrary.OwnerId),
@@ -213,11 +231,17 @@ func (s *Service) UpdateLibrary(ctx context.Context, userID, libraryID uuid.UUID
 		ImportPaths:       updatedLibrary.ImportPaths,
 		ExclusionPatterns: updatedLibrary.ExclusionPatterns,
 		IsWatched:         false, // Default value
-		IsVisible:         true, // Default value
+		IsVisible:         true,  // Default value
 		CreatedAt:         PgtypeToTime(updatedLibrary.CreatedAt),
 		UpdatedAt:         PgtypeToTime(updatedLibrary.UpdatedAt),
-		RefreshedAt:       func() *time.Time { t := PgtypeToTime(updatedLibrary.RefreshedAt); if t.IsZero() { return nil }; return &t }(),
-		AssetCount:        count,
+		RefreshedAt: func() *time.Time {
+			t := PgtypeToTime(updatedLibrary.RefreshedAt)
+			if t.IsZero() {
+				return nil
+			}
+			return &t
+		}(),
+		AssetCount: count,
 	}, nil
 }
 
@@ -228,12 +252,12 @@ func (s *Service) DeleteLibrary(ctx context.Context, userID, libraryID uuid.UUID
 		scanner.Stop()
 		delete(s.scanners, libraryID)
 	}
-	
+
 	// Delete library and associated assets
 	if err := s.db.DeleteLibrary(ctx, UUIDToPgtype(libraryID)); err != nil {
 		return fmt.Errorf("failed to delete library: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -243,27 +267,27 @@ func (s *Service) ScanLibrary(ctx context.Context, userID, libraryID uuid.UUID, 
 	if _, exists := s.scanners[libraryID]; exists {
 		return uuid.Nil, fmt.Errorf("library is already being scanned")
 	}
-	
+
 	// Get library
 	library, err := s.GetLibrary(ctx, userID, libraryID)
 	if err != nil {
 		return uuid.Nil, err
 	}
-	
+
 	// Create and start scanner
 	scanner := NewLibraryScanner(library, s.db, s.storageService)
 	s.scanners[libraryID] = scanner
-	
+
 	// Start scanning in background
 	go func() {
 		defer func() {
 			delete(s.scanners, libraryID)
 		}()
-		
+
 		if err := scanner.Scan(ctx, forceRefresh); err != nil {
 			logrus.WithError(err).Error("Library scan failed")
 		}
-		
+
 		// TODO: Update refresh timestamp when query is available
 		// now := time.Now()
 		// if err := s.db.UpdateLibraryRefreshedAt(ctx, sqlc.UpdateLibraryRefreshedAtParams{
@@ -273,7 +297,7 @@ func (s *Service) ScanLibrary(ctx context.Context, userID, libraryID uuid.UUID, 
 		// 	logrus.WithError(err).Error("Failed to update library refresh timestamp")
 		// }
 	}()
-	
+
 	// Return a job ID (simplified for now)
 	jobID := uuid.New()
 	return jobID, nil
@@ -286,7 +310,7 @@ func (s *Service) GetLibraryStatistics(ctx context.Context, userID, libraryID uu
 	if err != nil {
 		return nil, fmt.Errorf("failed to get library statistics: %w", err)
 	}
-	
+
 	return &LibraryStatistics{
 		Photos:    0, // TODO: Implement photo count
 		Videos:    0, // TODO: Implement video count
@@ -301,26 +325,26 @@ func (s *Service) ValidateImportPath(path string) (bool, string) {
 	if path == "" {
 		return false, "Path cannot be empty"
 	}
-	
+
 	// Check if path exists
 	if _, err := filepath.Abs(path); err != nil {
 		return false, "Invalid path"
 	}
-	
+
 	return true, ""
 }
 
 // ValidateLibrary validates library import paths
 func (s *Service) ValidateLibrary(ctx context.Context, req ValidateLibraryRequest) (*ValidateLibraryResponse, error) {
 	results := make(map[string]PathValidation)
-	
+
 	for _, path := range req.ImportPaths {
 		validation := PathValidation{
 			Path:       path,
 			IsValid:    false,
 			IsReadable: false,
 		}
-		
+
 		// Check if path exists
 		info, err := filepath.Glob(path)
 		if err != nil || len(info) == 0 {
@@ -331,10 +355,10 @@ func (s *Service) ValidateLibrary(ctx context.Context, req ValidateLibraryReques
 			validation.IsReadable = true
 			validation.Message = "Path is valid and readable"
 		}
-		
+
 		results[path] = validation
 	}
-	
+
 	return &ValidateLibraryResponse{
 		Results: results,
 	}, nil
@@ -402,14 +426,14 @@ func NewLibraryScanner(library *Library, db *sqlc.Queries, storageService *stora
 // Scan scans the library for assets
 func (ls *LibraryScanner) Scan(ctx context.Context, forceRefresh bool) error {
 	logrus.Infof("Starting scan of library %s", ls.library.Name)
-	
+
 	for _, importPath := range ls.library.ImportPaths {
 		if err := ls.scanPath(ctx, importPath, forceRefresh); err != nil {
 			logrus.WithError(err).Errorf("Failed to scan path %s", importPath)
 			continue
 		}
 	}
-	
+
 	logrus.Infof("Completed scan of library %s", ls.library.Name)
 	return nil
 }
@@ -423,11 +447,11 @@ func (ls *LibraryScanner) scanPath(ctx context.Context, path string, forceRefres
 			return fmt.Errorf("scan stopped")
 		default:
 		}
-		
+
 		if err != nil {
 			return err
 		}
-		
+
 		// Skip directories
 		if d.IsDir() {
 			// Check exclusion patterns
@@ -439,7 +463,7 @@ func (ls *LibraryScanner) scanPath(ctx context.Context, path string, forceRefres
 			}
 			return nil
 		}
-		
+
 		// Check if file should be excluded
 		for _, pattern := range ls.library.ExclusionPatterns {
 			matched, _ := filepath.Match(pattern, path)
@@ -447,26 +471,26 @@ func (ls *LibraryScanner) scanPath(ctx context.Context, path string, forceRefres
 				return nil
 			}
 		}
-		
+
 		// Check if file is a supported media type
 		if !ls.isSupportedMediaType(path) {
 			return nil
 		}
-		
+
 		// Check if asset already exists (by path)
 		// TODO: Implement CheckAssetExistsByPath query
 		// For now, skip this check
 		exists := false
-		
+
 		if exists && !forceRefresh {
 			return nil
 		}
-		
+
 		// Import the asset
 		// This would integrate with the asset service to properly import the file
 		logrus.Debugf("Would import asset: %s", path)
 		// TODO: Implement actual asset import
-		
+
 		return nil
 	})
 }
@@ -474,26 +498,26 @@ func (ls *LibraryScanner) scanPath(ctx context.Context, path string, forceRefres
 // isSupportedMediaType checks if a file is a supported media type
 func (ls *LibraryScanner) isSupportedMediaType(path string) bool {
 	ext := strings.ToLower(filepath.Ext(path))
-	
+
 	// Supported image formats
 	imageExts := []string{
 		".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".tif",
 		".webp", ".heic", ".heif", ".raw", ".cr2", ".nef", ".arw",
 		".dng", ".orf", ".rw2", ".raf", ".srw",
 	}
-	
+
 	// Supported video formats
 	videoExts := []string{
 		".mp4", ".avi", ".mov", ".mkv", ".webm", ".m4v",
 		".3gp", ".wmv", ".flv", ".mts", ".m2ts", ".mpg", ".mpeg",
 	}
-	
+
 	for _, supportedExt := range append(imageExts, videoExts...) {
 		if ext == supportedExt {
 			return true
 		}
 	}
-	
+
 	return false
 }
 

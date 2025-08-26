@@ -245,7 +245,7 @@ func (e *MetadataExtractor) CalculateChecksum(ctx context.Context, reader io.Rea
 	defer span.End()
 
 	hasher := sha256.New()
-	
+
 	// Copy data from reader to hasher
 	bytesRead, err := io.Copy(hasher, reader)
 	if err != nil {

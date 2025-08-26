@@ -571,7 +571,7 @@ func (s *Server) PlayAssetVideo(ctx context.Context, request *immichv1.PlayAsset
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to read video data: %v", err)
 	}
-	
+
 	return &immichv1.PlayAssetVideoResponse{
 		Data:        videoData,
 		ContentType: s.getVideoContentType(asset.OriginalFileName),

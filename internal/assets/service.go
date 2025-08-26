@@ -665,13 +665,13 @@ func (s *Service) SearchAssets(ctx context.Context, req SearchRequest) (*SearchR
 		// Filter by asset type
 		span.SetAttributes(attribute.String("search_type", "type"))
 		typeAssets, err := s.db.GetAssets(ctx, sqlc.GetAssetsParams{
-			OwnerId:     userUUID,
-			Type:        pgtype.Text{String: string(*req.Type), Valid: true},
-			IsFavorite:  pgtype.Bool{Bool: false, Valid: false},
-			IsArchived:  pgtype.Bool{Bool: false, Valid: false},
-			IsTrashed:   pgtype.Bool{Bool: false, Valid: false},
-			Limit:       int32(limit),
-			Offset:      int32(offset),
+			OwnerId:    userUUID,
+			Type:       pgtype.Text{String: string(*req.Type), Valid: true},
+			IsFavorite: pgtype.Bool{Bool: false, Valid: false},
+			IsArchived: pgtype.Bool{Bool: false, Valid: false},
+			IsTrashed:  pgtype.Bool{Bool: false, Valid: false},
+			Limit:      int32(limit),
+			Offset:     int32(offset),
 		})
 		if err != nil {
 			span.RecordError(err)

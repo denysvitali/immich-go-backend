@@ -10,7 +10,7 @@ import (
 
 // Service handles system configuration operations
 type Service struct {
-	db           *sqlc.Queries
+	db            *sqlc.Queries
 	defaultConfig *SystemConfig
 }
 
@@ -42,42 +42,42 @@ type SystemConfig struct {
 
 // FFmpegConfig represents FFmpeg configuration
 type FFmpegConfig struct {
-	CRF               int      `json:"crf"`
-	Threads           int      `json:"threads"`
-	Preset            string   `json:"preset"`
-	TargetVideoCodec  string   `json:"targetVideoCodec"`
+	CRF                 int      `json:"crf"`
+	Threads             int      `json:"threads"`
+	Preset              string   `json:"preset"`
+	TargetVideoCodec    string   `json:"targetVideoCodec"`
 	AcceptedVideoCodecs []string `json:"acceptedVideoCodecs"`
-	TargetAudioCodec  string   `json:"targetAudioCodec"`
+	TargetAudioCodec    string   `json:"targetAudioCodec"`
 	AcceptedAudioCodecs []string `json:"acceptedAudioCodecs"`
-	TargetResolution  string   `json:"targetResolution"`
-	MaxBitrate        string   `json:"maxBitrate"`
-	BFrames           int      `json:"bframes"`
-	Refs              int      `json:"refs"`
-	GopSize           int      `json:"gopSize"`
-	NPL               int      `json:"npl"`
-	TemporalAQ        bool     `json:"temporalAQ"`
-	CqMode            string   `json:"cqMode"`
-	TwoPass           bool     `json:"twoPass"`
-	PreferredHwDevice string   `json:"preferredHwDevice"`
-	Transcode         string   `json:"transcode"`
-	AccelDecode       bool     `json:"accelDecode"`
-	AccelEncode       bool     `json:"accelEncode"`
-	ToneMappingMode   string   `json:"toneMappingMode"`
+	TargetResolution    string   `json:"targetResolution"`
+	MaxBitrate          string   `json:"maxBitrate"`
+	BFrames             int      `json:"bframes"`
+	Refs                int      `json:"refs"`
+	GopSize             int      `json:"gopSize"`
+	NPL                 int      `json:"npl"`
+	TemporalAQ          bool     `json:"temporalAQ"`
+	CqMode              string   `json:"cqMode"`
+	TwoPass             bool     `json:"twoPass"`
+	PreferredHwDevice   string   `json:"preferredHwDevice"`
+	Transcode           string   `json:"transcode"`
+	AccelDecode         bool     `json:"accelDecode"`
+	AccelEncode         bool     `json:"accelEncode"`
+	ToneMappingMode     string   `json:"toneMappingMode"`
 }
 
 // JobConfig represents job configuration
 type JobConfig struct {
-	BackgroundTask      JobSettingsConfig `json:"backgroundTask"`
-	ClipEncoding        JobSettingsConfig `json:"clipEncoding"`
-	MetadataExtraction  JobSettingsConfig `json:"metadataExtraction"`
-	ObjectTagging       JobSettingsConfig `json:"objectTagging"`
-	RecognizeFaces      JobSettingsConfig `json:"recognizeFaces"`
-	Search              JobSettingsConfig `json:"search"`
-	Sidecar             JobSettingsConfig `json:"sidecar"`
-	SmartSearch         JobSettingsConfig `json:"smartSearch"`
+	BackgroundTask           JobSettingsConfig `json:"backgroundTask"`
+	ClipEncoding             JobSettingsConfig `json:"clipEncoding"`
+	MetadataExtraction       JobSettingsConfig `json:"metadataExtraction"`
+	ObjectTagging            JobSettingsConfig `json:"objectTagging"`
+	RecognizeFaces           JobSettingsConfig `json:"recognizeFaces"`
+	Search                   JobSettingsConfig `json:"search"`
+	Sidecar                  JobSettingsConfig `json:"sidecar"`
+	SmartSearch              JobSettingsConfig `json:"smartSearch"`
 	StorageTemplateMigration JobSettingsConfig `json:"storageTemplateMigration"`
-	ThumbnailGeneration JobSettingsConfig `json:"thumbnailGeneration"`
-	VideoConversion     JobSettingsConfig `json:"videoConversion"`
+	ThumbnailGeneration      JobSettingsConfig `json:"thumbnailGeneration"`
+	VideoConversion          JobSettingsConfig `json:"videoConversion"`
 }
 
 // JobSettingsConfig represents job settings
@@ -87,13 +87,13 @@ type JobSettingsConfig struct {
 
 // LibraryConfig represents library configuration
 type LibraryConfig struct {
-	Scan LibraryScanConfig `json:"scan"`
+	Scan  LibraryScanConfig  `json:"scan"`
 	Watch LibraryWatchConfig `json:"watch"`
 }
 
 // LibraryScanConfig represents library scan configuration
 type LibraryScanConfig struct {
-	Enabled      bool `json:"enabled"`
+	Enabled        bool   `json:"enabled"`
 	CronExpression string `json:"cronExpression"`
 }
 
@@ -102,7 +102,7 @@ type LibraryWatchConfig struct {
 	Enabled bool `json:"enabled"`
 }
 
-// LoggingConfig represents logging configuration  
+// LoggingConfig represents logging configuration
 type LoggingConfig struct {
 	Enabled bool   `json:"enabled"`
 	Level   string `json:"level"`
@@ -110,26 +110,26 @@ type LoggingConfig struct {
 
 // MachineLearningConfig represents machine learning configuration
 type MachineLearningConfig struct {
-	Enabled bool   `json:"enabled"`
-	URL     string `json:"url"`
-	Clip    MLModelConfig `json:"clip"`
+	Enabled           bool          `json:"enabled"`
+	URL               string        `json:"url"`
+	Clip              MLModelConfig `json:"clip"`
 	FacialRecognition MLModelConfig `json:"facialRecognition"`
 }
 
 // MLModelConfig represents ML model configuration
 type MLModelConfig struct {
-	Enabled     bool   `json:"enabled"`
-	ModelName   string `json:"modelName"`
+	Enabled     bool    `json:"enabled"`
+	ModelName   string  `json:"modelName"`
 	MinScore    float64 `json:"minScore"`
 	MaxDistance float64 `json:"maxDistance,omitempty"`
-	MinFaces    int    `json:"minFaces,omitempty"`
+	MinFaces    int     `json:"minFaces,omitempty"`
 }
 
 // MapConfig represents map configuration
 type MapConfig struct {
-	Enabled      bool   `json:"enabled"`
-	LightStyle   string `json:"lightStyle"`
-	DarkStyle    string `json:"darkStyle"`
+	Enabled    bool   `json:"enabled"`
+	LightStyle string `json:"lightStyle"`
+	DarkStyle  string `json:"darkStyle"`
 }
 
 // NewVersionCheckConfig represents version check configuration
@@ -139,19 +139,19 @@ type NewVersionCheckConfig struct {
 
 // OAuthConfig represents OAuth configuration
 type OAuthConfig struct {
-	Enabled              bool   `json:"enabled"`
-	IssuerURL            string `json:"issuerUrl"`
-	ClientID             string `json:"clientId"`
-	ClientSecret         string `json:"clientSecret"`
+	Enabled               bool   `json:"enabled"`
+	IssuerURL             string `json:"issuerUrl"`
+	ClientID              string `json:"clientId"`
+	ClientSecret          string `json:"clientSecret"`
 	MobileOverrideEnabled bool   `json:"mobileOverrideEnabled"`
-	MobileRedirectURI    string `json:"mobileRedirectUri"`
-	Scope                string `json:"scope"`
-	StorageLabelClaim    string `json:"storageLabelClaim"`
-	StorageQuotaClaim    string `json:"storageQuotaClaim"`
-	DefaultStorageQuota  int    `json:"defaultStorageQuota"`
-	ButtonText           string `json:"buttonText"`
-	AutoRegister         bool   `json:"autoRegister"`
-	AutoLaunch           bool   `json:"autoLaunch"`
+	MobileRedirectURI     string `json:"mobileRedirectUri"`
+	Scope                 string `json:"scope"`
+	StorageLabelClaim     string `json:"storageLabelClaim"`
+	StorageQuotaClaim     string `json:"storageQuotaClaim"`
+	DefaultStorageQuota   int    `json:"defaultStorageQuota"`
+	ButtonText            string `json:"buttonText"`
+	AutoRegister          bool   `json:"autoRegister"`
+	AutoLaunch            bool   `json:"autoLaunch"`
 }
 
 // PasswordLoginConfig represents password login configuration
@@ -166,23 +166,23 @@ type ReverseGeocodingConfig struct {
 
 // ServerConfig represents server configuration
 type ServerConfig struct {
-	ExternalDomain string `json:"externalDomain"`
+	ExternalDomain   string `json:"externalDomain"`
 	LoginPageMessage string `json:"loginPageMessage"`
 }
 
 // StorageTemplateConfig represents storage template configuration
 type StorageTemplateConfig struct {
-	Enabled         bool   `json:"enabled"`
-	HashVerificationEnabled bool `json:"hashVerificationEnabled"`
-	Template        string `json:"template"`
+	Enabled                 bool   `json:"enabled"`
+	HashVerificationEnabled bool   `json:"hashVerificationEnabled"`
+	Template                string `json:"template"`
 }
 
 // ThumbnailConfig represents thumbnail configuration
 type ThumbnailConfig struct {
-	WebpSize        int    `json:"webpSize"`
-	JpegSize        int    `json:"jpegSize"`
-	Quality         int    `json:"quality"`
-	ColorSpace      string `json:"colorspace"`
+	WebpSize   int    `json:"webpSize"`
+	JpegSize   int    `json:"jpegSize"`
+	Quality    int    `json:"quality"`
+	ColorSpace string `json:"colorspace"`
 }
 
 // TrashConfig represents trash configuration
@@ -283,40 +283,40 @@ func (s *Service) validateConfig(updates map[string]interface{}) error {
 func GetDefaultConfig() *SystemConfig {
 	return &SystemConfig{
 		FFmpeg: FFmpegConfig{
-			CRF:                23,
-			Threads:            0,
-			Preset:             "ultrafast",
-			TargetVideoCodec:   "h264",
+			CRF:                 23,
+			Threads:             0,
+			Preset:              "ultrafast",
+			TargetVideoCodec:    "h264",
 			AcceptedVideoCodecs: []string{"h264", "hevc", "vp9", "av1"},
-			TargetAudioCodec:   "aac",
+			TargetAudioCodec:    "aac",
 			AcceptedAudioCodecs: []string{"aac", "mp3", "libopus"},
-			TargetResolution:   "720",
-			MaxBitrate:         "0",
-			BFrames:            -1,
-			Refs:               0,
-			GopSize:            0,
-			NPL:                0,
-			TemporalAQ:         false,
-			CqMode:             "auto",
-			TwoPass:            false,
-			PreferredHwDevice:  "auto",
-			Transcode:          "required",
-			AccelDecode:        false,
-			AccelEncode:        false,
-			ToneMappingMode:    "hable",
+			TargetResolution:    "720",
+			MaxBitrate:          "0",
+			BFrames:             -1,
+			Refs:                0,
+			GopSize:             0,
+			NPL:                 0,
+			TemporalAQ:          false,
+			CqMode:              "auto",
+			TwoPass:             false,
+			PreferredHwDevice:   "auto",
+			Transcode:           "required",
+			AccelDecode:         false,
+			AccelEncode:         false,
+			ToneMappingMode:     "hable",
 		},
 		Job: JobConfig{
 			BackgroundTask:           JobSettingsConfig{Concurrency: 5},
-			ClipEncoding:            JobSettingsConfig{Concurrency: 2},
-			MetadataExtraction:      JobSettingsConfig{Concurrency: 5},
-			ObjectTagging:           JobSettingsConfig{Concurrency: 2},
-			RecognizeFaces:          JobSettingsConfig{Concurrency: 2},
-			Search:                  JobSettingsConfig{Concurrency: 5},
-			Sidecar:                 JobSettingsConfig{Concurrency: 5},
-			SmartSearch:             JobSettingsConfig{Concurrency: 2},
+			ClipEncoding:             JobSettingsConfig{Concurrency: 2},
+			MetadataExtraction:       JobSettingsConfig{Concurrency: 5},
+			ObjectTagging:            JobSettingsConfig{Concurrency: 2},
+			RecognizeFaces:           JobSettingsConfig{Concurrency: 2},
+			Search:                   JobSettingsConfig{Concurrency: 5},
+			Sidecar:                  JobSettingsConfig{Concurrency: 5},
+			SmartSearch:              JobSettingsConfig{Concurrency: 2},
 			StorageTemplateMigration: JobSettingsConfig{Concurrency: 5},
-			ThumbnailGeneration:     JobSettingsConfig{Concurrency: 5},
-			VideoConversion:         JobSettingsConfig{Concurrency: 1},
+			ThumbnailGeneration:      JobSettingsConfig{Concurrency: 5},
+			VideoConversion:          JobSettingsConfig{Concurrency: 1},
 		},
 		Library: LibraryConfig{
 			Scan: LibraryScanConfig{
@@ -357,18 +357,18 @@ func GetDefaultConfig() *SystemConfig {
 		},
 		OAuth: OAuthConfig{
 			Enabled:               false,
-			IssuerURL:            "",
-			ClientID:             "",
-			ClientSecret:         "",
+			IssuerURL:             "",
+			ClientID:              "",
+			ClientSecret:          "",
 			MobileOverrideEnabled: false,
-			MobileRedirectURI:    "",
-			Scope:                "openid email profile",
-			StorageLabelClaim:    "",
-			StorageQuotaClaim:    "",
-			DefaultStorageQuota:  0,
-			ButtonText:           "Login with OAuth",
-			AutoRegister:         true,
-			AutoLaunch:           false,
+			MobileRedirectURI:     "",
+			Scope:                 "openid email profile",
+			StorageLabelClaim:     "",
+			StorageQuotaClaim:     "",
+			DefaultStorageQuota:   0,
+			ButtonText:            "Login with OAuth",
+			AutoRegister:          true,
+			AutoLaunch:            false,
 		},
 		PasswordLogin: PasswordLoginConfig{
 			Enabled: true,
@@ -400,10 +400,10 @@ func GetDefaultConfig() *SystemConfig {
 
 // ServerInfo represents server information
 type ServerInfo struct {
-	Version      string   `json:"version"`
+	Version       string   `json:"version"`
 	LatestVersion string   `json:"latestVersion"`
 	IsInitialized bool     `json:"isInitialized"`
-	Features     Features `json:"features"`
+	Features      Features `json:"features"`
 }
 
 // Features represents enabled server features

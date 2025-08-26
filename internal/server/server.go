@@ -13,37 +13,37 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/denysvitali/immich-go-backend/internal/activity"
+	"github.com/denysvitali/immich-go-backend/internal/admin"
 	"github.com/denysvitali/immich-go-backend/internal/albums"
 	"github.com/denysvitali/immich-go-backend/internal/apikeys"
 	"github.com/denysvitali/immich-go-backend/internal/assets"
 	"github.com/denysvitali/immich-go-backend/internal/auth"
 	"github.com/denysvitali/immich-go-backend/internal/config"
 	"github.com/denysvitali/immich-go-backend/internal/db"
+	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/denysvitali/immich-go-backend/internal/download"
-	"github.com/denysvitali/immich-go-backend/internal/jobs"
-	"github.com/denysvitali/immich-go-backend/internal/libraries"
-	"github.com/denysvitali/immich-go-backend/internal/search"
-	"github.com/denysvitali/immich-go-backend/internal/sharedlinks"
-	"github.com/denysvitali/immich-go-backend/internal/systemconfig"
-	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
-	"github.com/denysvitali/immich-go-backend/internal/storage"
-	"github.com/denysvitali/immich-go-backend/internal/users"
-	"github.com/denysvitali/immich-go-backend/internal/websocket"
-	"github.com/denysvitali/immich-go-backend/internal/trash"
-	"github.com/denysvitali/immich-go-backend/internal/tags"
-	mapservice "github.com/denysvitali/immich-go-backend/internal/map"
-	"github.com/denysvitali/immich-go-backend/internal/people"
-	"github.com/denysvitali/immich-go-backend/internal/partners"
-	"github.com/denysvitali/immich-go-backend/internal/activity"
-	"github.com/denysvitali/immich-go-backend/internal/admin"
 	"github.com/denysvitali/immich-go-backend/internal/duplicates"
 	"github.com/denysvitali/immich-go-backend/internal/faces"
-	"github.com/denysvitali/immich-go-backend/internal/stacks"
-	"github.com/denysvitali/immich-go-backend/internal/systemmetadata"
-	"github.com/denysvitali/immich-go-backend/internal/view"
+	"github.com/denysvitali/immich-go-backend/internal/jobs"
+	"github.com/denysvitali/immich-go-backend/internal/libraries"
+	mapservice "github.com/denysvitali/immich-go-backend/internal/map"
+	"github.com/denysvitali/immich-go-backend/internal/partners"
+	"github.com/denysvitali/immich-go-backend/internal/people"
+	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
+	"github.com/denysvitali/immich-go-backend/internal/search"
 	"github.com/denysvitali/immich-go-backend/internal/sessions"
+	"github.com/denysvitali/immich-go-backend/internal/sharedlinks"
+	"github.com/denysvitali/immich-go-backend/internal/stacks"
+	"github.com/denysvitali/immich-go-backend/internal/storage"
 	"github.com/denysvitali/immich-go-backend/internal/sync"
-	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
+	"github.com/denysvitali/immich-go-backend/internal/systemconfig"
+	"github.com/denysvitali/immich-go-backend/internal/systemmetadata"
+	"github.com/denysvitali/immich-go-backend/internal/tags"
+	"github.com/denysvitali/immich-go-backend/internal/trash"
+	"github.com/denysvitali/immich-go-backend/internal/users"
+	"github.com/denysvitali/immich-go-backend/internal/view"
+	"github.com/denysvitali/immich-go-backend/internal/websocket"
 )
 
 var (
@@ -62,41 +62,41 @@ type Server struct {
 	wsHub       *websocket.Hub
 
 	// Service layer
-	userService    *users.Service
-	assetService   *assets.Service
-	albumService   *albums.Service
-	apiKeyService  *apikeys.Service
-	libraryService *libraries.Service
-	librariesServer     *libraries.Server
-	searchService       *search.Service
-	searchServer        *search.Server
-	downloadService     *download.Service
-	sharedLinksService  *sharedlinks.Service
-	systemConfigService *systemconfig.Service
-	jobService          *jobs.Service
-	trashService        *trash.Server
-	tagsService         *tags.Server
-	mapService          *mapservice.Server
-	peopleService       *people.Server
-	partnersService     *partners.Server
-	activityService     *activity.Server
-	adminService        *admin.Service
-	adminServer         *admin.Server
-	duplicatesService   *duplicates.Service
-	duplicatesServer    *duplicates.Server
-	facesService        *faces.Service
-	facesServer         *faces.Server
-	stacksService       *stacks.Service
-	stacksServer        *stacks.Server
+	userService           *users.Service
+	assetService          *assets.Service
+	albumService          *albums.Service
+	apiKeyService         *apikeys.Service
+	libraryService        *libraries.Service
+	librariesServer       *libraries.Server
+	searchService         *search.Service
+	searchServer          *search.Server
+	downloadService       *download.Service
+	sharedLinksService    *sharedlinks.Service
+	systemConfigService   *systemconfig.Service
+	jobService            *jobs.Service
+	trashService          *trash.Server
+	tagsService           *tags.Server
+	mapService            *mapservice.Server
+	peopleService         *people.Server
+	partnersService       *partners.Server
+	activityService       *activity.Server
+	adminService          *admin.Service
+	adminServer           *admin.Server
+	duplicatesService     *duplicates.Service
+	duplicatesServer      *duplicates.Server
+	facesService          *faces.Service
+	facesServer           *faces.Server
+	stacksService         *stacks.Service
+	stacksServer          *stacks.Server
 	systemMetadataService *systemmetadata.Service
 	systemMetadataServer  *systemmetadata.Server
-	viewService         *view.Service
-	viewServer          *view.Server
-	sessionsService     *sessions.Service
-	sessionsServer      *sessions.Server
-	syncService         *sync.Service
-	syncServer          *sync.Server
-	queries             *sqlc.Queries
+	viewService           *view.Service
+	viewServer            *view.Server
+	sessionsService       *sessions.Service
+	sessionsServer        *sessions.Server
+	syncService           *sync.Service
+	syncServer            *sync.Server
+	queries               *sqlc.Queries
 
 	immichv1.UnimplementedAlbumServiceServer
 	immichv1.UnimplementedApiKeyServiceServer
@@ -143,7 +143,7 @@ func NewServer(cfg *config.Config, db *db.Conn) (*Server, error) {
 		return nil, err
 	}
 
-	// Initialize storage service 
+	// Initialize storage service
 	storageService, err := storage.NewService(cfg.Storage)
 	if err != nil {
 		return nil, err
@@ -167,57 +167,57 @@ func NewServer(cfg *config.Config, db *db.Conn) (*Server, error) {
 	peopleService := people.NewServer(db.Queries)
 	partnersService := partners.NewServer(db.Queries)
 	activityService := activity.NewServer(db.Queries)
-	
+
 	// Initialize new services
 	adminService, err := admin.NewService(db.Queries, cfg)
 	if err != nil {
 		return nil, err
 	}
 	adminServer := admin.NewServer(adminService)
-	
+
 	duplicatesService, err := duplicates.NewService(db.Queries, cfg)
 	if err != nil {
 		return nil, err
 	}
 	duplicatesServer := duplicates.NewServer(duplicatesService)
-	
+
 	facesService, err := faces.NewService(db.Queries, cfg)
 	if err != nil {
 		return nil, err
 	}
 	facesServer := faces.NewServer(facesService)
-	
+
 	stacksService, err := stacks.NewService(db.Queries, cfg)
 	if err != nil {
 		return nil, err
 	}
 	stacksServer := stacks.NewServer(stacksService)
-	
+
 	systemMetadataService, err := systemmetadata.NewService(db.Queries, cfg)
 	if err != nil {
 		return nil, err
 	}
 	systemMetadataServer := systemmetadata.NewServer(systemMetadataService)
-	
+
 	viewService, err := view.NewService(db.Queries, cfg)
 	if err != nil {
 		return nil, err
 	}
 	viewServer := view.NewServer(viewService)
-	
+
 	// Initialize Sessions service
 	logger := logrus.StandardLogger()
 	sessionsService := sessions.NewService(db.Queries, authService, logger)
 	sessionsServer := sessions.NewServer(sessionsService)
-	
+
 	// Initialize Sync service
 	syncService := sync.NewService(db.Queries, logger)
 	syncServer := sync.NewServer(syncService)
-	
+
 	// Create server implementations for libraries and search
 	libraryServer := libraries.NewServer(libraryService)
 	searchServer := search.NewServer(searchService)
-	
+
 	// Initialize job service (requires Redis configuration)
 	var jobService *jobs.Service
 	if cfg.Jobs.Enabled && cfg.Jobs.RedisURL != "" {
@@ -240,48 +240,48 @@ func NewServer(cfg *config.Config, db *db.Conn) (*Server, error) {
 	}
 
 	s := &Server{
-		config:         cfg,
-		db:             db,
-		authService:    authService,
-		wsHub:          wsHub,
-		userService:    userService,
-		assetService:   assetService,
-		albumService:   albumService,
-		apiKeyService:  apiKeyService,
-		libraryService: libraryService,
-		librariesServer:     libraryServer,
-		searchService:       searchService,
-		searchServer:        searchServer,
-		downloadService:     downloadService,
-		sharedLinksService:  sharedLinksService,
-		systemConfigService: systemConfigService,
-		jobService:          jobService,
-		trashService:        trashService,
-		tagsService:         tagsService,
-		mapService:          mapService,
-		peopleService:       peopleService,
-		partnersService:     partnersService,
-		activityService:     activityService,
-		adminService:        adminService,
-		adminServer:         adminServer,
-		duplicatesService:   duplicatesService,
-		duplicatesServer:    duplicatesServer,
-		facesService:        facesService,
-		facesServer:         facesServer,
-		stacksService:       stacksService,
-		stacksServer:        stacksServer,
+		config:                cfg,
+		db:                    db,
+		authService:           authService,
+		wsHub:                 wsHub,
+		userService:           userService,
+		assetService:          assetService,
+		albumService:          albumService,
+		apiKeyService:         apiKeyService,
+		libraryService:        libraryService,
+		librariesServer:       libraryServer,
+		searchService:         searchService,
+		searchServer:          searchServer,
+		downloadService:       downloadService,
+		sharedLinksService:    sharedLinksService,
+		systemConfigService:   systemConfigService,
+		jobService:            jobService,
+		trashService:          trashService,
+		tagsService:           tagsService,
+		mapService:            mapService,
+		peopleService:         peopleService,
+		partnersService:       partnersService,
+		activityService:       activityService,
+		adminService:          adminService,
+		adminServer:           adminServer,
+		duplicatesService:     duplicatesService,
+		duplicatesServer:      duplicatesServer,
+		facesService:          facesService,
+		facesServer:           facesServer,
+		stacksService:         stacksService,
+		stacksServer:          stacksServer,
 		systemMetadataService: systemMetadataService,
 		systemMetadataServer:  systemMetadataServer,
-		viewService:         viewService,
-		viewServer:          viewServer,
-		sessionsService:     sessionsService,
-		sessionsServer:      sessionsServer,
-		syncService:         syncService,
-		syncServer:          syncServer,
-		queries:             db.Queries,
+		viewService:           viewService,
+		viewServer:            viewServer,
+		sessionsService:       sessionsService,
+		sessionsServer:        sessionsServer,
+		syncService:           syncService,
+		syncServer:            syncServer,
+		queries:               db.Queries,
 	}
 	s.grpcServer = grpc.NewServer()
-	
+
 	// Register gRPC services
 	immichv1.RegisterAuthServiceServer(s.grpcServer, s)
 	immichv1.RegisterAlbumServiceServer(s.grpcServer, s)
@@ -313,7 +313,7 @@ func NewServer(cfg *config.Config, db *db.Conn) (*Server, error) {
 	immichv1.RegisterViewServiceServer(s.grpcServer, s.viewServer)
 	immichv1.RegisterSessionsServiceServer(s.grpcServer, s.sessionsServer)
 	immichv1.RegisterSyncServiceServer(s.grpcServer, s.syncServer)
-	
+
 	return s, nil
 }
 

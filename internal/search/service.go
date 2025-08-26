@@ -30,16 +30,16 @@ func (s *Service) SearchMetadata(ctx context.Context, userID uuid.UUID, req Meta
 		Limit:   int32(req.Size),
 		Offset:  int32(req.Page * req.Size),
 	}
-	
+
 	// Note: Our basic search only supports text search for now
 	// TODO: Add support for other metadata filters
-	
+
 	// Execute search
 	assets, err := s.db.SearchAssets(ctx, params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search assets: %w", err)
 	}
-	
+
 	// Get total count
 	countParams := sqlc.CountSearchAssetsParams{
 		OwnerID: params.OwnerID,
@@ -49,7 +49,7 @@ func (s *Service) SearchMetadata(ctx context.Context, userID uuid.UUID, req Meta
 	if err != nil {
 		return nil, fmt.Errorf("failed to count search results: %w", err)
 	}
-	
+
 	// Convert to search results
 	items := make([]*SearchResultItem, len(assets))
 	for i, asset := range assets {
@@ -66,7 +66,7 @@ func (s *Service) SearchMetadata(ctx context.Context, userID uuid.UUID, req Meta
 			// Add more fields as needed
 		}
 	}
-	
+
 	return &SearchResult{
 		Items: items,
 		Total: int(count),
@@ -87,18 +87,18 @@ func (s *Service) SearchPeople(ctx context.Context, userID uuid.UUID, req People
 	if err != nil {
 		return nil, fmt.Errorf("failed to search people: %w", err)
 	}
-	
+
 	// Convert to search results
 	items := make([]*PersonResult, len(people))
 	for i, person := range people {
 		items[i] = &PersonResult{
 			ID:         PgtypeToUUID(person.ID).String(),
 			Name:       person.Name,
-			AssetCount: 0, // Not returned by basic query
+			AssetCount: 0,  // Not returned by basic query
 			Thumbnail:  "", // Not returned by basic query
 		}
 	}
-	
+
 	return &PeopleSearchResult{
 		People: items,
 		Total:  len(items),
@@ -117,7 +117,7 @@ func (s *Service) SearchPlaces(ctx context.Context, userID uuid.UUID, req Places
 	if err != nil {
 		return nil, fmt.Errorf("failed to search places: %w", err)
 	}
-	
+
 	// Convert to search results
 	items := make([]*PlaceResult, len(places))
 	for i, place := range places {
@@ -138,7 +138,7 @@ func (s *Service) SearchPlaces(ctx context.Context, userID uuid.UUID, req Places
 			AssetCount: 0, // Not returned by our query
 		}
 	}
-	
+
 	return &PlacesSearchResult{
 		Places: items,
 		Total:  len(items),
@@ -154,7 +154,7 @@ func (s *Service) SearchCities(ctx context.Context, userID uuid.UUID, req Cities
 	if err != nil {
 		return nil, fmt.Errorf("failed to get cities: %w", err)
 	}
-	
+
 	results := make([]*CityResult, len(cities))
 	for i, city := range cities {
 		results[i] = &CityResult{
@@ -163,7 +163,7 @@ func (s *Service) SearchCities(ctx context.Context, userID uuid.UUID, req Cities
 			Country: "", // Not returned by our query
 		}
 	}
-	
+
 	return results, nil
 }
 
@@ -177,7 +177,7 @@ func (s *Service) GetSearchSuggestions(ctx context.Context, userID uuid.UUID, re
 		Cameras:   []string{},
 		FileTypes: []string{},
 	}
-	
+
 	// Get people suggestions
 	if req.IncludePeople {
 		people, err := s.db.GetTopPeople(ctx, UUIDToPgtype(userID), 10)
@@ -187,7 +187,7 @@ func (s *Service) GetSearchSuggestions(ctx context.Context, userID uuid.UUID, re
 			}
 		}
 	}
-	
+
 	// Get place suggestions
 	// TODO: Implement GetTopPlaces query
 	// if req.IncludePlaces {
@@ -203,7 +203,7 @@ func (s *Service) GetSearchSuggestions(ctx context.Context, userID uuid.UUID, re
 	// 		}
 	// 	}
 	// }
-	
+
 	// Get camera make/model suggestions
 	// TODO: Implement GetDistinctCameras query
 	// if req.IncludeCameras {
@@ -216,7 +216,7 @@ func (s *Service) GetSearchSuggestions(ctx context.Context, userID uuid.UUID, re
 	// 		}
 	// 	}
 	// }
-	
+
 	return suggestions, nil
 }
 
@@ -236,10 +236,10 @@ func (s *Service) SearchExplore(ctx context.Context, userID uuid.UUID) (*Explore
 	result := &ExploreResult{
 		Categories: []ExploreCategory{},
 	}
-	
+
 	// TODO: Implement explore categories when queries are available
 	return result, nil
-	
+
 	/* TODO: Uncomment when queries are implemented
 	// This Year category
 	thisYear := time.Now().Year()
@@ -255,7 +255,7 @@ func (s *Service) SearchExplore(ctx context.Context, userID uuid.UUID) (*Explore
 			Thumbnail: thisYearAssets[0].ID.String(),
 		})
 	}
-	
+
 	// Recent uploads
 	recentAssets, err := s.db.GetRecentAssets(ctx, sqlc.GetRecentAssetsParams{
 		UserID: userID,
@@ -268,7 +268,7 @@ func (s *Service) SearchExplore(ctx context.Context, userID uuid.UUID) (*Explore
 			Thumbnail: recentAssets[0].ID.String(),
 		})
 	}
-	
+
 	// Favorites
 	favoriteAssets, err := s.db.GetFavoriteAssets(ctx, sqlc.GetFavoriteAssetsParams{
 		UserID: userID,
@@ -281,7 +281,7 @@ func (s *Service) SearchExplore(ctx context.Context, userID uuid.UUID) (*Explore
 			Thumbnail: favoriteAssets[0].ID.String(),
 		})
 	}
-	
+
 	// Videos
 	videoAssets, err := s.db.GetVideoAssets(ctx, sqlc.GetVideoAssetsParams{
 		UserID: userID,
@@ -294,7 +294,7 @@ func (s *Service) SearchExplore(ctx context.Context, userID uuid.UUID) (*Explore
 			Thumbnail: videoAssets[0].ID.String(),
 		})
 	}
-	
+
 	return result, nil
 	*/
 }

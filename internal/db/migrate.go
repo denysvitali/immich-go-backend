@@ -52,7 +52,7 @@ func RunMigrations(ctx context.Context, db *sql.DB) error {
 		}
 
 		logrus.Infof("Applying migration %03d: %s", m.Version, m.Name)
-		
+
 		// Start transaction
 		tx, err := db.BeginTx(ctx, nil)
 		if err != nil {
@@ -66,7 +66,7 @@ func RunMigrations(ctx context.Context, db *sql.DB) error {
 		}
 
 		// Record migration
-		if _, err := tx.ExecContext(ctx, 
+		if _, err := tx.ExecContext(ctx,
 			"INSERT INTO schema_migrations (version, name) VALUES ($1, $2)",
 			m.Version, m.Name,
 		); err != nil {
@@ -92,17 +92,17 @@ func createMigrationsTable(ctx context.Context, db *sql.DB) error {
 		name TEXT NOT NULL,
 		applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	);`
-	
+
 	_, err := db.ExecContext(ctx, query)
 	return err
 }
 
 func getCurrentMigrationVersion(ctx context.Context, db *sql.DB) (int, error) {
 	var version int
-	err := db.QueryRowContext(ctx, 
+	err := db.QueryRowContext(ctx,
 		"SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
 	).Scan(&version)
-	
+
 	if err == sql.ErrNoRows {
 		return 0, nil
 	}

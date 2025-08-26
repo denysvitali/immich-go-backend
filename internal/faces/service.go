@@ -113,12 +113,12 @@ func (s *Service) CreateFace(ctx context.Context, req CreateFaceRequest) (*FaceR
 	s.faceCounter.Add(ctx, 1)
 
 	return &FaceResponse{
-		ID:           faceID.String(),
-		AssetID:      req.AssetID,
-		PersonID:     req.PersonID,
-		BoundingBox:  req.BoundingBox,
-		ImageWidth:   nil,
-		ImageHeight:  nil,
+		ID:          faceID.String(),
+		AssetID:     req.AssetID,
+		PersonID:    req.PersonID,
+		BoundingBox: req.BoundingBox,
+		ImageWidth:  nil,
+		ImageHeight: nil,
 	}, nil
 }
 

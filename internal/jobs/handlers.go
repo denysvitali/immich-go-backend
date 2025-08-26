@@ -9,7 +9,7 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/sirupsen/logrus"
-	
+
 	"github.com/denysvitali/immich-go-backend/internal/assets"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/denysvitali/immich-go-backend/internal/libraries"
@@ -95,7 +95,7 @@ func (h *Handlers) generateThumbnail(ctx context.Context, asset *sqlc.Asset, siz
 		"asset_id": asset.ID,
 		"size":     size,
 	}).Debug("Generating thumbnail")
-	
+
 	return nil
 }
 
@@ -128,7 +128,7 @@ func (h *Handlers) HandleMetadataExtraction(ctx context.Context, task *asynq.Tas
 
 	// Extract metadata using asset service
 	// This would call the actual metadata extraction logic
-	
+
 	return nil
 }
 
@@ -180,9 +180,9 @@ func (h *Handlers) HandleLibraryScan(ctx context.Context, task *asynq.Task) erro
 
 // VideoTranscodePayload contains data for video transcoding
 type VideoTranscodePayload struct {
-	AssetID  string `json:"asset_id"`
-	Quality  string `json:"quality"`
-	Format   string `json:"format"`
+	AssetID string `json:"asset_id"`
+	Quality string `json:"quality"`
+	Format  string `json:"format"`
 }
 
 // HandleVideoTranscode processes video transcoding jobs
@@ -209,7 +209,7 @@ func (h *Handlers) HandleVideoTranscode(ctx context.Context, task *asynq.Task) e
 
 	// Video transcoding logic would go here
 	// This would typically use ffmpeg or similar tools
-	
+
 	return nil
 }
 
@@ -237,7 +237,7 @@ func (h *Handlers) HandleFaceDetection(ctx context.Context, task *asynq.Task) er
 
 	// Face detection logic would go here
 	// This would integrate with ML models for face detection
-	
+
 	return nil
 }
 
@@ -265,7 +265,7 @@ func (h *Handlers) HandleSmartSearchIndex(ctx context.Context, task *asynq.Task)
 
 	// Smart search indexing logic would go here
 	// This would use CLIP or similar models for embeddings
-	
+
 	return nil
 }
 
@@ -288,7 +288,7 @@ func (h *Handlers) HandleDuplicateDetection(ctx context.Context, task *asynq.Tas
 
 	// Duplicate detection logic would go here
 	// This would use perceptual hashing or similar techniques
-	
+
 	return nil
 }
 
@@ -319,7 +319,7 @@ func (h *Handlers) HandleStorageMigration(ctx context.Context, task *asynq.Task)
 
 	// Storage migration logic would go here
 	// This would move files between different storage backends
-	
+
 	return nil
 }
 
@@ -329,17 +329,17 @@ func (h *Handlers) RegisterAllHandlers(service *Service) {
 	service.RegisterHandler(JobTypeThumbnailGeneration, h.HandleThumbnailGeneration)
 	service.RegisterHandler(JobTypeMetadataExtraction, h.HandleMetadataExtraction)
 	service.RegisterHandler(JobTypeVideoTranscode, h.HandleVideoTranscode)
-	
+
 	// Machine learning
 	service.RegisterHandler(JobTypeFaceDetection, h.HandleFaceDetection)
 	service.RegisterHandler(JobTypeSmartSearch, h.HandleSmartSearchIndex)
-	
+
 	// Library management
 	service.RegisterHandler(JobTypeLibraryScan, h.HandleLibraryScan)
 	service.RegisterHandler(JobTypeDuplicateDetect, h.HandleDuplicateDetection)
-	
+
 	// Storage
 	service.RegisterHandler(JobTypeStorageMigration, h.HandleStorageMigration)
-	
+
 	h.logger.Info("All job handlers registered")
 }

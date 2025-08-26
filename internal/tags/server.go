@@ -32,7 +32,7 @@ func (s *Server) GetAllTags(ctx context.Context, request *immichv1.GetAllTagsReq
 	if !ok {
 		return nil, status.Error(codes.Unauthenticated, "unauthorized")
 	}
-	
+
 	return &immichv1.GetAllTagsResponse{
 		Tags: []*immichv1.TagResponse{},
 	}, nil
@@ -44,7 +44,7 @@ func (s *Server) CreateTag(ctx context.Context, request *immichv1.CreateTagReque
 	if !ok {
 		return nil, status.Error(codes.Unauthenticated, "unauthorized")
 	}
-	
+
 	return &immichv1.TagResponse{
 		Id:        uuid.New().String(),
 		Name:      request.GetName(),
@@ -60,7 +60,7 @@ func (s *Server) UpsertTags(ctx context.Context, request *immichv1.UpsertTagsReq
 	if !ok {
 		return nil, status.Error(codes.Unauthenticated, "unauthorized")
 	}
-	
+
 	return &immichv1.UpsertTagsResponse{
 		Tags: []*immichv1.TagResponse{},
 	}, nil
@@ -72,7 +72,7 @@ func (s *Server) BulkTagAssets(ctx context.Context, request *immichv1.BulkTagAss
 	if !ok {
 		return nil, status.Error(codes.Unauthenticated, "unauthorized")
 	}
-	
+
 	return &immichv1.BulkTagAssetsResponse{
 		// Field not in proto, return empty response
 	}, nil
@@ -84,7 +84,7 @@ func (s *Server) DeleteTag(ctx context.Context, request *immichv1.DeleteTagReque
 	if !ok {
 		return nil, status.Error(codes.Unauthenticated, "unauthorized")
 	}
-	
+
 	return &emptypb.Empty{}, nil
 }
 
@@ -94,7 +94,7 @@ func (s *Server) GetTagById(ctx context.Context, request *immichv1.GetTagByIdReq
 	if !ok {
 		return nil, status.Error(codes.Unauthenticated, "unauthorized")
 	}
-	
+
 	return nil, status.Error(codes.NotFound, "tag not found")
 }
 
@@ -104,7 +104,7 @@ func (s *Server) UpdateTag(ctx context.Context, request *immichv1.UpdateTagReque
 	if !ok {
 		return nil, status.Error(codes.Unauthenticated, "unauthorized")
 	}
-	
+
 	return nil, status.Error(codes.Unimplemented, "not implemented")
 }
 
@@ -114,7 +114,7 @@ func (s *Server) UntagAssets(ctx context.Context, request *immichv1.UntagAssetsR
 	if !ok {
 		return nil, status.Error(codes.Unauthenticated, "unauthorized")
 	}
-	
+
 	// Return empty response
 	return &immichv1.UntagAssetsResponse{}, nil
 }
@@ -125,7 +125,7 @@ func (s *Server) TagAssets(ctx context.Context, request *immichv1.TagAssetsReque
 	if !ok {
 		return nil, status.Error(codes.Unauthenticated, "unauthorized")
 	}
-	
+
 	// Return empty response
 	return &immichv1.TagAssetsResponse{}, nil
 }

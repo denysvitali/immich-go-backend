@@ -83,7 +83,7 @@ func (s *Service) GetAssetDuplicates(ctx context.Context, userID string) (*GetAs
 	// 2. Grouping by identical checksums
 	// 3. Filtering by user ownership
 	// 4. Building duplicate groups
-	
+
 	// For now, return empty response
 	duplicateGroups := []*DuplicateGroup{}
 
@@ -148,13 +148,13 @@ type DuplicateGroup struct {
 }
 
 type DuplicateAsset struct {
-	AssetID         string
-	DeviceAssetID   string
-	DeviceID        string
-	Checksum        string
-	Type            AssetType
-	OriginalPath    string
-	FileSizeInByte  int64
+	AssetID        string
+	DeviceAssetID  string
+	DeviceID       string
+	Checksum       string
+	Type           AssetType
+	OriginalPath   string
+	FileSizeInByte int64
 }
 
 type AssetType int32

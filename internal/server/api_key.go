@@ -26,18 +26,18 @@ func (s *Server) GetApiKeys(ctx context.Context, _ *emptypb.Empty) (*immichv1.Ge
 
 	// Create service if not exists
 	apiKeyService := apikeys.NewService(s.db.Queries)
-	
+
 	// Get all API keys for the user
 	keys, err := apiKeyService.GetAPIKeysByUser(ctx, userID)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get API keys: %v", err)
 	}
-	
+
 	// Convert to response format
 	response := &immichv1.GetApiKeysResponse{
 		ApiKeys: make([]*immichv1.ApiKeyResponseDto, len(keys)),
 	}
-	
+
 	for i, key := range keys {
 		response.ApiKeys[i] = &immichv1.ApiKeyResponseDto{
 			Id:        key.ID.String(),
@@ -46,7 +46,7 @@ func (s *Server) GetApiKeys(ctx context.Context, _ *emptypb.Empty) (*immichv1.Ge
 			UpdatedAt: timestamppb.New(key.UpdatedAt.Time),
 		}
 	}
-	
+
 	return response, nil
 }
 
@@ -56,22 +56,22 @@ func (s *Server) CreateApiKey(ctx context.Context, req *immichv1.CreateApiKeyReq
 	if req.Name == "" {
 		return nil, status.Error(codes.InvalidArgument, "API key name is required")
 	}
-	
+
 	// Get user ID from context
 	userID, err := s.getUserIDFromContext(ctx)
 	if err != nil {
 		return nil, status.Error(codes.Unauthenticated, "authentication required")
 	}
-	
+
 	// Create service
 	apiKeyService := apikeys.NewService(s.db.Queries)
-	
+
 	// Create the API key
 	apiKey, rawKey, err := apiKeyService.CreateAPIKey(ctx, userID, req.Name)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to create API key: %v", err)
 	}
-	
+
 	// Return response with the raw key (only shown once)
 	return &immichv1.CreateApiKeyResponse{
 		ApiKey: &immichv1.ApiKeyResponseDto{
@@ -91,21 +91,21 @@ func (s *Server) DeleteApiKey(ctx context.Context, req *immichv1.DeleteApiKeyReq
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid API key ID")
 	}
-	
+
 	// Get user ID from context
 	userID, err := s.getUserIDFromContext(ctx)
 	if err != nil {
 		return nil, status.Error(codes.Unauthenticated, "authentication required")
 	}
-	
+
 	// Create service
 	apiKeyService := apikeys.NewService(s.db.Queries)
-	
+
 	// Delete the API key
 	if err := apiKeyService.DeleteAPIKey(ctx, keyID, userID); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to delete API key: %v", err)
 	}
-	
+
 	return &emptypb.Empty{}, nil
 }
 

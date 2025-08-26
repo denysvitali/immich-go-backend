@@ -25,9 +25,9 @@ type Service struct {
 	config *config.Config
 
 	// Metrics
-	userCounter        metric.Int64UpDownCounter
-	operationCounter   metric.Int64Counter
-	operationDuration  metric.Float64Histogram
+	userCounter       metric.Int64UpDownCounter
+	operationCounter  metric.Int64Counter
+	operationDuration metric.Float64Histogram
 }
 
 // NewService creates a new user management service
@@ -681,16 +681,16 @@ func (s *Service) getDefaultUserPreferences(userID uuid.UUID) *UserPreferences {
 	tagsSizeThreshold := int32(10)
 
 	return &UserPreferences{
-		UserID:                       userID,
-		EmailNotifications:           &emailNotifications,
+		UserID:                        userID,
+		EmailNotifications:            &emailNotifications,
 		DownloadIncludeEmbeddedVideos: &downloadIncludeEmbeddedVideos,
-		FoldersEnabled:               &foldersEnabled,
-		MemoriesEnabled:              &memoriesEnabled,
-		PeopleEnabled:                &peopleEnabled,
-		PeopleSizeThreshold:          &peopleSizeThreshold,
-		SharedLinksEnabled:           &sharedLinksEnabled,
-		TagsEnabled:                  &tagsEnabled,
-		TagsSizeThreshold:            &tagsSizeThreshold,
+		FoldersEnabled:                &foldersEnabled,
+		MemoriesEnabled:               &memoriesEnabled,
+		PeopleEnabled:                 &peopleEnabled,
+		PeopleSizeThreshold:           &peopleSizeThreshold,
+		SharedLinksEnabled:            &sharedLinksEnabled,
+		TagsEnabled:                   &tagsEnabled,
+		TagsSizeThreshold:             &tagsSizeThreshold,
 	}
 }
 

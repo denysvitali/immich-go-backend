@@ -26,44 +26,44 @@ func NewService(db *sqlc.Queries) *Service {
 
 // SharedLink represents a shared link
 type SharedLink struct {
-	ID               uuid.UUID  `json:"id"`
-	UserID           uuid.UUID  `json:"userId"`
-	Key              string     `json:"key"`
-	Type             string     `json:"type"`
-	Description      string     `json:"description,omitempty"`
-	Password         string     `json:"-"`
-	ExpiresAt        *time.Time `json:"expiresAt,omitempty"`
-	AllowDownload    bool       `json:"allowDownload"`
-	AllowUpload      bool       `json:"allowUpload"`
-	ShowExif         bool       `json:"showExif"`
-	AssetCount       int        `json:"assetCount"`
-	AlbumID          *uuid.UUID `json:"albumId,omitempty"`
-	CreatedAt        time.Time  `json:"createdAt"`
-	UpdatedAt        time.Time  `json:"updatedAt"`
+	ID            uuid.UUID  `json:"id"`
+	UserID        uuid.UUID  `json:"userId"`
+	Key           string     `json:"key"`
+	Type          string     `json:"type"`
+	Description   string     `json:"description,omitempty"`
+	Password      string     `json:"-"`
+	ExpiresAt     *time.Time `json:"expiresAt,omitempty"`
+	AllowDownload bool       `json:"allowDownload"`
+	AllowUpload   bool       `json:"allowUpload"`
+	ShowExif      bool       `json:"showExif"`
+	AssetCount    int        `json:"assetCount"`
+	AlbumID       *uuid.UUID `json:"albumId,omitempty"`
+	CreatedAt     time.Time  `json:"createdAt"`
+	UpdatedAt     time.Time  `json:"updatedAt"`
 }
 
 // CreateSharedLinkRequest represents a request to create a shared link
 type CreateSharedLinkRequest struct {
-	Type            string     `json:"type"`
-	AssetIDs        []string   `json:"assetIds,omitempty"`
-	AlbumID         *string    `json:"albumId,omitempty"`
-	Description     string     `json:"description,omitempty"`
-	Password        string     `json:"password,omitempty"`
-	ExpiresAt       *time.Time `json:"expiresAt,omitempty"`
-	AllowDownload   bool       `json:"allowDownload"`
-	AllowUpload     bool       `json:"allowUpload"`
-	ShowExif        bool       `json:"showExif"`
+	Type          string     `json:"type"`
+	AssetIDs      []string   `json:"assetIds,omitempty"`
+	AlbumID       *string    `json:"albumId,omitempty"`
+	Description   string     `json:"description,omitempty"`
+	Password      string     `json:"password,omitempty"`
+	ExpiresAt     *time.Time `json:"expiresAt,omitempty"`
+	AllowDownload bool       `json:"allowDownload"`
+	AllowUpload   bool       `json:"allowUpload"`
+	ShowExif      bool       `json:"showExif"`
 }
 
 // UpdateSharedLinkRequest represents a request to update a shared link
 type UpdateSharedLinkRequest struct {
-	Description     *string    `json:"description,omitempty"`
-	Password        *string    `json:"password,omitempty"`
-	ExpiresAt       *time.Time `json:"expiresAt,omitempty"`
-	AllowDownload   *bool      `json:"allowDownload,omitempty"`
-	AllowUpload     *bool      `json:"allowUpload,omitempty"`
-	ShowExif        *bool      `json:"showExif,omitempty"`
-	ChangeExpiryTime bool      `json:"changeExpiryTime,omitempty"`
+	Description      *string    `json:"description,omitempty"`
+	Password         *string    `json:"password,omitempty"`
+	ExpiresAt        *time.Time `json:"expiresAt,omitempty"`
+	AllowDownload    *bool      `json:"allowDownload,omitempty"`
+	AllowUpload      *bool      `json:"allowUpload,omitempty"`
+	ShowExif         *bool      `json:"showExif,omitempty"`
+	ChangeExpiryTime bool       `json:"changeExpiryTime,omitempty"`
 }
 
 // CreateSharedLink creates a new shared link

@@ -44,10 +44,10 @@ func NewService(db *sqlc.Queries, cfg *config.Config) *Service {
 		config:    cfg,
 		providers: make(map[string]*OAuthProvider),
 	}
-	
+
 	// Initialize OAuth providers from config
 	s.initProviders()
-	
+
 	return s
 }
 
@@ -66,7 +66,7 @@ func (s *Service) initProviders() {
 			RedirectURL:  s.config.Auth.OAuth.Google.RedirectURL,
 		}
 	}
-	
+
 	// GitHub OAuth
 	if s.config.Auth.OAuth.GitHub.Enabled {
 		s.providers["github"] = &OAuthProvider{
@@ -80,7 +80,7 @@ func (s *Service) initProviders() {
 			RedirectURL:  s.config.Auth.OAuth.GitHub.RedirectURL,
 		}
 	}
-	
+
 	// Microsoft OAuth
 	if s.config.Auth.OAuth.Microsoft.Enabled {
 		s.providers["microsoft"] = &OAuthProvider{
@@ -111,20 +111,20 @@ func (s *Service) GetAuthorizationURL(provider, state string) (string, error) {
 	if !exists {
 		return "", fmt.Errorf("provider %s not configured", provider)
 	}
-	
+
 	params := url.Values{}
 	params.Set("client_id", p.ClientID)
 	params.Set("redirect_uri", p.RedirectURL)
 	params.Set("response_type", "code")
 	params.Set("scope", strings.Join(p.Scopes, " "))
 	params.Set("state", state)
-	
+
 	// Add provider-specific parameters
 	if provider == "google" {
 		params.Set("access_type", "offline")
 		params.Set("prompt", "consent")
 	}
-	
+
 	return fmt.Sprintf("%s?%s", p.AuthURL, params.Encode()), nil
 }
 
@@ -134,35 +134,35 @@ func (s *Service) ExchangeCodeForToken(provider, code string) (string, error) {
 	if !exists {
 		return "", fmt.Errorf("provider %s not configured", provider)
 	}
-	
+
 	data := url.Values{}
 	data.Set("client_id", p.ClientID)
 	data.Set("client_secret", p.ClientSecret)
 	data.Set("code", code)
 	data.Set("grant_type", "authorization_code")
 	data.Set("redirect_uri", p.RedirectURL)
-	
+
 	resp, err := http.PostForm(p.TokenURL, data)
 	if err != nil {
 		return "", fmt.Errorf("failed to exchange code: %w", err)
 	}
 	defer resp.Body.Close()
-	
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", fmt.Errorf("failed to read response: %w", err)
 	}
-	
+
 	var tokenResp map[string]interface{}
 	if err := json.Unmarshal(body, &tokenResp); err != nil {
 		return "", fmt.Errorf("failed to parse token response: %w", err)
 	}
-	
+
 	accessToken, ok := tokenResp["access_token"].(string)
 	if !ok {
 		return "", fmt.Errorf("no access token in response")
 	}
-	
+
 	return accessToken, nil
 }
 
@@ -172,55 +172,55 @@ func (s *Service) GetUserInfo(provider, accessToken string) (*OAuthUserInfo, err
 	if !exists {
 		return nil, fmt.Errorf("provider %s not configured", provider)
 	}
-	
+
 	req, err := http.NewRequest("GET", p.UserInfoURL, nil)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Set authorization header
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", accessToken))
-	
+
 	// GitHub requires a specific Accept header
 	if provider == "github" {
 		req.Header.Set("Accept", "application/vnd.github.v3+json")
 	}
-	
+
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user info: %w", err)
 	}
 	defer resp.Body.Close()
-	
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
-	
+
 	var data map[string]interface{}
 	if err := json.Unmarshal(body, &data); err != nil {
 		return nil, fmt.Errorf("failed to parse user info: %w", err)
 	}
-	
+
 	// Parse user info based on provider
 	userInfo := &OAuthUserInfo{
 		Provider: provider,
 	}
-	
+
 	switch provider {
 	case "google":
 		userInfo.ID = getString(data, "id")
 		userInfo.Email = getString(data, "email")
 		userInfo.Name = getString(data, "name")
 		userInfo.Picture = getString(data, "picture")
-		
+
 	case "github":
 		userInfo.ID = fmt.Sprintf("%v", data["id"])
 		userInfo.Email = getString(data, "email")
 		userInfo.Name = getString(data, "name")
 		userInfo.Picture = getString(data, "avatar_url")
-		
+
 	case "microsoft":
 		userInfo.ID = getString(data, "id")
 		userInfo.Email = getString(data, "mail")
@@ -229,7 +229,7 @@ func (s *Service) GetUserInfo(provider, accessToken string) (*OAuthUserInfo, err
 		}
 		userInfo.Name = getString(data, "displayName")
 	}
-	
+
 	return userInfo, nil
 }
 
@@ -248,14 +248,14 @@ func (s *Service) FindOrCreateUserByOAuth(ctx context.Context, userInfo *OAuthUs
 	if err == nil {
 		return &user, nil
 	}
-	
+
 	// If user doesn't exist, create a new one
 	// Generate a random password since OAuth users don't need one
 	randomPass := make([]byte, 32)
 	if _, err := rand.Read(randomPass); err != nil {
 		return nil, err
 	}
-	
+
 	newUser, err := s.db.CreateUser(ctx, sqlc.CreateUserParams{
 		ID:       pgtype.UUID{Bytes: uuid.New(), Valid: true},
 		Email:    userInfo.Email,
@@ -266,7 +266,7 @@ func (s *Service) FindOrCreateUserByOAuth(ctx context.Context, userInfo *OAuthUs
 	if err != nil {
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
-	
+
 	return &newUser, nil
 }
 

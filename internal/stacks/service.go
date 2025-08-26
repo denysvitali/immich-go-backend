@@ -228,8 +228,8 @@ type UpdateStackRequest struct {
 }
 
 type SearchStacksRequest struct {
-	UserID          *string
-	PrimaryAssetID  *string
+	UserID         *string
+	PrimaryAssetID *string
 }
 
 type SearchStacksResponse struct {

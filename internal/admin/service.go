@@ -444,14 +444,14 @@ type UserStatisticsResponseDto struct {
 type UserAvatarColor int32
 
 const (
-	UserAvatarColor_PRIMARY   UserAvatarColor = 0
-	UserAvatarColor_PINK      UserAvatarColor = 1
-	UserAvatarColor_RED       UserAvatarColor = 2
-	UserAvatarColor_YELLOW    UserAvatarColor = 3
-	UserAvatarColor_BLUE      UserAvatarColor = 4
-	UserAvatarColor_GREEN     UserAvatarColor = 5
-	UserAvatarColor_PURPLE    UserAvatarColor = 6
-	UserAvatarColor_ORANGE    UserAvatarColor = 7
-	UserAvatarColor_GRAY      UserAvatarColor = 8
-	UserAvatarColor_AMBER     UserAvatarColor = 9
+	UserAvatarColor_PRIMARY UserAvatarColor = 0
+	UserAvatarColor_PINK    UserAvatarColor = 1
+	UserAvatarColor_RED     UserAvatarColor = 2
+	UserAvatarColor_YELLOW  UserAvatarColor = 3
+	UserAvatarColor_BLUE    UserAvatarColor = 4
+	UserAvatarColor_GREEN   UserAvatarColor = 5
+	UserAvatarColor_PURPLE  UserAvatarColor = 6
+	UserAvatarColor_ORANGE  UserAvatarColor = 7
+	UserAvatarColor_GRAY    UserAvatarColor = 8
+	UserAvatarColor_AMBER   UserAvatarColor = 9
 )

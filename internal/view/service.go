@@ -115,15 +115,15 @@ type GetUniqueOriginalPathsResponse struct {
 }
 
 type AssetInfo struct {
-	ID                 string
-	DeviceAssetID      string
-	DeviceID           string
-	Type               AssetType
-	OriginalPath       string
-	OriginalFileName   string
-	IsArchived         bool
-	IsFavorite         bool
-	IsTrashed          bool
+	ID               string
+	DeviceAssetID    string
+	DeviceID         string
+	Type             AssetType
+	OriginalPath     string
+	OriginalFileName string
+	IsArchived       bool
+	IsFavorite       bool
+	IsTrashed        bool
 }
 
 type AssetType int32

@@ -32,7 +32,7 @@ func (q *Queries) SearchAssets(ctx context.Context, arg SearchAssetsParams) ([]A
 		return nil, err
 	}
 	defer rows.Close()
-	
+
 	var items []Asset
 	for rows.Next() {
 		var i Asset
@@ -116,7 +116,7 @@ func (q *Queries) SearchPeople(ctx context.Context, arg SearchPeopleParams) ([]P
 		return nil, err
 	}
 	defer rows.Close()
-	
+
 	var items []Person
 	for rows.Next() {
 		var i Person
@@ -166,7 +166,7 @@ func (q *Queries) SearchPlaces(ctx context.Context, arg SearchPlacesParams) ([]S
 		return nil, err
 	}
 	defer rows.Close()
-	
+
 	var items []SearchPlacesRow
 	for rows.Next() {
 		var i SearchPlacesRow
@@ -200,7 +200,7 @@ func (q *Queries) GetDistinctCities(ctx context.Context, arg GetDistinctCitiesPa
 		return nil, err
 	}
 	defer rows.Close()
-	
+
 	var items []string
 	for rows.Next() {
 		var city string
@@ -233,7 +233,7 @@ func (q *Queries) GetTopPeople(ctx context.Context, ownerID pgtype.UUID, limit i
 		return nil, err
 	}
 	defer rows.Close()
-	
+
 	var items []GetTopPeopleRow
 	for rows.Next() {
 		var i GetTopPeopleRow

@@ -29,7 +29,7 @@ func (s *Service) GenerateAPIKey() (string, error) {
 	if _, err := rand.Read(bytes); err != nil {
 		return "", fmt.Errorf("failed to generate random bytes: %w", err)
 	}
-	
+
 	// Encode to base64 URL-safe string
 	return base64.URLEncoding.EncodeToString(bytes), nil
 }
@@ -56,13 +56,13 @@ func (s *Service) CreateAPIKey(ctx context.Context, userID uuid.UUID, name strin
 	if err != nil {
 		return nil, "", err
 	}
-	
+
 	// Hash the key for storage
 	hashedKey, err := s.HashAPIKey(rawKey)
 	if err != nil {
 		return nil, "", err
 	}
-	
+
 	// Store in database
 	apiKey, err := s.db.CreateApiKey(ctx, sqlc.CreateApiKeyParams{
 		Name:        name,
@@ -73,7 +73,7 @@ func (s *Service) CreateAPIKey(ctx context.Context, userID uuid.UUID, name strin
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to create API key: %w", err)
 	}
-	
+
 	// Return the created key and the raw key (only shown once)
 	return &apiKey, rawKey, nil
 }
@@ -103,11 +103,11 @@ func (s *Service) DeleteAPIKey(ctx context.Context, keyID, userID uuid.UUID) err
 func (s *Service) ValidateAPIKey(ctx context.Context, rawKey string) (*sqlc.ApiKey, error) {
 	// Note: In production, you'd want to implement caching here to avoid
 	// hitting the database for every API request
-	
+
 	// Since we hash the keys, we need to fetch all keys and check each one
 	// In a production system, you might want to use a different approach,
 	// such as storing a prefix or using a cache
-	
+
 	// For now, this is a simplified implementation
 	// In reality, Immich stores the key in a way that allows direct lookup
 	return nil, fmt.Errorf("ValidateAPIKey not fully implemented - needs optimization")

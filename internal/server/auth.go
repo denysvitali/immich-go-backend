@@ -27,16 +27,16 @@ func (s *Server) Login(ctx context.Context, req *immichv1.LoginRequest) (*immich
 
 	// Set HTTP headers for web compatibility
 	_ = grpc.SetHeader(ctx, metadata.Pairs("x-http-code", "201"))
-	
+
 	// Set secure cookies
 	cookieMaxAge := fmt.Sprintf("Max-Age=%d", 86400) // 24 hours
-	accessTokenCookie := fmt.Sprintf("immich_access_token=%s; %s; Path=/; HttpOnly; Secure; SameSite=Lax", 
+	accessTokenCookie := fmt.Sprintf("immich_access_token=%s; %s; Path=/; HttpOnly; Secure; SameSite=Lax",
 		loginResponse.AccessToken, cookieMaxAge)
-	authTypeCookie := fmt.Sprintf("immich_auth_type=password; %s; Path=/; HttpOnly; Secure; SameSite=Lax", 
+	authTypeCookie := fmt.Sprintf("immich_auth_type=password; %s; Path=/; HttpOnly; Secure; SameSite=Lax",
 		cookieMaxAge)
-	isAuthenticatedCookie := fmt.Sprintf("immich_is_authenticated=true; %s; Path=/; Secure; SameSite=Lax", 
+	isAuthenticatedCookie := fmt.Sprintf("immich_is_authenticated=true; %s; Path=/; Secure; SameSite=Lax",
 		cookieMaxAge)
-	
+
 	_ = grpc.SetHeader(ctx, metadata.Pairs("Set-Cookie", accessTokenCookie))
 	_ = grpc.SetHeader(ctx, metadata.Pairs("Set-Cookie", authTypeCookie))
 	_ = grpc.SetHeader(ctx, metadata.Pairs("Set-Cookie", isAuthenticatedCookie))
@@ -71,7 +71,7 @@ func (s *Server) Logout(ctx context.Context, req *emptypb.Empty) (*immichv1.Logo
 	_ = grpc.SetHeader(ctx, metadata.Pairs("Set-Cookie", "immich_is_authenticated=false; Max-Age=0; Path=/; Secure; SameSite=Lax"))
 
 	return &immichv1.LogoutResponse{
-		Successful: true,
+		Successful:  true,
 		RedirectUri: "/auth/login",
 	}, nil
 }
