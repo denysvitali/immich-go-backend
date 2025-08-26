@@ -91,7 +91,7 @@ func (s *Service) GetDeltaSync(ctx context.Context, userID string, updatedAfter 
 	upserted := []string{}
 	for _, asset := range assets {
 		if asset.UpdatedAt.Valid && asset.UpdatedAt.Time.After(updatedAfter) {
-			upserted = append(upserted, asset.Id.String())
+			upserted = append(upserted, asset.ID.String())
 		}
 	}
 	
@@ -146,7 +146,7 @@ func (s *Service) GetFullSync(ctx context.Context, userID string, limit int, upd
 	var lastUpdated *time.Time
 	
 	for i, asset := range assets {
-		assetIDs[i] = asset.Id.String()
+		assetIDs[i] = asset.ID.String()
 		if asset.UpdatedAt.Valid {
 			lastUpdated = &asset.UpdatedAt.Time
 		}
