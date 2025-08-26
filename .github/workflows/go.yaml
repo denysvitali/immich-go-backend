@@ -94,7 +94,7 @@ jobs:
     - name: Build application
       run: |
         echo "🔨 Building application..."
-        go build -v -o bin/immich-go-backend .
+        go build -v -o bin/immich-go-backend ./cmd/main.go
 
     - name: Run tests
       run: |
