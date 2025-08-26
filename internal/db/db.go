@@ -2,8 +2,10 @@ package db
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 )
@@ -15,6 +17,11 @@ type Conn struct {
 
 func (c *Conn) Close() {
 	c.pool.Close()
+}
+
+// DB returns a standard database/sql DB for migrations
+func (c *Conn) DB() *sql.DB {
+	return stdlib.OpenDBFromPool(c.pool)
 }
 
 func New(ctx context.Context, databaseURL string) (*Conn, error) {

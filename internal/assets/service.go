@@ -83,6 +83,11 @@ func NewService(queries *sqlc.Queries, storageService *storage.Service, cfg *con
 	}, nil
 }
 
+// GetStorageService returns the storage service instance
+func (s *Service) GetStorageService() *storage.Service {
+	return s.storage
+}
+
 // InitiateUpload initiates an asset upload and returns upload instructions
 func (s *Service) InitiateUpload(ctx context.Context, req UploadRequest) (*UploadResponse, error) {
 	ctx, span := tracer.Start(ctx, "assets.initiate_upload",

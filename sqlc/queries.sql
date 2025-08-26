@@ -405,6 +405,7 @@ RETURNING *;
 UPDATE memories
 SET type = COALESCE(sqlc.narg('type'), type),
     data = COALESCE(sqlc.narg('data'), data),
+    "isSaved" = COALESCE(sqlc.narg('is_saved'), "isSaved"),
     "updatedAt" = now()
 WHERE id = $1 AND "deletedAt" IS NULL
 RETURNING *;
@@ -894,6 +895,88 @@ AND status = 'active'
 AND visibility = 'timeline'
 ORDER BY "createdAt" DESC
 LIMIT $2;
+
+-- ============================================================================
+-- TRASH QUERIES
+-- ============================================================================
+
+-- name: GetTrashedAssetsByUser :many
+SELECT * FROM assets
+WHERE "ownerId" = $1 
+AND "deletedAt" IS NULL
+AND status = 'trashed'
+ORDER BY "updatedAt" DESC;
+
+-- name: RestoreAssetFromTrash :exec
+UPDATE assets
+SET status = 'active',
+    "updatedAt" = now()
+WHERE id = $1 AND status = 'trashed';
+
+-- name: PermanentlyDeleteAsset :exec
+UPDATE assets
+SET "deletedAt" = now(),
+    "updatedAt" = now()
+WHERE id = $1;
+
+-- name: MoveAssetToTrash :exec
+UPDATE assets
+SET status = 'trashed',
+    "updatedAt" = now()
+WHERE id = $1 AND "deletedAt" IS NULL;
+
+-- ============================================================================
+-- TAG QUERIES
+-- ============================================================================
+
+-- name: GetTagsByUser :many
+SELECT * FROM tags
+WHERE "userId" = $1
+ORDER BY value ASC;
+
+-- name: GetTagByID :one
+SELECT * FROM tags
+WHERE id = $1;
+
+-- name: GetTagByValue :one
+SELECT * FROM tags
+WHERE "userId" = $1 AND value = $2;
+
+-- name: CreateTag :one
+INSERT INTO tags ("userId", value, color, "parentId")
+VALUES ($1, $2, $3, $4)
+RETURNING *;
+
+-- name: UpdateTag :one
+UPDATE tags
+SET value = COALESCE(sqlc.narg('value'), value),
+    color = COALESCE(sqlc.narg('color'), color),
+    "updatedAt" = now()
+WHERE id = $1
+RETURNING *;
+
+-- name: DeleteTag :exec
+DELETE FROM tags
+WHERE id = $1;
+
+-- name: AddTagToAsset :exec
+INSERT INTO tag_asset ("assetsId", "tagsId")
+VALUES ($1, $2)
+ON CONFLICT DO NOTHING;
+
+-- name: RemoveTagFromAsset :exec
+DELETE FROM tag_asset
+WHERE "assetsId" = $1 AND "tagsId" = $2;
+
+-- name: GetAssetTags :many
+SELECT t.* FROM tags t
+JOIN tag_asset ta ON t.id = ta."tagsId"
+WHERE ta."assetsId" = $1;
+
+-- name: GetTagAssets :many
+SELECT a.* FROM assets a
+JOIN tag_asset ta ON a.id = ta."assetsId"
+WHERE ta."tagsId" = $1 AND a."deletedAt" IS NULL;
 
 -- name: GetFavoriteAssets :many
 SELECT * FROM assets

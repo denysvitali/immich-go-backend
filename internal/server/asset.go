@@ -1,15 +1,22 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"path/filepath"
+	"strings"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/denysvitali/immich-go-backend/internal/assets"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 )
@@ -367,8 +374,66 @@ func (s *Server) RunAssetJobs(ctx context.Context, request *immichv1.RunAssetJob
 }
 
 func (s *Server) DownloadAsset(ctx context.Context, request *immichv1.DownloadAssetRequest) (*immichv1.DownloadAssetResponse, error) {
-	// File download would be implemented here
-	return nil, status.Errorf(codes.Unimplemented, "download asset not implemented")
+	// Parse asset ID
+	assetID, err := uuid.Parse(request.AssetId)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid asset ID: %v", err)
+	}
+
+	// Convert to pgtype.UUID
+	assetUUID := pgtype.UUID{Bytes: assetID, Valid: true}
+
+	// Get asset from database
+	asset, err := s.db.GetAssetByID(ctx, assetUUID)
+	if err != nil {
+		return nil, status.Errorf(codes.NotFound, "asset not found: %v", err)
+	}
+
+	// Get storage service
+	storageService := s.assetService.GetStorageService()
+
+	// Download the asset
+	assetData, err := storageService.Download(ctx, asset.OriginalPath)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to retrieve asset: %v", err)
+	}
+	defer assetData.Close()
+
+	// Read asset data
+	data, err := io.ReadAll(assetData)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to read asset data: %v", err)
+	}
+
+	// Determine content type based on file extension
+	contentType := "application/octet-stream"
+	ext := strings.ToLower(filepath.Ext(asset.OriginalFileName))
+	switch ext {
+	case ".jpg", ".jpeg":
+		contentType = "image/jpeg"
+	case ".png":
+		contentType = "image/png"
+	case ".gif":
+		contentType = "image/gif"
+	case ".webp":
+		contentType = "image/webp"
+	case ".mp4":
+		contentType = "video/mp4"
+	case ".webm":
+		contentType = "video/webm"
+	case ".mov":
+		contentType = "video/quicktime"
+	case ".avi":
+		contentType = "video/x-msvideo"
+	case ".pdf":
+		contentType = "application/pdf"
+	}
+
+	return &immichv1.DownloadAssetResponse{
+		Data:        data,
+		ContentType: contentType,
+		Filename:    asset.OriginalFileName,
+	}, nil
 }
 
 func (s *Server) ReplaceAsset(ctx context.Context, request *immichv1.ReplaceAssetRequest) (*immichv1.Asset, error) {
@@ -377,13 +442,165 @@ func (s *Server) ReplaceAsset(ctx context.Context, request *immichv1.ReplaceAsse
 }
 
 func (s *Server) GetAssetThumbnail(ctx context.Context, request *immichv1.GetAssetThumbnailRequest) (*immichv1.GetAssetThumbnailResponse, error) {
-	// Thumbnail generation/retrieval would be implemented here
-	return nil, status.Errorf(codes.Unimplemented, "get asset thumbnail not implemented")
+	// Parse asset ID
+	assetID, err := uuid.Parse(request.AssetId)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid asset ID: %v", err)
+	}
+
+	// Convert to pgtype.UUID
+	assetUUID := pgtype.UUID{Bytes: assetID, Valid: true}
+
+	// Get asset from database
+	asset, err := s.db.GetAssetByID(ctx, assetUUID)
+	if err != nil {
+		return nil, status.Errorf(codes.NotFound, "asset not found: %v", err)
+	}
+
+	// Determine thumbnail type based on format parameter
+	thumbnailType := assets.ThumbnailTypeWebp
+	if request.Format != nil {
+		switch *request.Format {
+		case immichv1.ImageFormat_IMAGE_FORMAT_JPEG:
+			thumbnailType = assets.ThumbnailTypeThumb
+		case immichv1.ImageFormat_IMAGE_FORMAT_WEBP:
+			thumbnailType = assets.ThumbnailTypeWebp
+		default:
+			thumbnailType = assets.ThumbnailTypePreview
+		}
+	}
+
+	// Generate thumbnail path
+	generator := assets.NewThumbnailGenerator()
+	thumbnailPath := generator.GetThumbnailPath(asset.OriginalPath, thumbnailType)
+
+	// Try to retrieve existing thumbnail from storage
+	storageService := s.assetService.GetStorageService()
+	thumbnailData, err := storageService.Download(ctx, thumbnailPath)
+	if err != nil {
+		// If thumbnail doesn't exist, try to generate it
+		originalData, err := storageService.Download(ctx, asset.OriginalPath)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to retrieve original asset: %v", err)
+		}
+
+		// Generate thumbnails
+		thumbnails, err := generator.GenerateThumbnails(ctx, originalData, asset.OriginalFileName)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to generate thumbnail: %v", err)
+		}
+
+		// Get the requested thumbnail type
+		thumbData, ok := thumbnails[thumbnailType]
+		if !ok {
+			return nil, status.Errorf(codes.Internal, "thumbnail type not generated")
+		}
+
+		// Store the generated thumbnail for future use
+		if err := storageService.Upload(ctx, thumbnailPath, bytes.NewReader(thumbData), s.getThumbnailContentType(thumbnailType)); err != nil {
+			// Log error but don't fail the request
+			logrus.WithError(err).Warn("Failed to store generated thumbnail")
+		}
+
+		// Return the generated thumbnail data
+		return &immichv1.GetAssetThumbnailResponse{
+			Data:        thumbData,
+			ContentType: s.getThumbnailContentType(thumbnailType),
+		}, nil
+	}
+
+	// Read thumbnail data
+	thumbData, err := io.ReadAll(thumbnailData)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to read thumbnail data: %v", err)
+	}
+
+	return &immichv1.GetAssetThumbnailResponse{
+		Data:        thumbData,
+		ContentType: s.getThumbnailContentType(thumbnailType),
+	}, nil
+}
+
+// getThumbnailContentType returns the MIME type for a thumbnail type
+func (s *Server) getThumbnailContentType(thumbnailType assets.ThumbnailType) string {
+	switch thumbnailType {
+	case assets.ThumbnailTypeWebp:
+		return "image/webp"
+	case assets.ThumbnailTypePreview, assets.ThumbnailTypeThumb:
+		return "image/jpeg"
+	default:
+		return "image/jpeg"
+	}
 }
 
 func (s *Server) PlayAssetVideo(ctx context.Context, request *immichv1.PlayAssetVideoRequest) (*immichv1.PlayAssetVideoResponse, error) {
-	// Video streaming would be implemented here
-	return nil, status.Errorf(codes.Unimplemented, "play asset video not implemented")
+	// Parse asset ID
+	assetID, err := uuid.Parse(request.AssetId)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid asset ID: %v", err)
+	}
+
+	// Convert to pgtype.UUID
+	assetUUID := pgtype.UUID{Bytes: assetID, Valid: true}
+
+	// Get asset from database
+	asset, err := s.db.GetAssetByID(ctx, assetUUID)
+	if err != nil {
+		return nil, status.Errorf(codes.NotFound, "asset not found: %v", err)
+	}
+
+	// Check if asset is a video
+	if asset.Type != "VIDEO" {
+		return nil, status.Errorf(codes.InvalidArgument, "asset is not a video")
+	}
+
+	// Get storage service
+	storageService := s.assetService.GetStorageService()
+
+	// For now, we'll stream the video data directly
+	// In production, you'd want to implement proper video streaming with range support
+
+	videoStream, err := storageService.Download(ctx, asset.OriginalPath)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to retrieve video: %v", err)
+	}
+	defer videoStream.Close()
+
+	// Read video data (this is simplified - in production you'd want streaming)
+	videoData, err := io.ReadAll(videoStream)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to read video data: %v", err)
+	}
+	
+	return &immichv1.PlayAssetVideoResponse{
+		Data:        videoData,
+		ContentType: s.getVideoContentType(asset.OriginalFileName),
+	}, nil
+}
+
+// getVideoContentType determines the video MIME type from filename
+func (s *Server) getVideoContentType(filename string) string {
+	ext := filepath.Ext(strings.ToLower(filename))
+	switch ext {
+	case ".mp4":
+		return "video/mp4"
+	case ".webm":
+		return "video/webm"
+	case ".avi":
+		return "video/x-msvideo"
+	case ".mov":
+		return "video/quicktime"
+	case ".mkv":
+		return "video/x-matroska"
+	case ".flv":
+		return "video/x-flv"
+	case ".wmv":
+		return "video/x-ms-wmv"
+	case ".m4v":
+		return "video/x-m4v"
+	default:
+		return "video/mp4" // Default to mp4
+	}
 }
 
 // Helper function to convert database asset to proto

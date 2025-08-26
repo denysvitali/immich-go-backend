@@ -102,5 +102,44 @@ func (s *Server) AdminSignUp(ctx context.Context, req *immichv1.AdminSignUpReque
 	}, nil
 }
 
-// ValidateAccessToken would go here if it was defined in the proto
-// Currently not part of the auth.proto definition
+// ValidateToken validates the current authentication token
+func (s *Server) ValidateToken(ctx context.Context, req *emptypb.Empty) (*immichv1.ValidateTokenResponse, error) {
+	// Get user from context (should be set by auth middleware)
+	userID, err := s.getUserIDFromContext(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Unauthenticated, "invalid or expired token")
+	}
+
+	// Get user details - just validate that the user exists
+	_, err = s.userService.GetUser(ctx, userID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get user: %v", err)
+	}
+
+	return &immichv1.ValidateTokenResponse{
+		AuthStatus: true,
+	}, nil
+}
+
+// ChangePassword changes the user's password
+func (s *Server) ChangePassword(ctx context.Context, req *immichv1.ChangePasswordRequest) (*emptypb.Empty, error) {
+	// Get user from context
+	userID, err := s.getUserIDFromContext(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Unauthenticated, "not authenticated")
+	}
+
+	// Change the password using auth service
+	err = s.authService.ChangePassword(ctx, userID.String(), auth.ChangePasswordRequest{
+		CurrentPassword: req.CurrentPassword,
+		NewPassword:     req.NewPassword,
+	})
+	if err != nil {
+		if authErr, ok := err.(*auth.AuthError); ok && authErr.Type == auth.ErrInvalidCredentials {
+			return nil, status.Errorf(codes.InvalidArgument, "current password is incorrect")
+		}
+		return nil, status.Errorf(codes.Internal, "failed to change password: %v", err)
+	}
+
+	return &emptypb.Empty{}, nil
+}

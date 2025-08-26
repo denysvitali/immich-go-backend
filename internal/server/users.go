@@ -1,14 +1,22 @@
 package server
 
 import (
+	"bytes"
 	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 	"github.com/denysvitali/immich-go-backend/internal/users"
 )
@@ -126,10 +134,61 @@ func (s *Server) UpdateMyPreferences(ctx context.Context, request *immichv1.User
 }
 
 func (s *Server) CreateProfileImage(ctx context.Context, request *immichv1.CreateProfileImageRequest) (*immichv1.CreateProfileImageResponse, error) {
-	// Profile image upload would be implemented here
+	// Get user ID from context (would normally come from auth)
+	// For now, use a placeholder
+	userID := uuid.New()
+	userUUID := pgtype.UUID{Bytes: userID, Valid: true}
+
+	// Validate image data
+	if len(request.File) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "image data is required")
+	}
+
+	// Detect image type
+	contentType := http.DetectContentType(request.File)
+	if !strings.HasPrefix(contentType, "image/") {
+		return nil, status.Error(codes.InvalidArgument, "file must be an image")
+	}
+
+	// Generate storage path for profile image
+	ext := ".jpg"
+	if strings.Contains(contentType, "png") {
+		ext = ".png"
+	} else if strings.Contains(contentType, "webp") {
+		ext = ".webp"
+	}
+	profilePath := fmt.Sprintf("profile/%s/avatar%s", userID.String(), ext)
+
+	// Get storage service
+	storageService := s.assetService.GetStorageService()
+
+	// Upload the profile image
+	if err := storageService.Upload(ctx, profilePath, bytes.NewReader(request.File), contentType); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to upload profile image: %v", err)
+	}
+
+	// Update user record with profile image path
+	now := time.Now()
+	_, err := s.db.UpdateUser(ctx, sqlc.UpdateUserParams{
+		ID:                   userUUID,
+		Email:                pgtype.Text{Valid: false}, // Don't update email
+		Name:                 pgtype.Text{Valid: false}, // Don't update name
+		IsAdmin:              pgtype.Bool{Valid: false}, // Don't update admin status
+		AvatarColor:          pgtype.Text{Valid: false}, // Don't update avatar color
+		ProfileImagePath:     pgtype.Text{String: profilePath, Valid: true},
+		ShouldChangePassword: pgtype.Bool{Valid: false}, // Don't update password change flag
+		QuotaSizeInBytes:     pgtype.Int8{Valid: false}, // Don't update quota
+		StorageLabel:         pgtype.Text{Valid: false}, // Don't update storage label
+	})
+	if err != nil {
+		// Profile image cleanup on failure would go here
+		return nil, status.Errorf(codes.Internal, "failed to update user profile: %v", err)
+	}
+
 	return &immichv1.CreateProfileImageResponse{
-		UserId:           "00000000-0000-0000-0000-000000000000",
-		ProfileImagePath: "/uploads/profile/image.jpg",
+		UserId:            userID.String(),
+		ProfileImagePath:  profilePath,
+		ProfileChangedAt:  timestamppb.New(now),
 	}, nil
 }
 
@@ -156,9 +215,57 @@ func (s *Server) GetUser(ctx context.Context, request *immichv1.GetUserRequest) 
 }
 
 func (s *Server) GetProfileImage(ctx context.Context, request *immichv1.GetProfileImageRequest) (*immichv1.GetProfileImageResponse, error) {
-	// Profile image retrieval would be implemented here
-	return nil, status.Errorf(codes.Unimplemented, "get profile image not implemented")
+	// Parse user ID
+	userID, err := uuid.Parse(request.UserId)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid user ID: %v", err)
+	}
+
+	// Convert to pgtype.UUID
+	userUUID := pgtype.UUID{Bytes: userID, Valid: true}
+
+	// Get user from database to retrieve profile image path
+	user, err := s.db.GetUserByID(ctx, userUUID)
+	if err != nil {
+		return nil, status.Errorf(codes.NotFound, "user not found: %v", err)
+	}
+
+	// Check if user has a profile image
+	if user.ProfileImagePath == "" {
+		return nil, status.Errorf(codes.NotFound, "profile image not found")
+	}
+
+	// Get storage service
+	storageService := s.assetService.GetStorageService()
+
+	// Download the profile image
+	imageData, err := storageService.Download(ctx, user.ProfileImagePath)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to retrieve profile image: %v", err)
+	}
+	defer imageData.Close()
+
+	// Read image data
+	data, err := io.ReadAll(imageData)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to read image data: %v", err)
+	}
+
+	// Determine content type from file extension
+	contentType := "image/jpeg"
+	if strings.HasSuffix(strings.ToLower(user.ProfileImagePath), ".png") {
+		contentType = "image/png"
+	} else if strings.HasSuffix(strings.ToLower(user.ProfileImagePath), ".webp") {
+		contentType = "image/webp"
+	}
+
+	return &immichv1.GetProfileImageResponse{
+		ImageData:   data,
+		ContentType: contentType,
+	}, nil
 }
+
+// This function is duplicate - removed
 
 // Helper functions to convert user service types to proto
 func (s *Server) convertUserToAdminProto(user *users.UserInfo) *immichv1.UserAdminResponse {

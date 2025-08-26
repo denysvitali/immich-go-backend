@@ -54,6 +54,7 @@ type Service struct {
 	server    *asynq.Server
 	inspector *asynq.Inspector
 	logger    *logrus.Logger
+	handlers  map[string]func(context.Context, *asynq.Task) error
 }
 
 // Config holds job queue configuration
@@ -100,6 +101,7 @@ func NewService(cfg *Config) (*Service, error) {
 		server:    server,
 		inspector: inspector,
 		logger:    logrus.StandardLogger(),
+		handlers:  make(map[string]func(context.Context, *asynq.Task) error),
 	}, nil
 }
 
@@ -271,13 +273,19 @@ func (s *Service) ClearQueue(ctx context.Context, queue string) error {
 
 // RegisterHandler registers a job handler for a specific job type
 func (s *Service) RegisterHandler(jobType JobType, handler func(context.Context, *asynq.Task) error) {
-	s.server.HandleFunc(string(jobType), handler)
+	s.handlers[string(jobType)] = handler
 }
 
 // Start begins processing jobs
 func (s *Service) Start() error {
 	s.logger.Info("Starting job queue server")
-	return s.server.Start(asynq.HandlerFunc(s.processJob))
+	mux := asynq.NewServeMux()
+	for jobType, handler := range s.handlers {
+		mux.HandleFunc(jobType, handler)
+	}
+	// Add default handler for unregistered job types
+	mux.HandleFunc("*", s.processJob)
+	return s.server.Start(mux)
 }
 
 // Stop gracefully stops the job queue server
