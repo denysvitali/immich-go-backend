@@ -41,6 +41,8 @@ import (
 	"github.com/denysvitali/immich-go-backend/internal/stacks"
 	"github.com/denysvitali/immich-go-backend/internal/systemmetadata"
 	"github.com/denysvitali/immich-go-backend/internal/view"
+	"github.com/denysvitali/immich-go-backend/internal/sessions"
+	"github.com/denysvitali/immich-go-backend/internal/sync"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 )
 
@@ -90,6 +92,10 @@ type Server struct {
 	systemMetadataServer  *systemmetadata.Server
 	viewService         *view.Service
 	viewServer          *view.Server
+	sessionsService     *sessions.Service
+	sessionsServer      *sessions.Server
+	syncService         *sync.Service
+	syncServer          *sync.Server
 	queries             *sqlc.Queries
 
 	immichv1.UnimplementedAlbumServiceServer
@@ -120,6 +126,8 @@ type Server struct {
 	immichv1.UnimplementedStacksServiceServer
 	immichv1.UnimplementedSystemMetadataServiceServer
 	immichv1.UnimplementedViewServiceServer
+	immichv1.UnimplementedSessionsServiceServer
+	immichv1.UnimplementedSyncServiceServer
 }
 
 func NewServer(cfg *config.Config, db *db.Conn) (*Server, error) {
@@ -197,6 +205,15 @@ func NewServer(cfg *config.Config, db *db.Conn) (*Server, error) {
 	}
 	viewServer := view.NewServer(viewService)
 	
+	// Initialize Sessions service
+	logger := logrus.StandardLogger()
+	sessionsService := sessions.NewService(db.Queries, authService, logger)
+	sessionsServer := sessions.NewServer(sessionsService)
+	
+	// Initialize Sync service
+	syncService := sync.NewService(db.Queries, logger)
+	syncServer := sync.NewServer(syncService)
+	
 	// Create server implementations for libraries and search
 	libraryServer := libraries.NewServer(libraryService)
 	searchServer := search.NewServer(searchService)
@@ -257,6 +274,10 @@ func NewServer(cfg *config.Config, db *db.Conn) (*Server, error) {
 		systemMetadataServer:  systemMetadataServer,
 		viewService:         viewService,
 		viewServer:          viewServer,
+		sessionsService:     sessionsService,
+		sessionsServer:      sessionsServer,
+		syncService:         syncService,
+		syncServer:          syncServer,
 		queries:             db.Queries,
 	}
 	s.grpcServer = grpc.NewServer()
@@ -290,6 +311,8 @@ func NewServer(cfg *config.Config, db *db.Conn) (*Server, error) {
 	immichv1.RegisterStacksServiceServer(s.grpcServer, s.stacksServer)
 	immichv1.RegisterSystemMetadataServiceServer(s.grpcServer, s.systemMetadataServer)
 	immichv1.RegisterViewServiceServer(s.grpcServer, s.viewServer)
+	immichv1.RegisterSessionsServiceServer(s.grpcServer, s.sessionsServer)
+	immichv1.RegisterSyncServiceServer(s.grpcServer, s.syncServer)
 	
 	return s, nil
 }
@@ -445,6 +468,12 @@ func (s *Server) HTTPHandler() http.Handler {
 	}
 	if err := immichv1.RegisterViewServiceHandlerServer(ctx, mux, s.viewServer); err != nil {
 		logrus.WithError(err).Error("Failed to register ViewService handler")
+	}
+	if err := immichv1.RegisterSessionsServiceHandlerServer(ctx, mux, s.sessionsServer); err != nil {
+		logrus.WithError(err).Error("Failed to register SessionsService handler")
+	}
+	if err := immichv1.RegisterSyncServiceHandlerServer(ctx, mux, s.syncServer); err != nil {
+		logrus.WithError(err).Error("Failed to register SyncService handler")
 	}
 	return s.handleWs(mux)
 }

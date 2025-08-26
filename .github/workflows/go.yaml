@@ -55,7 +55,7 @@ jobs:
       id: proto-cache
       with:
         path: internal/proto/gen
-        key: ${{ runner.os }}-proto-${{ hashFiles('internal/proto/**/*.proto', 'buf.gen.yaml', 'buf.yaml') }}
+        key: ${{ runner.os }}-proto-${{ hashFiles('internal/proto/**/*.proto', 'buf.gen.yaml', 'buf.work.yaml', 'internal/proto/buf.yaml') }}
         restore-keys: |
           ${{ runner.os }}-proto-
 
@@ -140,7 +140,7 @@ jobs:
       id: proto-cache
       with:
         path: internal/proto/gen
-        key: ${{ runner.os }}-proto-${{ hashFiles('internal/proto/**/*.proto', 'buf.gen.yaml', 'buf.yaml') }}
+        key: ${{ runner.os }}-proto-${{ hashFiles('internal/proto/**/*.proto', 'buf.gen.yaml', 'buf.work.yaml', 'internal/proto/buf.yaml') }}
         restore-keys: |
           ${{ runner.os }}-proto-
 
@@ -256,7 +256,7 @@ jobs:
       id: proto-cache
       with:
         path: internal/proto/gen
-        key: ${{ runner.os }}-proto-${{ hashFiles('internal/proto/**/*.proto', 'buf.gen.yaml', 'buf.yaml') }}
+        key: ${{ runner.os }}-proto-${{ hashFiles('internal/proto/**/*.proto', 'buf.gen.yaml', 'buf.work.yaml', 'internal/proto/buf.yaml') }}
         restore-keys: |
           ${{ runner.os }}-proto-
 
