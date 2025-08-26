@@ -6,6 +6,9 @@
 # Build artifacts
 /server
 /bin/
+/main
+/immich-go-backend
+*.exe
 
 # Downloaded files
 *.tar.gz
