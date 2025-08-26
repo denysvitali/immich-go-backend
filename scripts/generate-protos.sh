@@ -27,7 +27,7 @@ if [[ -z "${IN_NIX_SHELL:-}" ]]; then
     # Check if flake.nix exists (preferred) or fall back to shell.nix
     if [[ -f "flake.nix" ]]; then
         echo -e "${BLUE}📦 Using Nix flake environment...${NC}"
-        exec nix develop --command bash "$0" "$@"
+        exec nix --extra-experimental-features nix-command --extra-experimental-features flakes develop --command bash "$0" "$@"
     elif [[ -f "shell.nix" ]]; then
         echo -e "${BLUE}📦 Using Nix shell environment...${NC}"
         exec nix-shell --command "bash $0 $@"
