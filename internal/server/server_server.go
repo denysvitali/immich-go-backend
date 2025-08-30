@@ -72,17 +72,17 @@ func (s *Server) GetServerFeatures(ctx context.Context, empty *emptypb.Empty) (*
 }
 
 func (s *Server) GetServerLicense(ctx context.Context, empty *emptypb.Empty) (*immichv1.LicenseResponse, error) {
-	//TODO implement me
+	// TODO implement me
 	return nil, fmt.Errorf("not implemented")
 }
 
 func (s *Server) SetServerLicense(ctx context.Context, request *immichv1.LicenseKeyRequest) (*immichv1.LicenseResponse, error) {
-	//TODO implement me
+	// TODO implement me
 	return nil, fmt.Errorf("not implemented")
 }
 
 func (s *Server) DeleteServerLicense(ctx context.Context, empty *emptypb.Empty) (*emptypb.Empty, error) {
-	//TODO implement me
+	// TODO implement me
 	return nil, fmt.Errorf("not implemented")
 }
 

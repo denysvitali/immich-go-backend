@@ -58,7 +58,7 @@ func (s *Server) GetAssets(ctx context.Context, request *immichv1.GetAssetsReque
 
 	assets, err := s.db.GetAssets(ctx, sqlc.GetAssetsParams{
 		OwnerId:    userID,
-		Limit:      int32(request.Size),
+		Limit:      request.Size,
 		Offset:     offset,
 		Type:       assetType,
 		IsFavorite: isFavorite,

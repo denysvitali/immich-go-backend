@@ -649,11 +649,12 @@ func (s *Service) SearchAssets(ctx context.Context, req SearchRequest) (*SearchR
 		// Location-based search (using text search for now)
 		span.SetAttributes(attribute.String("search_type", "location"))
 		var locationQuery string
-		if req.City != nil {
+		switch {
+		case req.City != nil:
 			locationQuery = *req.City
-		} else if req.State != nil {
+		case req.State != nil:
 			locationQuery = *req.State
-		} else if req.Country != nil {
+		case req.Country != nil:
 			locationQuery = *req.Country
 		}
 
