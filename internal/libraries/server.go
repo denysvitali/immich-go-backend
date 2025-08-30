@@ -152,9 +152,19 @@ func (s *Server) GetLibraryStatistics(ctx context.Context, req *immichv1.GetLibr
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
+	// Safely convert int64 to int32 with bounds checking
+	photos := stats.Photos
+	if photos > 2147483647 {
+		photos = 2147483647
+	}
+	videos := stats.Videos
+	if videos > 2147483647 {
+		videos = 2147483647
+	}
+	
 	return &immichv1.LibraryStatisticsResponse{
-		Photos: int32(stats.Photos),
-		Videos: int32(stats.Videos),
+		Photos: int32(photos),
+		Videos: int32(videos),
 		Total:  stats.AssetCount,
 		Usage:  stats.TotalSize,
 	}, nil
@@ -202,6 +212,12 @@ func (s *Server) ValidateLibrary(ctx context.Context, req *immichv1.ValidateLibr
 
 // Helper function to convert database library to proto
 func (s *Server) libraryToProto(lib *Library) *immichv1.LibraryResponse {
+	// Safely convert int64 to int32 with bounds checking
+	assetCount := lib.AssetCount
+	if assetCount > 2147483647 {
+		assetCount = 2147483647
+	}
+	
 	return &immichv1.LibraryResponse{
 		Id:                lib.ID.String(),
 		OwnerId:           lib.OwnerID.String(),
@@ -210,6 +226,6 @@ func (s *Server) libraryToProto(lib *Library) *immichv1.LibraryResponse {
 		ExclusionPatterns: lib.ExclusionPatterns,
 		CreatedAt:         timestamppb.New(lib.CreatedAt),
 		UpdatedAt:         timestamppb.New(lib.UpdatedAt),
-		AssetCount:        int32(lib.AssetCount),
+		AssetCount:        int32(assetCount),
 	}
 }

@@ -117,6 +117,10 @@ func (e *MetadataExtractor) extractImageMetadata(ctx context.Context, reader io.
 	// Extract image dimensions
 	if width, err := x.Get(exif.PixelXDimension); err == nil {
 		if w, err := width.Int(0); err == nil {
+			// Ensure value fits in int32
+			if w > 2147483647 {
+				w = 2147483647
+			}
 			w32 := int32(w)
 			metadata.Width = &w32
 		}

@@ -118,12 +118,12 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (*AuthResponse, e
 	}
 
 	// Verify password
-	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
-		span.RecordError(err)
+	if passwordErr := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); passwordErr != nil {
+		span.RecordError(passwordErr)
 		return nil, &AuthError{
 			Type:    ErrInvalidCredentials,
 			Message: "Invalid email or password",
-			Err:     err,
+			Err:     passwordErr,
 		}
 	}
 

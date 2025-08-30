@@ -97,7 +97,7 @@ func (l *LocalBackend) getFullPath(path string) string {
 
 // Upload uploads a file to the local filesystem
 func (l *LocalBackend) Upload(ctx context.Context, path string, reader io.Reader, size int64, contentType string) error {
-	ctx, span := tracer.Start(ctx, "local.Upload",
+	_, span := tracer.Start(ctx, "local.Upload",
 		trace.WithAttributes(
 			attribute.String("storage.path", path),
 			attribute.Int64("storage.size", size),
@@ -148,7 +148,7 @@ func (l *LocalBackend) Upload(ctx context.Context, path string, reader io.Reader
 
 // UploadBytes uploads byte data to the local filesystem
 func (l *LocalBackend) UploadBytes(ctx context.Context, path string, data []byte, contentType string) error {
-	ctx, span := tracer.Start(ctx, "local.UploadBytes",
+	_, span := tracer.Start(ctx, "local.UploadBytes",
 		trace.WithAttributes(
 			attribute.String("storage.path", path),
 			attribute.String("storage.content_type", contentType),
@@ -186,7 +186,7 @@ func (l *LocalBackend) UploadBytes(ctx context.Context, path string, data []byte
 
 // Download downloads a file from the local filesystem
 func (l *LocalBackend) Download(ctx context.Context, path string) (io.ReadCloser, error) {
-	ctx, span := tracer.Start(ctx, "local.Download",
+	_, span := tracer.Start(ctx, "local.Download",
 		trace.WithAttributes(attribute.String("storage.path", path)))
 	defer span.End()
 

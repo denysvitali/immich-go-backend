@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/denysvitali/immich-go-backend/internal/auth"
-	"github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
+	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

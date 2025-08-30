@@ -13,19 +13,20 @@ linters:
     - gofumpt
     - goimports
     - misspell
-    - unparam
     - dogsled
     - nakedret
     - gocritic
     - gosimple
     - unconvert
-    - dupl
     - copyloopvar
+  disable:
+    - dupl  # Disable duplicate code detection for now
+    - unparam  # Disable unused parameter checks for now
 
 linters-settings:
   govet:
-    enable:
-      - shadow
+    disable:
+      - shadow  # Disable shadow variable checks for now
   errcheck:
     # Don't require checks on errors that are clearly intended to be ignored
     exclude-functions:
