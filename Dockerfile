@@ -23,9 +23,15 @@ COPY . .
 # Build the application using the Nix development environment
 RUN nix develop --impure --option sandbox false --command bash -c '\
     echo "🔍 Verifying tools are available..." && \
-    which protoc protoc-gen-go protoc-gen-go-grpc buf && \
-    echo "🔨 Generating protocol buffers..." && \
-    ./scripts/generate-protos.sh && \
+    which go && \
+    echo "🔍 Checking if protocol buffers are already generated..." && \
+    if [ -d "internal/proto/gen" ] && [ "$(find internal/proto/gen -name "*.pb.go" | wc -l)" -gt 0 ]; then \
+        echo "✅ Protocol buffers already generated, skipping generation"; \
+    else \
+        echo "🔨 Generating protocol buffers..." && \
+        which protoc protoc-gen-go protoc-gen-go-grpc buf && \
+        ./scripts/generate-protos.sh; \
+    fi && \
     echo "📦 Building application with static linking..." && \
     CGO_ENABLED=0 GOOS=linux go build \
         -a -installsuffix cgo \

@@ -72,9 +72,13 @@ if [[ ! -f "buf.gen.yaml" ]]; then
     exit 1
 fi
 
-# Check if buf.yaml exists
-if [[ ! -f "buf.yaml" ]]; then
-    echo -e "${RED}❌ buf.yaml not found${NC}"
+# Check if buf.work.yaml or buf.yaml exists
+if [[ -f "buf.work.yaml" ]]; then
+    echo -e "${GREEN}   ✅ Using buf workspace configuration${NC}"
+elif [[ -f "buf.yaml" ]]; then
+    echo -e "${GREEN}   ✅ Using buf module configuration${NC}"
+else
+    echo -e "${RED}❌ Neither buf.work.yaml nor buf.yaml found${NC}"
     exit 1
 fi
 
