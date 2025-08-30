@@ -161,7 +161,7 @@ func (s *Server) GetLibraryStatistics(ctx context.Context, req *immichv1.GetLibr
 	if videos > 2147483647 {
 		videos = 2147483647
 	}
-	
+
 	return &immichv1.LibraryStatisticsResponse{
 		Photos: int32(photos),
 		Videos: int32(videos),
@@ -217,7 +217,7 @@ func (s *Server) libraryToProto(lib *Library) *immichv1.LibraryResponse {
 	if assetCount > 2147483647 {
 		assetCount = 2147483647
 	}
-	
+
 	return &immichv1.LibraryResponse{
 		Id:                lib.ID.String(),
 		OwnerId:           lib.OwnerID.String(),
