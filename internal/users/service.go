@@ -184,8 +184,8 @@ func (s *Service) ListUsers(ctx context.Context, req ListUsersRequest) (*ListUse
 
 	// Get users from database
 	dbUsers, err := s.db.ListUsers(ctx, sqlc.ListUsersParams{
-		Limit:  int32(limit),
-		Offset: int32(offset),
+		Limit:  int32(limit),  // Safe after bounds check above
+		Offset: int32(offset), // Safe after bounds check above
 	})
 	if err != nil {
 		span.RecordError(err)

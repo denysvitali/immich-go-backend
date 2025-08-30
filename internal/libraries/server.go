@@ -163,8 +163,8 @@ func (s *Server) GetLibraryStatistics(ctx context.Context, req *immichv1.GetLibr
 	}
 
 	return &immichv1.LibraryStatisticsResponse{
-		Photos: int32(photos),
-		Videos: int32(videos),
+		Photos: int32(photos), // Safe after bounds check
+		Videos: int32(videos), // Safe after bounds check
 		Total:  stats.AssetCount,
 		Usage:  stats.TotalSize,
 	}, nil
@@ -226,6 +226,6 @@ func (s *Server) libraryToProto(lib *Library) *immichv1.LibraryResponse {
 		ExclusionPatterns: lib.ExclusionPatterns,
 		CreatedAt:         timestamppb.New(lib.CreatedAt),
 		UpdatedAt:         timestamppb.New(lib.UpdatedAt),
-		AssetCount:        int32(assetCount),
+		AssetCount:        int32(assetCount), // Safe after bounds check
 	}
 }

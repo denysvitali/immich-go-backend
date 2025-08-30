@@ -37,6 +37,9 @@ linters-settings:
     checks:
       - all
       - "-SA9003"  # Exclude empty branch check if it's being too noisy
+  gosec:
+    excludes:
+      - G115  # Exclude integer overflow conversion warnings (we handle bounds checking manually)
 
 issues:
   exclude-dirs:

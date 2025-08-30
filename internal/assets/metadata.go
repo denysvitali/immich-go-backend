@@ -121,7 +121,7 @@ func (e *MetadataExtractor) extractImageMetadata(ctx context.Context, reader io.
 			if w > 2147483647 {
 				w = 2147483647
 			}
-			w32 := int32(w)
+			w32 := int32(w) // Safe after bounds check
 			metadata.Width = &w32
 		}
 	}
