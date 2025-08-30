@@ -3,13 +3,11 @@ package server
 import (
 	"context"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // getUserIDFromContext extracts the user ID from the gRPC context
@@ -46,20 +44,4 @@ func (s *Server) getUserIDFromContext(ctx context.Context) (uuid.UUID, error) {
 	}
 
 	return userID, nil
-}
-
-// timestampFromTime converts a Go time.Time to a protobuf timestamp
-func timestampFromTime(t time.Time) *timestamppb.Timestamp {
-	if t.IsZero() {
-		return nil
-	}
-	return timestamppb.New(t)
-}
-
-// timeFromTimestamp converts a protobuf timestamp to a Go time.Time
-func timeFromTimestamp(ts *timestamppb.Timestamp) time.Time {
-	if ts == nil {
-		return time.Time{}
-	}
-	return ts.AsTime()
 }

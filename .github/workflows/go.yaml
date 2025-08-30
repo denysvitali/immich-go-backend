@@ -7,6 +7,10 @@ on:
     branches: [ main, develop, master ]
   workflow_dispatch: # Allow manual triggering
 
+permissions:
+  contents: read
+  security-events: write  # Required for uploading SARIF results
+
 env:
   GO_VERSION: '1.21'
 

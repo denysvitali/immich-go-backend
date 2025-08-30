@@ -300,6 +300,7 @@ func (l *LocalBackend) GetSize(ctx context.Context, path string) (int64, error) 
 
 // GetPresignedUploadURL is not supported by local backend
 func (l *LocalBackend) GetPresignedUploadURL(ctx context.Context, path string, contentType string, expiry time.Duration) (*PresignedURL, error) {
+	_ = ctx // Mark as intentionally unused
 	return nil, &StorageError{
 		Op:      "get presigned upload URL",
 		Path:    path,
@@ -310,6 +311,7 @@ func (l *LocalBackend) GetPresignedUploadURL(ctx context.Context, path string, c
 
 // GetPresignedDownloadURL is not supported by local backend
 func (l *LocalBackend) GetPresignedDownloadURL(ctx context.Context, path string, expiry time.Duration) (*PresignedURL, error) {
+	_ = ctx // Mark as intentionally unused
 	return nil, &StorageError{
 		Op:      "get presigned download URL",
 		Path:    path,
@@ -325,6 +327,7 @@ func (l *LocalBackend) SupportsPresignedURLs() bool {
 
 // GetPublicURL is not supported by local backend
 func (l *LocalBackend) GetPublicURL(ctx context.Context, path string) (string, error) {
+	_ = ctx // Mark as intentionally unused
 	return "", &StorageError{
 		Op:      "get public URL",
 		Path:    path,

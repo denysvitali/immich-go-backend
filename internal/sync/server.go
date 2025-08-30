@@ -78,13 +78,9 @@ func (s *Server) GetDeltaSync(ctx context.Context, req *immichv1.GetDeltaSyncReq
 
 	// Override with requesting user if not admin
 	userIDStr := userID.String()
-	if req.UserId != nil && *req.UserId != userIDStr {
-		// Check if user is admin (would need admin check in real implementation)
-		// For now, only allow users to sync their own data
-		req.UserId = &userIDStr
-	} else {
-		req.UserId = &userIDStr
-	}
+	// Check if user is admin (would need admin check in real implementation)
+	// For now, only allow users to sync their own data
+	req.UserId = &userIDStr
 
 	updatedAfter := time.Now().Add(-24 * time.Hour) // Default to last 24 hours
 	if req.UpdatedAfter != nil {
@@ -112,13 +108,9 @@ func (s *Server) GetFullSyncForUser(ctx context.Context, req *immichv1.GetFullSy
 
 	// Override with requesting user if not admin
 	userIDStr := userID.String()
-	if req.UserId != nil && *req.UserId != userIDStr {
-		// Check if user is admin (would need admin check in real implementation)
-		// For now, only allow users to sync their own data
-		req.UserId = &userIDStr
-	} else {
-		req.UserId = &userIDStr
-	}
+	// Check if user is admin (would need admin check in real implementation)
+	// For now, only allow users to sync their own data
+	req.UserId = &userIDStr
 
 	limit := 1000
 	if req.Limit != nil {
@@ -159,13 +151,9 @@ func (s *Server) GetSyncStream(req *immichv1.GetSyncStreamRequest, stream immich
 
 	// Override with requesting user if not admin
 	userIDStr := userID.String()
-	if req.UserId != nil && *req.UserId != userIDStr {
-		// Check if user is admin (would need admin check in real implementation)
-		// For now, only allow users to sync their own data
-		req.UserId = &userIDStr
-	} else {
-		req.UserId = &userIDStr
-	}
+	// Check if user is admin (would need admin check in real implementation)
+	// For now, only allow users to sync their own data
+	req.UserId = &userIDStr
 
 	// In a real implementation, this would:
 	// 1. Subscribe to real-time events (from Redis pub/sub or similar)

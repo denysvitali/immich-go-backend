@@ -34,7 +34,7 @@ func NewRcloneBackend(config RcloneConfig) (*RcloneBackend, error) {
 	}
 
 	// Construct full remote path
-	remote := config.Remote
+	var remote string
 	if config.Path != "" && config.Path != "/" {
 		remote = config.Remote + ":" + strings.TrimPrefix(config.Path, "/")
 	} else {
@@ -317,6 +317,7 @@ func (r *RcloneBackend) GetSize(ctx context.Context, path string) (int64, error)
 
 // GetPresignedUploadURL is not supported by rclone
 func (r *RcloneBackend) GetPresignedUploadURL(ctx context.Context, path string, contentType string, expiry time.Duration) (*PresignedURL, error) {
+	_ = ctx // Mark as intentionally unused
 	return nil, &StorageError{
 		Op:      "get presigned upload URL",
 		Path:    path,
@@ -327,6 +328,7 @@ func (r *RcloneBackend) GetPresignedUploadURL(ctx context.Context, path string, 
 
 // GetPresignedDownloadURL is not supported by rclone
 func (r *RcloneBackend) GetPresignedDownloadURL(ctx context.Context, path string, expiry time.Duration) (*PresignedURL, error) {
+	_ = ctx // Mark as intentionally unused
 	return nil, &StorageError{
 		Op:      "get presigned download URL",
 		Path:    path,
@@ -342,6 +344,7 @@ func (r *RcloneBackend) SupportsPresignedURLs() bool {
 
 // GetPublicURL is not supported by rclone
 func (r *RcloneBackend) GetPublicURL(ctx context.Context, path string) (string, error) {
+	_ = ctx // Mark as intentionally unused
 	return "", &StorageError{
 		Op:      "get public URL",
 		Path:    path,

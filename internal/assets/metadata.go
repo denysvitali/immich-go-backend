@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -74,40 +73,6 @@ func (e *MetadataExtractor) getAssetTypeFromContentType(contentType string) Asse
 	case strings.HasPrefix(contentType, "video/"):
 		return AssetTypeVideo
 	case strings.HasPrefix(contentType, "audio/"):
-		return AssetTypeAudio
-	default:
-		return AssetTypeOther
-	}
-}
-
-// getAssetTypeFromExtension determines asset type from file extension
-func (e *MetadataExtractor) getAssetTypeFromExtension(filename string) AssetType {
-	ext := strings.ToLower(filepath.Ext(filename))
-
-	imageExts := map[string]bool{
-		".jpg": true, ".jpeg": true, ".png": true, ".gif": true,
-		".bmp": true, ".tiff": true, ".tif": true, ".webp": true,
-		".heic": true, ".heif": true, ".avif": true, ".raw": true,
-		".cr2": true, ".nef": true, ".arw": true, ".dng": true,
-	}
-
-	videoExts := map[string]bool{
-		".mp4": true, ".avi": true, ".mov": true, ".mkv": true,
-		".wmv": true, ".flv": true, ".webm": true, ".m4v": true,
-		".3gp": true, ".mts": true, ".m2ts": true,
-	}
-
-	audioExts := map[string]bool{
-		".mp3": true, ".wav": true, ".flac": true, ".aac": true,
-		".ogg": true, ".wma": true, ".m4a": true,
-	}
-
-	switch {
-	case imageExts[ext]:
-		return AssetTypeImage
-	case videoExts[ext]:
-		return AssetTypeVideo
-	case audioExts[ext]:
 		return AssetTypeAudio
 	default:
 		return AssetTypeOther

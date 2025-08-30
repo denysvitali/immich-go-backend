@@ -1,0 +1,59 @@
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - errcheck
+    - ineffassign
+    - staticcheck
+    - unused
+    - gosec
+    - govet
+    - gofmt
+    - gofumpt
+    - goimports
+    - misspell
+    - unparam
+    - dogsled
+    - nakedret
+    - gocritic
+    - gosimple
+    - unconvert
+    - dupl
+    - copyloopvar
+
+linters-settings:
+  govet:
+    enable:
+      - shadow
+  errcheck:
+    # Don't require checks on errors that are clearly intended to be ignored
+    exclude-functions:
+      - fmt.Printf
+      - fmt.Println
+      - fmt.Sprintf
+  staticcheck:
+    checks:
+      - all
+      - "-SA9003"  # Exclude empty branch check if it's being too noisy
+
+issues:
+  exclude-dirs:
+    - internal/proto/gen
+  exclude-rules:
+    # Exclude ineffassign and other checks from generated protobuf files
+    - path: "internal/proto/gen/"
+      linters:
+        - ineffassign
+        - staticcheck
+        - errcheck
+        - unused
+        - gosec
+        - govet
+    # Exclude protobuf generated files from all linters
+    - path: ".*\\.pb\\.go"
+      linters:
+        - all
+    - path: ".*\\.pb\\.gw\\.go"
+      linters:
+        - all

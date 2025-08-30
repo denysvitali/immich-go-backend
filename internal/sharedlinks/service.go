@@ -397,7 +397,10 @@ func (s *Service) GetSharedLinkAssets(ctx context.Context, key string, password 
 // generateKey generates a unique key for a shared link
 func generateKey() string {
 	b := make([]byte, 32)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		// This should never happen with crypto/rand
+		panic("failed to generate random bytes: " + err.Error())
+	}
 	return base64.URLEncoding.EncodeToString(b)
 }
 

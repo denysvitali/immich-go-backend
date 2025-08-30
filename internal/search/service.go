@@ -299,15 +299,6 @@ func (s *Service) SearchExplore(ctx context.Context, userID uuid.UUID) (*Explore
 	*/
 }
 
-// Helper function to convert asset IDs to strings
-func assetIDsToStrings(assets []sqlc.Asset) []string {
-	ids := make([]string, len(assets))
-	for i, asset := range assets {
-		ids[i] = PgtypeToUUID(asset.ID).String()
-	}
-	return ids
-}
-
 // Request/Response types
 
 type MetadataSearchRequest struct {

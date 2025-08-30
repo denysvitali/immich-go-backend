@@ -17,6 +17,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/zap"
 )
 
 // Service handles asset management operations
@@ -26,6 +27,7 @@ type Service struct {
 	metadataExtractor *MetadataExtractor
 	thumbnailGen      *ThumbnailGenerator
 	config            *config.Config
+	logger            *zap.Logger
 
 	// Metrics
 	uploadCounter   metric.Int64Counter
@@ -70,12 +72,18 @@ func NewService(queries *sqlc.Queries, storageService *storage.Service, cfg *con
 		return nil, fmt.Errorf("failed to create storage size counter: %w", err)
 	}
 
+	logger, err := zap.NewProduction()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create logger: %w", err)
+	}
+
 	return &Service{
 		db:                queries,
 		storage:           storageService,
 		metadataExtractor: NewMetadataExtractor(),
 		thumbnailGen:      NewThumbnailGenerator(),
 		config:            cfg,
+		logger:            logger,
 		uploadCounter:     uploadCounter,
 		downloadCounter:   downloadCounter,
 		processingTime:    processingTime,
@@ -773,7 +781,15 @@ func (s *Service) DeleteAsset(ctx context.Context, assetID uuid.UUID, userID uui
 	// Schedule background cleanup if this is a hard delete
 	// For now, just do immediate cleanup
 	// In production, you'd want to use a job queue for this
-	go s.cleanupAssetFiles(context.Background(), assetUUID, asset.OriginalPath)
+	go func() {
+		if err := s.cleanupAssetFiles(context.Background(), assetUUID, asset.OriginalPath); err != nil {
+			// Log error but don't fail the deletion
+			s.logger.Error("Failed to cleanup asset files",
+				zap.Error(err),
+				zap.String("assetID", assetUUID.String()),
+				zap.String("path", asset.OriginalPath))
+		}
+	}()
 
 	return nil
 }

@@ -92,7 +92,11 @@ func runServer(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to connect to database: %w", err)
 	}
-	defer database.Close()
+	defer func() {
+		if err := database.Close(); err != nil {
+			logrus.WithError(err).Error("Failed to close database connection")
+		}
+	}()
 
 	// Create server
 	srv, err := server.NewServer(cfg, database)
@@ -159,7 +163,11 @@ func runMigrations(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to connect to database: %w", err)
 	}
-	defer database.Close()
+	defer func() {
+		if err := database.Close(); err != nil {
+			logrus.WithError(err).Error("Failed to close database connection")
+		}
+	}()
 
 	logrus.Info("Running database migrations...")
 

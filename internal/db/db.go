@@ -15,8 +15,9 @@ type Conn struct {
 	*sqlc.Queries
 }
 
-func (c *Conn) Close() {
+func (c *Conn) Close() error {
 	c.pool.Close()
+	return nil
 }
 
 // DB returns a standard database/sql DB for migrations

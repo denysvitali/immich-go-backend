@@ -221,7 +221,9 @@ func (s *Service) DownloadArchive(ctx context.Context, userID uuid.UUID, req *Do
 
 		// Copy file to ZIP
 		_, err = io.Copy(fileWriter, reader)
-		reader.Close()
+		if closeErr := reader.Close(); closeErr != nil {
+			s.logger.WithError(closeErr).Warnf("Failed to close reader for %s", assetID)
+		}
 		if err != nil {
 			s.logger.WithError(err).Warnf("Failed to write file %s to ZIP", assetID)
 			continue
