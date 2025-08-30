@@ -128,6 +128,10 @@ func (e *MetadataExtractor) extractImageMetadata(ctx context.Context, reader io.
 
 	if height, err := x.Get(exif.PixelYDimension); err == nil {
 		if h, err := height.Int(0); err == nil {
+			// Ensure value fits in int32
+			if h > 2147483647 {
+				h = 2147483647
+			}
 			h32 := int32(h)
 			metadata.Height = &h32
 		}
@@ -150,6 +154,10 @@ func (e *MetadataExtractor) extractImageMetadata(ctx context.Context, reader io.
 
 	if iso, err := x.Get(exif.ISOSpeedRatings); err == nil {
 		if isoVal, err := iso.Int(0); err == nil {
+			// Ensure value fits in int32
+			if isoVal > 2147483647 {
+				isoVal = 2147483647
+			}
 			iso32 := int32(isoVal)
 			metadata.ISO = &iso32
 		}

@@ -216,7 +216,7 @@ func (l *LocalBackend) Download(ctx context.Context, path string) (io.ReadCloser
 
 // Delete deletes a file from the local filesystem
 func (l *LocalBackend) Delete(ctx context.Context, path string) error {
-	ctx, span := tracer.Start(ctx, "local.Delete",
+	_, span := tracer.Start(ctx, "local.Delete",
 		trace.WithAttributes(attribute.String("storage.path", path)))
 	defer span.End()
 
@@ -245,7 +245,7 @@ func (l *LocalBackend) Delete(ctx context.Context, path string) error {
 
 // Exists checks if a file exists in the local filesystem
 func (l *LocalBackend) Exists(ctx context.Context, path string) (bool, error) {
-	ctx, span := tracer.Start(ctx, "local.Exists",
+	_, span := tracer.Start(ctx, "local.Exists",
 		trace.WithAttributes(attribute.String("storage.path", path)))
 	defer span.End()
 
@@ -270,7 +270,7 @@ func (l *LocalBackend) Exists(ctx context.Context, path string) (bool, error) {
 
 // GetSize returns the size of a file
 func (l *LocalBackend) GetSize(ctx context.Context, path string) (int64, error) {
-	ctx, span := tracer.Start(ctx, "local.GetSize",
+	_, span := tracer.Start(ctx, "local.GetSize",
 		trace.WithAttributes(attribute.String("storage.path", path)))
 	defer span.End()
 
@@ -338,7 +338,7 @@ func (l *LocalBackend) GetPublicURL(ctx context.Context, path string) (string, e
 
 // Copy copies a file within the local filesystem
 func (l *LocalBackend) Copy(ctx context.Context, srcPath, dstPath string) error {
-	ctx, span := tracer.Start(ctx, "local.Copy",
+	_, span := tracer.Start(ctx, "local.Copy",
 		trace.WithAttributes(
 			attribute.String("storage.src_path", srcPath),
 			attribute.String("storage.dst_path", dstPath),
@@ -402,7 +402,7 @@ func (l *LocalBackend) Copy(ctx context.Context, srcPath, dstPath string) error 
 
 // Move moves a file within the local filesystem
 func (l *LocalBackend) Move(ctx context.Context, srcPath, dstPath string) error {
-	ctx, span := tracer.Start(ctx, "local.Move",
+	_, span := tracer.Start(ctx, "local.Move",
 		trace.WithAttributes(
 			attribute.String("storage.src_path", srcPath),
 			attribute.String("storage.dst_path", dstPath),
@@ -443,7 +443,7 @@ func (l *LocalBackend) Move(ctx context.Context, srcPath, dstPath string) error 
 
 // List lists files in a directory
 func (l *LocalBackend) List(ctx context.Context, prefix string, recursive bool) ([]FileInfo, error) {
-	ctx, span := tracer.Start(ctx, "local.List",
+	_, span := tracer.Start(ctx, "local.List",
 		trace.WithAttributes(
 			attribute.String("storage.prefix", prefix),
 			attribute.Bool("storage.recursive", recursive),
@@ -536,7 +536,7 @@ func (l *LocalBackend) List(ctx context.Context, prefix string, recursive bool) 
 
 // GetMetadata returns metadata about a file
 func (l *LocalBackend) GetMetadata(ctx context.Context, path string) (*FileMetadata, error) {
-	ctx, span := tracer.Start(ctx, "local.GetMetadata",
+	_, span := tracer.Start(ctx, "local.GetMetadata",
 		trace.WithAttributes(attribute.String("storage.path", path)))
 	defer span.End()
 
