@@ -96,7 +96,7 @@ func (g *ThumbnailGenerator) GenerateThumbnails(ctx context.Context, reader io.R
 
 // generateThumbnail generates a single thumbnail
 func (g *ThumbnailGenerator) generateThumbnail(ctx context.Context, img image.Image, thumbType ThumbnailType, config ThumbnailConfig) ([]byte, error) {
-	ctx, span := tracer.Start(ctx, "thumbnails.generate_single",
+	_, span := tracer.Start(ctx, "thumbnails.generate_single",
 		trace.WithAttributes(
 			attribute.String("thumbnail_type", string(thumbType)),
 			attribute.Int("max_width", config.MaxWidth),
