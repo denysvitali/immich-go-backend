@@ -37,7 +37,7 @@ RUN nix develop --impure --option sandbox false --command bash -c '\
         -a -installsuffix cgo \
         -ldflags "-extldflags \"-static\" -s -w" \
         -o immich-go-backend \
-        . \
+        ./cmd \
 '
 
 # Stage 2: User creation stage using Alpine
