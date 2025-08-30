@@ -81,7 +81,7 @@ func (e *MetadataExtractor) getAssetTypeFromContentType(contentType string) Asse
 
 // extractImageMetadata extracts EXIF data from images
 func (e *MetadataExtractor) extractImageMetadata(ctx context.Context, reader io.Reader, metadata *AssetMetadata) error {
-	ctx, span := tracer.Start(ctx, "metadata.extract_image")
+	_, span := tracer.Start(ctx, "metadata.extract_image")
 	defer span.End()
 
 	// Try to extract EXIF data
@@ -196,7 +196,7 @@ func (e *MetadataExtractor) extractImageMetadata(ctx context.Context, reader io.
 
 // extractVideoMetadata extracts metadata from video files
 func (e *MetadataExtractor) extractVideoMetadata(ctx context.Context, reader io.Reader, metadata *AssetMetadata) error {
-	ctx, span := tracer.Start(ctx, "metadata.extract_video")
+	_, span := tracer.Start(ctx, "metadata.extract_video")
 	defer span.End()
 
 	// For now, we'll implement basic video metadata extraction
@@ -218,7 +218,7 @@ func (e *MetadataExtractor) extractVideoMetadata(ctx context.Context, reader io.
 
 // CalculateChecksum calculates a SHA256 checksum for the file content
 func (e *MetadataExtractor) CalculateChecksum(ctx context.Context, reader io.Reader) (string, error) {
-	ctx, span := tracer.Start(ctx, "metadata.calculate_checksum")
+	_, span := tracer.Start(ctx, "metadata.calculate_checksum")
 	defer span.End()
 
 	hasher := sha256.New()
