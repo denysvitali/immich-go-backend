@@ -2,7 +2,7 @@ package storage
 
 import (
 	"context"
-	"crypto/md5"
+	"crypto/md5" //nolint:gosec // MD5 is used for path generation, not security
 	"fmt"
 	"io"
 	"mime"
@@ -271,7 +271,7 @@ func (s *Service) ListAssets(ctx context.Context, userID string, prefix string, 
 // generateAssetPath generates a unique path for an asset
 func (s *Service) generateAssetPath(userID string, filename string) string {
 	// Generate a hash-based directory structure for better distribution
-	hash := md5.Sum([]byte(userID + filename + time.Now().String()))
+	hash := md5.Sum([]byte(userID + filename + time.Now().String())) //nolint:gosec // MD5 is used for path distribution, not security
 	hashStr := fmt.Sprintf("%x", hash)
 
 	// Create a directory structure: users/{userID}/{year}/{month}/{day}/{hash[0:2]}/{hash[2:4]}/{filename}

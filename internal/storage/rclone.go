@@ -190,7 +190,7 @@ func (r *RcloneBackend) UploadBytes(ctx context.Context, path string, data []byt
 	tmpFile.Close()
 
 	// Use rclone copyto to upload the file
-	cmd := exec.CommandContext(ctx, "rclone", "copyto", tmpFile.Name(), remotePath)
+	cmd := exec.CommandContext(ctx, "rclone", "copyto", tmpFile.Name(), remotePath) //nolint:gosec // Path is sanitized by getRemotePath
 	if output, err := cmd.CombinedOutput(); err != nil {
 		span.RecordError(err)
 		return &StorageError{
@@ -291,7 +291,6 @@ func (r *RcloneBackend) Exists(ctx context.Context, path string) (bool, error) {
 
 	cmd := r.buildCommand(ctx, "lsf", remotePath)
 	err := cmd.Run()
-
 	if err != nil {
 		// If the command fails, the file doesn't exist
 		return false, nil

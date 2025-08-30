@@ -579,7 +579,6 @@ func (s *Service) validateToken(tokenString string) (*Claims, error) {
 		}
 		return []byte(s.config.JWTSecret), nil
 	})
-
 	if err != nil {
 		return nil, err
 	}

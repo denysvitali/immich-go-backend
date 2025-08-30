@@ -275,9 +275,9 @@ func (s *Service) processAsset(ctx context.Context, assetID uuid.UUID) {
 
 	// Update asset with metadata
 	if metadata != nil {
-		err = s.updateAssetMetadata(ctx, assetUUID, metadata)
-		if err != nil {
-			span.RecordError(err)
+		updateErr := s.updateAssetMetadata(ctx, assetUUID, metadata)
+		if updateErr != nil {
+			span.RecordError(updateErr)
 			// Continue processing
 		}
 	}

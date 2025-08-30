@@ -7,7 +7,7 @@ type AuthErrorType string
 
 const (
 	// Authentication errors
-	ErrInvalidCredentials AuthErrorType = "invalid_credentials"
+	ErrInvalidCredentials AuthErrorType = "invalid_credentials" //nolint:gosec // Not a hardcoded credential
 	ErrInvalidToken       AuthErrorType = "invalid_token"
 	ErrTokenExpired       AuthErrorType = "token_expired"
 	ErrTokenGeneration    AuthErrorType = "token_generation"

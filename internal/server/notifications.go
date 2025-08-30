@@ -67,7 +67,6 @@ func stringPtr(s string) *string {
 }
 
 func (s *Server) GetNotifications(ctx context.Context, req *immichv1.GetNotificationsRequest) (*immichv1.GetNotificationsResponse, error) {
-
 	return &immichv1.GetNotificationsResponse{
 		Notifications: []*immichv1.NotificationDto{},
 	}, nil

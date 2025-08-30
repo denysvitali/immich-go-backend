@@ -174,6 +174,14 @@ func (s *Service) ListUsers(ctx context.Context, req ListUsersRequest) (*ListUse
 		offset = 0
 	}
 
+	// Ensure values fit in int32 to prevent overflow
+	if limit > 2147483647 {
+		limit = 100
+	}
+	if offset > 2147483647 {
+		offset = 0
+	}
+
 	// Get users from database
 	dbUsers, err := s.db.ListUsers(ctx, sqlc.ListUsersParams{
 		Limit:  int32(limit),

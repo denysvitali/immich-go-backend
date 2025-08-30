@@ -26,7 +26,7 @@ type LocalBackend struct {
 // NewLocalBackend creates a new local filesystem storage backend
 func NewLocalBackend(config LocalConfig) (*LocalBackend, error) {
 	// Parse file mode
-	fileMode, err := parseFileMode(config.FileMode, 0644)
+	fileMode, err := parseFileMode(config.FileMode, 0o644)
 	if err != nil {
 		return nil, &StorageError{
 			Op:      "create local backend",
@@ -36,7 +36,7 @@ func NewLocalBackend(config LocalConfig) (*LocalBackend, error) {
 	}
 
 	// Parse directory mode
-	dirMode, err := parseFileMode(config.DirMode, 0755)
+	dirMode, err := parseFileMode(config.DirMode, 0o755)
 	if err != nil {
 		return nil, &StorageError{
 			Op:      "create local backend",
@@ -484,7 +484,6 @@ func (l *LocalBackend) List(ctx context.Context, prefix string, recursive bool) 
 
 			return nil
 		})
-
 		if err != nil {
 			span.RecordError(err)
 			return nil, &StorageError{
