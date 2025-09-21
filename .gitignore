@@ -7,6 +7,7 @@
 /server
 /bin/
 /main
+/test-build
 /immich-go-backend
 *.exe
 
@@ -15,3 +16,10 @@
 *.json
 api.swagger.json
 immich-openapi-specs.json
+
+# Temporary test scripts
+test_*.sh
+
+# Temporary reports (regenerate as needed)
+*_REPORT.md
+TODO.md
