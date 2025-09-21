@@ -5,7 +5,7 @@ Current Implementation: **✅ SQLC & Protobuf Regenerated** (Updated: 2025-09-21
 Target: Full Immich API compatibility as a drop-in backend replacement
 Latest Compatibility Check: **✅ API Compatible with Immich v1.142.1**
 
-**✅ SQLC & Protobuf Successfully Regenerated!**
+**✅ SQLC & Protobuf Successfully Regenerated with Fixes!**
 - ✅ SQLC code regenerated with all queries (Sept 21)
 - ✅ Protobuf types regenerated with buf (Sept 21)
 - ✅ All SQL queries added to sqlc/queries.sql (including memory-asset associations)
@@ -13,18 +13,22 @@ Latest Compatibility Check: **✅ API Compatible with Immich v1.142.1**
 - ✅ Memories service - real DB operations with asset associations
 - ✅ Notifications service - ready for SQLC-generated methods
 - ✅ Timeline service - real DB operations implemented
-- ✅ Memory-asset association queries working (AddAssetsToMemory, RemoveAssetsFromMemory, GetMemoryAssets)
-- ✅ Fixed many compilation errors (GetUserAssets params, etc.)
+- ✅ Memory-asset association queries working
+- ✅ Fixed protobuf definitions (Sept 21):
+  - ✅ Map service: Added missing fields (min/max lat/lon, limit, offset, timestamp)
+  - ✅ Search service: Added missing AssetType enums (AUDIO, OTHER)
+  - ✅ Tags service: Added Color field to TagResponse
+  - ✅ Admin service: Fixed field names (id -> user_id) with HTTP annotations
 - ✅ REST API gateway configured with `/api/` prefix
 - ✅ Database schema 95% compatible with Immich
 
-**🔧 Remaining Compilation Issues:**
-These require protobuf schema updates to match implementation:
-- Map service: Missing fields in protobuf (MinLatitude, MaxLatitude, MinLongitude, MaxLongitude, Latitude, Longitude, Timestamp)
-- Search service: Missing protobuf enums (AssetType_ASSET_TYPE_AUDIO, AssetType_ASSET_TYPE_OTHER)
-- Tags service: Missing Color field in TagResponse protobuf
-- Admin service: Missing GetUserId method in protobuf requests
-- Various type mismatches between pgtype fields and string fields
+**🔧 Remaining Type Conversion Issues:**
+These require additional code fixes for type conversions:
+- Tags service: pgtype.Text vs string conversions for Color field
+- Admin service: pgtype fields vs string fields (AvatarColor, ProfileImagePath, OauthId)
+- Search service: UUID type conversions and missing query parameters
+- Trash service: UUID array type conversions
+- Some missing SQLC queries (SearchAlbums, etc.)
 
 **✅ MAJOR PROGRESS: Critical Services Now Operational!**
 All previously disabled services have been fixed and re-enabled:
