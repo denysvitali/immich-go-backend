@@ -5,19 +5,29 @@ Current Implementation: **🔧 REQUIRES SQLC REGENERATION** (Updated: 2025-09-21
 Target: Full Immich API compatibility as a drop-in backend replacement
 Latest Compatibility Check: **✅ API Compatible with Immich v1.142.1**
 
-**🔧 CRITICAL: SQLC Regeneration Required Before Build**
-- ❌ Binary cannot build without SQLC regeneration
-- ✅ All SQL queries added to sqlc/queries.sql
+**🔧 CRITICAL: SQLC & Protobuf Regeneration Required Before Build**
+- ❌ Binary cannot build without SQLC and protobuf regeneration
+- ✅ All SQL queries added to sqlc/queries.sql (including memory-asset associations)
 - ✅ All services updated to remove mocks/stubs per CLAUDE.md requirements
 - ✅ Memories service - real DB operations (needs SQLC for asset associations)
 - 🔧 Notifications service - requires SQLC regeneration for DB operations
 - ✅ Timeline service - real DB operations implemented
 - ✅ Memory-asset association queries added (AddAssetsToMemory, RemoveAssetsFromMemory, GetMemoryAssets)
+- ✅ Fixed compilation errors where possible without regeneration (Sept 21)
 - ✅ REST API gateway configured with `/api/` prefix
 - ✅ Database schema 95% compatible with Immich
-- ✅ Ready for deployment once SQLC is regenerated
 
-**Action Required: Run `make sqlc-gen` in Nix environment to regenerate database code**
+**Actions Required in Nix Environment:**
+1. Run `make sqlc-gen` to regenerate database code
+2. Run `make proto-gen` to regenerate protobuf types
+3. Run `make build` to compile the binary
+
+**Remaining Issues (require regeneration):**
+- Map service: protobuf fields missing (GetMinLatitude, etc.)
+- Trash service: SQLC methods missing (GetTrashedAssetsByUser, etc.)
+- Search service: protobuf enums missing (AssetType_ASSET_TYPE_AUDIO, etc.)
+- Tags service: protobuf fields missing (Color field)
+- Admin service: protobuf fields missing (GetUserId)
 
 **✅ MAJOR PROGRESS: Critical Services Now Operational!**
 All previously disabled services have been fixed and re-enabled:
