@@ -68,7 +68,7 @@ func (s *Server) GetMapMarkers(ctx context.Context, request *immichv1.GetMapMark
 	markers := make([]*immichv1.MapMarker, 0, len(assets))
 	for _, asset := range assets {
 		// Get exif data for location
-		exif, err := s.queries.GetExifByAssetID(ctx, asset.ID)
+		exif, err := s.queries.GetExifByAssetId(ctx, asset.ID)
 		if err != nil || exif.Latitude == nil || exif.Longitude == nil {
 			continue // Skip assets without location data
 		}
@@ -77,7 +77,7 @@ func (s *Server) GetMapMarkers(ctx context.Context, request *immichv1.GetMapMark
 			Id:        uuid.UUID(asset.ID.Bytes).String(),
 			Latitude:  *exif.Latitude,
 			Longitude: *exif.Longitude,
-			Timestamp: timestamppb.New(asset.LocalDateTime.Time),
+			Timestamp: asset.LocalDateTime.Time.Format("2006-01-02T15:04:05Z"),
 		}
 
 		// Add location info if available
@@ -123,13 +123,13 @@ func (s *Server) ReverseGeocode(ctx context.Context, request *immichv1.ReverseGe
 	// For now, find assets near this location and use their location info
 	delta := 0.1 // Approximately 11km at the equator
 	assets, err := s.queries.GetAssetsByLocation(ctx, sqlc.GetAssetsByLocationParams{
-		OwnerId:  userUUID,
-		Column2:  latitude - delta,
-		Column3:  latitude + delta,
-		Column4:  longitude - delta,
-		Column5:  longitude + delta,
-		Limit:    10,
-		Offset:   0,
+		OwnerId:     userUUID,
+		Latitude:    pgtype.Float8{Float64: latitude - delta, Valid: true},
+		Latitude_2:  pgtype.Float8{Float64: latitude + delta, Valid: true},
+		Longitude:   pgtype.Float8{Float64: longitude - delta, Valid: true},
+		Longitude_2: pgtype.Float8{Float64: longitude + delta, Valid: true},
+		Limit:       10,
+		Offset:      0,
 	})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to find nearby assets: %v", err)
@@ -142,7 +142,7 @@ func (s *Server) ReverseGeocode(ctx context.Context, request *immichv1.ReverseGe
 	countryCount := make(map[string]int)
 
 	for _, asset := range assets {
-		exif, err := s.queries.GetExifByAssetID(ctx, asset.ID)
+		exif, err := s.queries.GetExifByAssetId(ctx, asset.ID)
 		if err != nil {
 			continue
 		}

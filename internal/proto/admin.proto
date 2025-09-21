@@ -75,14 +75,14 @@ service AdminService {
   // Get user preferences (admin)
   rpc GetUserPreferencesAdmin(GetUserPreferencesAdminRequest) returns (UserPreferencesResponseDto) {
     option (google.api.http) = {
-      get: "/api/admin/users/{id}/preferences"
+      get: "/api/admin/users/{user_id}/preferences"
     };
   }
 
   // Update user preferences (admin)
   rpc UpdateUserPreferencesAdmin(UpdateUserPreferencesAdminRequest) returns (UserPreferencesResponseDto) {
     option (google.api.http) = {
-      put: "/api/admin/users/{id}/preferences"
+      put: "/api/admin/users/{user_id}/preferences"
       body: "*"
     };
   }
@@ -242,12 +242,12 @@ message UpdateUserAdminRequest {
 
 // Get user preferences admin request
 message GetUserPreferencesAdminRequest {
-  string id = 1;
+  string user_id = 1;
 }
 
 // Update user preferences admin request
 message UpdateUserPreferencesAdminRequest {
-  string id = 1;
+  string user_id = 1;
   UserPreferencesResponseDto preferences = 2;
 }
 

@@ -29,6 +29,12 @@ message GetMapMarkersRequest {
   optional bool is_favorite = 2;
   optional string file_created_after = 3;
   optional string file_created_before = 4;
+  optional double min_latitude = 5;
+  optional double max_latitude = 6;
+  optional double min_longitude = 7;
+  optional double max_longitude = 8;
+  optional int32 limit = 9;
+  optional int32 offset = 10;
 }
 
 // Response containing map markers
@@ -38,8 +44,8 @@ message GetMapMarkersResponse {
 
 // Request for reverse geocoding
 message ReverseGeocodeRequest {
-  double lat = 1;
-  double lon = 2;
+  double latitude = 1;
+  double longitude = 2;
 }
 
 // Response for reverse geocoding
@@ -57,4 +63,7 @@ message MapMarker {
   string city = 4;
   string state = 5;
   string country = 6;
+  double latitude = 7;
+  double longitude = 8;
+  string timestamp = 9;
 }

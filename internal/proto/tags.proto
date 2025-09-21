@@ -94,6 +94,7 @@ message GetAllTagsResponse {
 message CreateTagRequest {
   string name = 1;
   optional string type = 2;
+  optional string color = 3;
 }
 
 // Request to upsert tags
@@ -163,6 +164,7 @@ message TagResponse {
   string user_id = 4;
   google.protobuf.Timestamp created_at = 5;
   google.protobuf.Timestamp updated_at = 6;
+  optional string color = 7;
 }
 
 // Tag upsert for bulk operations
