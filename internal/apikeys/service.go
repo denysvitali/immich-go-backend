@@ -3,8 +3,11 @@ package apikeys
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
+	"time"
 
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/google/uuid"
@@ -20,6 +23,12 @@ func NewService(db *sqlc.Queries) *Service {
 	return &Service{
 		db: db,
 	}
+}
+
+// hashAPIKey hashes an API key for storage/lookup
+func hashAPIKey(key string) string {
+	hash := sha256.Sum256([]byte(key))
+	return hex.EncodeToString(hash[:])
 }
 
 // GenerateAPIKey generates a new random API key
@@ -111,10 +120,8 @@ func (s *Service) ValidateAPIKey(ctx context.Context, rawKey string) (*sqlc.ApiK
 		return nil, fmt.Errorf("invalid API key: %w", err)
 	}
 
-	// Check if the key has expired
-	if apiKey.ExpiresAt.Valid && apiKey.ExpiresAt.Time.Before(time.Now()) {
-		return nil, fmt.Errorf("API key has expired")
-	}
+	// Note: API keys don't have expiration in the current schema
+	// This could be added as a future enhancement
 
 	return &apiKey, nil
 }

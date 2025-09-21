@@ -2,13 +2,10 @@ package notifications
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Service struct {

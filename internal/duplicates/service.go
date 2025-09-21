@@ -100,7 +100,7 @@ func (s *Service) GetAssetDuplicates(ctx context.Context, userID string) (*GetAs
 		checksumStr := hex.EncodeToString(asset.Checksum)
 
 		// Get exif data for file size
-		exif, err := s.db.GetExifByAssetID(ctx, asset.ID)
+		exif, err := s.db.GetExifByAssetId(ctx, asset.ID)
 		var fileSize int64
 		if err == nil && exif.FileSizeInByte.Valid {
 			fileSize = exif.FileSizeInByte.Int64
@@ -181,7 +181,7 @@ func (s *Service) FindDuplicatesByChecksum(ctx context.Context, userID string, c
 		// Only include assets owned by the user
 		if asset.OwnerId.Valid && asset.OwnerId.Bytes == uid {
 			// Get exif data for file size
-			exif, err := s.db.GetExifByAssetID(ctx, asset.ID)
+			exif, err := s.db.GetExifByAssetId(ctx, asset.ID)
 			var fileSize int64
 			if err == nil && exif.FileSizeInByte.Valid {
 				fileSize = exif.FileSizeInByte.Int64
@@ -238,7 +238,7 @@ func (s *Service) FindDuplicatesBySize(ctx context.Context, userID string, sizeB
 	var duplicates []*DuplicateAsset
 	for _, asset := range assets {
 		// Get exif data to check file size
-		exif, err := s.db.GetExifByAssetID(ctx, asset.ID)
+		exif, err := s.db.GetExifByAssetId(ctx, asset.ID)
 		if err == nil && exif.FileSizeInByte.Valid && exif.FileSizeInByte.Int64 == sizeBytes {
 			dupAsset := &DuplicateAsset{
 				AssetID:        uuid.UUID(asset.ID.Bytes).String(),

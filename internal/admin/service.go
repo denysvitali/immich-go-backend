@@ -454,7 +454,7 @@ func (s *Service) GetUserStatisticsAdmin(ctx context.Context, userID string) (*U
 	if err == nil {
 		for _, asset := range userAssets {
 			// Get exif data for file size
-			exif, err := s.db.GetExifByAssetID(ctx, asset.ID)
+			exif, err := s.db.GetExifByAssetId(ctx, asset.ID)
 			if err == nil && exif.FileSizeInByte.Valid {
 				totalUsage += exif.FileSizeInByte.Int64
 			}
