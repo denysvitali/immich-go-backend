@@ -229,7 +229,11 @@ func (s *Service) FindDuplicatesBySize(ctx context.Context, userID string, sizeB
 
 	// Get assets by file size using GetAssetsByFileSizeAndUser query
 	// Since this query doesn't exist yet, we need to get all user assets and filter
-	assets, err := s.db.GetUserAssets(ctx, userUUID)
+	assets, err := s.db.GetUserAssets(ctx, sqlc.GetUserAssetsParams{
+		OwnerId: userUUID,
+		Limit:   pgtype.Int4{Int32: 1000, Valid: true},
+		Offset:  pgtype.Int4{Int32: 0, Valid: true},
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user assets: %w", err)
 	}

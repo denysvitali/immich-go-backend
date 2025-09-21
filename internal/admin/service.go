@@ -450,7 +450,11 @@ func (s *Service) GetUserStatisticsAdmin(ctx context.Context, userID string) (*U
 
 	// Calculate total storage usage by getting all user assets and summing file sizes
 	var totalUsage int64
-	userAssets, err := s.db.GetUserAssets(ctx, userUUID)
+	userAssets, err := s.db.GetUserAssets(ctx, sqlc.GetUserAssetsParams{
+		OwnerId: userUUID,
+		Limit:   pgtype.Int4{Int32: 10000, Valid: true},
+		Offset:  pgtype.Int4{Int32: 0, Valid: true},
+	})
 	if err == nil {
 		for _, asset := range userAssets {
 			// Get exif data for file size

@@ -1005,37 +1005,6 @@ WHERE id = $1;
 SELECT * FROM tags
 WHERE "userId" = $1 AND value = $2;
 
--- name: CreateTag :one
-INSERT INTO tags ("userId", value, color, "parentId")
-VALUES ($1, $2, $3, $4)
-RETURNING *;
-
--- name: UpdateTag :one
-UPDATE tags
-SET value = COALESCE(sqlc.narg('value'), value),
-    color = COALESCE(sqlc.narg('color'), color),
-    "updatedAt" = now()
-WHERE id = $1
-RETURNING *;
-
--- name: DeleteTag :exec
-DELETE FROM tags
-WHERE id = $1;
-
--- name: AddTagToAsset :exec
-INSERT INTO tag_asset ("assetsId", "tagsId")
-VALUES ($1, $2)
-ON CONFLICT DO NOTHING;
-
--- name: RemoveTagFromAsset :exec
-DELETE FROM tag_asset
-WHERE "assetsId" = $1 AND "tagsId" = $2;
-
--- name: GetAssetTags :many
-SELECT t.* FROM tags t
-JOIN tag_asset ta ON t.id = ta."tagsId"
-WHERE ta."assetsId" = $1;
-
 -- name: GetTagAssets :many
 SELECT a.* FROM assets a
 JOIN tag_asset ta ON a.id = ta."assetsId"
@@ -1177,85 +1146,24 @@ SELECT COUNT(*) FROM assets
 WHERE "libraryId" = $1
   AND "deletedAt" IS NULL;
 
--- ================== SHARED LINKS ==================
-
--- name: CreateSharedLink :one
-INSERT INTO shared_links (
-  id, "userId", key, type, description, password,
-  "expiresAt", "allowDownload", "allowUpload", "showMetadata",
-  "albumId", "createdAt", "updatedAt"
-) VALUES (
-  $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW()
-) RETURNING *;
-
--- name: GetSharedLink :one
-SELECT sl.*, COUNT(sla."assetId") as asset_count
-FROM shared_links sl
-LEFT JOIN shared_link_assets sla ON sl.id = sla."sharedLinkId"
-WHERE sl.id = $1
-GROUP BY sl.id;
-
--- name: GetSharedLinkByKey :one
-SELECT sl.*, COUNT(sla."assetId") as asset_count
-FROM shared_links sl
-LEFT JOIN shared_link_assets sla ON sl.id = sla."sharedLinkId"
-WHERE sl.key = $1
-GROUP BY sl.id;
-
--- name: ListSharedLinks :many
-SELECT sl.*, COUNT(sla."assetId") as asset_count
-FROM shared_links sl
-LEFT JOIN shared_link_assets sla ON sl.id = sla."sharedLinkId"
-WHERE sl."userId" = $1
-GROUP BY sl.id
-ORDER BY sl."createdAt" DESC;
-
--- name: UpdateSharedLink :one
-UPDATE shared_links
-SET description = $2,
-    password = $3,
-    "expiresAt" = $4,
-    "allowDownload" = $5,
-    "allowUpload" = $6,
-    "showMetadata" = $7,
-    "updatedAt" = NOW()
-WHERE id = $1
-RETURNING *;
-
--- name: DeleteSharedLink :exec
-DELETE FROM shared_links WHERE id = $1;
-
--- name: AddAssetToSharedLink :exec
-INSERT INTO shared_link_assets ("sharedLinkId", "assetId")
-VALUES ($1, $2)
-ON CONFLICT DO NOTHING;
-
--- name: RemoveAssetFromSharedLink :exec
-DELETE FROM shared_link_assets
-WHERE "sharedLinkId" = $1 AND "assetId" = $2;
-
--- name: RemoveAllAssetsFromSharedLink :exec
-DELETE FROM shared_link_assets WHERE "sharedLinkId" = $1;
-
--- name: GetSharedLinkAssets :many
-SELECT "assetId" FROM shared_link_assets
-WHERE "sharedLinkId" = $1;
 
 -- ================== SYSTEM CONFIGURATION ==================
+-- Note: system_config table doesn't exist in current schema
+-- These queries are commented until the table is added
 
--- name: GetAllSystemConfig :many
-SELECT key, value FROM system_config
-ORDER BY key;
+-- -- name: GetAllSystemConfig :many
+-- SELECT key, value FROM system_config
+-- ORDER BY key;
 
--- name: GetSystemConfig :one
-SELECT value FROM system_config
-WHERE key = $1;
+-- -- name: GetSystemConfig :one
+-- SELECT value FROM system_config
+-- WHERE key = $1;
 
--- name: UpsertSystemConfig :exec
-INSERT INTO system_config (key, value)
-VALUES ($1, $2)
-ON CONFLICT (key) DO UPDATE
-SET value = $2, "updatedAt" = NOW();
+-- -- name: UpsertSystemConfig :exec
+-- INSERT INTO system_config (key, value)
+-- VALUES ($1, $2)
+-- ON CONFLICT (key) DO UPDATE
+-- SET value = $2, "updatedAt" = NOW();
 
--- name: DeleteSystemConfig :exec
-DELETE FROM system_config WHERE key = $1;
+-- -- name: DeleteSystemConfig :exec
+-- DELETE FROM system_config WHERE key = $1;

@@ -41,36 +41,24 @@ func (s *Server) GetMapMarkers(ctx context.Context, request *immichv1.GetMapMark
 	}
 	userUUID := pgtype.UUID{Bytes: userID, Valid: true}
 
-	// Get bounding box from request or use defaults
-	minLat := request.GetMinLatitude()
-	maxLat := request.GetMaxLatitude()
-	minLon := request.GetMinLongitude()
-	maxLon := request.GetMaxLongitude()
-	limit := request.GetLimit()
-	offset := request.GetOffset()
-
-	// Set defaults if not provided
-	if minLat == 0 && maxLat == 0 {
-		minLat = -90.0
-		maxLat = 90.0
-	}
-	if minLon == 0 && maxLon == 0 {
-		minLon = -180.0
-		maxLon = 180.0
-	}
-	if limit == 0 {
-		limit = 1000 // Default limit
-	}
+	// Use default bounding box for now since request doesn't have these fields
+	// TODO: Add these fields to the protobuf definition
+	minLat := -90.0
+	maxLat := 90.0
+	minLon := -180.0
+	maxLon := 180.0
+	var limit int32 = 1000
+	var offset int32 = 0
 
 	// Get assets within the bounding box
 	assets, err := s.queries.GetAssetsByLocation(ctx, sqlc.GetAssetsByLocationParams{
-		OwnerId:  userUUID,
-		Column2:  minLat,
-		Column3:  maxLat,
-		Column4:  minLon,
-		Column5:  maxLon,
-		Limit:    limit,
-		Offset:   offset,
+		OwnerId:     userUUID,
+		Latitude:    pgtype.Float8{Float64: minLat, Valid: true},
+		Latitude_2:  pgtype.Float8{Float64: maxLat, Valid: true},
+		Longitude:   pgtype.Float8{Float64: minLon, Valid: true},
+		Longitude_2: pgtype.Float8{Float64: maxLon, Valid: true},
+		Limit:       limit,
+		Offset:      offset,
 	})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get assets with location: %v", err)
