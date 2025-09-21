@@ -74,7 +74,11 @@ func (s *Server) SearchMetadata(ctx context.Context, req *immichv1.SearchMetadat
 	assets := make([]*immichv1.AssetResponseDto, 0)
 	for _, item := range result.Items {
 		// Get full asset details
-		assetUUID := pgtype.UUID{Bytes: item.ID, Valid: true}
+		id, err := uuid.Parse(item.ID)
+		if err != nil {
+			continue // Skip invalid UUIDs
+		}
+		assetUUID := pgtype.UUID{Bytes: id, Valid: true}
 		asset, err := s.service.db.GetAssetByID(ctx, assetUUID)
 		if err != nil {
 			continue // Skip assets that can't be loaded
@@ -94,7 +98,7 @@ func (s *Server) SearchMetadata(ctx context.Context, req *immichv1.SearchMetadat
 		}
 
 		assets = append(assets, &immichv1.AssetResponseDto{
-			Id:               item.ID.String(),
+			Id:               item.ID,
 			DeviceAssetId:    asset.DeviceAssetId,
 			DeviceId:         asset.DeviceId,
 			Type:             assetType,
@@ -138,7 +142,11 @@ func (s *Server) SearchSmart(ctx context.Context, req *immichv1.SearchSmartReque
 	assets := make([]*immichv1.AssetResponseDto, 0)
 	for _, item := range result.Items {
 		// Get full asset details
-		assetUUID := pgtype.UUID{Bytes: item.ID, Valid: true}
+		id, err := uuid.Parse(item.ID)
+		if err != nil {
+			continue // Skip invalid UUIDs
+		}
+		assetUUID := pgtype.UUID{Bytes: id, Valid: true}
 		asset, err := s.service.db.GetAssetByID(ctx, assetUUID)
 		if err != nil {
 			continue // Skip assets that can't be loaded
@@ -158,7 +166,7 @@ func (s *Server) SearchSmart(ctx context.Context, req *immichv1.SearchSmartReque
 		}
 
 		assets = append(assets, &immichv1.AssetResponseDto{
-			Id:               item.ID.String(),
+			Id:               item.ID,
 			DeviceAssetId:    asset.DeviceAssetId,
 			DeviceId:         asset.DeviceId,
 			Type:             assetType,
@@ -353,8 +361,8 @@ func (s *Server) Search(ctx context.Context, req *immichv1.SearchRequest) (*immi
 	if req.GetQuery() != "" {
 		pgUserID := pgtype.UUID{Bytes: userID, Valid: true}
 		searchResults, err := s.service.db.SearchAssets(ctx, sqlc.SearchAssetsParams{
-			OwnerID: pgUserID,
-			Query:   req.GetQuery(),
+			OwnerId: pgUserID,
+			Column2: pgtype.Text{String: req.GetQuery(), Valid: true},
 			Limit:   50,
 			Offset:  0,
 		})

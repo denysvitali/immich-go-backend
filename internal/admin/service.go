@@ -570,10 +570,10 @@ func (s *Service) convertUserToDto(user *sqlc.User) *UserAdminResponseDto {
 	}
 
 	// Set avatar color
-	if user.AvatarColor != "" {
+	if user.AvatarColor.Valid && user.AvatarColor.String != "" {
 		// Parse avatar color from string
 		var colorValue int
-		if _, err := fmt.Sscanf(user.AvatarColor, "%d", &colorValue); err == nil {
+		if _, err := fmt.Sscanf(user.AvatarColor.String, "%d", &colorValue); err == nil {
 			dto.AvatarColor = UserAvatarColor(colorValue)
 		}
 	} else {
@@ -581,11 +581,11 @@ func (s *Service) convertUserToDto(user *sqlc.User) *UserAdminResponseDto {
 	}
 
 	// Set optional fields
-	if user.ProfileImagePath.Valid {
-		dto.ProfileImagePath = user.ProfileImagePath.String
+	if user.ProfileImagePath != "" {
+		dto.ProfileImagePath = user.ProfileImagePath
 	}
-	if user.OauthId.Valid {
-		dto.OauthID = user.OauthId.String
+	if user.OauthId != "" {
+		dto.OauthID = user.OauthId
 	}
 	if user.DeletedAt.Valid {
 		delTime := user.DeletedAt.Time

@@ -57,8 +57,9 @@ func (s *Server) GetAllTags(ctx context.Context, request *immichv1.GetAllTagsReq
 			CreatedAt: timestamppb.New(tag.CreatedAt.Time),
 			UpdatedAt: timestamppb.New(tag.UpdatedAt.Time),
 		}
-		if tag.Color != nil {
-			protoTags[i].Color = *tag.Color
+		if tag.Color.Valid {
+			color := tag.Color.String
+			protoTags[i].Color = &color
 		}
 	}
 
@@ -88,8 +89,8 @@ func (s *Server) CreateTag(ctx context.Context, request *immichv1.CreateTagReque
 	}
 
 	// Set color if provided
-	if request.Color != nil {
-		params.Color = request.Color
+	if request.Color != nil && *request.Color != "" {
+		params.Color = pgtype.Text{String: *request.Color, Valid: true}
 	}
 
 	// Create tag in database
@@ -106,8 +107,9 @@ func (s *Server) CreateTag(ctx context.Context, request *immichv1.CreateTagReque
 		CreatedAt: timestamppb.New(tag.CreatedAt.Time),
 		UpdatedAt: timestamppb.New(tag.UpdatedAt.Time),
 	}
-	if tag.Color != nil {
-		response.Color = *tag.Color
+	if tag.Color.Valid {
+		color := tag.Color.String
+		response.Color = &color
 	}
 
 	return response, nil
@@ -135,7 +137,7 @@ func (s *Server) UpsertTags(ctx context.Context, request *immichv1.UpsertTagsReq
 		userTags, err := s.queries.GetTags(ctx, userUUID)
 		if err == nil {
 			for _, existingTag := range userTags {
-				if existingTag.Value == tagName {
+				if existingTag.Value == tagName.GetName() {
 					// Tag exists, add to response
 					response := &immichv1.TagResponse{
 						Id:        uuid.UUID(existingTag.ID.Bytes).String(),
@@ -144,8 +146,9 @@ func (s *Server) UpsertTags(ctx context.Context, request *immichv1.UpsertTagsReq
 						CreatedAt: timestamppb.New(existingTag.CreatedAt.Time),
 						UpdatedAt: timestamppb.New(existingTag.UpdatedAt.Time),
 					}
-					if existingTag.Color != nil {
-						response.Color = *existingTag.Color
+					if existingTag.Color.Valid {
+						color := existingTag.Color.String
+						response.Color = &color
 					}
 					tags = append(tags, response)
 					continue
@@ -156,7 +159,7 @@ func (s *Server) UpsertTags(ctx context.Context, request *immichv1.UpsertTagsReq
 		// Tag doesn't exist, create it
 		newTag, err := s.queries.CreateTag(ctx, sqlc.CreateTagParams{
 			UserId: userUUID,
-			Value:  tagName,
+			Value:  tagName.GetName(),
 		})
 		if err == nil {
 			response := &immichv1.TagResponse{
@@ -166,8 +169,9 @@ func (s *Server) UpsertTags(ctx context.Context, request *immichv1.UpsertTagsReq
 				CreatedAt: timestamppb.New(newTag.CreatedAt.Time),
 				UpdatedAt: timestamppb.New(newTag.UpdatedAt.Time),
 			}
-			if newTag.Color != nil {
-				response.Color = *newTag.Color
+			if newTag.Color.Valid {
+				color := newTag.Color.String
+				response.Color = &color
 			}
 			tags = append(tags, response)
 		}
@@ -292,8 +296,9 @@ func (s *Server) GetTagById(ctx context.Context, request *immichv1.GetTagByIdReq
 		CreatedAt: timestamppb.New(tag.CreatedAt.Time),
 		UpdatedAt: timestamppb.New(tag.UpdatedAt.Time),
 	}
-	if tag.Color != nil {
-		response.Color = *tag.Color
+	if tag.Color.Valid {
+		color := tag.Color.String
+		response.Color = &color
 	}
 
 	return response, nil
@@ -332,8 +337,8 @@ func (s *Server) UpdateTag(ctx context.Context, request *immichv1.UpdateTagReque
 	}
 
 	// Set color if provided
-	if request.Color != nil {
-		params.Color = request.Color
+	if request.Color != nil && *request.Color != "" {
+		params.Color = pgtype.Text{String: *request.Color, Valid: true}
 	} else {
 		params.Color = existingTag.Color
 	}
@@ -352,8 +357,9 @@ func (s *Server) UpdateTag(ctx context.Context, request *immichv1.UpdateTagReque
 		CreatedAt: timestamppb.New(tag.CreatedAt.Time),
 		UpdatedAt: timestamppb.New(tag.UpdatedAt.Time),
 	}
-	if tag.Color != nil {
-		response.Color = *tag.Color
+	if tag.Color.Valid {
+		color := tag.Color.String
+		response.Color = &color
 	}
 
 	return response, nil

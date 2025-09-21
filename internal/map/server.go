@@ -69,26 +69,26 @@ func (s *Server) GetMapMarkers(ctx context.Context, request *immichv1.GetMapMark
 	for _, asset := range assets {
 		// Get exif data for location
 		exif, err := s.queries.GetExifByAssetId(ctx, asset.ID)
-		if err != nil || exif.Latitude == nil || exif.Longitude == nil {
+		if err != nil || !exif.Latitude.Valid || !exif.Longitude.Valid {
 			continue // Skip assets without location data
 		}
 
 		marker := &immichv1.MapMarker{
 			Id:        uuid.UUID(asset.ID.Bytes).String(),
-			Latitude:  *exif.Latitude,
-			Longitude: *exif.Longitude,
+			Latitude:  exif.Latitude.Float64,
+			Longitude: exif.Longitude.Float64,
 			Timestamp: asset.LocalDateTime.Time.Format("2006-01-02T15:04:05Z"),
 		}
 
 		// Add location info if available
-		if exif.City != nil {
-			marker.City = *exif.City
+		if exif.City.Valid {
+			marker.City = exif.City.String
 		}
-		if exif.State != nil {
-			marker.State = *exif.State
+		if exif.State.Valid {
+			marker.State = exif.State.String
 		}
-		if exif.Country != nil {
-			marker.Country = *exif.Country
+		if exif.Country.Valid {
+			marker.Country = exif.Country.String
 		}
 
 		markers = append(markers, marker)

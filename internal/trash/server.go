@@ -108,14 +108,14 @@ func (s *Server) RestoreAssets(ctx context.Context, request *immichv1.RestoreAss
 	userUUID := pgtype.UUID{Bytes: userID, Valid: true}
 
 	// Collect valid asset UUIDs
-	var assetUUIDs []uuid.UUID
+	var assetUUIDs []pgtype.UUID
 	for _, assetIDStr := range request.GetAssetIds() {
 		// Parse asset ID
 		assetID, err := uuid.Parse(assetIDStr)
 		if err != nil {
 			continue // Skip invalid IDs
 		}
-		assetUUIDs = append(assetUUIDs, assetID)
+		assetUUIDs = append(assetUUIDs, pgtype.UUID{Bytes: assetID, Valid: true})
 	}
 
 	// Restore all assets in batch (ownership check is done in the query)

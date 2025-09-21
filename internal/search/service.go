@@ -7,6 +7,7 @@ import (
 
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // Service handles search operations
@@ -25,8 +26,8 @@ func NewService(db *sqlc.Queries) *Service {
 func (s *Service) SearchMetadata(ctx context.Context, userID uuid.UUID, req MetadataSearchRequest) (*SearchResult, error) {
 	// Build query parameters
 	params := sqlc.SearchAssetsParams{
-		OwnerID: UUIDToPgtype(userID),
-		Query:   req.Query,
+		OwnerId: UUIDToPgtype(userID),
+		Column2: pgtype.Text{String: req.Query, Valid: true},
 		Limit:   int32(req.Size),
 		Offset:  int32(req.Page * req.Size),
 	}
@@ -42,8 +43,8 @@ func (s *Service) SearchMetadata(ctx context.Context, userID uuid.UUID, req Meta
 
 	// Get total count
 	countParams := sqlc.CountSearchAssetsParams{
-		OwnerID: params.OwnerID,
-		Query:   params.Query,
+		OwnerId: params.OwnerId,
+		Column2: params.Column2,
 	}
 	count, err := s.db.CountSearchAssets(ctx, countParams)
 	if err != nil {
