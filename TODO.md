@@ -22,13 +22,19 @@ Latest Compatibility Check: **✅ API Compatible with Immich v1.142.1**
 - ✅ REST API gateway configured with `/api/` prefix
 - ✅ Database schema 95% compatible with Immich
 
-**🔧 Remaining Type Conversion Issues:**
-These require additional code fixes for type conversions:
-- Tags service: pgtype.Text vs string conversions for Color field
-- Admin service: pgtype fields vs string fields (AvatarColor, ProfileImagePath, OauthId)
-- Search service: UUID type conversions and missing query parameters
-- Trash service: UUID array type conversions
-- Some missing SQLC queries (SearchAlbums, etc.)
+**✅ Type Conversion Issues Fixed! (Sept 21)**
+All major type conversion issues have been resolved:
+- ✅ Tags service: Fixed pgtype.Text conversions for Color field
+- ✅ Admin service: Fixed pgtype field conversions (AvatarColor, ProfileImagePath, OauthId)
+- ✅ Search service: Fixed UUID type conversions and field names
+- ✅ Trash service: Fixed UUID array conversions ([]uuid.UUID to []pgtype.UUID)
+- ✅ Map service: Fixed all pgtype conversions for location fields
+
+**🔧 Minor Remaining Issues:**
+- Tags service: Missing Color field in UpdateTagRequest protobuf
+- Search service: Missing SearchAlbums SQLC query
+- Search service: Missing UserResponseDto protobuf type
+- Tags/Search services: A few field name mismatches
 
 **✅ MAJOR PROGRESS: Critical Services Now Operational!**
 All previously disabled services have been fixed and re-enabled:
