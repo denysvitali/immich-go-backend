@@ -104,11 +104,17 @@ func (s *Service) ValidateAPIKey(ctx context.Context, rawKey string) (*sqlc.ApiK
 	// Note: In production, you'd want to implement caching here to avoid
 	// hitting the database for every API request
 
-	// Since we hash the keys, we need to fetch all keys and check each one
-	// In a production system, you might want to use a different approach,
-	// such as storing a prefix or using a cache
+	// Look up the API key directly in the database
+	// The key is stored hashed in the database, so we compare the hashed value
+	apiKey, err := s.db.GetApiKey(ctx, hashAPIKey(rawKey))
+	if err != nil {
+		return nil, fmt.Errorf("invalid API key: %w", err)
+	}
 
-	// For now, this is a simplified implementation
-	// In reality, Immich stores the key in a way that allows direct lookup
-	return nil, fmt.Errorf("ValidateAPIKey not fully implemented - needs optimization")
+	// Check if the key has expired
+	if apiKey.ExpiresAt.Valid && apiKey.ExpiresAt.Time.Before(time.Now()) {
+		return nil, fmt.Errorf("API key has expired")
+	}
+
+	return &apiKey, nil
 }

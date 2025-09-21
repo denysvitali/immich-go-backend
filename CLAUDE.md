@@ -2,6 +2,30 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## ⚠️ CRITICAL REQUIREMENTS - ABSOLUTELY NO MOCKS OR STUBS ⚠️
+
+### MANDATORY RULES - NO EXCEPTIONS
+1. **NO STUB IMPLEMENTATIONS** - Every method MUST have real functionality
+2. **NO MOCK DATA** - All responses MUST come from actual database operations
+3. **NO PLACEHOLDER VALUES** - Use real data from PostgreSQL via SQLC
+4. **NO "TODO: Implement later" RESPONSES** - Implement it NOW with real database queries
+5. **NO HARDCODED TEST DATA** - All data must be read from or written to the database
+6. **NO FAKE RETURNS** - Every return value must be the result of actual operations
+7. **MOCKS ARE NOT ALLOWED** - This is a production system, not a prototype
+
+### When implementing ANY service method:
+- ✅ DO: Use SQLC queries to interact with the database
+- ✅ DO: Create new SQLC queries if needed in sqlc/queries.sql
+- ✅ DO: Handle errors properly and return meaningful responses
+- ✅ DO: Perform actual CRUD operations on the database
+- ✅ DO: Write real data to the database when creating/updating
+- ✅ DO: Read real data from the database when fetching
+- ❌ DON'T: Return hardcoded values like "example@email.com" or "Partner User"
+- ❌ DON'T: Use placeholder data or dummy responses
+- ❌ DON'T: Leave methods with "// TODO: implement actual functionality"
+- ❌ DON'T: Return empty arrays when data should be fetched from DB
+- ❌ DON'T: Use fake IDs, fake names, or any other mock data
+
 ## Development Commands
 
 ### Environment Setup

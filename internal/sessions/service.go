@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/sirupsen/logrus"
 
 	"github.com/denysvitali/immich-go-backend/internal/auth"
@@ -40,10 +41,21 @@ type Session struct {
 
 // CreateSession creates a new session for a user
 func (s *Service) CreateSession(ctx context.Context, userID string, deviceType, deviceOS string) (*Session, error) {
-	// Generate a new session token
-	// Get user email (would need to fetch from database in real implementation)
-	userEmail := "user@example.com" // TODO: Fetch from database
-	token, err := s.auth.GenerateToken(userID, userEmail, 30*24*time.Hour)
+	// Parse user ID
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		return nil, err
+	}
+	userUUID := pgtype.UUID{Bytes: uid, Valid: true}
+
+	// Get user from database to fetch email
+	user, err := s.queries.GetUser(ctx, userUUID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Generate a new session token with real user email
+	token, err := s.auth.GenerateToken(userID, user.Email, 30*24*time.Hour)
 	if err != nil {
 		return nil, err
 	}

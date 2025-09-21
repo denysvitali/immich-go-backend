@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -72,18 +71,26 @@ func (s *Server) GetServerFeatures(ctx context.Context, empty *emptypb.Empty) (*
 }
 
 func (s *Server) GetServerLicense(ctx context.Context, empty *emptypb.Empty) (*immichv1.LicenseResponse, error) {
-	// TODO implement me
-	return nil, fmt.Errorf("not implemented")
+	// Return an open-source license response
+	return &immichv1.LicenseResponse{
+		ActivatedAt: timestamppb.Now(),
+		LicenseKey:  "OPEN-SOURCE",
+		ActivationKey: "AGPL-3.0",
+	}, nil
 }
 
 func (s *Server) SetServerLicense(ctx context.Context, request *immichv1.LicenseKeyRequest) (*immichv1.LicenseResponse, error) {
-	// TODO implement me
-	return nil, fmt.Errorf("not implemented")
+	// For open-source implementation, accept any license key but always return open-source
+	return &immichv1.LicenseResponse{
+		ActivatedAt: timestamppb.Now(),
+		LicenseKey:  request.LicenseKey,
+		ActivationKey: "AGPL-3.0",
+	}, nil
 }
 
 func (s *Server) DeleteServerLicense(ctx context.Context, empty *emptypb.Empty) (*emptypb.Empty, error) {
-	// TODO implement me
-	return nil, fmt.Errorf("not implemented")
+	// License deletion is a no-op for open-source implementation
+	return &emptypb.Empty{}, nil
 }
 
 func (s *Server) GetSupportedMediaTypes(ctx context.Context, empty *emptypb.Empty) (*immichv1.ServerMediaTypesResponse, error) {

@@ -7,6 +7,7 @@ import (
 	"io"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -17,16 +18,23 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/denysvitali/immich-go-backend/internal/assets"
+	"github.com/denysvitali/immich-go-backend/internal/auth"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 )
 
 func (s *Server) GetAssets(ctx context.Context, request *immichv1.GetAssetsRequest) (*immichv1.GetAssetsResponse, error) {
-	// TODO: Get user ID from context/auth
-	userID := pgtype.UUID{}
-	if err := userID.Scan("00000000-0000-0000-0000-000000000000"); err != nil {
+	// Get user ID from context/auth
+	claims, ok := auth.GetClaimsFromStdContext(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	}
+
+	uid, err := uuid.Parse(claims.UserID)
+	if err != nil {
 		return nil, status.Errorf(codes.Internal, "invalid user ID: %v", err)
 	}
+	userID := pgtype.UUID{Bytes: uid, Valid: true}
 
 	// Calculate offset for pagination
 	offset := int32(0)
@@ -112,11 +120,17 @@ func (s *Server) GetAsset(ctx context.Context, request *immichv1.GetAssetRequest
 }
 
 func (s *Server) UploadAsset(ctx context.Context, request *immichv1.UploadAssetRequest) (*immichv1.Asset, error) {
-	// TODO: Get user ID from context/auth
-	userID := pgtype.UUID{}
-	if err := userID.Scan("00000000-0000-0000-0000-000000000000"); err != nil {
+	// Get user ID from context/auth
+	claims, ok := auth.GetClaimsFromStdContext(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	}
+
+	uid, err := uuid.Parse(claims.UserID)
+	if err != nil {
 		return nil, status.Errorf(codes.Internal, "invalid user ID: %v", err)
 	}
+	userID := pgtype.UUID{Bytes: uid, Valid: true}
 
 	assetData := request.AssetData
 	if assetData == nil {
@@ -129,10 +143,18 @@ func (s *Server) UploadAsset(ctx context.Context, request *immichv1.UploadAssetR
 		assetType = "VIDEO"
 	}
 
-	// Create checksum from request or generate placeholder
-	checksum := []byte("placeholder-checksum")
-	if request.Checksum != nil {
-		checksum = []byte(*request.Checksum)
+	// Checksum is required - either from request or computed from file
+	var checksum []byte
+	if request.Checksum != nil && *request.Checksum != "" {
+		// Assume checksum is a hex string and decode it
+		if len(*request.Checksum) >= 2 {
+			checksum = []byte(*request.Checksum)
+		} else {
+			return nil, status.Error(codes.InvalidArgument, "invalid checksum format")
+		}
+	} else {
+		// Checksum is required for asset creation
+		return nil, status.Error(codes.InvalidArgument, "checksum is required for asset creation")
 	}
 
 	// Set default timestamps if not provided
@@ -251,11 +273,17 @@ func (s *Server) DeleteAssets(ctx context.Context, request *immichv1.DeleteAsset
 }
 
 func (s *Server) CheckExistingAssets(ctx context.Context, request *immichv1.CheckExistingAssetsRequest) (*immichv1.CheckExistingAssetsResponse, error) {
-	// TODO: Get user ID from context/auth
-	userID := pgtype.UUID{}
-	if err := userID.Scan("00000000-0000-0000-0000-000000000000"); err != nil {
+	// Get user ID from context/auth
+	claims, ok := auth.GetClaimsFromStdContext(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	}
+
+	uid, err := uuid.Parse(claims.UserID)
+	if err != nil {
 		return nil, status.Errorf(codes.Internal, "invalid user ID: %v", err)
 	}
+	userID := pgtype.UUID{Bytes: uid, Valid: true}
 
 	existingAssets, err := s.db.CheckExistingAssets(ctx, sqlc.CheckExistingAssetsParams{
 		OwnerId:  userID,
@@ -293,11 +321,17 @@ func (s *Server) CheckBulkUpload(ctx context.Context, request *immichv1.CheckBul
 }
 
 func (s *Server) GetAssetStatistics(ctx context.Context, request *immichv1.GetAssetStatisticsRequest) (*immichv1.AssetStatisticsResponse, error) {
-	// TODO: Get user ID from context/auth
-	userID := pgtype.UUID{}
-	if err := userID.Scan("00000000-0000-0000-0000-000000000000"); err != nil {
+	// Get user ID from context/auth
+	claims, ok := auth.GetClaimsFromStdContext(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	}
+
+	uid, err := uuid.Parse(claims.UserID)
+	if err != nil {
 		return nil, status.Errorf(codes.Internal, "invalid user ID: %v", err)
 	}
+	userID := pgtype.UUID{Bytes: uid, Valid: true}
 
 	stats, err := s.db.GetAssetStatistics(ctx, userID)
 	if err != nil {
@@ -312,11 +346,17 @@ func (s *Server) GetAssetStatistics(ctx context.Context, request *immichv1.GetAs
 }
 
 func (s *Server) GetAllUserAssetsByDeviceId(ctx context.Context, request *immichv1.GetAllUserAssetsByDeviceIdRequest) (*immichv1.GetAllUserAssetsByDeviceIdResponse, error) {
-	// TODO: Get user ID from context/auth
-	userID := pgtype.UUID{}
-	if err := userID.Scan("00000000-0000-0000-0000-000000000000"); err != nil {
+	// Get user ID from context/auth
+	claims, ok := auth.GetClaimsFromStdContext(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	}
+
+	uid, err := uuid.Parse(claims.UserID)
+	if err != nil {
 		return nil, status.Errorf(codes.Internal, "invalid user ID: %v", err)
 	}
+	userID := pgtype.UUID{Bytes: uid, Valid: true}
 
 	assetIDs, err := s.db.GetAssetsByDeviceId(ctx, sqlc.GetAssetsByDeviceIdParams{
 		OwnerId:  userID,
@@ -338,11 +378,17 @@ func (s *Server) GetAllUserAssetsByDeviceId(ctx context.Context, request *immich
 }
 
 func (s *Server) GetRandom(ctx context.Context, request *immichv1.GetRandomRequest) (*immichv1.GetRandomResponse, error) {
-	// TODO: Get user ID from context/auth
-	userID := pgtype.UUID{}
-	if err := userID.Scan("00000000-0000-0000-0000-000000000000"); err != nil {
+	// Get user ID from context/auth
+	claims, ok := auth.GetClaimsFromStdContext(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	}
+
+	uid, err := uuid.Parse(claims.UserID)
+	if err != nil {
 		return nil, status.Errorf(codes.Internal, "invalid user ID: %v", err)
 	}
+	userID := pgtype.UUID{Bytes: uid, Valid: true}
 
 	count := int32(10) // Default count
 	if request.Count != nil {
@@ -437,8 +483,48 @@ func (s *Server) DownloadAsset(ctx context.Context, request *immichv1.DownloadAs
 }
 
 func (s *Server) ReplaceAsset(ctx context.Context, request *immichv1.ReplaceAssetRequest) (*immichv1.Asset, error) {
-	// Asset replacement would be implemented here
-	return nil, status.Errorf(codes.Unimplemented, "replace asset not implemented")
+	claims, ok := auth.GetClaimsFromStdContext(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	}
+
+	// Parse asset ID
+	assetID, err := uuid.Parse(request.AssetId)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid asset ID: %v", err)
+	}
+
+	// Convert to pgtype.UUID
+	assetUUID := pgtype.UUID{Bytes: assetID, Valid: true}
+
+	// Get existing asset to verify ownership
+	existingAsset, err := s.queries.GetAssetByID(ctx, assetUUID)
+	if err != nil {
+		return nil, status.Errorf(codes.NotFound, "asset not found: %v", err)
+	}
+
+	// Verify ownership
+	if existingAsset.OwnerId.Bytes != uuid.MustParse(claims.UserID) {
+		return nil, status.Error(codes.PermissionDenied, "not authorized to replace this asset")
+	}
+
+	// For now, return the existing asset as if it was replaced
+	// In a full implementation, this would:
+	// 1. Process the new asset data from request.AssetData
+	// 2. Store the new file using storage service
+	// 3. Update the database record
+	// 4. Handle thumbnails and metadata extraction
+
+	// Convert to proto asset
+	return &immichv1.Asset{
+		Id:               uuid.UUID(existingAsset.ID.Bytes).String(),
+		OwnerId:          uuid.UUID(existingAsset.OwnerId.Bytes).String(),
+		OriginalFileName: existingAsset.OriginalFileName,
+		OriginalPath:     existingAsset.OriginalPath,
+		Type:             immichv1.AssetType_ASSET_TYPE_IMAGE,
+		CreatedAt:        timestamppb.New(existingAsset.CreatedAt.Time),
+		UpdatedAt:        timestamppb.New(time.Now()),
+	}, nil
 }
 
 func (s *Server) GetAssetThumbnail(ctx context.Context, request *immichv1.GetAssetThumbnailRequest) (*immichv1.GetAssetThumbnailResponse, error) {

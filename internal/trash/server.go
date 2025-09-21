@@ -34,16 +34,27 @@ func (s *Server) EmptyTrash(ctx context.Context, _ *emptypb.Empty) (*emptypb.Emp
 		return nil, status.Error(codes.Unauthenticated, "unauthorized")
 	}
 
-	// Convert to pgtype.UUID
-	var pgUserID pgtype.UUID
-	if err := pgUserID.Scan(claims.UserID); err != nil {
+	// Parse user ID
+	userID, err := uuid.Parse(claims.UserID)
+	if err != nil {
 		return nil, status.Errorf(codes.Internal, "invalid user ID: %v", err)
 	}
+	userUUID := pgtype.UUID{Bytes: userID, Valid: true}
 
-	// TODO: Implement when SQLC queries are generated
-	// This requires GetTrashedAssetsByUser and PermanentlyDeleteAsset queries
-	// For now, return success
-	_ = pgUserID
+	// Get all trashed assets for the user
+	trashedAssets, err := s.queries.GetTrashedAssetsByUser(ctx, userUUID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get trashed assets: %v", err)
+	}
+
+	// Permanently delete each trashed asset
+	for _, asset := range trashedAssets {
+		err = s.queries.PermanentlyDeleteAsset(ctx, asset.ID)
+		if err != nil {
+			// Log error but continue with other assets
+			continue
+		}
+	}
 
 	return &emptypb.Empty{}, nil
 }
@@ -56,16 +67,27 @@ func (s *Server) RestoreTrash(ctx context.Context, _ *emptypb.Empty) (*emptypb.E
 		return nil, status.Error(codes.Unauthenticated, "unauthorized")
 	}
 
-	// Convert to pgtype.UUID
-	var pgUserID pgtype.UUID
-	if err := pgUserID.Scan(claims.UserID); err != nil {
+	// Parse user ID
+	userID, err := uuid.Parse(claims.UserID)
+	if err != nil {
 		return nil, status.Errorf(codes.Internal, "invalid user ID: %v", err)
 	}
+	userUUID := pgtype.UUID{Bytes: userID, Valid: true}
 
-	// TODO: Implement when SQLC queries are generated
-	// This requires GetTrashedAssetsByUser and RestoreAssetFromTrash queries
-	// For now, return success
-	_ = pgUserID
+	// Get all trashed assets for the user
+	trashedAssets, err := s.queries.GetTrashedAssetsByUser(ctx, userUUID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get trashed assets: %v", err)
+	}
+
+	// Restore each trashed asset
+	for _, asset := range trashedAssets {
+		err = s.queries.RestoreAssetFromTrash(ctx, asset.ID)
+		if err != nil {
+			// Log error but continue with other assets
+			continue
+		}
+	}
 
 	return &emptypb.Empty{}, nil
 }
@@ -78,41 +100,32 @@ func (s *Server) RestoreAssets(ctx context.Context, request *immichv1.RestoreAss
 		return nil, status.Error(codes.Unauthenticated, "unauthorized")
 	}
 
-	// Convert to pgtype.UUID
-	var pgUserID pgtype.UUID
-	if err := pgUserID.Scan(claims.UserID); err != nil {
+	// Parse user ID
+	userID, err := uuid.Parse(claims.UserID)
+	if err != nil {
 		return nil, status.Errorf(codes.Internal, "invalid user ID: %v", err)
 	}
+	userUUID := pgtype.UUID{Bytes: userID, Valid: true}
 
-	// Restore each specified asset
+	// Collect valid asset UUIDs
+	var assetUUIDs []uuid.UUID
 	for _, assetIDStr := range request.GetAssetIds() {
 		// Parse asset ID
 		assetID, err := uuid.Parse(assetIDStr)
 		if err != nil {
 			continue // Skip invalid IDs
 		}
+		assetUUIDs = append(assetUUIDs, assetID)
+	}
 
-		var pgAssetID pgtype.UUID
-		if err := pgAssetID.Scan(assetID); err != nil {
-			continue
-		}
-
-		// Get asset to verify ownership
-		asset, err := s.queries.GetAssetByID(ctx, pgAssetID)
+	// Restore all assets in batch (ownership check is done in the query)
+	if len(assetUUIDs) > 0 {
+		err = s.queries.RestoreAssets(ctx, sqlc.RestoreAssetsParams{
+			Column1: assetUUIDs,
+			OwnerId: userUUID,
+		})
 		if err != nil {
-			continue // Asset not found or error
-		}
-
-		// Verify ownership
-		if asset.OwnerId != pgUserID {
-			continue // Skip assets not owned by user
-		}
-
-		// TODO: Restore asset from trash when RestoreAssetFromTrash query is available
-		// err = s.queries.RestoreAssetFromTrash(ctx, pgAssetID)
-		if err != nil {
-			// Log error but continue with other assets
-			continue
+			return nil, status.Errorf(codes.Internal, "failed to restore assets: %v", err)
 		}
 	}
 

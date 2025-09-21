@@ -9,9 +9,11 @@ import (
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/denysvitali/immich-go-backend/internal/telemetry"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/crypto/bcrypt"
 )
 
 var tracer = telemetry.GetTracer("admin")
@@ -93,12 +95,9 @@ func (s *Service) RenderNotificationTemplate(ctx context.Context, name string, d
 			metric.WithAttributes(attribute.String("operation", "render_notification_template")))
 	}()
 
-	// TODO: Implement actual template rendering when template system is available
-	// For now, return a mock response
-	return &TemplateResponseDto{
-		HTML:    "<h1>Test Template</h1><p>This is a test template.</p>",
-		Subject: "Test Subject",
-	}, nil
+	// Template rendering requires template system to be implemented
+	// Return error instead of mock data
+	return nil, fmt.Errorf("template rendering not yet implemented - requires template system")
 }
 
 // TestEmailNotification tests email notification functionality
@@ -115,11 +114,9 @@ func (s *Service) TestEmailNotification(ctx context.Context, recipient string) (
 			metric.WithAttributes(attribute.String("operation", "test_email_notification")))
 	}()
 
-	// TODO: Implement actual email testing when email system is available
-	// For now, return a mock response
-	return &TestEmailResponseDto{
-		Message: "Test email would be sent to " + recipient,
-	}, nil
+	// Email testing requires email system to be implemented
+	// Return error instead of mock data
+	return nil, fmt.Errorf("email testing not yet implemented - requires email system")
 }
 
 // SearchUsersAdmin searches for users (admin function)
@@ -160,28 +157,56 @@ func (s *Service) CreateUserAdmin(ctx context.Context, req CreateUserAdminReques
 			metric.WithAttributes(attribute.String("operation", "create_user_admin")))
 	}()
 
-	// TODO: Implement actual user creation when SQLC queries are available
-	// This should validate input and create user with proper password hashing
-	// For now, return a mock response
-	userID := uuid.New()
-	now := time.Now()
+	// Validate input
+	if req.Email == "" || req.Name == "" || req.Password == "" {
+		return nil, fmt.Errorf("email, name, and password are required")
+	}
 
-	return &UserAdminResponseDto{
-		AvatarColor:          UserAvatarColor_PRIMARY,
-		CreatedAt:            now,
-		DeletedAt:            nil,
-		Email:                req.Email,
-		ID:                   userID.String(),
-		IsAdmin:              false,
-		Name:                 req.Name,
-		OauthID:              "",
-		ProfileImagePath:     "",
-		ProfileChangedAt:     nil,
-		QuotaSizeInBytes:     req.QuotaSizeInBytes,
-		ShouldChangePassword: req.ShouldChangePassword != nil && *req.ShouldChangePassword,
-		StorageLabel:         req.StorageLabel,
-		UpdatedAt:            now,
-	}, nil
+	// Hash the password
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, fmt.Errorf("failed to hash password: %w", err)
+	}
+
+	// Generate new user ID
+	userID := uuid.New()
+	userUUID := pgtype.UUID{Bytes: userID, Valid: true}
+
+	// Create user in database
+	user, err := s.db.CreateUser(ctx, sqlc.CreateUserParams{
+		ID:       userUUID,
+		Email:    req.Email,
+		Name:     req.Name,
+		Password: string(hashedPassword),
+		IsAdmin:  false, // New users are not admins by default
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create user: %w", err)
+	}
+
+	// Update optional fields if provided
+	if req.QuotaSizeInBytes != nil || req.ShouldChangePassword != nil || req.StorageLabel != nil {
+		var updateParams sqlc.UpdateUserParams
+		updateParams.ID = userUUID
+		if req.QuotaSizeInBytes != nil {
+			quota := pgtype.Int8{Int64: *req.QuotaSizeInBytes, Valid: true}
+			updateParams.QuotaSizeInBytes = quota
+		}
+		if req.ShouldChangePassword != nil {
+			changePass := pgtype.Bool{Bool: *req.ShouldChangePassword, Valid: true}
+			updateParams.ShouldChangePassword = changePass
+		}
+		if req.StorageLabel != nil {
+			label := pgtype.Text{String: *req.StorageLabel, Valid: true}
+			updateParams.StorageLabel = label
+		}
+		user, err = s.db.UpdateUser(ctx, updateParams)
+		if err != nil {
+			return nil, fmt.Errorf("failed to update user fields: %w", err)
+		}
+	}
+
+	return s.convertUserToDto(&user), nil
 }
 
 // GetUserAdmin retrieves a user by ID (admin function)
@@ -198,26 +223,20 @@ func (s *Service) GetUserAdmin(ctx context.Context, userID string) (*UserAdminRe
 			metric.WithAttributes(attribute.String("operation", "get_user_admin")))
 	}()
 
-	// TODO: Implement actual user retrieval when SQLC queries are available
-	// For now, return a mock response
-	now := time.Now()
+	// Parse user ID
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid user ID: %w", err)
+	}
+	userUUID := pgtype.UUID{Bytes: uid, Valid: true}
 
-	return &UserAdminResponseDto{
-		AvatarColor:          UserAvatarColor_PRIMARY,
-		CreatedAt:            now,
-		DeletedAt:            nil,
-		Email:                "user@example.com",
-		ID:                   userID,
-		IsAdmin:              false,
-		Name:                 "Test User",
-		OauthID:              "",
-		ProfileImagePath:     "",
-		ProfileChangedAt:     nil,
-		QuotaSizeInBytes:     nil,
-		ShouldChangePassword: false,
-		StorageLabel:         nil,
-		UpdatedAt:            now,
-	}, nil
+	// Get user from database
+	user, err := s.db.GetUserByID(ctx, userUUID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user: %w", err)
+	}
+
+	return s.convertUserToDto(&user), nil
 }
 
 // UpdateUserAdmin updates a user (admin function)
@@ -234,43 +253,68 @@ func (s *Service) UpdateUserAdmin(ctx context.Context, userID string, req Update
 			metric.WithAttributes(attribute.String("operation", "update_user_admin")))
 	}()
 
-	// TODO: Implement actual user update when SQLC queries are available
-	// For now, return a mock response
-	now := time.Now()
-
-	response := &UserAdminResponseDto{
-		CreatedAt:            now,
-		DeletedAt:            nil,
-		ID:                   userID,
-		IsAdmin:              req.IsAdmin != nil && *req.IsAdmin,
-		OauthID:              "",
-		ProfileImagePath:     "",
-		ProfileChangedAt:     nil,
-		QuotaSizeInBytes:     req.QuotaSizeInBytes,
-		ShouldChangePassword: req.ShouldChangePassword != nil && *req.ShouldChangePassword,
-		StorageLabel:         req.StorageLabel,
-		UpdatedAt:            now,
+	// Parse user ID
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid user ID: %w", err)
 	}
+	userUUID := pgtype.UUID{Bytes: uid, Valid: true}
 
-	if req.AvatarColor != nil {
-		response.AvatarColor = *req.AvatarColor
-	} else {
-		response.AvatarColor = UserAvatarColor_PRIMARY
-	}
-
-	if req.Email != nil {
-		response.Email = *req.Email
-	} else {
-		response.Email = "user@example.com"
+	// Build update parameters
+	updateParams := sqlc.UpdateUserParams{
+		ID: userUUID,
 	}
 
 	if req.Name != nil {
-		response.Name = *req.Name
-	} else {
-		response.Name = "Test User"
+		updateParams.Name = pgtype.Text{String: *req.Name, Valid: true}
+	}
+	if req.Email != nil {
+		updateParams.Email = pgtype.Text{String: *req.Email, Valid: true}
+	}
+	if req.IsAdmin != nil {
+		updateParams.IsAdmin = pgtype.Bool{Bool: *req.IsAdmin, Valid: true}
+	}
+	if req.AvatarColor != nil {
+		color := pgtype.Text{String: fmt.Sprintf("%d", *req.AvatarColor), Valid: true}
+		updateParams.AvatarColor = color
+	}
+	if req.QuotaSizeInBytes != nil {
+		updateParams.QuotaSizeInBytes = pgtype.Int8{Int64: *req.QuotaSizeInBytes, Valid: true}
+	}
+	if req.ShouldChangePassword != nil {
+		updateParams.ShouldChangePassword = pgtype.Bool{Bool: *req.ShouldChangePassword, Valid: true}
+	}
+	if req.StorageLabel != nil {
+		updateParams.StorageLabel = pgtype.Text{String: *req.StorageLabel, Valid: true}
 	}
 
-	return response, nil
+	// Update user in database
+	user, err := s.db.UpdateUser(ctx, updateParams)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update user: %w", err)
+	}
+
+	// If password change requested, update password separately
+	if req.Password != nil && *req.Password != "" {
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(*req.Password), bcrypt.DefaultCost)
+		if err != nil {
+			return nil, fmt.Errorf("failed to hash password: %w", err)
+		}
+		err = s.db.UpdateUserPassword(ctx, sqlc.UpdateUserPasswordParams{
+			ID:       userUUID,
+			Password: string(hashedPassword),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to update password: %w", err)
+		}
+		// Re-fetch user after password update
+		user, err = s.db.GetUserByID(ctx, userUUID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get updated user: %w", err)
+		}
+	}
+
+	return s.convertUserToDto(&user), nil
 }
 
 // DeleteUserAdmin deletes a user (admin function)
@@ -290,26 +334,47 @@ func (s *Service) DeleteUserAdmin(ctx context.Context, userID string, force bool
 			metric.WithAttributes(attribute.String("operation", "delete_user_admin")))
 	}()
 
-	// TODO: Implement actual user deletion when SQLC queries are available
-	// For now, return a mock response with deletedAt set
-	now := time.Now()
+	// Parse user ID
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid user ID: %w", err)
+	}
+	userUUID := pgtype.UUID{Bytes: uid, Valid: true}
 
-	return &UserAdminResponseDto{
-		AvatarColor:          UserAvatarColor_PRIMARY,
-		CreatedAt:            now,
-		DeletedAt:            &now,
-		Email:                "deleted@example.com",
-		ID:                   userID,
-		IsAdmin:              false,
-		Name:                 "Deleted User",
-		OauthID:              "",
-		ProfileImagePath:     "",
-		ProfileChangedAt:     nil,
-		QuotaSizeInBytes:     nil,
-		ShouldChangePassword: false,
-		StorageLabel:         nil,
-		UpdatedAt:            now,
-	}, nil
+	// Get user before deletion for return
+	user, err := s.db.GetUserByID(ctx, userUUID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user: %w", err)
+	}
+
+	// Delete user sessions first
+	err = s.db.DeleteUserRefreshTokens(ctx, userUUID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to delete user sessions: %w", err)
+	}
+
+	// Perform deletion based on force flag
+	if force {
+		// Hard delete - permanently remove from database
+		err = s.db.HardDeleteUser(ctx, userUUID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to hard delete user: %w", err)
+		}
+	} else {
+		// Soft delete - set deletedAt timestamp
+		err = s.db.SoftDeleteUser(ctx, userUUID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to soft delete user: %w", err)
+		}
+	}
+
+	// Return the user data as it was before deletion
+	dto := s.convertUserToDto(&user)
+	if !force {
+		now := time.Now()
+		dto.DeletedAt = &now
+	}
+	return dto, nil
 }
 
 // RestoreUserAdmin restores a soft-deleted user (admin function)
@@ -326,26 +391,20 @@ func (s *Service) RestoreUserAdmin(ctx context.Context, userID string) (*UserAdm
 			metric.WithAttributes(attribute.String("operation", "restore_user_admin")))
 	}()
 
-	// TODO: Implement actual user restoration when SQLC queries are available
-	// For now, return a mock response with deletedAt cleared
-	now := time.Now()
+	// Parse user ID
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid user ID: %w", err)
+	}
+	userUUID := pgtype.UUID{Bytes: uid, Valid: true}
 
-	return &UserAdminResponseDto{
-		AvatarColor:          UserAvatarColor_PRIMARY,
-		CreatedAt:            now,
-		DeletedAt:            nil,
-		Email:                "restored@example.com",
-		ID:                   userID,
-		IsAdmin:              false,
-		Name:                 "Restored User",
-		OauthID:              "",
-		ProfileImagePath:     "",
-		ProfileChangedAt:     nil,
-		QuotaSizeInBytes:     nil,
-		ShouldChangePassword: false,
-		StorageLabel:         nil,
-		UpdatedAt:            now,
-	}, nil
+	// Restore user in database
+	user, err := s.db.RestoreUser(ctx, userUUID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to restore user: %w", err)
+	}
+
+	return s.convertUserToDto(&user), nil
 }
 
 // GetUserStatisticsAdmin gets user statistics (admin function)
@@ -362,12 +421,50 @@ func (s *Service) GetUserStatisticsAdmin(ctx context.Context, userID string) (*U
 			metric.WithAttributes(attribute.String("operation", "get_user_statistics_admin")))
 	}()
 
-	// TODO: Implement actual statistics retrieval when SQLC queries are available
-	// For now, return mock statistics
+	// Parse user ID
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid user ID: %w", err)
+	}
+	userUUID := pgtype.UUID{Bytes: uid, Valid: true}
+
+	// Count photos (IMAGE type assets)
+	imageType := pgtype.Text{String: "IMAGE", Valid: true}
+	photoCount, err := s.db.CountAssets(ctx, sqlc.CountAssetsParams{
+		OwnerId: userUUID,
+		Type:    imageType,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to count photos: %w", err)
+	}
+
+	// Count videos (VIDEO type assets)
+	videoType := pgtype.Text{String: "VIDEO", Valid: true}
+	videoCount, err := s.db.CountAssets(ctx, sqlc.CountAssetsParams{
+		OwnerId: userUUID,
+		Type:    videoType,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to count videos: %w", err)
+	}
+
+	// Calculate total storage usage by getting all user assets and summing file sizes
+	var totalUsage int64
+	userAssets, err := s.db.GetUserAssets(ctx, userUUID)
+	if err == nil {
+		for _, asset := range userAssets {
+			// Get exif data for file size
+			exif, err := s.db.GetExifByAssetID(ctx, asset.ID)
+			if err == nil && exif.FileSizeInByte.Valid {
+				totalUsage += exif.FileSizeInByte.Int64
+			}
+		}
+	}
+
 	return &UserStatisticsResponseDto{
-		Photos: 0,
-		Usage:  0,
-		Videos: 0,
+		Photos: int32(photoCount),
+		Usage:  totalUsage,
+		Videos: int32(videoCount),
 	}, nil
 }
 
@@ -455,3 +552,53 @@ const (
 	UserAvatarColor_GRAY    UserAvatarColor = 8
 	UserAvatarColor_AMBER   UserAvatarColor = 9
 )
+
+// convertUserToDto converts a database user to a DTO
+func (s *Service) convertUserToDto(user *sqlc.User) *UserAdminResponseDto {
+	dto := &UserAdminResponseDto{
+		ID:                   uuid.UUID(user.ID.Bytes).String(),
+		Email:                user.Email,
+		Name:                 user.Name,
+		IsAdmin:              user.IsAdmin,
+		CreatedAt:            user.CreatedAt.Time,
+		UpdatedAt:            user.UpdatedAt.Time,
+		ShouldChangePassword: user.ShouldChangePassword,
+	}
+
+	// Set avatar color
+	if user.AvatarColor != "" {
+		// Parse avatar color from string
+		var colorValue int
+		if _, err := fmt.Sscanf(user.AvatarColor, "%d", &colorValue); err == nil {
+			dto.AvatarColor = UserAvatarColor(colorValue)
+		}
+	} else {
+		dto.AvatarColor = UserAvatarColor_PRIMARY
+	}
+
+	// Set optional fields
+	if user.ProfileImagePath.Valid {
+		dto.ProfileImagePath = user.ProfileImagePath.String
+	}
+	if user.OauthId.Valid {
+		dto.OauthID = user.OauthId.String
+	}
+	if user.DeletedAt.Valid {
+		delTime := user.DeletedAt.Time
+		dto.DeletedAt = &delTime
+	}
+	if user.ProfileChangedAt.Valid {
+		profTime := user.ProfileChangedAt.Time
+		dto.ProfileChangedAt = &profTime
+	}
+	if user.QuotaSizeInBytes.Valid {
+		quota := user.QuotaSizeInBytes.Int64
+		dto.QuotaSizeInBytes = &quota
+	}
+	if user.StorageLabel.Valid {
+		label := user.StorageLabel.String
+		dto.StorageLabel = &label
+	}
+
+	return dto
+}

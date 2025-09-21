@@ -8,7 +8,6 @@ import (
 	"github.com/denysvitali/immich-go-backend/internal/config"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/denysvitali/immich-go-backend/internal/telemetry"
-	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
@@ -78,24 +77,9 @@ func (s *Service) CreateStack(ctx context.Context, req CreateStackRequest) (*Sta
 			metric.WithAttributes(attribute.String("operation", "create_stack")))
 	}()
 
-	// TODO: Implement actual stack creation when SQLC queries are available
-	// For now, return a mock response
-	stackID := uuid.New()
-	primaryAssetID := ""
-	if len(req.AssetIDs) > 0 {
-		primaryAssetID = req.AssetIDs[0]
-	}
-
-	s.stackCounter.Add(ctx, 1)
-
-	return &StackResponse{
-		ID:             stackID.String(),
-		PrimaryAssetID: primaryAssetID,
-		AssetIDs:       req.AssetIDs,
-		AssetCount:     int32(len(req.AssetIDs)),
-		CreatedAt:      time.Now(),
-		UpdatedAt:      time.Now(),
-	}, nil
+	// Stack creation requires database queries to be implemented
+	// Return error instead of mock data
+	return nil, fmt.Errorf("stack creation not yet implemented - requires SQLC queries")
 }
 
 // GetStack retrieves a stack by ID
@@ -112,16 +96,9 @@ func (s *Service) GetStack(ctx context.Context, stackID string) (*StackResponse,
 			metric.WithAttributes(attribute.String("operation", "get_stack")))
 	}()
 
-	// TODO: Implement actual stack retrieval when SQLC queries are available
-	// For now, return a mock response
-	return &StackResponse{
-		ID:             stackID,
-		PrimaryAssetID: "",
-		AssetIDs:       []string{},
-		AssetCount:     0,
-		CreatedAt:      time.Now(),
-		UpdatedAt:      time.Now(),
-	}, nil
+	// Stack retrieval requires database queries to be implemented
+	// Return error instead of mock data
+	return nil, fmt.Errorf("stack retrieval not yet implemented - requires SQLC queries")
 }
 
 // UpdateStack updates an existing stack
@@ -138,21 +115,9 @@ func (s *Service) UpdateStack(ctx context.Context, stackID string, req UpdateSta
 			metric.WithAttributes(attribute.String("operation", "update_stack")))
 	}()
 
-	// TODO: Implement actual stack update when SQLC queries are available
-	// For now, return a mock response
-	primaryAssetID := ""
-	if req.PrimaryAssetID != nil {
-		primaryAssetID = *req.PrimaryAssetID
-	}
-
-	return &StackResponse{
-		ID:             stackID,
-		PrimaryAssetID: primaryAssetID,
-		AssetIDs:       []string{},
-		AssetCount:     0,
-		CreatedAt:      time.Now(),
-		UpdatedAt:      time.Now(),
-	}, nil
+	// Stack update requires database queries to be implemented
+	// Return error instead of mock data
+	return nil, fmt.Errorf("stack update not yet implemented - requires SQLC queries")
 }
 
 // DeleteStack removes a stack
@@ -169,11 +134,9 @@ func (s *Service) DeleteStack(ctx context.Context, stackID string) error {
 			metric.WithAttributes(attribute.String("operation", "delete_stack")))
 	}()
 
-	// TODO: Implement actual stack deletion when SQLC queries are available
-	// For now, just decrement counter
-	s.stackCounter.Add(ctx, -1)
-
-	return nil
+	// Stack deletion requires database queries to be implemented
+	// Return error instead of mock data
+	return fmt.Errorf("stack deletion not yet implemented - requires SQLC queries")
 }
 
 // DeleteStacks removes multiple stacks
@@ -190,11 +153,9 @@ func (s *Service) DeleteStacks(ctx context.Context, stackIDs []string) error {
 			metric.WithAttributes(attribute.String("operation", "delete_stacks")))
 	}()
 
-	// TODO: Implement actual bulk stack deletion when SQLC queries are available
-	// For now, just decrement counter
-	s.stackCounter.Add(ctx, int64(-len(stackIDs)))
-
-	return nil
+	// Bulk stack deletion requires database queries to be implemented
+	// Return error instead of mock data
+	return fmt.Errorf("bulk stack deletion not yet implemented - requires SQLC queries")
 }
 
 // SearchStacks searches for stacks based on criteria
@@ -210,8 +171,8 @@ func (s *Service) SearchStacks(ctx context.Context, req SearchStacksRequest) (*S
 			metric.WithAttributes(attribute.String("operation", "search_stacks")))
 	}()
 
-	// TODO: Implement actual stack search when SQLC queries are available
-	// For now, return empty response
+	// Stack search requires database queries to be implemented
+	// Return empty results (not mock data)
 	return &SearchStacksResponse{
 		Stacks: []*StackResponse{},
 	}, nil

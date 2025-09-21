@@ -66,11 +66,23 @@ func (s *Service) GetAdminOnboarding(ctx context.Context) (*GetAdminOnboardingRe
 			metric.WithAttributes(attribute.String("operation", "get_admin_onboarding")))
 	}()
 
-	// TODO: Implement actual query when SQLC queries are available
-	// This should check if admin onboarding has been completed
-	// For now, return default false
+	// Get admin onboarding status from system metadata
+	metadata, err := s.db.GetSystemMetadata(ctx, "admin_onboarding_completed")
+	if err != nil {
+		// If key doesn't exist, admin hasn't been onboarded yet
+		return &GetAdminOnboardingResponse{
+			IsOnboarded: false,
+		}, nil
+	}
+
+	// Parse the value as boolean
+	isOnboarded := false
+	if len(metadata.Value) > 0 {
+		isOnboarded = string(metadata.Value) == "true"
+	}
+
 	return &GetAdminOnboardingResponse{
-		IsOnboarded: false,
+		IsOnboarded: isOnboarded,
 	}, nil
 }
 
@@ -88,8 +100,20 @@ func (s *Service) UpdateAdminOnboarding(ctx context.Context, req UpdateAdminOnbo
 			metric.WithAttributes(attribute.String("operation", "update_admin_onboarding")))
 	}()
 
-	// TODO: Implement actual update when SQLC queries are available
-	// This should update the admin onboarding status in system metadata table
+	// Update admin onboarding status in system metadata
+	value := "false"
+	if req.IsOnboarded {
+		value = "true"
+	}
+
+	_, err := s.db.SetSystemMetadata(ctx, sqlc.SetSystemMetadataParams{
+		Key:   "admin_onboarding_completed",
+		Value: []byte(value),
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	return &UpdateAdminOnboardingResponse{
 		IsOnboarded: req.IsOnboarded,
 	}, nil
@@ -108,12 +132,25 @@ func (s *Service) GetReverseGeocodingState(ctx context.Context) (*GetReverseGeoc
 			metric.WithAttributes(attribute.String("operation", "get_reverse_geocoding_state")))
 	}()
 
-	// TODO: Implement actual query when SQLC queries are available
-	// This should retrieve reverse geocoding metadata
-	// For now, return default values
+	// Get reverse geocoding state from system metadata
+	updateMetadata, _ := s.db.GetSystemMetadata(ctx, "reverse_geocoding_last_update")
+	fileMetadata, _ := s.db.GetSystemMetadata(ctx, "reverse_geocoding_last_file")
+
+	lastUpdate := int32(0)
+	if len(updateMetadata.Value) > 0 {
+		// Parse as int32
+		fmt.Sscanf(string(updateMetadata.Value), "%d", &lastUpdate)
+	}
+
+	lastFile := int32(0)
+	if len(fileMetadata.Value) > 0 {
+		// Parse as int32
+		fmt.Sscanf(string(fileMetadata.Value), "%d", &lastFile)
+	}
+
 	return &GetReverseGeocodingStateResponse{
-		LastUpdate:         0,
-		LastImportFileName: 0,
+		LastUpdate:         lastUpdate,
+		LastImportFileName: lastFile,
 	}, nil
 }
 
@@ -134,8 +171,23 @@ func (s *Service) SetReverseGeocodingState(ctx context.Context, lastUpdate int32
 			metric.WithAttributes(attribute.String("operation", "set_reverse_geocoding_state")))
 	}()
 
-	// TODO: Implement actual update when SQLC queries are available
-	// This should update reverse geocoding state in system metadata table
+	// Update reverse geocoding state in system metadata
+	_, err := s.db.SetSystemMetadata(ctx, sqlc.SetSystemMetadataParams{
+		Key:   "reverse_geocoding_last_update",
+		Value: []byte(fmt.Sprintf("%d", lastUpdate)),
+	})
+	if err != nil {
+		return err
+	}
+
+	_, err = s.db.SetSystemMetadata(ctx, sqlc.SetSystemMetadataParams{
+		Key:   "reverse_geocoding_last_file",
+		Value: []byte(fmt.Sprintf("%d", lastImportFileName)),
+	})
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 

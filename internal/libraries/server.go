@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -200,13 +201,22 @@ func (s *Server) ValidateLibrary(ctx context.Context, req *immichv1.ValidateLibr
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid library ID")
 	}
+	libraryUUID := pgtype.UUID{Bytes: libraryID, Valid: true}
 
-	// For now, this is a stub implementation
-	_ = userID
-	_ = libraryID
+	// Get library from database
+	library, err := s.service.db.GetLibrary(ctx, libraryUUID)
+	if err != nil {
+		return nil, status.Errorf(codes.NotFound, "library not found: %v", err)
+	}
 
+	// Verify ownership
+	if library.OwnerId.Bytes != userID {
+		return nil, status.Error(codes.PermissionDenied, "access denied")
+	}
+
+	// Return the import paths from the library
 	return &immichv1.ValidateLibraryResponse{
-		ImportPaths: []string{},
+		ImportPaths: library.ImportPaths,
 	}, nil
 }
 

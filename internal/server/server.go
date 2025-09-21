@@ -28,6 +28,8 @@ import (
 	"github.com/denysvitali/immich-go-backend/internal/jobs"
 	"github.com/denysvitali/immich-go-backend/internal/libraries"
 	mapservice "github.com/denysvitali/immich-go-backend/internal/map"
+	"github.com/denysvitali/immich-go-backend/internal/memories"
+	"github.com/denysvitali/immich-go-backend/internal/notifications"
 	"github.com/denysvitali/immich-go-backend/internal/partners"
 	"github.com/denysvitali/immich-go-backend/internal/people"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
@@ -40,6 +42,7 @@ import (
 	"github.com/denysvitali/immich-go-backend/internal/systemconfig"
 	"github.com/denysvitali/immich-go-backend/internal/systemmetadata"
 	"github.com/denysvitali/immich-go-backend/internal/tags"
+	"github.com/denysvitali/immich-go-backend/internal/timeline"
 	"github.com/denysvitali/immich-go-backend/internal/trash"
 	"github.com/denysvitali/immich-go-backend/internal/users"
 	"github.com/denysvitali/immich-go-backend/internal/view"
@@ -96,6 +99,12 @@ type Server struct {
 	sessionsServer        *sessions.Server
 	syncService           *sync.Service
 	syncServer            *sync.Server
+	memoriesService       *memories.Service
+	memoriesServer        *memories.Server
+	notificationsService  *notifications.Service
+	notificationsServer   *notifications.Server
+	timelineService       *timeline.Service
+	timelineServer        *timeline.Server
 	queries               *sqlc.Queries
 
 	immichv1.UnimplementedAlbumServiceServer
@@ -105,14 +114,14 @@ type Server struct {
 	immichv1.UnimplementedDownloadServiceServer
 	immichv1.UnimplementedJobServiceServer
 	// immichv1.UnimplementedLibrariesServiceServer // TODO: Re-enable when proto is updated
-	immichv1.UnimplementedMemoryServiceServer
-	immichv1.UnimplementedNotificationsServiceServer
+	// immichv1.UnimplementedMemoryServiceServer // Now implemented
+	// immichv1.UnimplementedNotificationsServiceServer // Now implemented
 	immichv1.UnimplementedOAuthServiceServer
 	// immichv1.UnimplementedSearchServiceServer // TODO: Re-enable when proto is updated
 	immichv1.UnimplementedServerServiceServer
 	immichv1.UnimplementedSharedLinksServiceServer
 	immichv1.UnimplementedSystemConfigServiceServer
-	immichv1.UnimplementedTimelineServiceServer
+	// immichv1.UnimplementedTimelineServiceServer // Now implemented
 	immichv1.UnimplementedUsersServiceServer
 	immichv1.UnimplementedTrashServiceServer
 	immichv1.UnimplementedTagsServiceServer
@@ -214,6 +223,18 @@ func NewServer(cfg *config.Config, db *db.Conn) (*Server, error) {
 	syncService := sync.NewService(db.Queries, logger)
 	syncServer := sync.NewServer(syncService)
 
+	// Initialize Memories service
+	memoriesService := memories.NewService(db.Queries)
+	memoriesServer := memories.NewServer(memoriesService)
+
+	// Initialize Notifications service
+	notificationsService := notifications.NewService(db.Queries)
+	notificationsServer := notifications.NewServer(notificationsService)
+
+	// Initialize Timeline service
+	timelineService := timeline.NewService(db.Queries)
+	timelineServer := timeline.NewServer(timelineService)
+
 	// Create server implementations for libraries and search
 	libraryServer := libraries.NewServer(libraryService)
 	searchServer := search.NewServer(searchService)
@@ -278,6 +299,12 @@ func NewServer(cfg *config.Config, db *db.Conn) (*Server, error) {
 		sessionsServer:        sessionsServer,
 		syncService:           syncService,
 		syncServer:            syncServer,
+		memoriesService:       memoriesService,
+		memoriesServer:        memoriesServer,
+		notificationsService:  notificationsService,
+		notificationsServer:   notificationsServer,
+		timelineService:       timelineService,
+		timelineServer:        timelineServer,
 		queries:               db.Queries,
 	}
 	s.grpcServer = grpc.NewServer()
@@ -290,14 +317,14 @@ func NewServer(cfg *config.Config, db *db.Conn) (*Server, error) {
 	immichv1.RegisterDownloadServiceServer(s.grpcServer, s)
 	immichv1.RegisterJobServiceServer(s.grpcServer, s)
 	immichv1.RegisterLibrariesServiceServer(s.grpcServer, s.librariesServer)
-	immichv1.RegisterMemoryServiceServer(s.grpcServer, s)
-	immichv1.RegisterNotificationsServiceServer(s.grpcServer, s)
+	immichv1.RegisterMemoryServiceServer(s.grpcServer, s.memoriesServer)
+	immichv1.RegisterNotificationsServiceServer(s.grpcServer, s.notificationsServer)
 	immichv1.RegisterOAuthServiceServer(s.grpcServer, s)
 	immichv1.RegisterSearchServiceServer(s.grpcServer, s.searchServer)
 	immichv1.RegisterServerServiceServer(s.grpcServer, s)
 	immichv1.RegisterSharedLinksServiceServer(s.grpcServer, s)
 	immichv1.RegisterSystemConfigServiceServer(s.grpcServer, s)
-	immichv1.RegisterTimelineServiceServer(s.grpcServer, s)
+	immichv1.RegisterTimelineServiceServer(s.grpcServer, s.timelineServer)
 	immichv1.RegisterUsersServiceServer(s.grpcServer, s)
 	immichv1.RegisterTrashServiceServer(s.grpcServer, s.trashService)
 	immichv1.RegisterTagsServiceServer(s.grpcServer, s.tagsService)
@@ -400,10 +427,10 @@ func (s *Server) HTTPHandler() http.Handler {
 	if err := immichv1.RegisterAssetServiceHandlerServer(ctx, mux, s); err != nil {
 		logrus.WithError(err).Error("Failed to register AssetService handler")
 	}
-	if err := immichv1.RegisterMemoryServiceHandlerServer(ctx, mux, s); err != nil {
+	if err := immichv1.RegisterMemoryServiceHandlerServer(ctx, mux, s.memoriesServer); err != nil {
 		logrus.WithError(err).Error("Failed to register MemoryService handler")
 	}
-	if err := immichv1.RegisterNotificationsServiceHandlerServer(ctx, mux, s); err != nil {
+	if err := immichv1.RegisterNotificationsServiceHandlerServer(ctx, mux, s.notificationsServer); err != nil {
 		logrus.WithError(err).Error("Failed to register NotificationsService handler")
 	}
 	if err := immichv1.RegisterOAuthServiceHandlerServer(ctx, mux, s); err != nil {
@@ -412,7 +439,7 @@ func (s *Server) HTTPHandler() http.Handler {
 	if err := immichv1.RegisterServerServiceHandlerServer(ctx, mux, s); err != nil {
 		logrus.WithError(err).Error("Failed to register ServerService handler")
 	}
-	if err := immichv1.RegisterTimelineServiceHandlerServer(ctx, mux, s); err != nil {
+	if err := immichv1.RegisterTimelineServiceHandlerServer(ctx, mux, s.timelineServer); err != nil {
 		logrus.WithError(err).Error("Failed to register TimelineService handler")
 	}
 	if err := immichv1.RegisterUsersServiceHandlerServer(ctx, mux, s); err != nil {

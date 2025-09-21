@@ -416,6 +416,19 @@ SET "deletedAt" = now(),
     "updatedAt" = now()
 WHERE id = $1;
 
+-- name: AddAssetsToMemory :exec
+INSERT INTO memories_assets_assets ("memoriesId", "assetsId")
+SELECT $1, unnest($2::uuid[])
+ON CONFLICT ("memoriesId", "assetsId") DO NOTHING;
+
+-- name: RemoveAssetsFromMemory :exec
+DELETE FROM memories_assets_assets
+WHERE "memoriesId" = $1 AND "assetsId" = ANY($2::uuid[]);
+
+-- name: GetMemoryAssets :many
+SELECT "assetsId" FROM memories_assets_assets
+WHERE "memoriesId" = $1;
+
 -- ============================================================================
 -- PEOPLE & FACES QUERIES
 -- ============================================================================
@@ -763,7 +776,7 @@ WHERE id = $1;
 -- ============================================================================
 
 -- name: GetPartners :many
-SELECT u.*, p."sharedById", p."sharedWithId" FROM partners p
+SELECT u.*, p."sharedById", p."sharedWithId", p."inTimeline", p."createdAt" as partnership_created_at, p."updatedAt" as partnership_updated_at FROM partners p
 JOIN users u ON (u.id = p."sharedById" OR u.id = p."sharedWithId")
 WHERE (p."sharedById" = $1 OR p."sharedWithId" = $1) AND u.id != $1;
 
@@ -775,6 +788,13 @@ RETURNING *;
 -- name: DeletePartnership :exec
 DELETE FROM partners
 WHERE ("sharedById" = $1 AND "sharedWithId" = $2) OR ("sharedById" = $2 AND "sharedWithId" = $1);
+
+-- name: UpdatePartnership :one
+UPDATE partners
+SET "inTimeline" = $3,
+    "updatedAt" = now()
+WHERE ("sharedById" = $1 AND "sharedWithId" = $2) OR ("sharedById" = $2 AND "sharedWithId" = $1)
+RETURNING *;
 
 -- ============================================================================
 -- SYSTEM & METADATA QUERIES
@@ -803,6 +823,49 @@ RETURNING *;
 -- name: GetUserPreferences :many
 SELECT * FROM user_metadata
 WHERE "userId" = $1;
+
+-- ============================================================================
+-- NOTIFICATIONS QUERIES
+-- ============================================================================
+
+-- name: GetNotifications :many
+SELECT * FROM notifications
+WHERE "userId" = $1 AND "deletedAt" IS NULL
+ORDER BY "createdAt" DESC
+LIMIT $2 OFFSET $3;
+
+-- name: GetNotification :one
+SELECT * FROM notifications
+WHERE id = $1 AND "deletedAt" IS NULL;
+
+-- name: CreateNotification :one
+INSERT INTO notifications ("userId", level, type, data, title, description)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING *;
+
+-- name: UpdateNotification :one
+UPDATE notifications
+SET "readAt" = $2,
+    "updatedAt" = now()
+WHERE id = $1 AND "deletedAt" IS NULL
+RETURNING *;
+
+-- name: DeleteNotification :exec
+UPDATE notifications
+SET "deletedAt" = now(),
+    "updatedAt" = now()
+WHERE id = $1;
+
+-- name: MarkNotificationAsRead :one
+UPDATE notifications
+SET "readAt" = now(),
+    "updatedAt" = now()
+WHERE id = $1 AND "deletedAt" IS NULL
+RETURNING *;
+
+-- name: CountUnreadNotifications :one
+SELECT COUNT(*) FROM notifications
+WHERE "userId" = $1 AND "readAt" IS NULL AND "deletedAt" IS NULL;
 
 -- ============================================================================
 -- TIMELINE & STATISTICS QUERIES

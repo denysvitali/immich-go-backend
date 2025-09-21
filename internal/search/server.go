@@ -4,12 +4,14 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/denysvitali/immich-go-backend/internal/auth"
+	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 )
 
@@ -68,20 +70,40 @@ func (s *Server) SearchMetadata(ctx context.Context, req *immichv1.SearchMetadat
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	// Convert results to proto - simplified stub implementation
+	// Convert real search results to proto
 	assets := make([]*immichv1.AssetResponseDto, 0)
-	for range result.Items {
+	for _, item := range result.Items {
+		// Get full asset details
+		assetUUID := pgtype.UUID{Bytes: item.ID, Valid: true}
+		asset, err := s.service.db.GetAssetByID(ctx, assetUUID)
+		if err != nil {
+			continue // Skip assets that can't be loaded
+		}
+
+		// Convert asset type
+		var assetType immichv1.AssetType
+		switch asset.Type {
+		case "IMAGE":
+			assetType = immichv1.AssetType_ASSET_TYPE_IMAGE
+		case "VIDEO":
+			assetType = immichv1.AssetType_ASSET_TYPE_VIDEO
+		case "AUDIO":
+			assetType = immichv1.AssetType_ASSET_TYPE_AUDIO
+		default:
+			assetType = immichv1.AssetType_ASSET_TYPE_OTHER
+		}
+
 		assets = append(assets, &immichv1.AssetResponseDto{
-			Id:               uuid.New().String(),
-			DeviceAssetId:    "device-asset-id",
-			DeviceId:         "device-id",
-			Type:             immichv1.AssetType_ASSET_TYPE_IMAGE,
-			OriginalPath:     "/path/to/asset",
-			OriginalFileName: "photo.jpg",
-			IsFavorite:       false,
-			IsArchived:       false,
-			CreatedAt:        timestamppb.Now(),
-			UpdatedAt:        timestamppb.Now(),
+			Id:               item.ID.String(),
+			DeviceAssetId:    asset.DeviceAssetId,
+			DeviceId:         asset.DeviceId,
+			Type:             assetType,
+			OriginalPath:     asset.OriginalPath,
+			OriginalFileName: asset.OriginalFileName,
+			IsFavorite:       asset.IsFavorite,
+			IsArchived:       asset.Visibility == "archive",
+			CreatedAt:        timestamppb.New(asset.CreatedAt.Time),
+			UpdatedAt:        timestamppb.New(asset.UpdatedAt.Time),
 		})
 	}
 
@@ -112,20 +134,40 @@ func (s *Server) SearchSmart(ctx context.Context, req *immichv1.SearchSmartReque
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	// Convert results to proto
+	// Convert real search results to proto
 	assets := make([]*immichv1.AssetResponseDto, 0)
-	for range result.Items {
+	for _, item := range result.Items {
+		// Get full asset details
+		assetUUID := pgtype.UUID{Bytes: item.ID, Valid: true}
+		asset, err := s.service.db.GetAssetByID(ctx, assetUUID)
+		if err != nil {
+			continue // Skip assets that can't be loaded
+		}
+
+		// Convert asset type
+		var assetType immichv1.AssetType
+		switch asset.Type {
+		case "IMAGE":
+			assetType = immichv1.AssetType_ASSET_TYPE_IMAGE
+		case "VIDEO":
+			assetType = immichv1.AssetType_ASSET_TYPE_VIDEO
+		case "AUDIO":
+			assetType = immichv1.AssetType_ASSET_TYPE_AUDIO
+		default:
+			assetType = immichv1.AssetType_ASSET_TYPE_OTHER
+		}
+
 		assets = append(assets, &immichv1.AssetResponseDto{
-			Id:               uuid.New().String(),
-			DeviceAssetId:    "device-asset-id",
-			DeviceId:         "device-id",
-			Type:             immichv1.AssetType_ASSET_TYPE_IMAGE,
-			OriginalPath:     "/path/to/asset",
-			OriginalFileName: "photo.jpg",
-			IsFavorite:       false,
-			IsArchived:       false,
-			CreatedAt:        timestamppb.Now(),
-			UpdatedAt:        timestamppb.Now(),
+			Id:               item.ID.String(),
+			DeviceAssetId:    asset.DeviceAssetId,
+			DeviceId:         asset.DeviceId,
+			Type:             assetType,
+			OriginalPath:     asset.OriginalPath,
+			OriginalFileName: asset.OriginalFileName,
+			IsFavorite:       asset.IsFavorite,
+			IsArchived:       asset.Visibility == "archive",
+			CreatedAt:        timestamppb.New(asset.CreatedAt.Time),
+			UpdatedAt:        timestamppb.New(asset.UpdatedAt.Time),
 		})
 	}
 
@@ -274,18 +316,23 @@ func (s *Server) SearchExplore(ctx context.Context, req *emptypb.Empty) (*immich
 
 	// Convert results to proto
 	items := make([]*immichv1.SearchExploreItemResponseDto, 0)
-	// Stub implementation - would need proper mapping
+	// Convert actual search results from database
 	for _, category := range result.Categories {
+		// Create value items from category data
+		valueItems := make([]*immichv1.SearchExploreItemValueResponseDto, 0)
+
+		// Add a value item for this category
+		// In a real implementation, this would be populated with actual data
+		if len(category.AssetIDs) > 0 {
+			valueItems = append(valueItems, &immichv1.SearchExploreItemValueResponseDto{
+				Value: category.Name,
+				Data:  nil, // Would be populated with actual asset data from DB
+			})
+		}
+
 		items = append(items, &immichv1.SearchExploreItemResponseDto{
 			FieldName: category.Name,
-			Items: []*immichv1.SearchExploreItemValueResponseDto{
-				{
-					Value: "example",
-					Data: &immichv1.AssetResponseDto{
-						Id: uuid.New().String(),
-					},
-				},
-			},
+			Items:     valueItems,
 		})
 	}
 
@@ -301,14 +348,80 @@ func (s *Server) Search(ctx context.Context, req *immichv1.SearchRequest) (*immi
 		return nil, status.Error(codes.Unauthenticated, "unauthorized")
 	}
 
-	// Stub implementation
-	_ = userID
-	_ = req
+	// Search assets
+	var assets []*immichv1.AssetResponseDto
+	if req.GetQuery() != "" {
+		pgUserID := pgtype.UUID{Bytes: userID, Valid: true}
+		searchResults, err := s.service.db.SearchAssets(ctx, sqlc.SearchAssetsParams{
+			OwnerID: pgUserID,
+			Query:   req.GetQuery(),
+			Limit:   50,
+			Offset:  0,
+		})
+		if err == nil {
+			assets = make([]*immichv1.AssetResponseDto, 0, len(searchResults))
+			for _, asset := range searchResults {
+				// Convert asset type
+				var assetType immichv1.AssetType
+				switch asset.Type {
+				case "IMAGE":
+					assetType = immichv1.AssetType_ASSET_TYPE_IMAGE
+				case "VIDEO":
+					assetType = immichv1.AssetType_ASSET_TYPE_VIDEO
+				case "AUDIO":
+					assetType = immichv1.AssetType_ASSET_TYPE_AUDIO
+				default:
+					assetType = immichv1.AssetType_ASSET_TYPE_OTHER
+				}
+
+				assets = append(assets, &immichv1.AssetResponseDto{
+					Id:               uuid.UUID(asset.ID.Bytes).String(),
+					DeviceAssetId:    asset.DeviceAssetId,
+					DeviceId:         asset.DeviceId,
+					Type:             assetType,
+					OriginalPath:     asset.OriginalPath,
+					OriginalFileName: asset.OriginalFileName,
+					IsFavorite:       asset.IsFavorite,
+					IsArchived:       asset.Visibility == "archive",
+					CreatedAt:        timestamppb.New(asset.CreatedAt.Time),
+					UpdatedAt:        timestamppb.New(asset.UpdatedAt.Time),
+				})
+			}
+		}
+	}
+
+	// Search albums
+	var albums []*immichv1.AlbumResponseDto
+	if req.GetQuery() != "" {
+		pgUserID := pgtype.UUID{Bytes: userID, Valid: true}
+		albumResults, err := s.service.db.SearchAlbums(ctx, sqlc.SearchAlbumsParams{
+			OwnerID: pgUserID,
+			Query:   req.GetQuery(),
+			Limit:   50,
+			Offset:  0,
+		})
+		if err == nil {
+			albums = make([]*immichv1.AlbumResponseDto, 0, len(albumResults))
+			for _, album := range albumResults {
+				albums = append(albums, &immichv1.AlbumResponseDto{
+					Id:          uuid.UUID(album.ID.Bytes).String(),
+					AlbumName:   album.AlbumName,
+					Description: stringValue(album.Description),
+					CreatedAt:   timestamppb.New(album.CreatedAt.Time),
+					UpdatedAt:   timestamppb.New(album.UpdatedAt.Time),
+					AssetCount:  0, // Would need a join query to get this
+					Owner: &immichv1.UserResponseDto{
+						Id: uuid.UUID(album.OwnerId.Bytes).String(),
+					},
+				})
+			}
+		}
+	}
 
 	return &immichv1.SearchResponse{
-		Albums: []*immichv1.AlbumResponseDto{},
-		Assets: []*immichv1.AssetResponseDto{},
-		Total:  0,
+		Albums: albums,
+		Assets: assets,
+		Total:  int32(len(albums) + len(assets)),
 	}, nil
 }
 

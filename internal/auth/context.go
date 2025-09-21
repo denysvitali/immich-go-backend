@@ -18,11 +18,19 @@ const (
 )
 
 // GetUserIDFromContext extracts the user ID from the gRPC context
-// This is a placeholder implementation - in production, this would validate the JWT token
 func GetUserIDFromContext(ctx context.Context) (uuid.UUID, error) {
 	// Check if user ID is already in context (set by middleware)
 	if userID, ok := ctx.Value(userIDKey).(uuid.UUID); ok {
 		return userID, nil
+	}
+
+	// Try to get claims from standard context (set by auth middleware)
+	claims, ok := GetClaimsFromStdContext(ctx)
+	if ok && claims != nil {
+		userID, err := uuid.Parse(claims.UserID)
+		if err == nil {
+			return userID, nil
+		}
 	}
 
 	// Try to extract from gRPC metadata
@@ -43,9 +51,8 @@ func GetUserIDFromContext(ctx context.Context) (uuid.UUID, error) {
 		return uuid.UUID{}, status.Error(codes.Unauthenticated, "invalid authorization header format")
 	}
 
-	// For now, return a placeholder user ID
-	// In production, this would validate the JWT and extract the actual user ID
-	return uuid.New(), nil
+	// Return error - authentication is required
+	return uuid.UUID{}, status.Error(codes.Unauthenticated, "authentication required - JWT validation not performed")
 }
 
 // SetUserIDInContext sets the user ID in the context

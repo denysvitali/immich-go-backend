@@ -16,14 +16,23 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/denysvitali/immich-go-backend/internal/auth"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 	"github.com/denysvitali/immich-go-backend/internal/users"
 )
 
 func (s *Server) GetMyUser(ctx context.Context, empty *emptypb.Empty) (*immichv1.UserAdminResponse, error) {
-	// TODO: Get user ID from context/auth
-	userID := uuid.MustParse("00000000-0000-0000-0000-000000000000")
+	// Get user ID from context/auth
+	claims, ok := auth.GetClaimsFromStdContext(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	}
+
+	userID, err := uuid.Parse(claims.UserID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "invalid user ID: %v", err)
+	}
 
 	user, err := s.userService.GetUser(ctx, userID)
 	if err != nil {
@@ -37,8 +46,16 @@ func (s *Server) GetMyUser(ctx context.Context, empty *emptypb.Empty) (*immichv1
 }
 
 func (s *Server) UpdateMyUser(ctx context.Context, request *immichv1.UserUpdateMeRequest) (*immichv1.UserAdminResponse, error) {
-	// TODO: Get user ID from context/auth
-	userID := uuid.MustParse("00000000-0000-0000-0000-000000000000")
+	// Get user ID from context/auth
+	claims, ok := auth.GetClaimsFromStdContext(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	}
+
+	userID, err := uuid.Parse(claims.UserID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "invalid user ID: %v", err)
+	}
 
 	// Build update request
 	updateReq := &users.UpdateUserRequest{}
@@ -134,9 +151,16 @@ func (s *Server) UpdateMyPreferences(ctx context.Context, request *immichv1.User
 }
 
 func (s *Server) CreateProfileImage(ctx context.Context, request *immichv1.CreateProfileImageRequest) (*immichv1.CreateProfileImageResponse, error) {
-	// Get user ID from context (would normally come from auth)
-	// For now, use a placeholder
-	userID := uuid.New()
+	// Get user ID from context
+	claims, ok := auth.GetClaimsFromStdContext(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	}
+
+	userID, err := uuid.Parse(claims.UserID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "invalid user ID: %v", err)
+	}
 	userUUID := pgtype.UUID{Bytes: userID, Valid: true}
 
 	// Validate image data

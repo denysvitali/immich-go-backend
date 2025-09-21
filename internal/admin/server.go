@@ -2,9 +2,13 @@ package admin
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/denysvitali/immich-go-backend/internal/auth"
+	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -303,7 +307,7 @@ func (s *Server) GetUserStatisticsAdmin(ctx context.Context, request *immichv1.G
 	}, nil
 }
 
-// GetUserPreferencesAdmin gets user preferences (admin function) - stub implementation
+// GetUserPreferencesAdmin gets user preferences (admin function)
 func (s *Server) GetUserPreferencesAdmin(ctx context.Context, request *immichv1.GetUserPreferencesAdminRequest) (*immichv1.UserPreferencesResponseDto, error) {
 	// Require admin privileges
 	_, err := auth.RequireAdmin(ctx)
@@ -311,12 +315,30 @@ func (s *Server) GetUserPreferencesAdmin(ctx context.Context, request *immichv1.
 		return nil, status.Error(codes.PermissionDenied, "admin privileges required")
 	}
 
-	// TODO: Implement when user preferences service is integrated
-	// For now, return empty response
-	return &immichv1.UserPreferencesResponseDto{}, nil
+	// Parse user ID
+	userID, err := uuid.Parse(request.GetUserId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid user ID: %v", err)
+	}
+	userUUID := pgtype.UUID{Bytes: userID, Valid: true}
+
+	// Get preferences from database
+	prefsData, err := s.service.db.GetUserPreferencesData(ctx, userUUID)
+	if err != nil {
+		// If no preferences found, return empty preferences
+		return &immichv1.UserPreferencesResponseDto{}, nil
+	}
+
+	// Parse JSON preferences data
+	var prefs immichv1.UserPreferencesResponseDto
+	if err := json.Unmarshal(prefsData, &prefs); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to parse preferences: %v", err)
+	}
+
+	return &prefs, nil
 }
 
-// UpdateUserPreferencesAdmin updates user preferences (admin function) - stub implementation
+// UpdateUserPreferencesAdmin updates user preferences (admin function)
 func (s *Server) UpdateUserPreferencesAdmin(ctx context.Context, request *immichv1.UpdateUserPreferencesAdminRequest) (*immichv1.UserPreferencesResponseDto, error) {
 	// Require admin privileges
 	_, err := auth.RequireAdmin(ctx)
@@ -324,9 +346,35 @@ func (s *Server) UpdateUserPreferencesAdmin(ctx context.Context, request *immich
 		return nil, status.Error(codes.PermissionDenied, "admin privileges required")
 	}
 
-	// TODO: Implement when user preferences service is integrated
-	// For now, return the input preferences
-	return request.GetPreferences(), nil
+	// Parse user ID
+	userID, err := uuid.Parse(request.GetUserId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid user ID: %v", err)
+	}
+	userUUID := pgtype.UUID{Bytes: userID, Valid: true}
+
+	// Serialize preferences to JSON
+	prefsData, err := json.Marshal(request.GetPreferences())
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to serialize preferences: %v", err)
+	}
+
+	// Update preferences in database
+	updatedData, err := s.service.db.UpdateUserPreferencesData(ctx, sqlc.UpdateUserPreferencesDataParams{
+		UserId: userUUID,
+		Value:  prefsData,
+	})
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to update preferences: %v", err)
+	}
+
+	// Parse updated preferences
+	var updatedPrefs immichv1.UserPreferencesResponseDto
+	if err := json.Unmarshal(updatedData, &updatedPrefs); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to parse updated preferences: %v", err)
+	}
+
+	return &updatedPrefs, nil
 }
 
 // Helper function to convert service user to proto user

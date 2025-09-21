@@ -3,12 +3,14 @@ package server
 import (
 	"context"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/denysvitali/immich-go-backend/internal/auth"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 )
@@ -30,11 +32,17 @@ func (s *Server) GetAllAlbums(ctx context.Context, request *immichv1.GetAllAlbum
 }
 
 func (s *Server) CreateAlbum(ctx context.Context, request *immichv1.CreateAlbumRequest) (*immichv1.Album, error) {
-	// TODO: Get user ID from context/auth
-	userID := pgtype.UUID{}
-	if err := userID.Scan("00000000-0000-0000-0000-000000000000"); err != nil {
+	// Get user ID from context/auth
+	claims, ok := auth.GetClaimsFromStdContext(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	}
+
+	uid, err := uuid.Parse(claims.UserID)
+	if err != nil {
 		return nil, status.Errorf(codes.Internal, "invalid user ID: %v", err)
 	}
+	userID := pgtype.UUID{Bytes: uid, Valid: true}
 
 	album, err := s.db.CreateAlbum(ctx, sqlc.CreateAlbumParams{
 		OwnerId:     userID,
@@ -272,11 +280,17 @@ func (s *Server) UpdateAlbumUser(ctx context.Context, request *immichv1.UpdateAl
 }
 
 func (s *Server) GetAlbumStatistics(ctx context.Context, request *immichv1.GetAlbumStatisticsRequest) (*immichv1.AlbumStatisticsResponse, error) {
-	// TODO: Get user ID from context/auth
-	userID := pgtype.UUID{}
-	if err := userID.Scan("00000000-0000-0000-0000-000000000000"); err != nil {
+	// Get user ID from context/auth
+	claims, ok := auth.GetClaimsFromStdContext(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	}
+
+	uid, err := uuid.Parse(claims.UserID)
+	if err != nil {
 		return nil, status.Errorf(codes.Internal, "invalid user ID: %v", err)
 	}
+	userID := pgtype.UUID{Bytes: uid, Valid: true}
 
 	stats, err := s.db.GetAlbumStatistics(ctx, userID)
 	if err != nil {

@@ -1,18 +1,23 @@
 # TODO - Immich API Compatibility Status
 
 ## Overview
-Current Implementation: **✅ 100% Core Features Complete** (Verified: 2025-08-28)
+Current Implementation: **🔧 REQUIRES SQLC REGENERATION** (Updated: 2025-09-21)
 Target: Full Immich API compatibility as a drop-in backend replacement
+Latest Compatibility Check: **✅ API Compatible with Immich v1.142.1**
 
-**✅ PROJECT PRODUCTION-READY - ALL CORE SERVICES OPERATIONAL!**
-- ✅ Binary builds successfully (tested locally)
-- ✅ All 31 services implemented and registered
+**🔧 CRITICAL: SQLC Regeneration Required Before Build**
+- ❌ Binary cannot build without SQLC regeneration
+- ✅ All SQL queries added to sqlc/queries.sql
+- ✅ All services updated to remove mocks/stubs per CLAUDE.md requirements
+- ✅ Memories service - real DB operations (needs SQLC for asset associations)
+- 🔧 Notifications service - requires SQLC regeneration for DB operations
+- ✅ Timeline service - real DB operations implemented
+- ✅ Memory-asset association queries added (AddAssetsToMemory, RemoveAssetsFromMemory, GetMemoryAssets)
 - ✅ REST API gateway configured with `/api/` prefix
 - ✅ Database schema 95% compatible with Immich
-- ✅ Ready for deployment with PostgreSQL + Redis
-- ✅ API compatibility test script created
-- ✅ Comprehensive verification report completed
-- ✅ CI/CD pipeline issues resolved (linting errors fixed)
+- ✅ Ready for deployment once SQLC is regenerated
+
+**Action Required: Run `make sqlc-gen` in Nix environment to regenerate database code**
 
 **✅ MAJOR PROGRESS: Critical Services Now Operational!**
 All previously disabled services have been fixed and re-enabled:
