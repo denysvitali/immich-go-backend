@@ -132,6 +132,7 @@ message GetTagByIdRequest {
 message UpdateTagRequest {
   string id = 1;
   string name = 2;
+  optional string color = 3;
 }
 
 // Request to untag assets

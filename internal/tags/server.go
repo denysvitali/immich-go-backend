@@ -333,7 +333,7 @@ func (s *Server) UpdateTag(ctx context.Context, request *immichv1.UpdateTagReque
 	// Prepare update params
 	params := sqlc.UpdateTagParams{
 		ID:    tagUUID,
-		Value: request.GetName(),
+		Value: pgtype.Text{String: request.GetName(), Valid: true},
 	}
 
 	// Set color if provided
@@ -375,52 +375,45 @@ func (s *Server) UntagAssets(ctx context.Context, request *immichv1.UntagAssetsR
 	// Parse user ID for ownership checks
 	userID, _ := uuid.Parse(claims.UserID)
 
-	success := int32(0)
-	errors := int32(0)
+	count := int32(0)
 
-	// Process each tag
-	for _, tagID := range request.GetTagIds() {
-		// Parse tag ID
-		tagUUID, err := uuid.Parse(tagID)
+	// Parse tag ID
+	tagUUID, err := uuid.Parse(request.GetId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid tag ID")
+	}
+	tagPgUUID := pgtype.UUID{Bytes: tagUUID, Valid: true}
+
+	// Verify tag ownership
+	tag, err := s.queries.GetTag(ctx, tagPgUUID)
+	if err != nil {
+		return nil, status.Error(codes.NotFound, "tag not found")
+	}
+	if tag.UserId.Bytes != userID {
+		return nil, status.Error(codes.PermissionDenied, "tag does not belong to user")
+	}
+
+	// Remove tag from each asset
+	for _, assetID := range request.GetAssetIds() {
+		// Parse asset ID
+		assetUUID, err := uuid.Parse(assetID)
 		if err != nil {
-			errors++
-			continue
+			continue // Skip invalid IDs
 		}
-		tagPgUUID := pgtype.UUID{Bytes: tagUUID, Valid: true}
+		assetPgUUID := pgtype.UUID{Bytes: assetUUID, Valid: true}
 
-		// Verify tag ownership
-		tag, err := s.queries.GetTag(ctx, tagPgUUID)
-		if err != nil || tag.UserId.Bytes != userID {
-			errors++
-			continue
-		}
-
-		// Remove tag from each asset
-		for _, assetID := range request.GetAssetIds() {
-			// Parse asset ID
-			assetUUID, err := uuid.Parse(assetID)
-			if err != nil {
-				errors++
-				continue
-			}
-			assetPgUUID := pgtype.UUID{Bytes: assetUUID, Valid: true}
-
-			// Remove tag from asset
-			err = s.queries.RemoveTagFromAsset(ctx, sqlc.RemoveTagFromAssetParams{
-				TagsId:   tagPgUUID,
-				AssetsId: assetPgUUID,
-			})
-			if err != nil {
-				errors++
-			} else {
-				success++
-			}
+		// Remove tag from asset
+		err = s.queries.RemoveTagFromAsset(ctx, sqlc.RemoveTagFromAssetParams{
+			TagsId:   tagPgUUID,
+			AssetsId: assetPgUUID,
+		})
+		if err == nil {
+			count++
 		}
 	}
 
 	return &immichv1.UntagAssetsResponse{
-		Success: success,
-		Errors:  errors,
+		Count: count,
 	}, nil
 }
 
@@ -434,51 +427,44 @@ func (s *Server) TagAssets(ctx context.Context, request *immichv1.TagAssetsReque
 	// Parse user ID for ownership checks
 	userID, _ := uuid.Parse(claims.UserID)
 
-	success := int32(0)
-	errors := int32(0)
+	count := int32(0)
 
-	// Process each tag
-	for _, tagID := range request.GetTagIds() {
-		// Parse tag ID
-		tagUUID, err := uuid.Parse(tagID)
+	// Parse tag ID
+	tagUUID, err := uuid.Parse(request.GetId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid tag ID")
+	}
+	tagPgUUID := pgtype.UUID{Bytes: tagUUID, Valid: true}
+
+	// Verify tag ownership
+	tag, err := s.queries.GetTag(ctx, tagPgUUID)
+	if err != nil {
+		return nil, status.Error(codes.NotFound, "tag not found")
+	}
+	if tag.UserId.Bytes != userID {
+		return nil, status.Error(codes.PermissionDenied, "tag does not belong to user")
+	}
+
+	// Add tag to each asset
+	for _, assetID := range request.GetAssetIds() {
+		// Parse asset ID
+		assetUUID, err := uuid.Parse(assetID)
 		if err != nil {
-			errors++
-			continue
+			continue // Skip invalid IDs
 		}
-		tagPgUUID := pgtype.UUID{Bytes: tagUUID, Valid: true}
+		assetPgUUID := pgtype.UUID{Bytes: assetUUID, Valid: true}
 
-		// Verify tag ownership
-		tag, err := s.queries.GetTag(ctx, tagPgUUID)
-		if err != nil || tag.UserId.Bytes != userID {
-			errors++
-			continue
-		}
-
-		// Add tag to each asset
-		for _, assetID := range request.GetAssetIds() {
-			// Parse asset ID
-			assetUUID, err := uuid.Parse(assetID)
-			if err != nil {
-				errors++
-				continue
-			}
-			assetPgUUID := pgtype.UUID{Bytes: assetUUID, Valid: true}
-
-			// Add tag to asset
-			err = s.queries.AddTagToAsset(ctx, sqlc.AddTagToAssetParams{
-				TagsId:   tagPgUUID,
-				AssetsId: assetPgUUID,
-			})
-			if err != nil {
-				errors++
-			} else {
-				success++
-			}
+		// Add tag to asset
+		err = s.queries.AddTagToAsset(ctx, sqlc.AddTagToAssetParams{
+			TagsId:   tagPgUUID,
+			AssetsId: assetPgUUID,
+		})
+		if err == nil {
+			count++
 		}
 	}
 
 	return &immichv1.TagAssetsResponse{
-		Success: success,
-		Errors:  errors,
+		Count: count,
 	}, nil
 }

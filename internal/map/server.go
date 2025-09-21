@@ -10,7 +10,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // Server implements the MapService
@@ -147,14 +146,14 @@ func (s *Server) ReverseGeocode(ctx context.Context, request *immichv1.ReverseGe
 			continue
 		}
 
-		if exif.City != nil && *exif.City != "" {
-			cityCount[*exif.City]++
+		if exif.City.Valid && exif.City.String != "" {
+			cityCount[exif.City.String]++
 		}
-		if exif.State != nil && *exif.State != "" {
-			stateCount[*exif.State]++
+		if exif.State.Valid && exif.State.String != "" {
+			stateCount[exif.State.String]++
 		}
-		if exif.Country != nil && *exif.Country != "" {
-			countryCount[*exif.Country]++
+		if exif.Country.Valid && exif.Country.String != "" {
+			countryCount[exif.Country.String]++
 		}
 	}
 

@@ -193,7 +193,7 @@ func (s *Server) CreateProfileImage(ctx context.Context, request *immichv1.Creat
 
 	// Update user record with profile image path
 	now := time.Now()
-	_, err := s.db.UpdateUser(ctx, sqlc.UpdateUserParams{
+	_, err = s.db.UpdateUser(ctx, sqlc.UpdateUserParams{
 		ID:                   userUUID,
 		Email:                pgtype.Text{Valid: false}, // Don't update email
 		Name:                 pgtype.Text{Valid: false}, // Don't update name

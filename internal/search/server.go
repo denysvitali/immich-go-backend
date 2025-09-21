@@ -403,8 +403,8 @@ func (s *Server) Search(ctx context.Context, req *immichv1.SearchRequest) (*immi
 	if req.GetQuery() != "" {
 		pgUserID := pgtype.UUID{Bytes: userID, Valid: true}
 		albumResults, err := s.service.db.SearchAlbums(ctx, sqlc.SearchAlbumsParams{
-			OwnerID: pgUserID,
-			Query:   req.GetQuery(),
+			OwnerId: pgUserID,
+			Column2: pgtype.Text{String: req.GetQuery(), Valid: true},
 			Limit:   50,
 			Offset:  0,
 		})
@@ -414,11 +414,11 @@ func (s *Server) Search(ctx context.Context, req *immichv1.SearchRequest) (*immi
 				albums = append(albums, &immichv1.AlbumResponseDto{
 					Id:          uuid.UUID(album.ID.Bytes).String(),
 					AlbumName:   album.AlbumName,
-					Description: stringValue(album.Description),
+					Description: album.Description,
 					CreatedAt:   timestamppb.New(album.CreatedAt.Time),
 					UpdatedAt:   timestamppb.New(album.UpdatedAt.Time),
 					AssetCount:  0, // Would need a join query to get this
-					Owner: &immichv1.UserResponseDto{
+					Owner: &immichv1.User{
 						Id: uuid.UUID(album.OwnerId.Bytes).String(),
 					},
 				})

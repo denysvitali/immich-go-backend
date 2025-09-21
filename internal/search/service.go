@@ -80,8 +80,8 @@ func (s *Service) SearchMetadata(ctx context.Context, userID uuid.UUID, req Meta
 func (s *Service) SearchPeople(ctx context.Context, userID uuid.UUID, req PeopleSearchRequest) (*PeopleSearchResult, error) {
 	// Search for people
 	people, err := s.db.SearchPeople(ctx, sqlc.SearchPeopleParams{
-		OwnerID: UUIDToPgtype(userID),
-		Query:   req.Query,
+		OwnerId: UUIDToPgtype(userID),
+		Column2: pgtype.Text{String: req.Query, Valid: true},
 		Limit:   int32(req.Size),
 		Offset:  int32(req.Page * req.Size),
 	})
@@ -110,8 +110,8 @@ func (s *Service) SearchPeople(ctx context.Context, userID uuid.UUID, req People
 func (s *Service) SearchPlaces(ctx context.Context, userID uuid.UUID, req PlacesSearchRequest) (*PlacesSearchResult, error) {
 	// Search for places
 	places, err := s.db.SearchPlaces(ctx, sqlc.SearchPlacesParams{
-		OwnerID: UUIDToPgtype(userID),
-		Query:   req.Query,
+		OwnerId: UUIDToPgtype(userID),
+		Column2: pgtype.Text{String: req.Query, Valid: true},
 		Limit:   int32(req.Size),
 		Offset:  int32(req.Page * req.Size),
 	})
@@ -123,14 +123,14 @@ func (s *Service) SearchPlaces(ctx context.Context, userID uuid.UUID, req Places
 	items := make([]*PlaceResult, len(places))
 	for i, place := range places {
 		var city, state, country string
-		if place.City != nil {
-			city = *place.City
+		if place.City.Valid {
+			city = place.City.String
 		}
-		if place.State != nil {
-			state = *place.State
+		if place.State.Valid {
+			state = place.State.String
 		}
-		if place.Country != nil {
-			country = *place.Country
+		if place.Country.Valid {
+			country = place.Country.String
 		}
 		items[i] = &PlaceResult{
 			City:       city,
@@ -149,7 +149,7 @@ func (s *Service) SearchPlaces(ctx context.Context, userID uuid.UUID, req Places
 // SearchCities searches for cities
 func (s *Service) SearchCities(ctx context.Context, userID uuid.UUID, req CitiesSearchRequest) ([]*CityResult, error) {
 	cities, err := s.db.GetDistinctCities(ctx, sqlc.GetDistinctCitiesParams{
-		OwnerID: UUIDToPgtype(userID),
+		OwnerId: UUIDToPgtype(userID),
 		Limit:   int32(req.Size),
 	})
 	if err != nil {
@@ -158,8 +158,12 @@ func (s *Service) SearchCities(ctx context.Context, userID uuid.UUID, req Cities
 
 	results := make([]*CityResult, len(cities))
 	for i, city := range cities {
+		var cityName string
+		if city.Valid {
+			cityName = city.String
+		}
 		results[i] = &CityResult{
-			City:    city,
+			City:    cityName,
 			State:   "", // Not returned by our query
 			Country: "", // Not returned by our query
 		}
@@ -181,7 +185,10 @@ func (s *Service) GetSearchSuggestions(ctx context.Context, userID uuid.UUID, re
 
 	// Get people suggestions
 	if req.IncludePeople {
-		people, err := s.db.GetTopPeople(ctx, UUIDToPgtype(userID), 10)
+		people, err := s.db.GetTopPeople(ctx, sqlc.GetTopPeopleParams{
+			OwnerId: UUIDToPgtype(userID),
+			Limit:   10,
+		})
 		if err == nil {
 			for _, p := range people {
 				suggestions.People = append(suggestions.People, p.Name)

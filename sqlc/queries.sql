@@ -51,6 +51,14 @@ ON CONFLICT DO NOTHING;
 DELETE FROM albums_assets_assets
 WHERE "albumsId" = $1 AND "assetsId" = $2;
 
+-- name: SearchAlbums :many
+SELECT * FROM albums
+WHERE "ownerId" = $1
+  AND ("albumName" ILIKE '%' || $2 || '%'
+       OR description ILIKE '%' || $2 || '%')
+ORDER BY "createdAt" DESC
+LIMIT $3 OFFSET $4;
+
 -- name: GetAlbumSharedUsers :many
 SELECT u.*, asu.role FROM users u
 JOIN albums_shared_users_users asu ON u.id = asu."usersId"
