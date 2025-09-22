@@ -78,12 +78,44 @@ func (s *Service) GetFaces(ctx context.Context, req GetFacesRequest) (*GetFacesR
 			metric.WithAttributes(attribute.String("operation", "get_faces")))
 	}()
 
-	// TODO: Implement actual query when SQLC queries are available
-	// This should retrieve faces, optionally filtered by face ID
-	// For now, return empty response
-	return &GetFacesResponse{
-		Faces: []*FaceResponse{},
-	}, nil
+	// Get faces based on request parameters
+	var faces []sqlc.AssetFace
+	var err error
+
+	if req.AssetID != "" {
+		// Get faces by asset
+		assetID, err := uuid.Parse(req.AssetID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid asset ID: %w", err)
+		}
+		faces, err = s.db.GetFacesByAsset(ctx, pgtype.UUID{Bytes: assetID, Valid: true})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get faces for asset: %w", err)
+		}
+	} else if req.PersonID != "" {
+		// Get faces by person
+		personID, err := uuid.Parse(req.PersonID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid person ID: %w", err)
+		}
+		faces, err = s.db.GetFacesByPerson(ctx, pgtype.UUID{Bytes: personID, Valid: true})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get faces for person: %w", err)
+		}
+	} else {
+		// Return empty if no filter specified
+		faces = []sqlc.AssetFace{}
+	}
+
+	// Convert to response format
+	response := &GetFacesResponse{
+		Faces: make([]*FaceResponse, len(faces)),
+	}
+	for i, face := range faces {
+		response.Faces[i] = s.convertToFaceResponse(face)
+	}
+
+	return response, nil
 }
 
 // CreateFace creates a new face detection record
@@ -254,4 +286,42 @@ type BoundingBox struct {
 	Y1 int32
 	X2 int32
 	Y2 int32
+}
+
+// Helper function to convert database face to response format
+func (s *Service) convertToFaceResponse(face sqlc.AssetFace) *FaceResponse {
+	resp := &FaceResponse{
+		ID:      uuidToString(face.ID),
+		AssetID: uuidToString(face.AssetId),
+		BoundingBox: BoundingBox{
+			X1: face.BoundingBoxX1,
+			Y1: face.BoundingBoxY1,
+			X2: face.BoundingBoxX2,
+			Y2: face.BoundingBoxY2,
+		},
+	}
+
+	// Add person ID if present
+	if face.PersonId.Valid {
+		resp.PersonID = uuidToString(face.PersonId)
+	}
+
+	// Add image dimensions
+	if face.ImageWidth > 0 {
+		width := fmt.Sprintf("%d", face.ImageWidth)
+		resp.ImageWidth = &width
+	}
+	if face.ImageHeight > 0 {
+		height := fmt.Sprintf("%d", face.ImageHeight)
+		resp.ImageHeight = &height
+	}
+
+	return resp
+}
+
+func uuidToString(id pgtype.UUID) string {
+	if !id.Valid {
+		return ""
+	}
+	return uuid.UUID(id.Bytes).String()
 }

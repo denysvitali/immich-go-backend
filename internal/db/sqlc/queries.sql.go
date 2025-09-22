@@ -623,6 +623,58 @@ func (q *Queries) CreateExif(ctx context.Context, arg CreateExifParams) (Exif, e
 	return i, err
 }
 
+const createFace = `-- name: CreateFace :one
+
+INSERT INTO asset_faces (
+    id, "assetId", "personId",
+    "boundingBoxX1", "boundingBoxY1",
+    "boundingBoxX2", "boundingBoxY2",
+    "imageWidth", "imageHeight"
+) VALUES (
+    gen_uuid_v7(), $1, $2, $3, $4, $5, $6, $7, $8
+) RETURNING "assetId", "personId", "imageWidth", "imageHeight", "boundingBoxX1", "boundingBoxY1", "boundingBoxX2", "boundingBoxY2", id, "sourceType", "deletedAt"
+`
+
+type CreateFaceParams struct {
+	AssetId       pgtype.UUID
+	PersonId      pgtype.UUID
+	BoundingBoxX1 int32
+	BoundingBoxY1 int32
+	BoundingBoxX2 int32
+	BoundingBoxY2 int32
+	ImageWidth    int32
+	ImageHeight   int32
+}
+
+// ================== FACE RECOGNITION QUERIES ==================
+func (q *Queries) CreateFace(ctx context.Context, arg CreateFaceParams) (AssetFace, error) {
+	row := q.db.QueryRow(ctx, createFace,
+		arg.AssetId,
+		arg.PersonId,
+		arg.BoundingBoxX1,
+		arg.BoundingBoxY1,
+		arg.BoundingBoxX2,
+		arg.BoundingBoxY2,
+		arg.ImageWidth,
+		arg.ImageHeight,
+	)
+	var i AssetFace
+	err := row.Scan(
+		&i.AssetId,
+		&i.PersonId,
+		&i.ImageWidth,
+		&i.ImageHeight,
+		&i.BoundingBoxX1,
+		&i.BoundingBoxY1,
+		&i.BoundingBoxX2,
+		&i.BoundingBoxY2,
+		&i.ID,
+		&i.SourceType,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
 const createFaceSearch = `-- name: CreateFaceSearch :one
 INSERT INTO face_search ("faceId", embedding)
 VALUES ($1, $2)
@@ -1201,6 +1253,17 @@ WHERE "expiresAt" IS NOT NULL AND "expiresAt" <= now()
 
 func (q *Queries) DeleteExpiredRefreshTokens(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, deleteExpiredRefreshTokens)
+	return err
+}
+
+const deleteFace = `-- name: DeleteFace :exec
+UPDATE asset_faces
+SET "deletedAt" = NOW()
+WHERE id = $1
+`
+
+func (q *Queries) DeleteFace(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteFace, id)
 	return err
 }
 
@@ -1903,6 +1966,72 @@ func (q *Queries) GetAssetByIDAndUser(ctx context.Context, arg GetAssetByIDAndUs
 	return i, err
 }
 
+const getAssetByPath = `-- name: GetAssetByPath :one
+
+
+
+
+
+
+SELECT id, "deviceAssetId", "ownerId", "deviceId", type, "originalPath", "fileCreatedAt", "fileModifiedAt", "isFavorite", duration, "encodedVideoPath", checksum, "livePhotoVideoId", "updatedAt", "createdAt", "originalFileName", "sidecarPath", thumbhash, "isOffline", "libraryId", "isExternal", "deletedAt", "localDateTime", "stackId", "duplicateId", status, "updateId", visibility FROM assets
+WHERE "originalPath" = $1
+AND "deletedAt" IS NULL
+LIMIT 1
+`
+
+// ================== SYSTEM CONFIGURATION ==================
+// Note: system_config table doesn't exist in current schema
+// These queries are commented until the table is added
+// -- name: GetAllSystemConfig :many
+// SELECT key, value FROM system_config
+// ORDER BY key;
+// -- name: GetSystemConfig :one
+// SELECT value FROM system_config
+// WHERE key = $1;
+// -- name: UpsertSystemConfig :exec
+// INSERT INTO system_config (key, value)
+// VALUES ($1, $2)
+// ON CONFLICT (key) DO UPDATE
+// SET value = $2, "updatedAt" = NOW();
+// -- name: DeleteSystemConfig :exec
+// DELETE FROM system_config WHERE key = $1;
+// ================== ADDITIONAL ASSET PATH QUERIES ==================
+func (q *Queries) GetAssetByPath(ctx context.Context, originalpath string) (Asset, error) {
+	row := q.db.QueryRow(ctx, getAssetByPath, originalpath)
+	var i Asset
+	err := row.Scan(
+		&i.ID,
+		&i.DeviceAssetId,
+		&i.OwnerId,
+		&i.DeviceId,
+		&i.Type,
+		&i.OriginalPath,
+		&i.FileCreatedAt,
+		&i.FileModifiedAt,
+		&i.IsFavorite,
+		&i.Duration,
+		&i.EncodedVideoPath,
+		&i.Checksum,
+		&i.LivePhotoVideoId,
+		&i.UpdatedAt,
+		&i.CreatedAt,
+		&i.OriginalFileName,
+		&i.SidecarPath,
+		&i.Thumbhash,
+		&i.IsOffline,
+		&i.LibraryId,
+		&i.IsExternal,
+		&i.DeletedAt,
+		&i.LocalDateTime,
+		&i.StackId,
+		&i.DuplicateId,
+		&i.Status,
+		&i.UpdateId,
+		&i.Visibility,
+	)
+	return i, err
+}
+
 const getAssetExif = `-- name: GetAssetExif :one
 SELECT "assetId", make, model, "exifImageWidth", "exifImageHeight", "fileSizeInByte", orientation, "dateTimeOriginal", "modifyDate", "lensModel", "fNumber", "focalLength", iso, latitude, longitude, city, state, country, description, fps, "exposureTime", "livePhotoCID", "timeZone", "projectionType", "profileDescription", colorspace, "bitsPerSample", "autoStackId", rating, "updatedAt", "updateId" FROM exif
 WHERE "assetId" = $1
@@ -2217,6 +2346,19 @@ func (q *Queries) GetAssetTags(ctx context.Context, assetsid pgtype.UUID) ([]Tag
 		return nil, err
 	}
 	return items, nil
+}
+
+const getAssetViewCount = `-- name: GetAssetViewCount :one
+SELECT COUNT(DISTINCT user_id) as view_count
+FROM asset_views
+WHERE asset_id = $1
+`
+
+func (q *Queries) GetAssetViewCount(ctx context.Context, assetID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, getAssetViewCount, assetID)
+	var view_count int64
+	err := row.Scan(&view_count)
+	return view_count, err
 }
 
 const getAssets = `-- name: GetAssets :many
@@ -2971,6 +3113,82 @@ func (q *Queries) GetFaceSearch(ctx context.Context, faceid pgtype.UUID) ([]Face
 	for rows.Next() {
 		var i FaceSearch
 		if err := rows.Scan(&i.FaceId, &i.Embedding); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getFacesByAsset = `-- name: GetFacesByAsset :many
+SELECT "assetId", "personId", "imageWidth", "imageHeight", "boundingBoxX1", "boundingBoxY1", "boundingBoxX2", "boundingBoxY2", id, "sourceType", "deletedAt" FROM asset_faces
+WHERE "assetId" = $1
+AND "deletedAt" IS NULL
+`
+
+func (q *Queries) GetFacesByAsset(ctx context.Context, assetid pgtype.UUID) ([]AssetFace, error) {
+	rows, err := q.db.Query(ctx, getFacesByAsset, assetid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AssetFace
+	for rows.Next() {
+		var i AssetFace
+		if err := rows.Scan(
+			&i.AssetId,
+			&i.PersonId,
+			&i.ImageWidth,
+			&i.ImageHeight,
+			&i.BoundingBoxX1,
+			&i.BoundingBoxY1,
+			&i.BoundingBoxX2,
+			&i.BoundingBoxY2,
+			&i.ID,
+			&i.SourceType,
+			&i.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getFacesByPerson = `-- name: GetFacesByPerson :many
+SELECT "assetId", "personId", "imageWidth", "imageHeight", "boundingBoxX1", "boundingBoxY1", "boundingBoxX2", "boundingBoxY2", id, "sourceType", "deletedAt" FROM asset_faces
+WHERE "personId" = $1
+AND "deletedAt" IS NULL
+`
+
+func (q *Queries) GetFacesByPerson(ctx context.Context, personid pgtype.UUID) ([]AssetFace, error) {
+	rows, err := q.db.Query(ctx, getFacesByPerson, personid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AssetFace
+	for rows.Next() {
+		var i AssetFace
+		if err := rows.Scan(
+			&i.AssetId,
+			&i.PersonId,
+			&i.ImageWidth,
+			&i.ImageHeight,
+			&i.BoundingBoxX1,
+			&i.BoundingBoxY1,
+			&i.BoundingBoxX2,
+			&i.BoundingBoxY2,
+			&i.ID,
+			&i.SourceType,
+			&i.DeletedAt,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -4253,6 +4471,55 @@ func (q *Queries) GetTopPeople(ctx context.Context, arg GetTopPeopleParams) ([]G
 	return items, nil
 }
 
+const getTopPlaces = `-- name: GetTopPlaces :many
+
+SELECT
+    e.city,
+    e.state,
+    e.country,
+    COUNT(*) as asset_count
+FROM exif e
+INNER JOIN assets a ON e."assetId" = a.id
+WHERE a."deletedAt" IS NULL
+AND e.city IS NOT NULL
+GROUP BY e.city, e.state, e.country
+ORDER BY asset_count DESC
+LIMIT $1
+`
+
+type GetTopPlacesRow struct {
+	City       pgtype.Text
+	State      pgtype.Text
+	Country    pgtype.Text
+	AssetCount int64
+}
+
+// ================== LOCATION/PLACE QUERIES ==================
+func (q *Queries) GetTopPlaces(ctx context.Context, limit int32) ([]GetTopPlacesRow, error) {
+	rows, err := q.db.Query(ctx, getTopPlaces, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetTopPlacesRow
+	for rows.Next() {
+		var i GetTopPlacesRow
+		if err := rows.Scan(
+			&i.City,
+			&i.State,
+			&i.Country,
+			&i.AssetCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getTrashedAssets = `-- name: GetTrashedAssets :many
 SELECT id, "deviceAssetId", "ownerId", "deviceId", type, "originalPath", "fileCreatedAt", "fileModifiedAt", "isFavorite", duration, "encodedVideoPath", checksum, "livePhotoVideoId", "updatedAt", "createdAt", "originalFileName", "sidecarPath", thumbhash, "isOffline", "libraryId", "isExternal", "deletedAt", "localDateTime", "stackId", "duplicateId", status, "updateId", visibility FROM assets
 WHERE "ownerId" = $1 
@@ -4600,6 +4867,46 @@ func (q *Queries) GetUserPreferencesData(ctx context.Context, userid pgtype.UUID
 	return value, err
 }
 
+const getUserRecentViews = `-- name: GetUserRecentViews :many
+SELECT DISTINCT ON (asset_id)
+    asset_id,
+    viewed_at
+FROM asset_views
+WHERE user_id = $1
+ORDER BY asset_id, viewed_at DESC
+LIMIT $2
+`
+
+type GetUserRecentViewsParams struct {
+	UserID pgtype.UUID
+	Limit  int32
+}
+
+type GetUserRecentViewsRow struct {
+	AssetID  pgtype.UUID
+	ViewedAt pgtype.Timestamptz
+}
+
+func (q *Queries) GetUserRecentViews(ctx context.Context, arg GetUserRecentViewsParams) ([]GetUserRecentViewsRow, error) {
+	rows, err := q.db.Query(ctx, getUserRecentViews, arg.UserID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetUserRecentViewsRow
+	for rows.Next() {
+		var i GetUserRecentViewsRow
+		if err := rows.Scan(&i.AssetID, &i.ViewedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getUsers = `-- name: GetUsers :many
 SELECT id, email, password, "createdAt", "profileImagePath", "isAdmin", "shouldChangePassword", "deletedAt", "oauthId", "updatedAt", "storageLabel", name, "quotaSizeInBytes", "quotaUsageInBytes", status, "profileChangedAt", "updateId", "avatarColor", "pinCode" FROM users
 WHERE "deletedAt" IS NULL
@@ -4777,6 +5084,25 @@ type PermanentlyDeleteAssetsParams struct {
 
 func (q *Queries) PermanentlyDeleteAssets(ctx context.Context, arg PermanentlyDeleteAssetsParams) error {
 	_, err := q.db.Exec(ctx, permanentlyDeleteAssets, arg.Column1, arg.OwnerId)
+	return err
+}
+
+const recordAssetView = `-- name: RecordAssetView :exec
+
+INSERT INTO asset_views (asset_id, user_id, viewed_at)
+VALUES ($1, $2, NOW())
+ON CONFLICT (asset_id, user_id) DO UPDATE
+SET viewed_at = NOW()
+`
+
+type RecordAssetViewParams struct {
+	AssetID pgtype.UUID
+	UserID  pgtype.UUID
+}
+
+// ================== VIEW TRACKING QUERIES ==================
+func (q *Queries) RecordAssetView(ctx context.Context, arg RecordAssetViewParams) error {
+	_, err := q.db.Exec(ctx, recordAssetView, arg.AssetID, arg.UserID)
 	return err
 }
 
@@ -5574,6 +5900,35 @@ func (q *Queries) UpdateAssetFace(ctx context.Context, arg UpdateAssetFaceParams
 		&i.DeletedAt,
 	)
 	return i, err
+}
+
+const updateAssetFileInfo = `-- name: UpdateAssetFileInfo :exec
+
+UPDATE exif
+SET
+    "fileSizeInByte" = $2,
+    "exifImageWidth" = $3,
+    "exifImageHeight" = $4,
+    "updatedAt" = NOW()
+WHERE "assetId" = $1
+`
+
+type UpdateAssetFileInfoParams struct {
+	AssetId         pgtype.UUID
+	FileSizeInByte  pgtype.Int8
+	ExifImageWidth  pgtype.Int4
+	ExifImageHeight pgtype.Int4
+}
+
+// ================== ASSET FILE SIZE/DIMENSIONS ==================
+func (q *Queries) UpdateAssetFileInfo(ctx context.Context, arg UpdateAssetFileInfoParams) error {
+	_, err := q.db.Exec(ctx, updateAssetFileInfo,
+		arg.AssetId,
+		arg.FileSizeInByte,
+		arg.ExifImageWidth,
+		arg.ExifImageHeight,
+	)
+	return err
 }
 
 const updateAssetJobStatus = `-- name: UpdateAssetJobStatus :one

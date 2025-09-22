@@ -982,8 +982,59 @@ func (s *Service) convertToAssetInfo(asset sqlc.Asset, thumbnails []AssetThumbna
 		info.Metadata.ModifiedAt = timestamptzToTime(asset.FileModifiedAt)
 	}
 
-	// TODO: Get EXIF data from separate exif table
-	// For now, we'll leave width, height, make, model empty
+	// Get EXIF data from separate exif table
+	exif, err := s.db.GetExifByAssetId(context.Background(), asset.ID)
+	if err == nil {
+		// Update metadata with EXIF data
+		if exif.FileSizeInByte.Valid {
+			info.Metadata.Size = exif.FileSizeInByte.Int64
+		}
+		if exif.ExifImageWidth.Valid {
+			width := int32(exif.ExifImageWidth.Int32)
+			info.Metadata.Width = &width
+		}
+		if exif.ExifImageHeight.Valid {
+			height := int32(exif.ExifImageHeight.Int32)
+			info.Metadata.Height = &height
+		}
+		if exif.Make.Valid {
+			info.Metadata.Make = &exif.Make.String
+		}
+		if exif.Model.Valid {
+			info.Metadata.Model = &exif.Model.String
+		}
+		if exif.LensModel.Valid {
+			info.Metadata.LensModel = &exif.LensModel.String
+		}
+		if exif.FNumber.Valid {
+			info.Metadata.FNumber = &exif.FNumber.Float64
+		}
+		if exif.FocalLength.Valid {
+			info.Metadata.FocalLength = &exif.FocalLength.Float64
+		}
+		if exif.Iso.Valid {
+			iso := int32(exif.Iso.Int32)
+			info.Metadata.ISO = &iso
+		}
+		if exif.ExposureTime.Valid {
+			info.Metadata.ExposureTime = &exif.ExposureTime.String
+		}
+		if exif.Latitude.Valid {
+			info.Metadata.Latitude = &exif.Latitude.Float64
+		}
+		if exif.Longitude.Valid {
+			info.Metadata.Longitude = &exif.Longitude.Float64
+		}
+		if exif.City.Valid {
+			info.Metadata.City = &exif.City.String
+		}
+		if exif.State.Valid {
+			info.Metadata.State = &exif.State.String
+		}
+		if exif.Country.Valid {
+			info.Metadata.Country = &exif.Country.String
+		}
+	}
 
 	// Add thumbnails
 	info.Thumbnails = make([]ThumbnailInfo, len(thumbnails))

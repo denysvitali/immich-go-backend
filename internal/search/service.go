@@ -197,20 +197,16 @@ func (s *Service) GetSearchSuggestions(ctx context.Context, userID uuid.UUID, re
 	}
 
 	// Get place suggestions
-	// TODO: Implement GetTopPlaces query
-	// if req.IncludePlaces {
-	// 	places, err := s.db.GetTopPlaces(ctx, sqlc.GetTopPlacesParams{
-	// 		UserID: userID,
-	// 		Limit:  10,
-	// 	})
-	// 	if err == nil {
-	// 		for _, p := range places {
-	// 			if p.City != "" {
-	// 				suggestions.Places = append(suggestions.Places, p.City)
-	// 			}
-	// 		}
-	// 	}
-	// }
+	if req.IncludePlaces {
+		places, err := s.db.GetTopPlaces(ctx, int32(10))
+		if err == nil {
+			for _, p := range places {
+				if p.City.Valid && p.City.String != "" {
+					suggestions.Places = append(suggestions.Places, p.City.String)
+				}
+			}
+		}
+	}
 
 	// Get camera make/model suggestions
 	// TODO: Implement GetDistinctCameras query

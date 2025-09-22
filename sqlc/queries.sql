@@ -1175,3 +1175,87 @@ WHERE "libraryId" = $1
 
 -- -- name: DeleteSystemConfig :exec
 -- DELETE FROM system_config WHERE key = $1;
+
+-- ================== ADDITIONAL ASSET PATH QUERIES ==================
+
+-- name: GetAssetByPath :one
+SELECT * FROM assets
+WHERE "originalPath" = $1
+AND "deletedAt" IS NULL
+LIMIT 1;
+
+-- ================== VIEW TRACKING QUERIES ==================
+
+-- name: RecordAssetView :exec
+INSERT INTO asset_views (asset_id, user_id, viewed_at)
+VALUES ($1, $2, NOW())
+ON CONFLICT (asset_id, user_id) DO UPDATE
+SET viewed_at = NOW();
+
+-- name: GetAssetViewCount :one
+SELECT COUNT(DISTINCT user_id) as view_count
+FROM asset_views
+WHERE asset_id = $1;
+
+-- name: GetUserRecentViews :many
+SELECT DISTINCT ON (asset_id)
+    asset_id,
+    viewed_at
+FROM asset_views
+WHERE user_id = $1
+ORDER BY asset_id, viewed_at DESC
+LIMIT $2;
+
+-- ================== LOCATION/PLACE QUERIES ==================
+
+-- name: GetTopPlaces :many
+SELECT
+    e.city,
+    e.state,
+    e.country,
+    COUNT(*) as asset_count
+FROM exif e
+INNER JOIN assets a ON e."assetId" = a.id
+WHERE a."deletedAt" IS NULL
+AND e.city IS NOT NULL
+GROUP BY e.city, e.state, e.country
+ORDER BY asset_count DESC
+LIMIT $1;
+
+-- ================== FACE RECOGNITION QUERIES ==================
+
+-- name: CreateFace :one
+INSERT INTO asset_faces (
+    id, "assetId", "personId",
+    "boundingBoxX1", "boundingBoxY1",
+    "boundingBoxX2", "boundingBoxY2",
+    "imageWidth", "imageHeight"
+) VALUES (
+    gen_uuid_v7(), $1, $2, $3, $4, $5, $6, $7, $8
+) RETURNING *;
+
+-- name: GetFacesByAsset :many
+SELECT * FROM asset_faces
+WHERE "assetId" = $1
+AND "deletedAt" IS NULL;
+
+-- name: GetFacesByPerson :many
+SELECT * FROM asset_faces
+WHERE "personId" = $1
+AND "deletedAt" IS NULL;
+
+-- name: DeleteFace :exec
+UPDATE asset_faces
+SET "deletedAt" = NOW()
+WHERE id = $1;
+
+-- ================== ASSET FILE SIZE/DIMENSIONS ==================
+
+-- name: UpdateAssetFileInfo :exec
+UPDATE exif
+SET
+    "fileSizeInByte" = $2,
+    "exifImageWidth" = $3,
+    "exifImageHeight" = $4,
+    "updatedAt" = NOW()
+WHERE "assetId" = $1;

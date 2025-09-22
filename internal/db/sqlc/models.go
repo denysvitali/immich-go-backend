@@ -277,6 +277,12 @@ type AssetStack struct {
 	OwnerId        pgtype.UUID
 }
 
+type AssetView struct {
+	AssetID  pgtype.UUID
+	UserID   pgtype.UUID
+	ViewedAt pgtype.Timestamptz
+}
+
 type AssetsAudit struct {
 	ID        pgtype.UUID
 	AssetId   pgtype.UUID

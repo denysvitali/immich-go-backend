@@ -2514,3 +2514,20 @@ ALTER TABLE ONLY public.face_search
 
 ALTER TABLE ONLY public.smart_search
     ADD CONSTRAINT "smart_search_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES public.assets(id) ON DELETE CASCADE;
+
+--
+-- Name: asset_views; Type: TABLE; Schema: public; Owner: immich
+--
+
+CREATE TABLE public.asset_views (
+    asset_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    viewed_at timestamp with time zone DEFAULT now() NOT NULL,
+    PRIMARY KEY (asset_id, user_id),
+    CONSTRAINT "asset_views_asset_id_fkey" FOREIGN KEY (asset_id) REFERENCES public.assets(id) ON DELETE CASCADE,
+    CONSTRAINT "asset_views_user_id_fkey" FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_asset_views_asset_id ON public.asset_views USING btree (asset_id);
+CREATE INDEX idx_asset_views_user_id ON public.asset_views USING btree (user_id);
+CREATE INDEX idx_asset_views_viewed_at ON public.asset_views USING btree (viewed_at DESC);
