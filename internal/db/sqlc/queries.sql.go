@@ -228,6 +228,18 @@ func (q *Queries) CountUnreadNotifications(ctx context.Context, userid pgtype.UU
 	return count, err
 }
 
+const countUserSessions = `-- name: CountUserSessions :one
+SELECT COUNT(*) FROM sessions
+WHERE "userId" = $1
+`
+
+func (q *Queries) CountUserSessions(ctx context.Context, userid pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countUserSessions, userid)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countUsers = `-- name: CountUsers :one
 SELECT COUNT(*) FROM users
 WHERE "deletedAt" IS NULL
@@ -1001,6 +1013,50 @@ func (q *Queries) CreateRefreshToken(ctx context.Context, arg CreateRefreshToken
 	return err
 }
 
+const createSession = `-- name: CreateSession :one
+
+INSERT INTO sessions (
+    id, token, "userId", "deviceType", "deviceOS",
+    "expiresAt", "createdAt", "updatedAt"
+) VALUES (
+    gen_uuid_v7(), $1, $2, $3, $4, $5, NOW(), NOW()
+) RETURNING id, token, "createdAt", "updatedAt", "userId", "deviceType", "deviceOS", "updateId", "pinExpiresAt", "expiresAt", "parentId"
+`
+
+type CreateSessionParams struct {
+	Token      string
+	UserId     pgtype.UUID
+	DeviceType string
+	DeviceOS   string
+	ExpiresAt  pgtype.Timestamptz
+}
+
+// ================== SESSION MANAGEMENT ==================
+func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error) {
+	row := q.db.QueryRow(ctx, createSession,
+		arg.Token,
+		arg.UserId,
+		arg.DeviceType,
+		arg.DeviceOS,
+		arg.ExpiresAt,
+	)
+	var i Session
+	err := row.Scan(
+		&i.ID,
+		&i.Token,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.UserId,
+		&i.DeviceType,
+		&i.DeviceOS,
+		&i.UpdateId,
+		&i.PinExpiresAt,
+		&i.ExpiresAt,
+		&i.ParentId,
+	)
+	return i, err
+}
+
 const createSharedLink = `-- name: CreateSharedLink :one
 INSERT INTO shared_links ("userId", key, type, "albumId", "expiresAt", "allowUpload", "allowDownload", description, password, "showExif")
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
@@ -1256,6 +1312,16 @@ func (q *Queries) DeleteExpiredRefreshTokens(ctx context.Context) error {
 	return err
 }
 
+const deleteExpiredSessions = `-- name: DeleteExpiredSessions :exec
+DELETE FROM sessions
+WHERE "expiresAt" < NOW()
+`
+
+func (q *Queries) DeleteExpiredSessions(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, deleteExpiredSessions)
+	return err
+}
+
 const deleteFace = `-- name: DeleteFace :exec
 UPDATE asset_faces
 SET "deletedAt" = NOW()
@@ -1338,6 +1404,16 @@ func (q *Queries) DeleteRefreshToken(ctx context.Context, token string) error {
 	return err
 }
 
+const deleteSession = `-- name: DeleteSession :exec
+DELETE FROM sessions
+WHERE id = $1
+`
+
+func (q *Queries) DeleteSession(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteSession, id)
+	return err
+}
+
 const deleteSharedLink = `-- name: DeleteSharedLink :exec
 DELETE FROM shared_links
 WHERE id = $1
@@ -1377,6 +1453,16 @@ WHERE "userId" = $1
 
 func (q *Queries) DeleteUserRefreshTokens(ctx context.Context, userid pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deleteUserRefreshTokens, userid)
+	return err
+}
+
+const deleteUserSessions = `-- name: DeleteUserSessions :exec
+DELETE FROM sessions
+WHERE "userId" = $1
+`
+
+func (q *Queries) DeleteUserSessions(ctx context.Context, userid pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteUserSessions, userid)
 	return err
 }
 
@@ -3931,6 +4017,54 @@ func (q *Queries) GetRefreshToken(ctx context.Context, token string) (Session, e
 	return i, err
 }
 
+const getSession = `-- name: GetSession :one
+SELECT id, token, "createdAt", "updatedAt", "userId", "deviceType", "deviceOS", "updateId", "pinExpiresAt", "expiresAt", "parentId" FROM sessions
+WHERE id = $1
+`
+
+func (q *Queries) GetSession(ctx context.Context, id pgtype.UUID) (Session, error) {
+	row := q.db.QueryRow(ctx, getSession, id)
+	var i Session
+	err := row.Scan(
+		&i.ID,
+		&i.Token,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.UserId,
+		&i.DeviceType,
+		&i.DeviceOS,
+		&i.UpdateId,
+		&i.PinExpiresAt,
+		&i.ExpiresAt,
+		&i.ParentId,
+	)
+	return i, err
+}
+
+const getSessionByToken = `-- name: GetSessionByToken :one
+SELECT id, token, "createdAt", "updatedAt", "userId", "deviceType", "deviceOS", "updateId", "pinExpiresAt", "expiresAt", "parentId" FROM sessions
+WHERE token = $1
+`
+
+func (q *Queries) GetSessionByToken(ctx context.Context, token string) (Session, error) {
+	row := q.db.QueryRow(ctx, getSessionByToken, token)
+	var i Session
+	err := row.Scan(
+		&i.ID,
+		&i.Token,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.UserId,
+		&i.DeviceType,
+		&i.DeviceOS,
+		&i.UpdateId,
+		&i.PinExpiresAt,
+		&i.ExpiresAt,
+		&i.ParentId,
+	)
+	return i, err
+}
+
 const getSharedLink = `-- name: GetSharedLink :one
 
 SELECT id, description, "userId", key, type, "createdAt", "expiresAt", "allowUpload", "albumId", "allowDownload", "showExif", password FROM shared_links
@@ -4897,6 +5031,44 @@ func (q *Queries) GetUserRecentViews(ctx context.Context, arg GetUserRecentViews
 	for rows.Next() {
 		var i GetUserRecentViewsRow
 		if err := rows.Scan(&i.AssetID, &i.ViewedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getUserSessions = `-- name: GetUserSessions :many
+SELECT id, token, "createdAt", "updatedAt", "userId", "deviceType", "deviceOS", "updateId", "pinExpiresAt", "expiresAt", "parentId" FROM sessions
+WHERE "userId" = $1
+ORDER BY "createdAt" DESC
+`
+
+func (q *Queries) GetUserSessions(ctx context.Context, userid pgtype.UUID) ([]Session, error) {
+	rows, err := q.db.Query(ctx, getUserSessions, userid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Session
+	for rows.Next() {
+		var i Session
+		if err := rows.Scan(
+			&i.ID,
+			&i.Token,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.UserId,
+			&i.DeviceType,
+			&i.DeviceOS,
+			&i.UpdateId,
+			&i.PinExpiresAt,
+			&i.ExpiresAt,
+			&i.ParentId,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -6306,6 +6478,17 @@ func (q *Queries) UpdatePerson(ctx context.Context, arg UpdatePersonParams) (Per
 		&i.UpdateId,
 	)
 	return i, err
+}
+
+const updateSessionActivity = `-- name: UpdateSessionActivity :exec
+UPDATE sessions
+SET "updatedAt" = NOW()
+WHERE id = $1
+`
+
+func (q *Queries) UpdateSessionActivity(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, updateSessionActivity, id)
+	return err
 }
 
 const updateSharedLink = `-- name: UpdateSharedLink :one

@@ -1259,3 +1259,47 @@ SET
     "exifImageHeight" = $4,
     "updatedAt" = NOW()
 WHERE "assetId" = $1;
+
+-- ================== SESSION MANAGEMENT ==================
+
+-- name: CreateSession :one
+INSERT INTO sessions (
+    id, token, "userId", "deviceType", "deviceOS",
+    "expiresAt", "createdAt", "updatedAt"
+) VALUES (
+    gen_uuid_v7(), $1, $2, $3, $4, $5, NOW(), NOW()
+) RETURNING *;
+
+-- name: GetSession :one
+SELECT * FROM sessions
+WHERE id = $1;
+
+-- name: GetSessionByToken :one
+SELECT * FROM sessions
+WHERE token = $1;
+
+-- name: GetUserSessions :many
+SELECT * FROM sessions
+WHERE "userId" = $1
+ORDER BY "createdAt" DESC;
+
+-- name: UpdateSessionActivity :exec
+UPDATE sessions
+SET "updatedAt" = NOW()
+WHERE id = $1;
+
+-- name: DeleteSession :exec
+DELETE FROM sessions
+WHERE id = $1;
+
+-- name: DeleteUserSessions :exec
+DELETE FROM sessions
+WHERE "userId" = $1;
+
+-- name: DeleteExpiredSessions :exec
+DELETE FROM sessions
+WHERE "expiresAt" < NOW();
+
+-- name: CountUserSessions :one
+SELECT COUNT(*) FROM sessions
+WHERE "userId" = $1;
