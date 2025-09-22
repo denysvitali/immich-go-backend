@@ -24,6 +24,7 @@ import (
 type Service struct {
 	db                *sqlc.Queries
 	storage           *storage.Service
+	sync              SyncService
 	metadataExtractor *MetadataExtractor
 	thumbnailGen      *ThumbnailGenerator
 	config            *config.Config
@@ -36,8 +37,13 @@ type Service struct {
 	storageSize     metric.Int64UpDownCounter
 }
 
+// SyncService interface for broadcasting events
+type SyncService interface {
+	BroadcastAssetEvent(ownerID string, assetID string, action string)
+}
+
 // NewService creates a new asset service
-func NewService(queries *sqlc.Queries, storageService *storage.Service, cfg *config.Config) (*Service, error) {
+func NewService(queries *sqlc.Queries, storageService *storage.Service, cfg *config.Config, syncService SyncService) (*Service, error) {
 	meter := telemetry.GetMeter()
 
 	uploadCounter, err := meter.Int64Counter(
@@ -80,6 +86,7 @@ func NewService(queries *sqlc.Queries, storageService *storage.Service, cfg *con
 	return &Service{
 		db:                queries,
 		storage:           storageService,
+		sync:              syncService,
 		metadataExtractor: NewMetadataExtractor(),
 		thumbnailGen:      NewThumbnailGenerator(),
 		config:            cfg,
@@ -140,6 +147,11 @@ func (s *Service) InitiateUpload(ctx context.Context, req UploadRequest) (*Uploa
 	if err != nil {
 		span.RecordError(err)
 		return nil, fmt.Errorf("failed to create asset record: %w", err)
+	}
+
+	// Broadcast asset creation event
+	if s.sync != nil {
+		s.sync.BroadcastAssetEvent(req.UserID.String(), uuidToString(asset.ID), "upsert")
 	}
 
 	// Check if we should use direct S3 upload
@@ -773,6 +785,11 @@ func (s *Service) DeleteAsset(ctx context.Context, assetID uuid.UUID, userID uui
 	if err != nil {
 		span.RecordError(err)
 		return fmt.Errorf("failed to delete asset: %w", err)
+	}
+
+	// Broadcast asset deletion event
+	if s.sync != nil {
+		s.sync.BroadcastAssetEvent(userID.String(), assetID.String(), "delete")
 	}
 
 	// Update storage metrics

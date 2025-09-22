@@ -158,7 +158,11 @@ func NewServer(cfg *config.Config, db *db.Conn) (*Server, error) {
 		return nil, err
 	}
 
-	assetService, err := assets.NewService(db.Queries, storageService, cfg)
+	// Initialize Sync service early so it can be used by other services
+	logger := logrus.StandardLogger()
+	syncService := sync.NewService(db.Queries, logger)
+
+	assetService, err := assets.NewService(db.Queries, storageService, cfg, syncService)
 	if err != nil {
 		return nil, err
 	}
@@ -215,12 +219,10 @@ func NewServer(cfg *config.Config, db *db.Conn) (*Server, error) {
 	viewServer := view.NewServer(viewService)
 
 	// Initialize Sessions service
-	logger := logrus.StandardLogger()
 	sessionsService := sessions.NewService(db.Queries, authService, logger)
 	sessionsServer := sessions.NewServer(sessionsService)
 
-	// Initialize Sync service
-	syncService := sync.NewService(db.Queries, logger)
+	// Create sync server
 	syncServer := sync.NewServer(syncService)
 
 	// Initialize Memories service

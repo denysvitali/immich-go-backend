@@ -24,15 +24,20 @@ type Service struct {
 	// Track last sync timestamps per user
 	lastSyncMutex sync.RWMutex
 	lastSync      map[string]time.Time
+
+	// Event broadcasting for real-time sync
+	eventMutex sync.RWMutex
+	eventSubscribers map[string][]chan *SyncEvent // userID -> list of subscriber channels
 }
 
 // NewService creates a new sync service
 func NewService(queries *sqlc.Queries, logger *logrus.Logger) *Service {
 	return &Service{
-		queries:  queries,
-		logger:   logger,
-		syncAcks: make(map[string]map[string]bool),
-		lastSync: make(map[string]time.Time),
+		queries:          queries,
+		logger:           logger,
+		syncAcks:         make(map[string]map[string]bool),
+		lastSync:         make(map[string]time.Time),
+		eventSubscribers: make(map[string][]chan *SyncEvent),
 	}
 }
 
@@ -42,6 +47,16 @@ type SyncState struct {
 	LastSyncTime       time.Time
 	PendingAssets      []string
 	AcknowledgedAssets []string
+}
+
+// SyncEvent represents a real-time sync event
+type SyncEvent struct {
+	Type      string    // "asset", "album", "partner"
+	Action    string    // "upsert", "delete"
+	UserID    string    // User who owns the resource
+	ResourceID string   // ID of the asset/album/partner
+	Timestamp time.Time
+	Data      interface{} // Optional additional data
 }
 
 // DeltaSyncResult contains changes since last sync
@@ -251,4 +266,111 @@ func (s *Service) ClearUserSyncState(ctx context.Context, userID string) error {
 	s.logger.WithField("user_id", userID).Info("Cleared sync state for user")
 
 	return nil
+}
+
+// SubscribeToEvents creates a new event channel for a user to receive real-time events
+func (s *Service) SubscribeToEvents(userID string) chan *SyncEvent {
+	s.eventMutex.Lock()
+	defer s.eventMutex.Unlock()
+
+	// Create a buffered channel to avoid blocking
+	eventChan := make(chan *SyncEvent, 100)
+
+	// Add to subscribers list
+	if s.eventSubscribers[userID] == nil {
+		s.eventSubscribers[userID] = []chan *SyncEvent{}
+	}
+	s.eventSubscribers[userID] = append(s.eventSubscribers[userID], eventChan)
+
+	s.logger.WithField("userID", userID).Debug("User subscribed to sync events")
+	return eventChan
+}
+
+// UnsubscribeFromEvents removes an event channel from the subscribers list
+func (s *Service) UnsubscribeFromEvents(userID string, eventChan chan *SyncEvent) {
+	s.eventMutex.Lock()
+	defer s.eventMutex.Unlock()
+
+	if subscribers, exists := s.eventSubscribers[userID]; exists {
+		for i, ch := range subscribers {
+			if ch == eventChan {
+				// Remove from slice
+				s.eventSubscribers[userID] = append(subscribers[:i], subscribers[i+1:]...)
+				close(eventChan)
+				s.logger.WithField("userID", userID).Debug("User unsubscribed from sync events")
+				break
+			}
+		}
+
+		// Clean up empty subscriber lists
+		if len(s.eventSubscribers[userID]) == 0 {
+			delete(s.eventSubscribers, userID)
+		}
+	}
+}
+
+// BroadcastAssetEvent broadcasts an asset change event to all subscribers
+func (s *Service) BroadcastAssetEvent(ownerID string, assetID string, action string) {
+	event := &SyncEvent{
+		Type:       "asset",
+		Action:     action,
+		UserID:     ownerID,
+		ResourceID: assetID,
+		Timestamp:  time.Now(),
+	}
+	s.broadcastEvent(ownerID, event)
+}
+
+// BroadcastAlbumEvent broadcasts an album change event to all subscribers
+func (s *Service) BroadcastAlbumEvent(ownerID string, albumID string, action string) {
+	event := &SyncEvent{
+		Type:       "album",
+		Action:     action,
+		UserID:     ownerID,
+		ResourceID: albumID,
+		Timestamp:  time.Now(),
+	}
+	s.broadcastEvent(ownerID, event)
+}
+
+// BroadcastPartnerEvent broadcasts a partner change event to all subscribers
+func (s *Service) BroadcastPartnerEvent(userID string, partnerID string, action string) {
+	event := &SyncEvent{
+		Type:       "partner",
+		Action:     action,
+		UserID:     userID,
+		ResourceID: partnerID,
+		Timestamp:  time.Now(),
+	}
+	s.broadcastEvent(userID, event)
+}
+
+// broadcastEvent sends an event to all subscribers for a user
+func (s *Service) broadcastEvent(userID string, event *SyncEvent) {
+	s.eventMutex.RLock()
+	subscribers := s.eventSubscribers[userID]
+	s.eventMutex.RUnlock()
+
+	if len(subscribers) == 0 {
+		return
+	}
+
+	s.logger.WithFields(logrus.Fields{
+		"userID": userID,
+		"type":   event.Type,
+		"action": event.Action,
+		"resourceID": event.ResourceID,
+		"subscribers": len(subscribers),
+	}).Debug("Broadcasting sync event")
+
+	// Send to all subscribers (non-blocking)
+	for _, ch := range subscribers {
+		select {
+		case ch <- event:
+			// Sent successfully
+		default:
+			// Channel is full, skip this event
+			s.logger.WithField("userID", userID).Warn("Event channel full, dropping event")
+		}
+	}
 }

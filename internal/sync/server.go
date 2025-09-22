@@ -149,34 +149,104 @@ func (s *Server) GetSyncStream(req *immichv1.GetSyncStreamRequest, stream immich
 		return err
 	}
 
-	// Override with requesting user if not admin
 	userIDStr := userID.String()
-	// Check if user is admin (would need admin check in real implementation)
-	// For now, only allow users to sync their own data
-	req.UserId = &userIDStr
 
-	// In a real implementation, this would:
-	// 1. Subscribe to real-time events (from Redis pub/sub or similar)
-	// 2. Stream events as they occur
-	// 3. Handle disconnections gracefully
+	// Subscribe to events for this user
+	eventChan := s.service.SubscribeToEvents(userIDStr)
+	defer s.service.UnsubscribeFromEvents(userIDStr, eventChan)
 
-	// For now, send a test event and complete
-	testEvent := &immichv1.SyncStreamResponse{
-		Event: &immichv1.SyncStreamResponse_AssetEvent{
-			AssetEvent: &immichv1.AssetSyncEvent{
-				Type:      "upsert",
-				AssetId:   "test-asset-id",
-				Timestamp: timestamppb.Now(),
-			},
-		},
+	// Send initial sync state - get recent changes
+	// This ensures client gets any events they might have missed
+	deltaSyncResult, err := s.service.GetDeltaSync(ctx, userIDStr, time.Now().Add(-1*time.Hour))
+	if err == nil && !deltaSyncResult.NeedsFullSync {
+		// Send initial upserted assets
+		for _, assetID := range deltaSyncResult.UpsertedAssets {
+			event := &immichv1.SyncStreamResponse{
+				Event: &immichv1.SyncStreamResponse_AssetEvent{
+					AssetEvent: &immichv1.AssetSyncEvent{
+						Type:      "upsert",
+						AssetId:   assetID,
+						Timestamp: timestamppb.Now(),
+					},
+				},
+			}
+			if err := stream.Send(event); err != nil {
+				return err
+			}
+		}
+
+		// Send initial deleted assets
+		for _, assetID := range deltaSyncResult.DeletedAssets {
+			event := &immichv1.SyncStreamResponse{
+				Event: &immichv1.SyncStreamResponse_AssetEvent{
+					AssetEvent: &immichv1.AssetSyncEvent{
+						Type:      "delete",
+						AssetId:   assetID,
+						Timestamp: timestamppb.Now(),
+					},
+				},
+			}
+			if err := stream.Send(event); err != nil {
+				return err
+			}
+		}
 	}
 
-	if err := stream.Send(testEvent); err != nil {
-		return err
+	// Stream real-time events
+	for {
+		select {
+		case <-ctx.Done():
+			// Client disconnected
+			return ctx.Err()
+
+		case event, ok := <-eventChan:
+			if !ok {
+				// Channel was closed
+				return nil
+			}
+
+			// Convert internal event to protobuf format and send
+			var syncResponse *immichv1.SyncStreamResponse
+
+			switch event.Type {
+			case "asset":
+				syncResponse = &immichv1.SyncStreamResponse{
+					Event: &immichv1.SyncStreamResponse_AssetEvent{
+						AssetEvent: &immichv1.AssetSyncEvent{
+							Type:      event.Action,
+							AssetId:   event.ResourceID,
+							Timestamp: timestamppb.New(event.Timestamp),
+						},
+					},
+				}
+			case "album":
+				syncResponse = &immichv1.SyncStreamResponse{
+					Event: &immichv1.SyncStreamResponse_AlbumEvent{
+						AlbumEvent: &immichv1.AlbumSyncEvent{
+							Type:      event.Action,
+							AlbumId:   event.ResourceID,
+							Timestamp: timestamppb.New(event.Timestamp),
+						},
+					},
+				}
+			case "partner":
+				syncResponse = &immichv1.SyncStreamResponse{
+					Event: &immichv1.SyncStreamResponse_PartnerEvent{
+						PartnerEvent: &immichv1.PartnerSyncEvent{
+							Type:       event.Action,
+							PartnerId:  event.ResourceID,
+							Timestamp:  timestamppb.New(event.Timestamp),
+						},
+					},
+				}
+			default:
+				// Unknown event type, skip
+				continue
+			}
+
+			if err := stream.Send(syncResponse); err != nil {
+				return err
+			}
+		}
 	}
-
-	// Keep the stream open until context is cancelled
-	<-ctx.Done()
-
-	return ctx.Err()
 }
