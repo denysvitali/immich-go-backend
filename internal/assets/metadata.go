@@ -1,10 +1,15 @@
 package assets
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"io"
+	"os"
+	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -194,25 +199,309 @@ func (e *MetadataExtractor) extractImageMetadata(ctx context.Context, reader io.
 	return nil
 }
 
-// extractVideoMetadata extracts metadata from video files
+// ffprobeOutput represents the JSON output from ffprobe
+type ffprobeOutput struct {
+	Streams []ffprobeStream `json:"streams"`
+	Format  ffprobeFormat   `json:"format"`
+}
+
+type ffprobeStream struct {
+	CodecType   string `json:"codec_type"`
+	CodecName   string `json:"codec_name"`
+	Width       int    `json:"width"`
+	Height      int    `json:"height"`
+	Duration    string `json:"duration"`
+	RFrameRate  string `json:"r_frame_rate"`
+	AvgFrameRate string `json:"avg_frame_rate"`
+}
+
+type ffprobeFormat struct {
+	Duration   string            `json:"duration"`
+	Size       string            `json:"size"`
+	BitRate    string            `json:"bit_rate"`
+	FormatName string            `json:"format_name"`
+	Tags       map[string]string `json:"tags"`
+}
+
+// extractVideoMetadata extracts metadata from video files using ffprobe
 func (e *MetadataExtractor) extractVideoMetadata(ctx context.Context, reader io.Reader, metadata *AssetMetadata) error {
 	_, span := tracer.Start(ctx, "metadata.extract_video")
 	defer span.End()
 
-	// For now, we'll implement basic video metadata extraction
-	// In a production system, you'd use ffmpeg or similar
-	// This is a placeholder for video metadata extraction
+	// Check if ffprobe is available
+	ffprobePath, err := exec.LookPath("ffprobe")
+	if err != nil {
+		span.SetAttributes(attribute.String("status", "ffprobe_not_found"))
+		// ffprobe not available, skip video metadata extraction
+		return nil
+	}
 
-	// TODO: Implement video metadata extraction using ffmpeg
-	// This would extract:
-	// - Duration
-	// - Resolution (width/height)
-	// - Codec information
-	// - Creation date
-	// - GPS coordinates (if available)
-	// - Camera make/model (if available)
+	// Create a temporary file to store the video data for ffprobe
+	tmpFile, err := os.CreateTemp("", "video-metadata-*.tmp")
+	if err != nil {
+		span.RecordError(err)
+		return fmt.Errorf("failed to create temp file: %w", err)
+	}
+	defer os.Remove(tmpFile.Name())
+	defer tmpFile.Close()
 
-	span.SetAttributes(attribute.String("status", "not_implemented"))
+	// Copy the reader content to the temp file
+	bytesWritten, err := io.Copy(tmpFile, reader)
+	if err != nil {
+		span.RecordError(err)
+		return fmt.Errorf("failed to write to temp file: %w", err)
+	}
+	span.SetAttributes(attribute.Int64("bytes_written", bytesWritten))
+
+	// Close the file before running ffprobe
+	tmpFile.Close()
+
+	// Run ffprobe to extract metadata
+	cmd := exec.CommandContext(ctx, ffprobePath,
+		"-v", "quiet",
+		"-print_format", "json",
+		"-show_format",
+		"-show_streams",
+		tmpFile.Name(),
+	)
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		span.RecordError(err)
+		span.SetAttributes(attribute.String("stderr", stderr.String()))
+		return fmt.Errorf("ffprobe failed: %w", err)
+	}
+
+	// Parse ffprobe output
+	var probeData ffprobeOutput
+	if err := json.Unmarshal(stdout.Bytes(), &probeData); err != nil {
+		span.RecordError(err)
+		return fmt.Errorf("failed to parse ffprobe output: %w", err)
+	}
+
+	span.SetAttributes(attribute.String("status", "success"))
+
+	// Extract video stream info (first video stream)
+	for _, stream := range probeData.Streams {
+		if stream.CodecType == "video" {
+			if stream.Width > 0 {
+				w := int32(stream.Width)
+				metadata.Width = &w
+			}
+			if stream.Height > 0 {
+				h := int32(stream.Height)
+				metadata.Height = &h
+			}
+			// Try stream duration first
+			if stream.Duration != "" {
+				if dur, err := strconv.ParseFloat(stream.Duration, 64); err == nil {
+					metadata.Duration = &dur
+				}
+			}
+			span.SetAttributes(
+				attribute.Int("width", stream.Width),
+				attribute.Int("height", stream.Height),
+				attribute.String("codec", stream.CodecName),
+			)
+			break
+		}
+	}
+
+	// Extract format-level metadata
+	if probeData.Format.Duration != "" && metadata.Duration == nil {
+		if dur, err := strconv.ParseFloat(probeData.Format.Duration, 64); err == nil {
+			metadata.Duration = &dur
+			span.SetAttributes(attribute.Float64("duration", dur))
+		}
+	}
+
+	// Extract creation date from format tags
+	if probeData.Format.Tags != nil {
+		// Try various common date tags
+		dateFields := []string{"creation_time", "date", "com.apple.quicktime.creationdate"}
+		for _, field := range dateFields {
+			if dateStr, ok := probeData.Format.Tags[field]; ok {
+				// Try parsing ISO 8601 format
+				for _, layout := range []string{
+					time.RFC3339,
+					"2006-01-02T15:04:05.000000Z",
+					"2006-01-02T15:04:05Z",
+					"2006-01-02 15:04:05",
+				} {
+					if dateTaken, err := time.Parse(layout, dateStr); err == nil {
+						metadata.DateTaken = &dateTaken
+						span.SetAttributes(attribute.String("date_taken", dateTaken.String()))
+						break
+					}
+				}
+				if metadata.DateTaken != nil {
+					break
+				}
+			}
+		}
+
+		// Extract make/model if available
+		if make, ok := probeData.Format.Tags["com.apple.quicktime.make"]; ok {
+			metadata.Make = &make
+		}
+		if model, ok := probeData.Format.Tags["com.apple.quicktime.model"]; ok {
+			metadata.Model = &model
+		}
+
+		// Extract GPS coordinates if available
+		if latStr, ok := probeData.Format.Tags["com.apple.quicktime.location.ISO6709"]; ok {
+			lat, lon := parseISO6709Location(latStr)
+			if lat != 0 || lon != 0 {
+				metadata.Latitude = &lat
+				metadata.Longitude = &lon
+			}
+		}
+	}
+
+	return nil
+}
+
+// parseISO6709Location parses ISO 6709 location string (e.g., "+37.7749-122.4194/")
+func parseISO6709Location(s string) (lat, lon float64) {
+	s = strings.TrimSuffix(s, "/")
+
+	// Find the second sign (start of longitude)
+	secondSignIdx := -1
+	for i := 1; i < len(s); i++ {
+		if s[i] == '+' || s[i] == '-' {
+			secondSignIdx = i
+			break
+		}
+	}
+
+	if secondSignIdx == -1 {
+		return 0, 0
+	}
+
+	latStr := s[:secondSignIdx]
+	lonStr := s[secondSignIdx:]
+
+	lat, _ = strconv.ParseFloat(latStr, 64)
+	lon, _ = strconv.ParseFloat(lonStr, 64)
+
+	return lat, lon
+}
+
+// ExtractVideoMetadataFromFile extracts metadata from a video file on disk (more efficient)
+func (e *MetadataExtractor) ExtractVideoMetadataFromFile(ctx context.Context, filePath string, metadata *AssetMetadata) error {
+	_, span := tracer.Start(ctx, "metadata.extract_video_from_file",
+		trace.WithAttributes(attribute.String("file_path", filePath)))
+	defer span.End()
+
+	// Check if ffprobe is available
+	ffprobePath, err := exec.LookPath("ffprobe")
+	if err != nil {
+		span.SetAttributes(attribute.String("status", "ffprobe_not_found"))
+		return nil
+	}
+
+	// Run ffprobe directly on the file
+	cmd := exec.CommandContext(ctx, ffprobePath,
+		"-v", "quiet",
+		"-print_format", "json",
+		"-show_format",
+		"-show_streams",
+		filePath,
+	)
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		span.RecordError(err)
+		span.SetAttributes(attribute.String("stderr", stderr.String()))
+		return fmt.Errorf("ffprobe failed: %w", err)
+	}
+
+	// Parse ffprobe output
+	var probeData ffprobeOutput
+	if err := json.Unmarshal(stdout.Bytes(), &probeData); err != nil {
+		span.RecordError(err)
+		return fmt.Errorf("failed to parse ffprobe output: %w", err)
+	}
+
+	span.SetAttributes(attribute.String("status", "success"))
+
+	// Extract video stream info (first video stream)
+	for _, stream := range probeData.Streams {
+		if stream.CodecType == "video" {
+			if stream.Width > 0 {
+				w := int32(stream.Width)
+				metadata.Width = &w
+			}
+			if stream.Height > 0 {
+				h := int32(stream.Height)
+				metadata.Height = &h
+			}
+			if stream.Duration != "" {
+				if dur, err := strconv.ParseFloat(stream.Duration, 64); err == nil {
+					metadata.Duration = &dur
+				}
+			}
+			span.SetAttributes(
+				attribute.Int("width", stream.Width),
+				attribute.Int("height", stream.Height),
+				attribute.String("codec", stream.CodecName),
+			)
+			break
+		}
+	}
+
+	// Extract format-level metadata
+	if probeData.Format.Duration != "" && metadata.Duration == nil {
+		if dur, err := strconv.ParseFloat(probeData.Format.Duration, 64); err == nil {
+			metadata.Duration = &dur
+			span.SetAttributes(attribute.Float64("duration", dur))
+		}
+	}
+
+	// Extract creation date and other tags from format
+	if probeData.Format.Tags != nil {
+		dateFields := []string{"creation_time", "date", "com.apple.quicktime.creationdate"}
+		for _, field := range dateFields {
+			if dateStr, ok := probeData.Format.Tags[field]; ok {
+				for _, layout := range []string{
+					time.RFC3339,
+					"2006-01-02T15:04:05.000000Z",
+					"2006-01-02T15:04:05Z",
+					"2006-01-02 15:04:05",
+				} {
+					if dateTaken, err := time.Parse(layout, dateStr); err == nil {
+						metadata.DateTaken = &dateTaken
+						break
+					}
+				}
+				if metadata.DateTaken != nil {
+					break
+				}
+			}
+		}
+
+		if make, ok := probeData.Format.Tags["com.apple.quicktime.make"]; ok {
+			metadata.Make = &make
+		}
+		if model, ok := probeData.Format.Tags["com.apple.quicktime.model"]; ok {
+			metadata.Model = &model
+		}
+
+		if latStr, ok := probeData.Format.Tags["com.apple.quicktime.location.ISO6709"]; ok {
+			lat, lon := parseISO6709Location(latStr)
+			if lat != 0 || lon != 0 {
+				metadata.Latitude = &lat
+				metadata.Longitude = &lon
+			}
+		}
+	}
+
 	return nil
 }
 

@@ -13,14 +13,14 @@ service TagsService {
   // Get all tags
   rpc GetAllTags(GetAllTagsRequest) returns (GetAllTagsResponse) {
     option (google.api.http) = {
-      get: "/tags"
+      get: "/api/tags"
     };
   }
 
   // Create tag
   rpc CreateTag(CreateTagRequest) returns (TagResponse) {
     option (google.api.http) = {
-      post: "/tags"
+      post: "/api/tags"
       body: "*"
     };
   }
@@ -28,7 +28,7 @@ service TagsService {
   // Upsert tags
   rpc UpsertTags(UpsertTagsRequest) returns (UpsertTagsResponse) {
     option (google.api.http) = {
-      put: "/tags"
+      put: "/api/tags"
       body: "*"
     };
   }
@@ -36,7 +36,7 @@ service TagsService {
   // Bulk tag assets
   rpc BulkTagAssets(BulkTagAssetsRequest) returns (BulkTagAssetsResponse) {
     option (google.api.http) = {
-      put: "/tags/assets"
+      put: "/api/tags/assets"
       body: "*"
     };
   }
@@ -44,21 +44,21 @@ service TagsService {
   // Delete tag
   rpc DeleteTag(DeleteTagRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {
-      delete: "/tags/{id}"
+      delete: "/api/tags/{id}"
     };
   }
 
   // Get tag by ID
   rpc GetTagById(GetTagByIdRequest) returns (TagResponse) {
     option (google.api.http) = {
-      get: "/tags/{id}"
+      get: "/api/tags/{id}"
     };
   }
 
   // Update tag
   rpc UpdateTag(UpdateTagRequest) returns (TagResponse) {
     option (google.api.http) = {
-      put: "/tags/{id}"
+      put: "/api/tags/{id}"
       body: "*"
     };
   }
@@ -66,7 +66,7 @@ service TagsService {
   // Untag assets
   rpc UntagAssets(UntagAssetsRequest) returns (UntagAssetsResponse) {
     option (google.api.http) = {
-      delete: "/tags/{id}/assets"
+      delete: "/api/tags/{id}/assets"
       body: "*"
     };
   }
@@ -74,7 +74,7 @@ service TagsService {
   // Tag assets
   rpc TagAssets(TagAssetsRequest) returns (TagAssetsResponse) {
     option (google.api.http) = {
-      put: "/tags/{id}/assets"
+      put: "/api/tags/{id}/assets"
       body: "*"
     };
   }

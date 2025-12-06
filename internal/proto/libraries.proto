@@ -13,14 +13,14 @@ service LibrariesService {
   // Get all libraries
   rpc GetAllLibraries(GetAllLibrariesRequest) returns (GetAllLibrariesResponse) {
     option (google.api.http) = {
-      get: "/libraries"
+      get: "/api/libraries"
     };
   }
 
   // Create library
   rpc CreateLibrary(CreateLibraryRequest) returns (LibraryResponse) {
     option (google.api.http) = {
-      post: "/libraries"
+      post: "/api/libraries"
       body: "*"
     };
   }
@@ -28,21 +28,21 @@ service LibrariesService {
   // Delete library
   rpc DeleteLibrary(DeleteLibraryRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {
-      delete: "/libraries/{id}"
+      delete: "/api/libraries/{id}"
     };
   }
 
   // Get library
   rpc GetLibrary(GetLibraryRequest) returns (LibraryResponse) {
     option (google.api.http) = {
-      get: "/libraries/{id}"
+      get: "/api/libraries/{id}"
     };
   }
 
   // Update library
   rpc UpdateLibrary(UpdateLibraryRequest) returns (LibraryResponse) {
     option (google.api.http) = {
-      put: "/libraries/{id}"
+      put: "/api/libraries/{id}"
       body: "*"
     };
   }
@@ -50,7 +50,7 @@ service LibrariesService {
   // Scan library
   rpc ScanLibrary(ScanLibraryRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {
-      post: "/libraries/{id}/scan"
+      post: "/api/libraries/{id}/scan"
       body: "*"
     };
   }
@@ -58,14 +58,14 @@ service LibrariesService {
   // Get library statistics
   rpc GetLibraryStatistics(GetLibraryStatisticsRequest) returns (LibraryStatisticsResponse) {
     option (google.api.http) = {
-      get: "/libraries/{id}/statistics"
+      get: "/api/libraries/{id}/statistics"
     };
   }
 
   // Validate library
   rpc ValidateLibrary(ValidateLibraryRequest) returns (ValidateLibraryResponse) {
     option (google.api.http) = {
-      post: "/libraries/{id}/validate"
+      post: "/api/libraries/{id}/validate"
       body: "*"
     };
   }

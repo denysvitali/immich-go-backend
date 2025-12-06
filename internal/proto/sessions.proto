@@ -13,21 +13,21 @@ service SessionsService {
   // Delete all sessions
   rpc DeleteAllSessions(google.protobuf.Empty) returns (google.protobuf.Empty) {
     option (google.api.http) = {
-      delete: "/sessions"
+      delete: "/api/sessions"
     };
   }
 
   // Get sessions
   rpc GetSessions(google.protobuf.Empty) returns (GetSessionsResponse) {
     option (google.api.http) = {
-      get: "/sessions"
+      get: "/api/sessions"
     };
   }
 
   // Create session
   rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse) {
     option (google.api.http) = {
-      post: "/sessions"
+      post: "/api/sessions"
       body: "*"
     };
   }
@@ -35,14 +35,14 @@ service SessionsService {
   // Delete session
   rpc DeleteSession(DeleteSessionRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {
-      delete: "/sessions/{id}"
+      delete: "/api/sessions/{id}"
     };
   }
 
   // Lock session
   rpc LockSession(LockSessionRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {
-      post: "/sessions/{id}/lock"
+      post: "/api/sessions/{id}/lock"
       body: "*"
     };
   }

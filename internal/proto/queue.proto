@@ -1,0 +1,141 @@
+syntax = "proto3";
+
+package immich.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+
+option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
+
+// QueueService handles job queue management
+service QueueService {
+  // List all queues
+  rpc ListQueues(google.protobuf.Empty) returns (ListQueuesResponse) {
+    option (google.api.http) = {
+      get: "/api/queues"
+    };
+  }
+
+  // Get a specific queue by name
+  rpc GetQueue(GetQueueRequest) returns (QueueInfo) {
+    option (google.api.http) = {
+      get: "/api/queues/{name}"
+    };
+  }
+
+  // Update a queue (pause/resume)
+  rpc UpdateQueue(UpdateQueueRequest) returns (QueueInfo) {
+    option (google.api.http) = {
+      put: "/api/queues/{name}"
+      body: "*"
+    };
+  }
+
+  // Get jobs in a queue
+  rpc GetQueueJobs(GetQueueJobsRequest) returns (ListQueueJobsResponse) {
+    option (google.api.http) = {
+      get: "/api/queues/{name}/jobs"
+    };
+  }
+
+  // Clear jobs from a queue
+  rpc ClearQueueJobs(ClearQueueJobsRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/api/queues/{name}/jobs"
+      body: "*"
+    };
+  }
+}
+
+// Queue name enum
+enum QueueName {
+  QUEUE_NAME_UNSPECIFIED = 0;
+  QUEUE_NAME_THUMBNAIL_GENERATION = 1;
+  QUEUE_NAME_METADATA_EXTRACTION = 2;
+  QUEUE_NAME_VIDEO_CONVERSION = 3;
+  QUEUE_NAME_FACE_DETECTION = 4;
+  QUEUE_NAME_FACIAL_RECOGNITION = 5;
+  QUEUE_NAME_SMART_SEARCH = 6;
+  QUEUE_NAME_DUPLICATE_DETECTION = 7;
+  QUEUE_NAME_BACKGROUND_TASK = 8;
+  QUEUE_NAME_STORAGE_MIGRATION = 9;
+  QUEUE_NAME_SEARCH = 10;
+  QUEUE_NAME_SIDECAR = 11;
+  QUEUE_NAME_LIBRARY = 12;
+  QUEUE_NAME_NOTIFICATION = 13;
+}
+
+// Job status enum
+enum QueueJobStatus {
+  QUEUE_JOB_STATUS_UNSPECIFIED = 0;
+  QUEUE_JOB_STATUS_ACTIVE = 1;
+  QUEUE_JOB_STATUS_COMPLETED = 2;
+  QUEUE_JOB_STATUS_FAILED = 3;
+  QUEUE_JOB_STATUS_DELAYED = 4;
+  QUEUE_JOB_STATUS_WAITING = 5;
+  QUEUE_JOB_STATUS_PAUSED = 6;
+}
+
+// Queue statistics
+message QueueStatistics {
+  int32 active = 1;
+  int32 completed = 2;
+  int32 failed = 3;
+  int32 delayed = 4;
+  int32 waiting = 5;
+  int32 paused = 6;
+}
+
+// Queue information
+message QueueInfo {
+  QueueName name = 1;
+  bool is_paused = 2;
+  QueueStatistics statistics = 3;
+}
+
+// Response containing list of queues
+message ListQueuesResponse {
+  repeated QueueInfo queues = 1;
+}
+
+// Request to get a specific queue
+message GetQueueRequest {
+  string name = 1;
+}
+
+// Request to update a queue
+message UpdateQueueRequest {
+  string name = 1;
+  optional bool is_paused = 2;
+}
+
+// Request to get jobs in a queue
+message GetQueueJobsRequest {
+  string name = 1;
+  repeated QueueJobStatus status = 2; // Filter by status
+  int32 limit = 3;
+  int32 offset = 4;
+}
+
+// Queue job information
+message QueueJob {
+  string id = 1;
+  string name = 2;
+  string data = 3; // JSON data
+  int64 timestamp = 4;
+  QueueJobStatus status = 5;
+  optional string error = 6;
+  optional int32 attempts = 7;
+}
+
+// Response containing list of queue jobs
+message ListQueueJobsResponse {
+  repeated QueueJob jobs = 1;
+  int32 total = 2;
+}
+
+// Request to clear jobs from a queue
+message ClearQueueJobsRequest {
+  string name = 1;
+  bool include_failed = 2; // If true, also remove failed jobs
+}

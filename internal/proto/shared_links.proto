@@ -13,14 +13,14 @@ service SharedLinksService {
   // Get all shared links
   rpc GetAllSharedLinks(GetAllSharedLinksRequest) returns (GetAllSharedLinksResponse) {
     option (google.api.http) = {
-      get: "/shared-links"
+      get: "/api/shared-links"
     };
   }
 
   // Create shared link
   rpc CreateSharedLink(CreateSharedLinkRequest) returns (SharedLinkResponse) {
     option (google.api.http) = {
-      post: "/shared-links"
+      post: "/api/shared-links"
       body: "*"
     };
   }
@@ -28,28 +28,28 @@ service SharedLinksService {
   // Get my shared link
   rpc GetMySharedLink(GetMySharedLinkRequest) returns (SharedLinkResponse) {
     option (google.api.http) = {
-      get: "/shared-links/me"
+      get: "/api/shared-links/me"
     };
   }
 
   // Remove shared link
   rpc RemoveSharedLink(RemoveSharedLinkRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {
-      delete: "/shared-links/{id}"
+      delete: "/api/shared-links/{id}"
     };
   }
 
   // Get shared link by ID
   rpc GetSharedLinkById(GetSharedLinkByIdRequest) returns (SharedLinkResponse) {
     option (google.api.http) = {
-      get: "/shared-links/{id}"
+      get: "/api/shared-links/{id}"
     };
   }
 
   // Update shared link
   rpc UpdateSharedLink(UpdateSharedLinkRequest) returns (SharedLinkResponse) {
     option (google.api.http) = {
-      patch: "/shared-links/{id}"
+      patch: "/api/shared-links/{id}"
       body: "*"
     };
   }
@@ -57,7 +57,7 @@ service SharedLinksService {
   // Remove shared link assets
   rpc RemoveSharedLinkAssets(RemoveSharedLinkAssetsRequest) returns (SharedLinkResponse) {
     option (google.api.http) = {
-      delete: "/shared-links/{id}/assets"
+      delete: "/api/shared-links/{id}/assets"
       body: "*"
     };
   }
@@ -65,7 +65,7 @@ service SharedLinksService {
   // Add shared link assets
   rpc AddSharedLinkAssets(AddSharedLinkAssetsRequest) returns (SharedLinkResponse) {
     option (google.api.http) = {
-      put: "/shared-links/{id}/assets"
+      put: "/api/shared-links/{id}/assets"
       body: "*"
     };
   }

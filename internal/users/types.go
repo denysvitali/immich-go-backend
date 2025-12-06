@@ -83,6 +83,11 @@ type UpdateUserPreferencesRequest struct {
 	TagsSizeThreshold             *int32 `json:"tagsSizeThreshold,omitempty"`
 }
 
+// OnboardingStatus represents user's onboarding status
+type OnboardingStatus struct {
+	IsOnboarded bool `json:"isOnboarded"`
+}
+
 // UserError represents errors that can occur in user operations
 type UserError struct {
 	Type    UserErrorType `json:"type"`

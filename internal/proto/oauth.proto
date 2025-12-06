@@ -12,7 +12,7 @@ service OAuthService {
   // Authorize OAuth
   rpc AuthorizeOAuth(AuthorizeOAuthRequest) returns (AuthorizeOAuthResponse) {
     option (google.api.http) = {
-      post: "/oauth/authorize"
+      post: "/api/oauth/authorize"
       body: "*"
     };
   }
@@ -20,7 +20,7 @@ service OAuthService {
   // Callback OAuth
   rpc CallbackOAuth(CallbackOAuthRequest) returns (CallbackOAuthResponse) {
     option (google.api.http) = {
-      post: "/oauth/callback"
+      post: "/api/oauth/callback"
       body: "*"
     };
   }
@@ -28,7 +28,7 @@ service OAuthService {
   // Generate OAuth config
   rpc GenerateOAuthConfig(GenerateOAuthConfigRequest) returns (GenerateOAuthConfigResponse) {
     option (google.api.http) = {
-      post: "/oauth/config"
+      post: "/api/oauth/config"
       body: "*"
     };
   }
@@ -36,7 +36,7 @@ service OAuthService {
   // Link OAuth account
   rpc LinkOAuthAccount(LinkOAuthAccountRequest) returns (LinkOAuthAccountResponse) {
     option (google.api.http) = {
-      post: "/oauth/link"
+      post: "/api/oauth/link"
       body: "*"
     };
   }
@@ -44,7 +44,7 @@ service OAuthService {
   // Unlink OAuth account
   rpc UnlinkOAuthAccount(google.protobuf.Empty) returns (UnlinkOAuthAccountResponse) {
     option (google.api.http) = {
-      post: "/oauth/unlink"
+      post: "/api/oauth/unlink"
       body: "*"
     };
   }

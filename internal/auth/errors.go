@@ -25,6 +25,14 @@ const (
 	ErrPasswordHashing AuthErrorType = "password_hashing"
 	ErrPasswordUpdate  AuthErrorType = "password_update"
 
+	// PIN code errors
+	ErrPinCodeUpdate AuthErrorType = "pin_code_update"
+	ErrPinCodeExists AuthErrorType = "pin_code_exists"
+	ErrNoPinCode     AuthErrorType = "no_pin_code"
+
+	// Session errors
+	ErrSessionUpdate AuthErrorType = "session_update"
+
 	// Registration errors
 	ErrRegistrationDisabled AuthErrorType = "registration_disabled"
 

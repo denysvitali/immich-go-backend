@@ -12,6 +12,13 @@ option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immi
 
 // Users service
 service UsersService {
+  // List all users (authenticated users can see basic info)
+  rpc ListUsers(google.protobuf.Empty) returns (ListUsersResponse) {
+    option (google.api.http) = {
+      get: "/api/users"
+    };
+  }
+
   // Get current user information
   rpc GetMyUser(google.protobuf.Empty) returns (UserAdminResponse) {
     option (google.api.http) = {
@@ -31,6 +38,21 @@ service UsersService {
   rpc GetUserLicense(google.protobuf.Empty) returns (UserLicenseResponse) {
     option (google.api.http) = {
       get: "/api/users/me/license"
+    };
+  }
+
+  // Get user onboarding status
+  rpc GetOnboarding(google.protobuf.Empty) returns (OnboardingResponse) {
+    option (google.api.http) = {
+      get: "/api/users/me/onboarding"
+    };
+  }
+
+  // Update user onboarding status
+  rpc UpdateOnboarding(OnboardingUpdateRequest) returns (OnboardingResponse) {
+    option (google.api.http) = {
+      put: "/api/users/me/onboarding"
+      body: "*"
     };
   }
 
@@ -288,4 +310,19 @@ message GetProfileImageRequest {
 message GetProfileImageResponse {
   bytes image_data = 1;
   string content_type = 2;
+}
+
+// List users response
+message ListUsersResponse {
+  repeated UserResponse users = 1;
+}
+
+// Onboarding response
+message OnboardingResponse {
+  bool is_onboarded = 1;
+}
+
+// Onboarding update request
+message OnboardingUpdateRequest {
+  bool is_onboarded = 1;
 }

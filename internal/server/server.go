@@ -27,12 +27,16 @@ import (
 	"github.com/denysvitali/immich-go-backend/internal/faces"
 	"github.com/denysvitali/immich-go-backend/internal/jobs"
 	"github.com/denysvitali/immich-go-backend/internal/libraries"
+	"github.com/denysvitali/immich-go-backend/internal/maintenance"
 	mapservice "github.com/denysvitali/immich-go-backend/internal/map"
 	"github.com/denysvitali/immich-go-backend/internal/memories"
 	"github.com/denysvitali/immich-go-backend/internal/notifications"
 	"github.com/denysvitali/immich-go-backend/internal/partners"
 	"github.com/denysvitali/immich-go-backend/internal/people"
+	"github.com/denysvitali/immich-go-backend/internal/plugin"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
+	"github.com/denysvitali/immich-go-backend/internal/queue"
+	"github.com/denysvitali/immich-go-backend/internal/workflow"
 	"github.com/denysvitali/immich-go-backend/internal/search"
 	"github.com/denysvitali/immich-go-backend/internal/sessions"
 	"github.com/denysvitali/immich-go-backend/internal/sharedlinks"
@@ -105,6 +109,10 @@ type Server struct {
 	notificationsServer   *notifications.Server
 	timelineService       *timeline.Service
 	timelineServer        *timeline.Server
+	maintenanceService    *maintenance.Service
+	queueService          *queue.Service
+	pluginService         *plugin.Service
+	workflowService       *workflow.Service
 	queries               *sqlc.Queries
 
 	immichv1.UnimplementedAlbumServiceServer
@@ -137,6 +145,10 @@ type Server struct {
 	immichv1.UnimplementedViewServiceServer
 	immichv1.UnimplementedSessionsServiceServer
 	immichv1.UnimplementedSyncServiceServer
+	immichv1.UnimplementedMaintenanceServiceServer
+	immichv1.UnimplementedQueueServiceServer
+	immichv1.UnimplementedPluginServiceServer
+	immichv1.UnimplementedWorkflowServiceServer
 }
 
 func NewServer(cfg *config.Config, db *db.Conn) (*Server, error) {
@@ -237,6 +249,30 @@ func NewServer(cfg *config.Config, db *db.Conn) (*Server, error) {
 	timelineService := timeline.NewService(db.Queries)
 	timelineServer := timeline.NewServer(timelineService)
 
+	// Initialize Maintenance service
+	maintenanceService, err := maintenance.NewService(db.Queries, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	// Initialize Queue service
+	queueService, err := queue.NewService(db.Queries, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	// Initialize Plugin service
+	pluginService, err := plugin.NewService(db.Queries, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	// Initialize Workflow service
+	workflowService, err := workflow.NewService(db.Queries, cfg)
+	if err != nil {
+		return nil, err
+	}
+
 	// Create server implementations for libraries and search
 	libraryServer := libraries.NewServer(libraryService)
 	searchServer := search.NewServer(searchService)
@@ -307,6 +343,10 @@ func NewServer(cfg *config.Config, db *db.Conn) (*Server, error) {
 		notificationsServer:   notificationsServer,
 		timelineService:       timelineService,
 		timelineServer:        timelineServer,
+		maintenanceService:    maintenanceService,
+		queueService:          queueService,
+		pluginService:         pluginService,
+		workflowService:       workflowService,
 		queries:               db.Queries,
 	}
 	s.grpcServer = grpc.NewServer()
@@ -342,6 +382,10 @@ func NewServer(cfg *config.Config, db *db.Conn) (*Server, error) {
 	immichv1.RegisterViewServiceServer(s.grpcServer, s.viewServer)
 	immichv1.RegisterSessionsServiceServer(s.grpcServer, s.sessionsServer)
 	immichv1.RegisterSyncServiceServer(s.grpcServer, s.syncServer)
+	immichv1.RegisterMaintenanceServiceServer(s.grpcServer, s)
+	immichv1.RegisterQueueServiceServer(s.grpcServer, s)
+	immichv1.RegisterPluginServiceServer(s.grpcServer, s)
+	immichv1.RegisterWorkflowServiceServer(s.grpcServer, s)
 
 	return s, nil
 }
@@ -503,6 +547,12 @@ func (s *Server) HTTPHandler() http.Handler {
 	}
 	if err := immichv1.RegisterSyncServiceHandlerServer(ctx, mux, s.syncServer); err != nil {
 		logrus.WithError(err).Error("Failed to register SyncService handler")
+	}
+	if err := immichv1.RegisterPluginServiceHandlerServer(ctx, mux, s); err != nil {
+		logrus.WithError(err).Error("Failed to register PluginService handler")
+	}
+	if err := immichv1.RegisterWorkflowServiceHandlerServer(ctx, mux, s); err != nil {
+		logrus.WithError(err).Error("Failed to register WorkflowService handler")
 	}
 	return s.handleWs(mux)
 }

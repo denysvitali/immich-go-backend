@@ -12,7 +12,7 @@ service DownloadService {
   // Create download archive
   rpc DownloadArchive(DownloadArchiveRequest) returns (DownloadResponse) {
     option (google.api.http) = {
-      post: "/download/archive"
+      post: "/api/download/archive"
       body: "*"
     };
   }
@@ -20,7 +20,7 @@ service DownloadService {
   // Get download info
   rpc GetDownloadInfo(DownloadInfoRequest) returns (DownloadInfoResponse) {
     option (google.api.http) = {
-      post: "/download/info"
+      post: "/api/download/info"
       body: "*"
     };
   }

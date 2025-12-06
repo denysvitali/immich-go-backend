@@ -49,6 +49,52 @@ service AuthService {
       body: "*"
     };
   }
+
+  // Get auth status - returns session info and whether user has password
+  rpc GetAuthStatus(google.protobuf.Empty) returns (AuthStatusResponse) {
+    option (google.api.http) = {
+      get: "/api/auth/status"
+    };
+  }
+
+  // Setup PIN code for the current user
+  rpc SetupPinCode(PinCodeSetupRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/api/auth/pin-code"
+      body: "*"
+    };
+  }
+
+  // Change PIN code for the current user
+  rpc ChangePinCode(PinCodeChangeRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      put: "/api/auth/pin-code"
+      body: "*"
+    };
+  }
+
+  // Reset PIN code by providing account password
+  rpc ResetPinCode(PinCodeResetRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/api/auth/pin-code"
+    };
+  }
+
+  // Unlock session with PIN code to access locked assets
+  rpc UnlockSession(SessionUnlockRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/api/auth/session/unlock"
+      body: "*"
+    };
+  }
+
+  // Lock session to revoke access to locked assets
+  rpc LockSession(google.protobuf.Empty) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/api/auth/session/lock"
+      body: "*"
+    };
+  }
 }
 
 // Login request
@@ -90,4 +136,32 @@ message LogoutResponse {
 // Validate token response
 message ValidateTokenResponse {
   bool auth_status = 1;
+}
+
+// Auth status response
+message AuthStatusResponse {
+  bool has_password = 1;
+  bool is_elevated = 2;  // Whether session has elevated access to locked assets
+  bool pin_code_enabled = 3;
+}
+
+// PIN code setup request
+message PinCodeSetupRequest {
+  string pin_code = 1;
+}
+
+// PIN code change request
+message PinCodeChangeRequest {
+  string current_pin_code = 1;
+  string new_pin_code = 2;
+}
+
+// PIN code reset request (requires account password)
+message PinCodeResetRequest {
+  string password = 1;
+}
+
+// Session unlock request
+message SessionUnlockRequest {
+  string pin_code = 1;
 }

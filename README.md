@@ -1,124 +1,212 @@
 # immich-go-backend
 
-A high-performance alternative backend for [Immich](https://github.com/immich-app/immich) written in **Go**, designed for enhanced performance and S3-first architecture.
+A Go-based alternative backend for [Immich](https://github.com/immich-app/immich), designed with an S3-first architecture and cloud-native patterns.
 
-## 🚀 Why This Project?
+> [!WARNING]
+> **THIS CODE IS AI-GENERATED AND NOT SUITABLE FOR PRODUCTION USE**
+>
+> This project was developed primarily using AI assistants (Claude Opus 4.5, Claude Sonnet 4) and automated coding tools. While functional, it has **not been thoroughly tested**, **security audited**, or **validated for production workloads**.
+>
+> **USE AT YOUR OWN RISK.** The authors take no responsibility for data loss, security vulnerabilities, or any other issues that may arise from using this software.
+>
+> If you choose to use this project:
+> - Do NOT use it with important data without backups
+> - Do NOT expose it to the public internet without proper security review
+> - Expect bugs, incomplete features, and breaking changes
 
-This project aims to provide a more performant alternative to the original Immich backend with specific focus on:
+---
 
-- **Performance**: Go's superior concurrency model and performance characteristics
-- **S3-First Architecture**: Native support for object storage with pre-signed URLs for direct client uploads/downloads
-- **Cloud-Native Design**: Built with modern cloud storage patterns in mind
-- **Scalability**: Designed to handle larger datasets and concurrent operations more efficiently
+## Project Goals
 
-## 🛠️ Technology Stack
+- **API Compatibility**: Achieve full parity with upstream Immich (~230 endpoints)
+- **Mobile App Support**: iOS/Android Immich apps should work seamlessly
+- **S3-First Architecture**: Native object storage with pre-signed URLs
+- **Performance**: Leverage Go's concurrency for better scalability
 
-This backend is built with modern Go technologies and cloud-native patterns:
+## Current Status
+
+| Metric | Value |
+|--------|-------|
+| **API Coverage** | ~60% (estimated) |
+| **Total Services** | 28 |
+| **SQL Queries** | 200+ |
+| **Build Status** | Compiles |
+
+### Implemented Services
+
+| Service | Status | Description |
+|---------|--------|-------------|
+| AuthService | Working | JWT auth, login, logout, PIN codes, session lock/unlock |
+| UsersService | Working | Profile, preferences, onboarding, license |
+| AssetService | Working | CRUD, thumbnails, video playback, bulk operations |
+| AlbumService | Working | CRUD, sharing, role-based access |
+| SyncService | Working | Real-time events, delta/full sync |
+| SessionsService | Working | Database-backed session management |
+| TimelineService | Working | Chronological asset browsing |
+| MemoryService | Working | Memories with asset associations |
+| SearchService | Working | Metadata and smart search |
+| PeopleService | Working | Face recognition, person management |
+| TagsService | Working | Asset tagging |
+| SharedLinksService | Working | Shareable links with passwords |
+| TrashService | Working | Soft delete with recovery |
+| MapService | Working | Geolocation browsing |
+| DuplicatesService | Working | Duplicate detection |
+| DownloadService | Working | Asset downloads, archives |
+| AdminService | Working | User management, notifications |
+| MaintenanceService | Working | Maintenance mode control |
+| QueueService | Working | Job queue management |
+| PluginService | Working | Plugin system (extensibility) |
+| WorkflowService | Working | Automation workflows |
+| LibrariesService | Working | External library management |
+| StacksService | Working | Asset stacking |
+| FacesService | Working | Face management |
+| NotificationsService | Working | User notifications |
+| PartnersService | Working | Partner sharing |
+| ActivityService | Working | Activity feed |
+| SystemMetadataService | Working | System configuration |
+
+### Known Limitations
+
+- **Token refresh** endpoint not implemented
+- **OCR data** endpoint not implemented
+- **OAuth mobile redirect** not implemented
+- **Email verification/password reset** flows not implemented
+- **HLS/adaptive streaming** not implemented
+- Some edge cases may not be handled properly
+- Error messages may leak internal details
+- No comprehensive test coverage
+
+## Technology Stack
 
 - **Language**: Go 1.24+
-- **Database**: PostgreSQL with [SQLC](https://sqlc.dev/) for type-safe SQL queries
-- **API**: Protocol Buffers (protobuf) with [gRPC](https://grpc.io/) and [grpc-gateway](https://github.com/grpc-ecosystem/grpc-gateway) for REST compatibility
-- **Storage**: Multi-backend support (Local, S3, Rclone) with pre-signed URL capabilities
-- **Observability**: OpenTelemetry for comprehensive tracing and metrics
-- **Configuration**: Viper for flexible configuration management
-- **Authentication**: JWT-based authentication with bcrypt password hashing
+- **Database**: PostgreSQL with [SQLC](https://sqlc.dev/) for type-safe queries
+- **API**: gRPC with [grpc-gateway](https://github.com/grpc-ecosystem/grpc-gateway) for REST
+- **Storage**: Local, S3, or Rclone backends
+- **Observability**: OpenTelemetry (tracing, metrics)
+- **Authentication**: JWT with bcrypt password hashing
 
-## 🏗️ Architecture
+## Architecture
 
-The project follows a clean architecture pattern with:
-
-- **Storage Abstraction Layer**: Universal storage interface supporting local filesystem, S3, and rclone backends
-- **Service Layer**: Business logic separated into domain-specific services (auth, users, assets, albums)
-- **Protocol Buffers**: Type-safe API definitions with automatic REST gateway generation
-- **Database Layer**: SQLC-generated type-safe database operations
-- **Telemetry**: Comprehensive observability with OpenTelemetry
-
-## ⚠️ Project Status
-
-**This project is currently a Work In Progress (WIP) and is NOT ready for production use.**
-
-See the [ROADMAP.md](./ROADMAP.md) for detailed progress tracking. Currently implemented:
-- ✅ Database schema and SQLC queries
-- ✅ Protocol buffer definitions and code generation
-- ✅ Storage abstraction layer with S3 support
-- ✅ Configuration and telemetry systems
-- ✅ Authentication service
-- ✅ User management service
-- 🔄 Asset management service (in progress)
-- 🔄 Album management service (pending)
-- 🔄 HTTP/gRPC controllers (pending)
-
-## 🤖 Development
-
-This project was developed mostly with:
-- **Claude Sonnet 4**
-- **[OpenHands (All-Hands-AI)](https://github.com/All-Hands-AI/OpenHands/)**
-
-## 📋 Prerequisites
-
-- [Nix](https://nixos.org/) package manager (recommended)
-- PostgreSQL 15+ (can be managed through Nix or installed separately)
-
-**Note**: This project uses Nix flakes to manage the development environment. You need to enable experimental features:
-```bash
-# Enable flakes and nix-command experimental features
-echo "experimental-features = nix-command flakes" >> ~/.config/nix/nix.conf
-# Or temporarily enable them:
-# nix --experimental-features "nix-command flakes" develop
+```
+┌─────────────────────────────────────────────────────────┐
+│                    HTTP/REST Clients                     │
+│                  (Immich Mobile/Web)                     │
+└─────────────────────────┬───────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────┐
+│                   grpc-gateway                           │
+│              (REST ↔ gRPC translation)                   │
+└─────────────────────────┬───────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────┐
+│                    gRPC Services                         │
+│  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐       │
+│  │  Auth   │ │  Users  │ │ Assets  │ │ Albums  │  ...  │
+│  └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘       │
+└───────┼──────────┼──────────┼──────────┼───────────────┘
+        │          │          │          │
+        ▼          ▼          ▼          ▼
+┌─────────────────────────────────────────────────────────┐
+│                   Service Layer                          │
+│            (Business logic, validation)                  │
+└─────────────────────────┬───────────────────────────────┘
+                          │
+        ┌─────────────────┼─────────────────┐
+        ▼                 ▼                 ▼
+┌───────────────┐ ┌───────────────┐ ┌───────────────┐
+│   PostgreSQL  │ │    Storage    │ │   Job Queue   │
+│    (SQLC)     │ │ (S3/Local)    │ │   (Redis)     │
+└───────────────┘ └───────────────┘ └───────────────┘
 ```
 
-The Nix environment automatically provides:
-- Go 1.24+
-- Protocol Buffers compiler (protoc)
-- Buf CLI tool (for protobuf management)
-- SQLC for type-safe SQL code generation
-- Other development tools and dependencies
+## Getting Started
 
-## 🚀 Getting Started
+### Prerequisites
 
-This project uses [Nix](https://nixos.org/) to manage the development environment, ensuring all developers have the same tools and dependencies.
+- [Nix](https://nixos.org/) package manager (recommended)
+- PostgreSQL 15+
+- Redis (optional, for job queue)
 
-1. **Clone the repository**:
+Enable Nix flakes:
+```bash
+echo "experimental-features = nix-command flakes" >> ~/.config/nix/nix.conf
+```
+
+### Setup
+
+1. **Clone and enter dev environment**:
 ```bash
 git clone https://github.com/denysvitali/immich-go-backend.git
 cd immich-go-backend
-```
-
-2. **Enter the Nix development environment**:
-```bash
 nix develop
-# or alternatively:
-make dev-shell
 ```
-This will automatically install and make available all required tools including Go, protoc, buf, sqlc, and other dependencies.
 
-3. **Set up your configuration**:
-Copy and modify the configuration file according to your environment:
+2. **Configure**:
 ```bash
 cp config.yaml config.yaml.local
-# Edit config.yaml.local with your database credentials, S3 settings, etc.
+# Edit config.yaml.local with your settings
 ```
 
-4. **Initialize and generate code**:
+3. **Generate code and build**:
 ```bash
 make setup
+make build
 ```
-This command will:
-- Download Go module dependencies
-- Generate protocol buffer code
-- Generate type-safe SQL code with SQLC
 
-5. **Start the server**:
+4. **Run**:
 ```bash
+./bin/immich-go-backend serve
+# or
 go run main.go serve
 ```
 
-**Available Make targets**: Run `make help` to see all available development commands.
+### Development Commands
 
-## 🤝 Contributing
+```bash
+make build          # Build binary
+make test           # Run tests
+make proto-gen      # Generate protobuf code
+make sqlc-gen       # Generate SQL code
+make lint           # Run linters
+make ci-check       # Run all CI checks
+```
 
-Contributions are welcome! Please read the [ROADMAP.md](./ROADMAP.md) to understand the current development priorities.
+## Configuration
 
-## 📄 License
+Configuration is loaded from `config.yaml` with environment variable overrides using the pattern `IMMICH_SECTION_KEY`.
 
-This project is licensed under the same terms as the original Immich project: AGPL-3.0. See the [LICENSE](./LICENSE) file for details.
+Key configuration sections:
+- `server`: HTTP/gRPC ports
+- `database`: PostgreSQL connection
+- `storage`: Storage backend (local/s3/rclone)
+- `auth`: JWT secrets and settings
+- `jobs`: Background job processing
+
+## Development History
+
+This project was developed using AI assistance:
+- **Claude Opus 4.5** - Architecture, complex implementations
+- **Claude Sonnet 4** - Service implementations, bug fixes
+- **[OpenHands](https://github.com/All-Hands-AI/OpenHands/)** - Automated development
+
+The AI-assisted development approach allowed rapid prototyping but means the codebase lacks the rigor of traditional software development.
+
+## Contributing
+
+Contributions are welcome, especially:
+- Security reviews and fixes
+- Test coverage improvements
+- Bug reports with reproduction steps
+- Documentation improvements
+
+Please open an issue before starting major work.
+
+## License
+
+AGPL-3.0 - Same as the original Immich project. See [LICENSE](./LICENSE).
+
+## Disclaimer
+
+This project is not affiliated with or endorsed by the Immich project. It is an independent reimplementation of the Immich backend API.

@@ -386,3 +386,74 @@ func (s *Server) convertUserToProto(user *users.UserInfo) *immichv1.UserResponse
 
 	return response
 }
+
+// ListUsers returns all users (for authenticated users)
+func (s *Server) ListUsers(ctx context.Context, _ *emptypb.Empty) (*immichv1.ListUsersResponse, error) {
+	// Ensure user is authenticated
+	_, ok := auth.GetClaimsFromStdContext(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	}
+
+	// Get all users from service
+	usersList, err := s.userService.GetAllUsers(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to list users: %v", err)
+	}
+
+	// Convert to proto
+	protoUsers := make([]*immichv1.UserResponse, 0, len(usersList))
+	for _, user := range usersList {
+		protoUsers = append(protoUsers, s.convertUserToProto(user))
+	}
+
+	return &immichv1.ListUsersResponse{
+		Users: protoUsers,
+	}, nil
+}
+
+// GetOnboarding returns the user's onboarding status
+func (s *Server) GetOnboarding(ctx context.Context, _ *emptypb.Empty) (*immichv1.OnboardingResponse, error) {
+	// Get user ID from context
+	claims, ok := auth.GetClaimsFromStdContext(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	}
+
+	userID, err := uuid.Parse(claims.UserID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "invalid user ID: %v", err)
+	}
+
+	onboarding, err := s.userService.GetUserOnboarding(ctx, userID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get onboarding status: %v", err)
+	}
+
+	return &immichv1.OnboardingResponse{
+		IsOnboarded: onboarding.IsOnboarded,
+	}, nil
+}
+
+// UpdateOnboarding updates the user's onboarding status
+func (s *Server) UpdateOnboarding(ctx context.Context, req *immichv1.OnboardingUpdateRequest) (*immichv1.OnboardingResponse, error) {
+	// Get user ID from context
+	claims, ok := auth.GetClaimsFromStdContext(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	}
+
+	userID, err := uuid.Parse(claims.UserID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "invalid user ID: %v", err)
+	}
+
+	onboarding, err := s.userService.UpdateUserOnboarding(ctx, userID, req.IsOnboarded)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to update onboarding status: %v", err)
+	}
+
+	return &immichv1.OnboardingResponse{
+		IsOnboarded: onboarding.IsOnboarded,
+	}, nil
+}

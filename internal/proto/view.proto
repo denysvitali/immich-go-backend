@@ -12,14 +12,14 @@ service ViewService {
   // Get assets by original path
   rpc GetAssetsByOriginalPath(GetAssetsByOriginalPathRequest) returns (GetAssetsByOriginalPathResponse) {
     option (google.api.http) = {
-      get: "/view/folder"
+      get: "/api/view/folder"
     };
   }
 
   // Get unique original paths
   rpc GetUniqueOriginalPaths(GetUniqueOriginalPathsRequest) returns (GetUniqueOriginalPathsResponse) {
     option (google.api.http) = {
-      get: "/view/folder/unique-paths"
+      get: "/api/view/folder/unique-paths"
     };
   }
 }

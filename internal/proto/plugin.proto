@@ -1,0 +1,148 @@
+syntax = "proto3";
+
+package immich.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
+
+option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
+
+// Plugin service for managing server plugins
+service PluginService {
+  // List all installed plugins
+  rpc ListPlugins(google.protobuf.Empty) returns (ListPluginsResponse) {
+    option (google.api.http) = {
+      get: "/api/plugins"
+    };
+  }
+
+  // Get plugin details
+  rpc GetPlugin(GetPluginRequest) returns (PluginInfo) {
+    option (google.api.http) = {
+      get: "/api/plugins/{plugin_id}"
+    };
+  }
+
+  // Install a new plugin
+  rpc InstallPlugin(InstallPluginRequest) returns (PluginInfo) {
+    option (google.api.http) = {
+      post: "/api/plugins"
+      body: "*"
+    };
+  }
+
+  // Uninstall a plugin
+  rpc UninstallPlugin(UninstallPluginRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/api/plugins/{plugin_id}"
+    };
+  }
+
+  // Get plugin configuration
+  rpc GetPluginConfig(GetPluginConfigRequest) returns (PluginConfigResponse) {
+    option (google.api.http) = {
+      get: "/api/plugins/{plugin_id}/config"
+    };
+  }
+
+  // Update plugin configuration
+  rpc UpdatePluginConfig(UpdatePluginConfigRequest) returns (PluginConfigResponse) {
+    option (google.api.http) = {
+      put: "/api/plugins/{plugin_id}/config"
+      body: "*"
+    };
+  }
+
+  // Enable or disable a plugin
+  rpc SetPluginEnabled(SetPluginEnabledRequest) returns (PluginInfo) {
+    option (google.api.http) = {
+      put: "/api/plugins/{plugin_id}/enabled"
+      body: "*"
+    };
+  }
+}
+
+// Plugin status
+enum PluginStatus {
+  PLUGIN_STATUS_UNSPECIFIED = 0;
+  PLUGIN_STATUS_ACTIVE = 1;
+  PLUGIN_STATUS_DISABLED = 2;
+  PLUGIN_STATUS_ERROR = 3;
+  PLUGIN_STATUS_UPDATING = 4;
+}
+
+// Plugin type
+enum PluginType {
+  PLUGIN_TYPE_UNSPECIFIED = 0;
+  PLUGIN_TYPE_STORAGE = 1;      // Storage backend plugins
+  PLUGIN_TYPE_PROCESSOR = 2;    // Asset processor plugins (thumbnails, transcoding)
+  PLUGIN_TYPE_ML = 3;           // Machine learning plugins (face recognition, smart search)
+  PLUGIN_TYPE_NOTIFICATION = 4; // Notification plugins (email, webhook)
+  PLUGIN_TYPE_AUTH = 5;         // Authentication plugins (OAuth, LDAP)
+  PLUGIN_TYPE_INTEGRATION = 6;  // Third-party integrations
+}
+
+// Plugin information
+message PluginInfo {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  string version = 4;
+  string author = 5;
+  PluginType type = 6;
+  PluginStatus status = 7;
+  bool enabled = 8;
+  google.protobuf.Timestamp installed_at = 9;
+  google.protobuf.Timestamp updated_at = 10;
+  optional string error_message = 11;
+  optional string homepage_url = 12;
+  optional string repository_url = 13;
+}
+
+// List plugins response
+message ListPluginsResponse {
+  repeated PluginInfo plugins = 1;
+}
+
+// Get plugin request
+message GetPluginRequest {
+  string plugin_id = 1;
+}
+
+// Install plugin request
+message InstallPluginRequest {
+  string source = 1;          // URL or identifier for the plugin source
+  optional string version = 2; // Specific version to install (default: latest)
+}
+
+// Uninstall plugin request
+message UninstallPluginRequest {
+  string plugin_id = 1;
+  optional bool remove_data = 2; // Whether to remove plugin data (default: false)
+}
+
+// Get plugin config request
+message GetPluginConfigRequest {
+  string plugin_id = 1;
+}
+
+// Plugin config response
+message PluginConfigResponse {
+  string plugin_id = 1;
+  google.protobuf.Struct config = 2;   // Current configuration
+  google.protobuf.Struct schema = 3;   // JSON schema for configuration
+}
+
+// Update plugin config request
+message UpdatePluginConfigRequest {
+  string plugin_id = 1;
+  google.protobuf.Struct config = 2;
+}
+
+// Set plugin enabled request
+message SetPluginEnabledRequest {
+  string plugin_id = 1;
+  bool enabled = 2;
+}

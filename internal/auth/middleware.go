@@ -52,6 +52,13 @@ func timeToTimestamptz(t time.Time) (pgtype.Timestamptz, error) {
 	}, nil
 }
 
+func pgTypeString(s string) pgtype.Text {
+	return pgtype.Text{
+		String: s,
+		Valid:  true,
+	}
+}
+
 // AuthMiddleware creates a middleware for JWT authentication
 func (s *Service) AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {

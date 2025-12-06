@@ -13,14 +13,14 @@ service PeopleService {
   // Get all people
   rpc GetAllPeople(GetAllPeopleRequest) returns (GetAllPeopleResponse) {
     option (google.api.http) = {
-      get: "/people"
+      get: "/api/people"
     };
   }
 
   // Create person
   rpc CreatePerson(CreatePersonRequest) returns (PersonResponse) {
     option (google.api.http) = {
-      post: "/people"
+      post: "/api/people"
       body: "*"
     };
   }
@@ -28,7 +28,7 @@ service PeopleService {
   // Update people
   rpc UpdatePeople(UpdatePeopleRequest) returns (UpdatePeopleResponse) {
     option (google.api.http) = {
-      put: "/people"
+      put: "/api/people"
       body: "*"
     };
   }
@@ -36,14 +36,14 @@ service PeopleService {
   // Get person
   rpc GetPerson(GetPersonRequest) returns (PersonResponse) {
     option (google.api.http) = {
-      get: "/people/{id}"
+      get: "/api/people/{id}"
     };
   }
 
   // Update person
   rpc UpdatePerson(UpdatePersonRequest) returns (PersonResponse) {
     option (google.api.http) = {
-      put: "/people/{id}"
+      put: "/api/people/{id}"
       body: "*"
     };
   }
@@ -51,7 +51,7 @@ service PeopleService {
   // Merge person
   rpc MergePerson(MergePersonRequest) returns (MergePersonResponse) {
     option (google.api.http) = {
-      post: "/people/{id}/merge"
+      post: "/api/people/{id}/merge"
       body: "*"
     };
   }
@@ -59,7 +59,7 @@ service PeopleService {
   // Reassign faces
   rpc ReassignFaces(ReassignFacesRequest) returns (ReassignFacesResponse) {
     option (google.api.http) = {
-      put: "/people/{id}/reassign"
+      put: "/api/people/{id}/reassign"
       body: "*"
     };
   }
@@ -67,14 +67,14 @@ service PeopleService {
   // Get person statistics
   rpc GetPersonStatistics(GetPersonStatisticsRequest) returns (PersonStatisticsResponse) {
     option (google.api.http) = {
-      get: "/people/{id}/statistics"
+      get: "/api/people/{id}/statistics"
     };
   }
 
   // Get person thumbnail
   rpc GetPersonThumbnail(GetPersonThumbnailRequest) returns (GetPersonThumbnailResponse) {
     option (google.api.http) = {
-      get: "/people/{id}/thumbnail"
+      get: "/api/people/{id}/thumbnail"
     };
   }
 }

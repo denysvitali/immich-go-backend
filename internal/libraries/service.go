@@ -480,7 +480,7 @@ func (ls *LibraryScanner) scanPath(ctx context.Context, path string, forceRefres
 		}
 
 		// Check if asset already exists (by path)
-		result, err := s.db.CheckAssetExistsByPath(ctx, path)
+		result, err := ls.db.CheckAssetExistsByPath(ctx, path)
 		if err != nil {
 			logrus.WithError(err).Errorf("Failed to check if asset exists: %s", path)
 			return nil // Continue with other files even if this check fails

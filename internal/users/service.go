@@ -710,3 +710,136 @@ func (s *Service) validatePassword(password string) error {
 	// Add additional password complexity requirements here
 	return nil
 }
+
+// GetAllUsers retrieves all users without pagination (for simple user listing)
+func (s *Service) GetAllUsers(ctx context.Context) ([]*UserInfo, error) {
+	ctx, span := tracer.Start(ctx, "users.get_all_users")
+	defer span.End()
+
+	start := time.Now()
+	defer func() {
+		s.operationDuration.Record(ctx, time.Since(start).Seconds(),
+			metric.WithAttributes(attribute.String("operation", "get_all_users")))
+		s.operationCounter.Add(ctx, 1,
+			metric.WithAttributes(attribute.String("operation", "get_all_users")))
+	}()
+
+	dbUsers, err := s.db.GetAllUsers(ctx)
+	if err != nil {
+		span.RecordError(err)
+		return nil, &UserError{
+			Type:    ErrDatabaseError,
+			Message: "Failed to retrieve users",
+			Err:     err,
+		}
+	}
+
+	users := make([]*UserInfo, 0, len(dbUsers))
+	for _, dbUser := range dbUsers {
+		users = append(users, s.dbUserToUserInfo(dbUser))
+	}
+
+	return users, nil
+}
+
+// GetUserOnboarding retrieves user's onboarding status
+func (s *Service) GetUserOnboarding(ctx context.Context, userID uuid.UUID) (*OnboardingStatus, error) {
+	ctx, span := tracer.Start(ctx, "users.get_user_onboarding",
+		trace.WithAttributes(attribute.String("user_id", userID.String())))
+	defer span.End()
+
+	start := time.Now()
+	defer func() {
+		s.operationDuration.Record(ctx, time.Since(start).Seconds(),
+			metric.WithAttributes(attribute.String("operation", "get_user_onboarding")))
+		s.operationCounter.Add(ctx, 1,
+			metric.WithAttributes(attribute.String("operation", "get_user_onboarding")))
+	}()
+
+	userUUID := pgtype.UUID{}
+	if err := userUUID.Scan(userID.String()); err != nil {
+		span.RecordError(err)
+		return nil, &UserError{
+			Type:    ErrInvalidUserID,
+			Message: "Invalid user ID format",
+			Err:     err,
+		}
+	}
+
+	// Try to get onboarding data
+	data, err := s.db.GetUserOnboarding(ctx, userUUID)
+	if err != nil {
+		// If no onboarding data found, user is not onboarded
+		if err.Error() == "no rows in result set" {
+			return &OnboardingStatus{IsOnboarded: false}, nil
+		}
+		span.RecordError(err)
+		return nil, &UserError{
+			Type:    ErrDatabaseError,
+			Message: "Failed to get onboarding status",
+			Err:     err,
+		}
+	}
+
+	// Parse onboarding JSON
+	var status OnboardingStatus
+	if err := json.Unmarshal(data, &status); err != nil {
+		// Invalid JSON, treat as not onboarded
+		return &OnboardingStatus{IsOnboarded: false}, nil
+	}
+
+	return &status, nil
+}
+
+// UpdateUserOnboarding updates user's onboarding status
+func (s *Service) UpdateUserOnboarding(ctx context.Context, userID uuid.UUID, isOnboarded bool) (*OnboardingStatus, error) {
+	ctx, span := tracer.Start(ctx, "users.update_user_onboarding",
+		trace.WithAttributes(
+			attribute.String("user_id", userID.String()),
+			attribute.Bool("is_onboarded", isOnboarded),
+		))
+	defer span.End()
+
+	start := time.Now()
+	defer func() {
+		s.operationDuration.Record(ctx, time.Since(start).Seconds(),
+			metric.WithAttributes(attribute.String("operation", "update_user_onboarding")))
+		s.operationCounter.Add(ctx, 1,
+			metric.WithAttributes(attribute.String("operation", "update_user_onboarding")))
+	}()
+
+	userUUID := pgtype.UUID{}
+	if err := userUUID.Scan(userID.String()); err != nil {
+		span.RecordError(err)
+		return nil, &UserError{
+			Type:    ErrInvalidUserID,
+			Message: "Invalid user ID format",
+			Err:     err,
+		}
+	}
+
+	status := OnboardingStatus{IsOnboarded: isOnboarded}
+	data, err := json.Marshal(status)
+	if err != nil {
+		span.RecordError(err)
+		return nil, &UserError{
+			Type:    ErrDatabaseError,
+			Message: "Failed to encode onboarding status",
+			Err:     err,
+		}
+	}
+
+	if err := s.db.UpdateUserOnboarding(ctx, sqlc.UpdateUserOnboardingParams{
+		UserId: userUUID,
+		Value:  data,
+	}); err != nil {
+		span.RecordError(err)
+		return nil, &UserError{
+			Type:    ErrDatabaseError,
+			Message: "Failed to update onboarding status",
+			Err:     err,
+		}
+	}
+
+	return &status, nil
+}

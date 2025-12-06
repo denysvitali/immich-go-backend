@@ -1,0 +1,229 @@
+syntax = "proto3";
+
+package immich.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
+
+option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
+
+// Workflow service for automation workflows
+service WorkflowService {
+  // List all workflows
+  rpc ListWorkflows(google.protobuf.Empty) returns (ListWorkflowsResponse) {
+    option (google.api.http) = {
+      get: "/api/workflows"
+    };
+  }
+
+  // Get workflow details
+  rpc GetWorkflow(GetWorkflowRequest) returns (WorkflowInfo) {
+    option (google.api.http) = {
+      get: "/api/workflows/{workflow_id}"
+    };
+  }
+
+  // Create a new workflow
+  rpc CreateWorkflow(CreateWorkflowRequest) returns (WorkflowInfo) {
+    option (google.api.http) = {
+      post: "/api/workflows"
+      body: "*"
+    };
+  }
+
+  // Update an existing workflow
+  rpc UpdateWorkflow(UpdateWorkflowRequest) returns (WorkflowInfo) {
+    option (google.api.http) = {
+      put: "/api/workflows/{workflow_id}"
+      body: "*"
+    };
+  }
+
+  // Delete a workflow
+  rpc DeleteWorkflow(DeleteWorkflowRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/api/workflows/{workflow_id}"
+    };
+  }
+
+  // Manually trigger a workflow
+  rpc TriggerWorkflow(TriggerWorkflowRequest) returns (WorkflowExecutionInfo) {
+    option (google.api.http) = {
+      post: "/api/workflows/{workflow_id}/trigger"
+      body: "*"
+    };
+  }
+
+  // Get workflow execution history
+  rpc GetWorkflowExecutions(GetWorkflowExecutionsRequest) returns (ListWorkflowExecutionsResponse) {
+    option (google.api.http) = {
+      get: "/api/workflows/{workflow_id}/executions"
+    };
+  }
+
+  // Enable or disable a workflow
+  rpc SetWorkflowEnabled(SetWorkflowEnabledRequest) returns (WorkflowInfo) {
+    option (google.api.http) = {
+      put: "/api/workflows/{workflow_id}/enabled"
+      body: "*"
+    };
+  }
+}
+
+// Workflow trigger type
+enum WorkflowTriggerType {
+  WORKFLOW_TRIGGER_TYPE_UNSPECIFIED = 0;
+  WORKFLOW_TRIGGER_TYPE_ASSET_UPLOADED = 1;      // When new asset is uploaded
+  WORKFLOW_TRIGGER_TYPE_ASSET_DELETED = 2;       // When asset is deleted
+  WORKFLOW_TRIGGER_TYPE_ALBUM_CREATED = 3;       // When album is created
+  WORKFLOW_TRIGGER_TYPE_ALBUM_UPDATED = 4;       // When album is updated
+  WORKFLOW_TRIGGER_TYPE_USER_CREATED = 5;        // When user is created
+  WORKFLOW_TRIGGER_TYPE_SCHEDULED = 6;           // Cron-based schedule
+  WORKFLOW_TRIGGER_TYPE_MANUAL = 7;              // Manual trigger only
+  WORKFLOW_TRIGGER_TYPE_FACE_DETECTED = 8;       // When face is detected
+  WORKFLOW_TRIGGER_TYPE_DUPLICATE_FOUND = 9;     // When duplicate is found
+}
+
+// Workflow action type
+enum WorkflowActionType {
+  WORKFLOW_ACTION_TYPE_UNSPECIFIED = 0;
+  WORKFLOW_ACTION_TYPE_ADD_TAG = 1;              // Add tag to asset
+  WORKFLOW_ACTION_TYPE_REMOVE_TAG = 2;           // Remove tag from asset
+  WORKFLOW_ACTION_TYPE_MOVE_TO_ALBUM = 3;        // Move asset to album
+  WORKFLOW_ACTION_TYPE_SET_VISIBILITY = 4;       // Set archive/timeline visibility
+  WORKFLOW_ACTION_TYPE_SEND_NOTIFICATION = 5;    // Send notification
+  WORKFLOW_ACTION_TYPE_WEBHOOK = 6;              // Call external webhook
+  WORKFLOW_ACTION_TYPE_RUN_PLUGIN = 7;           // Run plugin action
+  WORKFLOW_ACTION_TYPE_SET_METADATA = 8;         // Set asset metadata
+  WORKFLOW_ACTION_TYPE_GENERATE_THUMBNAIL = 9;   // Force thumbnail regeneration
+}
+
+// Workflow status
+enum WorkflowStatus {
+  WORKFLOW_STATUS_UNSPECIFIED = 0;
+  WORKFLOW_STATUS_ACTIVE = 1;
+  WORKFLOW_STATUS_DISABLED = 2;
+  WORKFLOW_STATUS_ERROR = 3;
+}
+
+// Workflow execution status
+enum WorkflowExecutionStatus {
+  WORKFLOW_EXECUTION_STATUS_UNSPECIFIED = 0;
+  WORKFLOW_EXECUTION_STATUS_PENDING = 1;
+  WORKFLOW_EXECUTION_STATUS_RUNNING = 2;
+  WORKFLOW_EXECUTION_STATUS_COMPLETED = 3;
+  WORKFLOW_EXECUTION_STATUS_FAILED = 4;
+  WORKFLOW_EXECUTION_STATUS_CANCELLED = 5;
+}
+
+// Workflow trigger configuration
+message WorkflowTrigger {
+  WorkflowTriggerType type = 1;
+  optional string cron_expression = 2;  // For scheduled triggers
+  google.protobuf.Struct conditions = 3; // Conditions to match (e.g., file type, location)
+}
+
+// Workflow action configuration
+message WorkflowAction {
+  WorkflowActionType type = 1;
+  google.protobuf.Struct params = 2; // Action-specific parameters
+  optional int32 order = 3;          // Execution order
+}
+
+// Workflow information
+message WorkflowInfo {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  WorkflowStatus status = 4;
+  bool enabled = 5;
+  WorkflowTrigger trigger = 6;
+  repeated WorkflowAction actions = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp updated_at = 9;
+  optional string created_by = 10;     // User ID who created the workflow
+  optional string error_message = 11;  // Error message if status is ERROR
+  int32 execution_count = 12;          // Total number of executions
+  optional google.protobuf.Timestamp last_execution_at = 13;
+}
+
+// Workflow execution info
+message WorkflowExecutionInfo {
+  string id = 1;
+  string workflow_id = 2;
+  WorkflowExecutionStatus status = 3;
+  google.protobuf.Timestamp started_at = 4;
+  optional google.protobuf.Timestamp completed_at = 5;
+  optional string error_message = 6;
+  google.protobuf.Struct trigger_data = 7;  // Data that triggered the execution
+  repeated WorkflowActionResult action_results = 8;
+}
+
+// Result of a single workflow action
+message WorkflowActionResult {
+  WorkflowActionType type = 1;
+  bool success = 2;
+  optional string error_message = 3;
+  int64 duration_ms = 4;
+}
+
+// List workflows response
+message ListWorkflowsResponse {
+  repeated WorkflowInfo workflows = 1;
+}
+
+// Get workflow request
+message GetWorkflowRequest {
+  string workflow_id = 1;
+}
+
+// Create workflow request
+message CreateWorkflowRequest {
+  string name = 1;
+  optional string description = 2;
+  WorkflowTrigger trigger = 3;
+  repeated WorkflowAction actions = 4;
+  optional bool enabled = 5;  // Default: true
+}
+
+// Update workflow request
+message UpdateWorkflowRequest {
+  string workflow_id = 1;
+  optional string name = 2;
+  optional string description = 3;
+  optional WorkflowTrigger trigger = 4;
+  repeated WorkflowAction actions = 5;
+}
+
+// Delete workflow request
+message DeleteWorkflowRequest {
+  string workflow_id = 1;
+}
+
+// Trigger workflow request
+message TriggerWorkflowRequest {
+  string workflow_id = 1;
+  optional google.protobuf.Struct trigger_data = 2;  // Optional data to pass to the workflow
+}
+
+// Get workflow executions request
+message GetWorkflowExecutionsRequest {
+  string workflow_id = 1;
+  optional int32 limit = 2;
+  optional int32 offset = 3;
+  optional WorkflowExecutionStatus status = 4;  // Filter by status
+}
+
+// List workflow executions response
+message ListWorkflowExecutionsResponse {
+  repeated WorkflowExecutionInfo executions = 1;
+  int32 total = 2;
+}
+
+// Set workflow enabled request
+message SetWorkflowEnabledRequest {
+  string workflow_id = 1;
+  bool enabled = 2;
+}

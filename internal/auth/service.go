@@ -620,6 +620,336 @@ func (s *Service) generateUserID() (string, error) {
 	return base64.URLEncoding.EncodeToString(bytes), nil
 }
 
+// HasPinCode checks if the user has a PIN code set
+func (s *Service) HasPinCode(ctx context.Context, userID string) (bool, error) {
+	ctx, span := tracer.Start(ctx, "auth.HasPinCode",
+		trace.WithAttributes(attribute.String("auth.user_id", userID)))
+	defer span.End()
+
+	userUUID, err := stringToUUID(userID)
+	if err != nil {
+		span.RecordError(err)
+		return false, err
+	}
+
+	hasPinCode, err := s.queries.HasUserPinCode(ctx, userUUID)
+	if err != nil {
+		span.RecordError(err)
+		return false, err
+	}
+
+	return hasPinCode, nil
+}
+
+// SetupPinCode sets up a new PIN code for the user
+func (s *Service) SetupPinCode(ctx context.Context, userID, pinCode string) error {
+	ctx, span := tracer.Start(ctx, "auth.SetupPinCode",
+		trace.WithAttributes(attribute.String("auth.user_id", userID)))
+	defer span.End()
+
+	userUUID, err := stringToUUID(userID)
+	if err != nil {
+		span.RecordError(err)
+		return &AuthError{
+			Type:    ErrInvalidCredentials,
+			Message: "Invalid user ID",
+			Err:     err,
+		}
+	}
+
+	// Check if PIN code already exists
+	hasPinCode, err := s.queries.HasUserPinCode(ctx, userUUID)
+	if err != nil {
+		span.RecordError(err)
+		return &AuthError{
+			Type:    ErrPinCodeUpdate,
+			Message: "Failed to check PIN code status",
+			Err:     err,
+		}
+	}
+
+	if hasPinCode {
+		return &AuthError{
+			Type:    ErrPinCodeExists,
+			Message: "PIN code already set. Use change PIN code instead.",
+		}
+	}
+
+	// Hash the PIN code
+	hashedPinCode, err := bcrypt.GenerateFromPassword([]byte(pinCode), bcrypt.DefaultCost)
+	if err != nil {
+		span.RecordError(err)
+		return &AuthError{
+			Type:    ErrPasswordHashing,
+			Message: "Failed to hash PIN code",
+			Err:     err,
+		}
+	}
+
+	// Store the PIN code
+	if err := s.queries.SetUserPinCode(ctx, sqlc.SetUserPinCodeParams{
+		PinCode: pgTypeString(string(hashedPinCode)),
+		ID:      userUUID,
+	}); err != nil {
+		span.RecordError(err)
+		return &AuthError{
+			Type:    ErrPinCodeUpdate,
+			Message: "Failed to set PIN code",
+			Err:     err,
+		}
+	}
+
+	return nil
+}
+
+// ChangePinCode changes the PIN code for the user
+func (s *Service) ChangePinCode(ctx context.Context, userID, currentPinCode, newPinCode string) error {
+	ctx, span := tracer.Start(ctx, "auth.ChangePinCode",
+		trace.WithAttributes(attribute.String("auth.user_id", userID)))
+	defer span.End()
+
+	userUUID, err := stringToUUID(userID)
+	if err != nil {
+		span.RecordError(err)
+		return &AuthError{
+			Type:    ErrInvalidCredentials,
+			Message: "Invalid user ID",
+			Err:     err,
+		}
+	}
+
+	// Get current PIN code
+	result, err := s.queries.GetUserPinCode(ctx, userUUID)
+	if err != nil {
+		span.RecordError(err)
+		return &AuthError{
+			Type:    ErrPinCodeUpdate,
+			Message: "Failed to get current PIN code",
+			Err:     err,
+		}
+	}
+
+	if !result.Valid {
+		return &AuthError{
+			Type:    ErrNoPinCode,
+			Message: "No PIN code set",
+		}
+	}
+
+	// Verify current PIN code
+	if err := bcrypt.CompareHashAndPassword([]byte(result.String), []byte(currentPinCode)); err != nil {
+		span.RecordError(err)
+		return &AuthError{
+			Type:    ErrInvalidCredentials,
+			Message: "Current PIN code is incorrect",
+			Err:     err,
+		}
+	}
+
+	// Hash the new PIN code
+	hashedPinCode, err := bcrypt.GenerateFromPassword([]byte(newPinCode), bcrypt.DefaultCost)
+	if err != nil {
+		span.RecordError(err)
+		return &AuthError{
+			Type:    ErrPasswordHashing,
+			Message: "Failed to hash new PIN code",
+			Err:     err,
+		}
+	}
+
+	// Store the new PIN code
+	if err := s.queries.SetUserPinCode(ctx, sqlc.SetUserPinCodeParams{
+		PinCode: pgTypeString(string(hashedPinCode)),
+		ID:      userUUID,
+	}); err != nil {
+		span.RecordError(err)
+		return &AuthError{
+			Type:    ErrPinCodeUpdate,
+			Message: "Failed to update PIN code",
+			Err:     err,
+		}
+	}
+
+	return nil
+}
+
+// ResetPinCode resets the PIN code by verifying the account password
+func (s *Service) ResetPinCode(ctx context.Context, userID, password string) error {
+	ctx, span := tracer.Start(ctx, "auth.ResetPinCode",
+		trace.WithAttributes(attribute.String("auth.user_id", userID)))
+	defer span.End()
+
+	userUUID, err := stringToUUID(userID)
+	if err != nil {
+		span.RecordError(err)
+		return &AuthError{
+			Type:    ErrInvalidCredentials,
+			Message: "Invalid user ID",
+			Err:     err,
+		}
+	}
+
+	// Get user to verify password
+	user, err := s.queries.GetUserByID(ctx, userUUID)
+	if err != nil {
+		span.RecordError(err)
+		return &AuthError{
+			Type:    ErrUserNotFound,
+			Message: "User not found",
+			Err:     err,
+		}
+	}
+
+	// Verify password
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
+		span.RecordError(err)
+		return &AuthError{
+			Type:    ErrInvalidCredentials,
+			Message: "Password is incorrect",
+			Err:     err,
+		}
+	}
+
+	// Clear the PIN code
+	if err := s.queries.ClearUserPinCode(ctx, userUUID); err != nil {
+		span.RecordError(err)
+		return &AuthError{
+			Type:    ErrPinCodeUpdate,
+			Message: "Failed to clear PIN code",
+			Err:     err,
+		}
+	}
+
+	return nil
+}
+
+// UnlockSession unlocks a session with PIN code for elevated access
+func (s *Service) UnlockSession(ctx context.Context, userID, sessionID, pinCode string) error {
+	ctx, span := tracer.Start(ctx, "auth.UnlockSession",
+		trace.WithAttributes(
+			attribute.String("auth.user_id", userID),
+			attribute.String("auth.session_id", sessionID)))
+	defer span.End()
+
+	userUUID, err := stringToUUID(userID)
+	if err != nil {
+		span.RecordError(err)
+		return &AuthError{
+			Type:    ErrInvalidCredentials,
+			Message: "Invalid user ID",
+			Err:     err,
+		}
+	}
+
+	// Get user's PIN code
+	result, err := s.queries.GetUserPinCode(ctx, userUUID)
+	if err != nil {
+		span.RecordError(err)
+		return &AuthError{
+			Type:    ErrPinCodeUpdate,
+			Message: "Failed to get PIN code",
+			Err:     err,
+		}
+	}
+
+	if !result.Valid {
+		return &AuthError{
+			Type:    ErrNoPinCode,
+			Message: "No PIN code set",
+		}
+	}
+
+	// Verify PIN code
+	if err := bcrypt.CompareHashAndPassword([]byte(result.String), []byte(pinCode)); err != nil {
+		span.RecordError(err)
+		return &AuthError{
+			Type:    ErrInvalidCredentials,
+			Message: "PIN code is incorrect",
+			Err:     err,
+		}
+	}
+
+	// Set session PIN elevation (expires in 1 hour)
+	sessionUUID, err := stringToUUID(sessionID)
+	if err != nil {
+		span.RecordError(err)
+		return &AuthError{
+			Type:    ErrInvalidCredentials,
+			Message: "Invalid session ID",
+			Err:     err,
+		}
+	}
+
+	pinExpiresAt, err := timeToTimestamptz(time.Now().Add(1 * time.Hour))
+	if err != nil {
+		span.RecordError(err)
+		return err
+	}
+
+	if err := s.queries.SetSessionPinElevation(ctx, sqlc.SetSessionPinElevationParams{
+		PinExpiresAt: pinExpiresAt,
+		ID:           sessionUUID,
+	}); err != nil {
+		span.RecordError(err)
+		return &AuthError{
+			Type:    ErrSessionUpdate,
+			Message: "Failed to elevate session",
+			Err:     err,
+		}
+	}
+
+	return nil
+}
+
+// LockSession locks a session to revoke elevated access
+func (s *Service) LockSession(ctx context.Context, sessionID string) error {
+	ctx, span := tracer.Start(ctx, "auth.LockSession",
+		trace.WithAttributes(attribute.String("auth.session_id", sessionID)))
+	defer span.End()
+
+	sessionUUID, err := stringToUUID(sessionID)
+	if err != nil {
+		span.RecordError(err)
+		return &AuthError{
+			Type:    ErrInvalidCredentials,
+			Message: "Invalid session ID",
+			Err:     err,
+		}
+	}
+
+	if err := s.queries.ClearSessionPinElevation(ctx, sessionUUID); err != nil {
+		span.RecordError(err)
+		return &AuthError{
+			Type:    ErrSessionUpdate,
+			Message: "Failed to lock session",
+			Err:     err,
+		}
+	}
+
+	return nil
+}
+
+// IsSessionElevated checks if a session has elevated access
+func (s *Service) IsSessionElevated(ctx context.Context, sessionID string) (bool, error) {
+	ctx, span := tracer.Start(ctx, "auth.IsSessionElevated",
+		trace.WithAttributes(attribute.String("auth.session_id", sessionID)))
+	defer span.End()
+
+	sessionUUID, err := stringToUUID(sessionID)
+	if err != nil {
+		span.RecordError(err)
+		return false, err
+	}
+
+	isElevated, err := s.queries.IsSessionElevated(ctx, sessionUUID)
+	if err != nil {
+		span.RecordError(err)
+		return false, err
+	}
+
+	return isElevated, nil
+}
+
 // validatePassword validates password complexity requirements
 func (s *Service) validatePassword(password string) error {
 	if len(password) < s.config.PasswordMinLength {

@@ -267,6 +267,16 @@ func (s *Service) processAsset(ctx context.Context, assetID uuid.UUID) {
 		return
 	}
 
+	// Get file metadata (including size) from storage
+	fileMetadata, err := s.storage.GetAssetMetadata(ctx, asset.OriginalPath)
+	if err != nil {
+		span.RecordError(err)
+		s.markAssetFailed(ctx, assetUUID, fmt.Sprintf("failed to get file metadata: %v", err))
+		return
+	}
+	fileSize := fileMetadata.Size
+	span.SetAttributes(attribute.Int64("file_size", fileSize))
+
 	// Download file for processing
 	reader, err := s.storage.Download(ctx, asset.OriginalPath)
 	if err != nil {
@@ -277,9 +287,8 @@ func (s *Service) processAsset(ctx context.Context, assetID uuid.UUID) {
 	defer reader.Close()
 
 	// Extract metadata
-	// TODO: Store MIME type and size in database or derive from file
 	mimeType := s.getMimeTypeFromAssetType(asset.Type)
-	metadata, err := s.metadataExtractor.ExtractMetadata(ctx, reader, asset.OriginalFileName, mimeType, 0)
+	metadata, err := s.metadataExtractor.ExtractMetadata(ctx, reader, asset.OriginalFileName, mimeType, fileSize)
 	if err != nil {
 		span.RecordError(err)
 		// Continue processing even if metadata extraction fails
@@ -425,6 +434,11 @@ func (s *Service) updateAssetMetadata(ctx context.Context, assetID pgtype.UUID, 
 
 	if metadata.Description != nil {
 		params.Description = *metadata.Description
+	}
+
+	// Save file size if available
+	if metadata.Size > 0 {
+		params.FileSizeInByte = pgtype.Int8{Int64: metadata.Size, Valid: true}
 	}
 
 	_, err := s.db.CreateOrUpdateExif(ctx, params)

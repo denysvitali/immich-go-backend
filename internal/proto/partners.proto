@@ -14,21 +14,21 @@ service PartnersService {
   // Get partners
   rpc GetPartners(GetPartnersRequest) returns (GetPartnersResponse) {
     option (google.api.http) = {
-      get: "/partners"
+      get: "/api/partners"
     };
   }
 
   // Remove partner
   rpc RemovePartner(RemovePartnerRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {
-      delete: "/partners/{id}"
+      delete: "/api/partners/{id}"
     };
   }
 
   // Create partner
   rpc CreatePartner(CreatePartnerRequest) returns (PartnerResponse) {
     option (google.api.http) = {
-      post: "/partners/{id}"
+      post: "/api/partners/{id}"
       body: "*"
     };
   }
@@ -36,7 +36,7 @@ service PartnersService {
   // Update partner
   rpc UpdatePartner(UpdatePartnerRequest) returns (PartnerResponse) {
     option (google.api.http) = {
-      put: "/partners/{id}"
+      put: "/api/partners/{id}"
       body: "*"
     };
   }

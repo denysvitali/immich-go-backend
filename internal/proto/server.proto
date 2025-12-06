@@ -102,6 +102,20 @@ service ServerService {
       get: "/api/server/version-history"
     };
   }
+
+  // Get APK download links
+  rpc GetApkLinks(google.protobuf.Empty) returns (ServerApkLinksResponse) {
+    option (google.api.http) = {
+      get: "/api/server/apk-links"
+    };
+  }
+
+  // Check for version updates
+  rpc CheckVersion(google.protobuf.Empty) returns (ServerVersionCheckResponse) {
+    option (google.api.http) = {
+      get: "/api/server/version-check"
+    };
+  }
 }
 
 // Server about information response
@@ -241,4 +255,25 @@ message ServerVersionHistoryItem {
 // Server version history response
 message ServerVersionHistoryResponse {
   repeated ServerVersionHistoryItem items = 1;
+}
+
+// APK link info
+message ApkLink {
+  string name = 1;
+  string url = 2;
+  string version = 3;
+}
+
+// Server APK links response
+message ServerApkLinksResponse {
+  repeated ApkLink links = 1;
+}
+
+// Server version check response
+message ServerVersionCheckResponse {
+  string current_version = 1;
+  string latest_version = 2;
+  bool is_update_available = 3;
+  string release_notes_url = 4;
+  google.protobuf.Timestamp checked_at = 5;
 }

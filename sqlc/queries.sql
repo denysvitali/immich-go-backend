@@ -328,6 +328,30 @@ SET "deletedAt" = NULL,
 WHERE id = $1
 RETURNING *;
 
+-- name: ClearAllOAuthIds :exec
+UPDATE users
+SET "oauthId" = '',
+    "updatedAt" = now()
+WHERE "oauthId" != '';
+
+-- name: GetAllUsers :many
+SELECT * FROM users
+WHERE "deletedAt" IS NULL
+ORDER BY "createdAt" DESC;
+
+-- name: GetAllUsersWithDeleted :many
+SELECT * FROM users
+ORDER BY "createdAt" DESC;
+
+-- name: GetUserOnboarding :one
+SELECT value FROM user_metadata
+WHERE "userId" = $1 AND key = 'onboarding';
+
+-- name: UpdateUserOnboarding :exec
+INSERT INTO user_metadata ("userId", key, value)
+VALUES ($1, 'onboarding', $2)
+ON CONFLICT ("userId", key) DO UPDATE SET value = $2;
+
 -- User Preferences queries using user_metadata table
 -- name: GetUserPreferencesData :one
 SELECT value FROM user_metadata
@@ -1303,3 +1327,47 @@ WHERE "expiresAt" < NOW();
 -- name: CountUserSessions :one
 SELECT COUNT(*) FROM sessions
 WHERE "userId" = $1;
+
+-- PIN Code queries
+
+-- name: GetUserPinCode :one
+SELECT "pinCode" FROM users
+WHERE id = $1;
+
+-- name: SetUserPinCode :exec
+UPDATE users
+SET "pinCode" = $1, "updatedAt" = NOW()
+WHERE id = $2;
+
+-- name: ClearUserPinCode :exec
+UPDATE users
+SET "pinCode" = NULL, "updatedAt" = NOW()
+WHERE id = $1;
+
+-- name: HasUserPinCode :one
+SELECT EXISTS(
+    SELECT 1 FROM users
+    WHERE id = $1 AND "pinCode" IS NOT NULL
+) AS has_pin_code;
+
+-- Session PIN elevation queries
+
+-- name: SetSessionPinElevation :exec
+UPDATE sessions
+SET "pinExpiresAt" = $1, "updatedAt" = NOW()
+WHERE id = $2;
+
+-- name: ClearSessionPinElevation :exec
+UPDATE sessions
+SET "pinExpiresAt" = NULL, "updatedAt" = NOW()
+WHERE id = $1;
+
+-- name: IsSessionElevated :one
+SELECT
+    CASE
+        WHEN "pinExpiresAt" IS NULL THEN false
+        WHEN "pinExpiresAt" > NOW() THEN true
+        ELSE false
+    END AS is_elevated
+FROM sessions
+WHERE id = $1;

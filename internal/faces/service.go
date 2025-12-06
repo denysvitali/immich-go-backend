@@ -84,7 +84,8 @@ func (s *Service) GetFaces(ctx context.Context, req GetFacesRequest) (*GetFacesR
 
 	if req.AssetID != "" {
 		// Get faces by asset
-		assetID, err := uuid.Parse(req.AssetID)
+		var assetID uuid.UUID
+		assetID, err = uuid.Parse(req.AssetID)
 		if err != nil {
 			return nil, fmt.Errorf("invalid asset ID: %w", err)
 		}
@@ -94,7 +95,8 @@ func (s *Service) GetFaces(ctx context.Context, req GetFacesRequest) (*GetFacesR
 		}
 	} else if req.PersonID != "" {
 		// Get faces by person
-		personID, err := uuid.Parse(req.PersonID)
+		var personID uuid.UUID
+		personID, err = uuid.Parse(req.PersonID)
 		if err != nil {
 			return nil, fmt.Errorf("invalid person ID: %w", err)
 		}
@@ -255,7 +257,9 @@ func (s *Service) ReassignFacesById(ctx context.Context, faceID, personID string
 // Request/Response types
 
 type GetFacesRequest struct {
-	ID *string
+	ID       *string
+	AssetID  string
+	PersonID string
 }
 
 type GetFacesResponse struct {

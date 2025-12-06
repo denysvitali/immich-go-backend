@@ -11,14 +11,14 @@ service MapService {
   // Get map markers
   rpc GetMapMarkers(GetMapMarkersRequest) returns (GetMapMarkersResponse) {
     option (google.api.http) = {
-      get: "/map/markers"
+      get: "/api/map/markers"
     };
   }
 
   // Reverse geocode
   rpc ReverseGeocode(ReverseGeocodeRequest) returns (ReverseGeocodeResponse) {
     option (google.api.http) = {
-      get: "/map/reverse-geocode"
+      get: "/api/map/reverse-geocode"
     };
   }
 }

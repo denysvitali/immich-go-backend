@@ -12,7 +12,7 @@ service DuplicatesService {
   // Get asset duplicates
   rpc GetAssetDuplicates(GetAssetDuplicatesRequest) returns (GetAssetDuplicatesResponse) {
     option (google.api.http) = {
-      get: "/duplicates"
+      get: "/api/duplicates"
     };
   }
 }

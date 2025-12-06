@@ -144,3 +144,135 @@ func (s *Server) ChangePassword(ctx context.Context, req *immichv1.ChangePasswor
 
 	return &emptypb.Empty{}, nil
 }
+
+// GetAuthStatus returns the current auth status including session info
+func (s *Server) GetAuthStatus(ctx context.Context, req *emptypb.Empty) (*immichv1.AuthStatusResponse, error) {
+	// Get user from context
+	userID, err := s.getUserIDFromContext(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Unauthenticated, "not authenticated")
+	}
+
+	// Get user details to check if they have a password set
+	_, err = s.userService.GetUser(ctx, userID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get user: %v", err)
+	}
+
+	// Check if user has a PIN code set
+	hasPinCode, err := s.authService.HasPinCode(ctx, userID.String())
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to check PIN code status: %v", err)
+	}
+
+	// Check if session is elevated
+	sessionID, _ := s.getSessionIDFromContext(ctx)
+	isElevated := false
+	if sessionID != "" {
+		isElevated, _ = s.authService.IsSessionElevated(ctx, sessionID)
+	}
+
+	// Assume users have passwords unless they only use OAuth
+	// (OAuth-only users would have an empty password hash)
+	hasPassword := true
+
+	return &immichv1.AuthStatusResponse{
+		HasPassword:    hasPassword,
+		IsElevated:     isElevated,
+		PinCodeEnabled: hasPinCode,
+	}, nil
+}
+
+// SetupPinCode sets up a new PIN code for the current user
+func (s *Server) SetupPinCode(ctx context.Context, req *immichv1.PinCodeSetupRequest) (*emptypb.Empty, error) {
+	userID, err := s.getUserIDFromContext(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Unauthenticated, "not authenticated")
+	}
+
+	err = s.authService.SetupPinCode(ctx, userID.String(), req.PinCode)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to setup PIN code: %v", err)
+	}
+
+	return &emptypb.Empty{}, nil
+}
+
+// ChangePinCode changes the PIN code for the current user
+func (s *Server) ChangePinCode(ctx context.Context, req *immichv1.PinCodeChangeRequest) (*emptypb.Empty, error) {
+	userID, err := s.getUserIDFromContext(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Unauthenticated, "not authenticated")
+	}
+
+	err = s.authService.ChangePinCode(ctx, userID.String(), req.CurrentPinCode, req.NewPinCode)
+	if err != nil {
+		if authErr, ok := err.(*auth.AuthError); ok && authErr.Type == auth.ErrInvalidCredentials {
+			return nil, status.Errorf(codes.InvalidArgument, "current PIN code is incorrect")
+		}
+		return nil, status.Errorf(codes.Internal, "failed to change PIN code: %v", err)
+	}
+
+	return &emptypb.Empty{}, nil
+}
+
+// ResetPinCode resets the PIN code by verifying account password
+func (s *Server) ResetPinCode(ctx context.Context, req *immichv1.PinCodeResetRequest) (*emptypb.Empty, error) {
+	userID, err := s.getUserIDFromContext(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Unauthenticated, "not authenticated")
+	}
+
+	err = s.authService.ResetPinCode(ctx, userID.String(), req.Password)
+	if err != nil {
+		if authErr, ok := err.(*auth.AuthError); ok && authErr.Type == auth.ErrInvalidCredentials {
+			return nil, status.Errorf(codes.InvalidArgument, "password is incorrect")
+		}
+		return nil, status.Errorf(codes.Internal, "failed to reset PIN code: %v", err)
+	}
+
+	return &emptypb.Empty{}, nil
+}
+
+// UnlockSession unlocks the session with a PIN code for elevated access
+func (s *Server) UnlockSession(ctx context.Context, req *immichv1.SessionUnlockRequest) (*emptypb.Empty, error) {
+	userID, err := s.getUserIDFromContext(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Unauthenticated, "not authenticated")
+	}
+
+	sessionID, err := s.getSessionIDFromContext(ctx)
+	if err != nil || sessionID == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "no session found")
+	}
+
+	err = s.authService.UnlockSession(ctx, userID.String(), sessionID, req.PinCode)
+	if err != nil {
+		if authErr, ok := err.(*auth.AuthError); ok && authErr.Type == auth.ErrInvalidCredentials {
+			return nil, status.Errorf(codes.InvalidArgument, "PIN code is incorrect")
+		}
+		return nil, status.Errorf(codes.Internal, "failed to unlock session: %v", err)
+	}
+
+	return &emptypb.Empty{}, nil
+}
+
+// LockSession locks the session to revoke elevated access
+func (s *Server) LockSession(ctx context.Context, req *emptypb.Empty) (*emptypb.Empty, error) {
+	_, err := s.getUserIDFromContext(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Unauthenticated, "not authenticated")
+	}
+
+	sessionID, err := s.getSessionIDFromContext(ctx)
+	if err != nil || sessionID == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "no session found")
+	}
+
+	err = s.authService.LockSession(ctx, sessionID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to lock session: %v", err)
+	}
+
+	return &emptypb.Empty{}, nil
+}

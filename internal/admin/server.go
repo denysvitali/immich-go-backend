@@ -410,3 +410,92 @@ func (s *Server) convertToProtoUser(user *UserAdminResponseDto) *immichv1.UserAd
 
 	return protoUser
 }
+
+// GetUserSessionsAdmin gets user sessions (admin function)
+func (s *Server) GetUserSessionsAdmin(ctx context.Context, request *immichv1.GetUserSessionsAdminRequest) (*immichv1.GetUserSessionsAdminResponse, error) {
+	// Require admin privileges
+	_, err := auth.RequireAdmin(ctx)
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, "admin privileges required")
+	}
+
+	// Parse user ID
+	userID, err := uuid.Parse(request.GetId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid user ID: %v", err)
+	}
+	userUUID := pgtype.UUID{Bytes: userID, Valid: true}
+
+	// Get sessions from database
+	sessions, err := s.service.db.GetUserSessions(ctx, userUUID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get user sessions: %v", err)
+	}
+
+	// Convert to proto
+	var protoSessions []*immichv1.SessionResponseDto
+	for _, session := range sessions {
+		protoSession := &immichv1.SessionResponseDto{
+			Id:        uuidToString(session.ID),
+			CreatedAt: timestamppb.New(session.CreatedAt.Time),
+			UpdatedAt: timestamppb.New(session.UpdatedAt.Time),
+			Current:   false, // Admin viewing, so not their session
+		}
+		protoSession.DeviceType = session.DeviceType
+		protoSession.DeviceOs = session.DeviceOS
+		protoSessions = append(protoSessions, protoSession)
+	}
+
+	return &immichv1.GetUserSessionsAdminResponse{
+		Sessions: protoSessions,
+	}, nil
+}
+
+// DeleteUserSessionAdmin deletes a user session (admin function)
+func (s *Server) DeleteUserSessionAdmin(ctx context.Context, request *immichv1.DeleteUserSessionAdminRequest) (*emptypb.Empty, error) {
+	// Require admin privileges
+	_, err := auth.RequireAdmin(ctx)
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, "admin privileges required")
+	}
+
+	// Parse session ID
+	sessionID, err := uuid.Parse(request.GetSessionId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid session ID: %v", err)
+	}
+	sessionUUID := pgtype.UUID{Bytes: sessionID, Valid: true}
+
+	// Delete session
+	err = s.service.db.DeleteSession(ctx, sessionUUID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to delete session: %v", err)
+	}
+
+	return &emptypb.Empty{}, nil
+}
+
+// UnlinkAllOAuthAccounts unlinks all OAuth accounts (admin function)
+func (s *Server) UnlinkAllOAuthAccounts(ctx context.Context, _ *emptypb.Empty) (*emptypb.Empty, error) {
+	// Require admin privileges
+	_, err := auth.RequireAdmin(ctx)
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, "admin privileges required")
+	}
+
+	// Clear all OAuth IDs from users
+	err = s.service.db.ClearAllOAuthIds(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to unlink OAuth accounts: %v", err)
+	}
+
+	return &emptypb.Empty{}, nil
+}
+
+// Helper function to convert UUID to string
+func uuidToString(u pgtype.UUID) string {
+	if !u.Valid {
+		return ""
+	}
+	return uuid.UUID(u.Bytes).String()
+}

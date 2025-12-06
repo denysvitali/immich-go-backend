@@ -1,0 +1,70 @@
+syntax = "proto3";
+
+package immich.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+
+option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
+
+// MaintenanceService handles system maintenance operations
+service MaintenanceService {
+  // Set maintenance mode (start or stop)
+  rpc SetMaintenanceMode(SetMaintenanceModeRequest) returns (SetMaintenanceModeResponse) {
+    option (google.api.http) = {
+      post: "/api/admin/maintenance"
+      body: "*"
+    };
+  }
+
+  // Login to maintenance mode
+  rpc MaintenanceLogin(MaintenanceLoginRequest) returns (MaintenanceAuthResponse) {
+    option (google.api.http) = {
+      post: "/api/admin/maintenance/login"
+      body: "*"
+    };
+  }
+
+  // Get maintenance mode status
+  rpc GetMaintenanceStatus(google.protobuf.Empty) returns (MaintenanceStatusResponse) {
+    option (google.api.http) = {
+      get: "/api/admin/maintenance/status"
+    };
+  }
+}
+
+// Maintenance action enum
+enum MaintenanceAction {
+  MAINTENANCE_ACTION_UNSPECIFIED = 0;
+  MAINTENANCE_ACTION_START = 1;
+  MAINTENANCE_ACTION_STOP = 2;
+}
+
+// Request to set maintenance mode
+message SetMaintenanceModeRequest {
+  MaintenanceAction action = 1;
+}
+
+// Response from setting maintenance mode
+message SetMaintenanceModeResponse {
+  bool is_maintenance_mode = 1;
+  optional string token = 2; // JWT token for maintenance mode access
+}
+
+// Request to login to maintenance mode
+message MaintenanceLoginRequest {
+  optional string token = 1; // Maintenance token from cookie or header
+}
+
+// Maintenance auth response
+message MaintenanceAuthResponse {
+  string username = 1;
+  bool is_authenticated = 2;
+}
+
+// Maintenance status response
+message MaintenanceStatusResponse {
+  bool is_maintenance_mode = 1;
+  optional string started_by = 2;
+  optional string started_at = 3;
+}

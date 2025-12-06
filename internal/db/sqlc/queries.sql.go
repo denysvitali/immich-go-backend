@@ -138,6 +138,40 @@ func (q *Queries) CheckExistingAssets(ctx context.Context, arg CheckExistingAsse
 	return items, nil
 }
 
+const clearAllOAuthIds = `-- name: ClearAllOAuthIds :exec
+UPDATE users
+SET "oauthId" = '',
+    "updatedAt" = now()
+WHERE "oauthId" != ''
+`
+
+func (q *Queries) ClearAllOAuthIds(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, clearAllOAuthIds)
+	return err
+}
+
+const clearSessionPinElevation = `-- name: ClearSessionPinElevation :exec
+UPDATE sessions
+SET "pinExpiresAt" = NULL, "updatedAt" = NOW()
+WHERE id = $1
+`
+
+func (q *Queries) ClearSessionPinElevation(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, clearSessionPinElevation, id)
+	return err
+}
+
+const clearUserPinCode = `-- name: ClearUserPinCode :exec
+UPDATE users
+SET "pinCode" = NULL, "updatedAt" = NOW()
+WHERE id = $1
+`
+
+func (q *Queries) ClearUserPinCode(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, clearUserPinCode, id)
+	return err
+}
+
 const countAssets = `-- name: CountAssets :one
 SELECT COUNT(*) FROM assets
 WHERE "ownerId" = $1 
@@ -1791,6 +1825,97 @@ func (q *Queries) GetAlbumsByOwner(ctx context.Context, ownerid pgtype.UUID) ([]
 			&i.IsActivityEnabled,
 			&i.Order,
 			&i.UpdateId,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAllUsers = `-- name: GetAllUsers :many
+SELECT id, email, password, "createdAt", "profileImagePath", "isAdmin", "shouldChangePassword", "deletedAt", "oauthId", "updatedAt", "storageLabel", name, "quotaSizeInBytes", "quotaUsageInBytes", status, "profileChangedAt", "updateId", "avatarColor", "pinCode" FROM users
+WHERE "deletedAt" IS NULL
+ORDER BY "createdAt" DESC
+`
+
+func (q *Queries) GetAllUsers(ctx context.Context) ([]User, error) {
+	rows, err := q.db.Query(ctx, getAllUsers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []User
+	for rows.Next() {
+		var i User
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.Password,
+			&i.CreatedAt,
+			&i.ProfileImagePath,
+			&i.IsAdmin,
+			&i.ShouldChangePassword,
+			&i.DeletedAt,
+			&i.OauthId,
+			&i.UpdatedAt,
+			&i.StorageLabel,
+			&i.Name,
+			&i.QuotaSizeInBytes,
+			&i.QuotaUsageInBytes,
+			&i.Status,
+			&i.ProfileChangedAt,
+			&i.UpdateId,
+			&i.AvatarColor,
+			&i.PinCode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAllUsersWithDeleted = `-- name: GetAllUsersWithDeleted :many
+SELECT id, email, password, "createdAt", "profileImagePath", "isAdmin", "shouldChangePassword", "deletedAt", "oauthId", "updatedAt", "storageLabel", name, "quotaSizeInBytes", "quotaUsageInBytes", status, "profileChangedAt", "updateId", "avatarColor", "pinCode" FROM users
+ORDER BY "createdAt" DESC
+`
+
+func (q *Queries) GetAllUsersWithDeleted(ctx context.Context) ([]User, error) {
+	rows, err := q.db.Query(ctx, getAllUsersWithDeleted)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []User
+	for rows.Next() {
+		var i User
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.Password,
+			&i.CreatedAt,
+			&i.ProfileImagePath,
+			&i.IsAdmin,
+			&i.ShouldChangePassword,
+			&i.DeletedAt,
+			&i.OauthId,
+			&i.UpdatedAt,
+			&i.StorageLabel,
+			&i.Name,
+			&i.QuotaSizeInBytes,
+			&i.QuotaUsageInBytes,
+			&i.Status,
+			&i.ProfileChangedAt,
+			&i.UpdateId,
+			&i.AvatarColor,
+			&i.PinCode,
 		); err != nil {
 			return nil, err
 		}
@@ -4963,6 +5088,32 @@ func (q *Queries) GetUserMetadata(ctx context.Context, arg GetUserMetadataParams
 	return i, err
 }
 
+const getUserOnboarding = `-- name: GetUserOnboarding :one
+SELECT value FROM user_metadata
+WHERE "userId" = $1 AND key = 'onboarding'
+`
+
+func (q *Queries) GetUserOnboarding(ctx context.Context, userid pgtype.UUID) ([]byte, error) {
+	row := q.db.QueryRow(ctx, getUserOnboarding, userid)
+	var value []byte
+	err := row.Scan(&value)
+	return value, err
+}
+
+const getUserPinCode = `-- name: GetUserPinCode :one
+
+SELECT "pinCode" FROM users
+WHERE id = $1
+`
+
+// PIN Code queries
+func (q *Queries) GetUserPinCode(ctx context.Context, id pgtype.UUID) (pgtype.Text, error) {
+	row := q.db.QueryRow(ctx, getUserPinCode, id)
+	var pinCode pgtype.Text
+	err := row.Scan(&pinCode)
+	return pinCode, err
+}
+
 const getUserPreferences = `-- name: GetUserPreferences :many
 SELECT "userId", key, value FROM user_metadata
 WHERE "userId" = $1
@@ -5133,6 +5284,38 @@ WHERE id = $1
 func (q *Queries) HardDeleteUser(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, hardDeleteUser, id)
 	return err
+}
+
+const hasUserPinCode = `-- name: HasUserPinCode :one
+SELECT EXISTS(
+    SELECT 1 FROM users
+    WHERE id = $1 AND "pinCode" IS NOT NULL
+) AS has_pin_code
+`
+
+func (q *Queries) HasUserPinCode(ctx context.Context, id pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, hasUserPinCode, id)
+	var has_pin_code bool
+	err := row.Scan(&has_pin_code)
+	return has_pin_code, err
+}
+
+const isSessionElevated = `-- name: IsSessionElevated :one
+SELECT
+    CASE
+        WHEN "pinExpiresAt" IS NULL THEN false
+        WHEN "pinExpiresAt" > NOW() THEN true
+        ELSE false
+    END AS is_elevated
+FROM sessions
+WHERE id = $1
+`
+
+func (q *Queries) IsSessionElevated(ctx context.Context, id pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, isSessionElevated, id)
+	var is_elevated bool
+	err := row.Scan(&is_elevated)
+	return is_elevated, err
 }
 
 const listUsers = `-- name: ListUsers :many
@@ -5873,6 +6056,24 @@ func (q *Queries) SearchPlaces(ctx context.Context, arg SearchPlacesParams) ([]S
 	return items, nil
 }
 
+const setSessionPinElevation = `-- name: SetSessionPinElevation :exec
+
+UPDATE sessions
+SET "pinExpiresAt" = $1, "updatedAt" = NOW()
+WHERE id = $2
+`
+
+type SetSessionPinElevationParams struct {
+	PinExpiresAt pgtype.Timestamptz
+	ID           pgtype.UUID
+}
+
+// Session PIN elevation queries
+func (q *Queries) SetSessionPinElevation(ctx context.Context, arg SetSessionPinElevationParams) error {
+	_, err := q.db.Exec(ctx, setSessionPinElevation, arg.PinExpiresAt, arg.ID)
+	return err
+}
+
 const setSystemMetadata = `-- name: SetSystemMetadata :one
 INSERT INTO system_metadata (key, value)
 VALUES ($1, $2)
@@ -5910,6 +6111,22 @@ func (q *Queries) SetUserMetadata(ctx context.Context, arg SetUserMetadataParams
 	var i UserMetadatum
 	err := row.Scan(&i.UserId, &i.Key, &i.Value)
 	return i, err
+}
+
+const setUserPinCode = `-- name: SetUserPinCode :exec
+UPDATE users
+SET "pinCode" = $1, "updatedAt" = NOW()
+WHERE id = $2
+`
+
+type SetUserPinCodeParams struct {
+	PinCode pgtype.Text
+	ID      pgtype.UUID
+}
+
+func (q *Queries) SetUserPinCode(ctx context.Context, arg SetUserPinCodeParams) error {
+	_, err := q.db.Exec(ctx, setUserPinCode, arg.PinCode, arg.ID)
+	return err
 }
 
 const softDeleteUser = `-- name: SoftDeleteUser :exec
@@ -6704,6 +6921,22 @@ WHERE id = $1
 
 func (q *Queries) UpdateUserLastLogin(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, updateUserLastLogin, id)
+	return err
+}
+
+const updateUserOnboarding = `-- name: UpdateUserOnboarding :exec
+INSERT INTO user_metadata ("userId", key, value)
+VALUES ($1, 'onboarding', $2)
+ON CONFLICT ("userId", key) DO UPDATE SET value = $2
+`
+
+type UpdateUserOnboardingParams struct {
+	UserId pgtype.UUID
+	Value  []byte
+}
+
+func (q *Queries) UpdateUserOnboarding(ctx context.Context, arg UpdateUserOnboardingParams) error {
+	_, err := q.db.Exec(ctx, updateUserOnboarding, arg.UserId, arg.Value)
 	return err
 }
 

@@ -12,14 +12,14 @@ service FacesService {
   // Get all faces
   rpc GetFaces(GetFacesRequest) returns (GetFacesResponse) {
     option (google.api.http) = {
-      get: "/faces"
+      get: "/api/faces"
     };
   }
 
   // Create face
   rpc CreateFace(CreateFaceRequest) returns (FaceResponse) {
     option (google.api.http) = {
-      post: "/faces"
+      post: "/api/faces"
       body: "*"
     };
   }
@@ -27,14 +27,14 @@ service FacesService {
   // Delete face
   rpc DeleteFace(DeleteFaceRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {
-      delete: "/faces/{id}"
+      delete: "/api/faces/{id}"
     };
   }
 
   // Reassign faces by ID
   rpc ReassignFacesById(ReassignFacesByIdRequest) returns (ReassignFacesByIdResponse) {
     option (google.api.http) = {
-      put: "/faces/{id}"
+      put: "/api/faces/{id}"
       body: "*"
     };
   }

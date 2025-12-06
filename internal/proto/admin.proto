@@ -101,6 +101,28 @@ service AdminService {
       get: "/api/admin/users/{id}/statistics"
     };
   }
+
+  // Get user sessions (admin)
+  rpc GetUserSessionsAdmin(GetUserSessionsAdminRequest) returns (GetUserSessionsAdminResponse) {
+    option (google.api.http) = {
+      get: "/api/admin/users/{id}/sessions"
+    };
+  }
+
+  // Delete user session (admin)
+  rpc DeleteUserSessionAdmin(DeleteUserSessionAdminRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/api/admin/users/{user_id}/sessions/{session_id}"
+    };
+  }
+
+  // Unlink all OAuth accounts (admin)
+  rpc UnlinkAllOAuthAccounts(google.protobuf.Empty) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/api/admin/auth/unlink-all"
+      body: "*"
+    };
+  }
 }
 
 // Template response DTO
@@ -259,4 +281,30 @@ message RestoreUserAdminRequest {
 // Get user statistics admin request
 message GetUserStatisticsAdminRequest {
   string id = 1;
+}
+
+// Get user sessions admin request
+message GetUserSessionsAdminRequest {
+  string id = 1;
+}
+
+// Get user sessions admin response
+message GetUserSessionsAdminResponse {
+  repeated SessionResponseDto sessions = 1;
+}
+
+// Session response DTO
+message SessionResponseDto {
+  string id = 1;
+  google.protobuf.Timestamp created_at = 2;
+  google.protobuf.Timestamp updated_at = 3;
+  string device_type = 4;
+  string device_os = 5;
+  bool current = 6;
+}
+
+// Delete user session admin request
+message DeleteUserSessionAdminRequest {
+  string user_id = 1;
+  string session_id = 2;
 }

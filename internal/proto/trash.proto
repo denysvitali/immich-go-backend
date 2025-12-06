@@ -12,7 +12,7 @@ service TrashService {
   // Empty trash
   rpc EmptyTrash(google.protobuf.Empty) returns (google.protobuf.Empty) {
     option (google.api.http) = {
-      post: "/trash/empty"
+      post: "/api/trash/empty"
       body: "*"
     };
   }
@@ -20,7 +20,7 @@ service TrashService {
   // Restore trash
   rpc RestoreTrash(google.protobuf.Empty) returns (google.protobuf.Empty) {
     option (google.api.http) = {
-      post: "/trash/restore"
+      post: "/api/trash/restore"
       body: "*"
     };
   }
@@ -28,7 +28,7 @@ service TrashService {
   // Restore assets
   rpc RestoreAssets(RestoreAssetsRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {
-      post: "/trash/restore/assets"
+      post: "/api/trash/restore/assets"
       body: "*"
     };
   }
