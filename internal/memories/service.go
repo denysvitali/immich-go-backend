@@ -276,7 +276,7 @@ func (s *Service) AddAssetsToMemory(ctx context.Context, userID string, memoryID
 	// Parse memory ID
 	memUUID, err := uuid.Parse(memoryID)
 	if err != nil {
-		return err
+		return fmt.Errorf("invalid memory ID: %w", err)
 	}
 
 	memoryUUID := pgtype.UUID{Bytes: memUUID, Valid: true}
@@ -284,23 +284,39 @@ func (s *Service) AddAssetsToMemory(ctx context.Context, userID string, memoryID
 	// Verify memory ownership
 	dbMemory, err := s.queries.GetMemory(ctx, memoryUUID)
 	if err != nil {
-		return err
+		return fmt.Errorf("memory not found: %w", err)
 	}
 
 	if uuid.UUID(dbMemory.OwnerId.Bytes).String() != userID {
-		return err // Should return permission denied error
+		return fmt.Errorf("access denied: memory does not belong to user")
 	}
 
-	// CRITICAL: SQLC regeneration required
-	// The AddAssetsToMemory query has been added to sqlc/queries.sql but needs SQLC regeneration
-	return fmt.Errorf("memory asset associations require SQLC regeneration: run 'make sqlc-gen' in Nix environment")
+	// Convert asset IDs to UUIDs
+	var assetUUIDs []pgtype.UUID
+	for _, assetIDStr := range assetIDs {
+		assetID, err := uuid.Parse(assetIDStr)
+		if err != nil {
+			continue // Skip invalid IDs
+		}
+		assetUUIDs = append(assetUUIDs, pgtype.UUID{Bytes: assetID, Valid: true})
+	}
+
+	if len(assetUUIDs) == 0 {
+		return nil
+	}
+
+	// Add assets to memory
+	return s.queries.AddAssetsToMemory(ctx, sqlc.AddAssetsToMemoryParams{
+		MemoriesId: memoryUUID,
+		Column2:    assetUUIDs,
+	})
 }
 
 func (s *Service) RemoveAssetsFromMemory(ctx context.Context, userID string, memoryID string, assetIDs []string) error {
 	// Parse memory ID
 	memUUID, err := uuid.Parse(memoryID)
 	if err != nil {
-		return err
+		return fmt.Errorf("invalid memory ID: %w", err)
 	}
 
 	memoryUUID := pgtype.UUID{Bytes: memUUID, Valid: true}
@@ -308,16 +324,66 @@ func (s *Service) RemoveAssetsFromMemory(ctx context.Context, userID string, mem
 	// Verify memory ownership
 	dbMemory, err := s.queries.GetMemory(ctx, memoryUUID)
 	if err != nil {
-		return err
+		return fmt.Errorf("memory not found: %w", err)
 	}
 
 	if uuid.UUID(dbMemory.OwnerId.Bytes).String() != userID {
-		return err // Should return permission denied error
+		return fmt.Errorf("access denied: memory does not belong to user")
 	}
 
-	// CRITICAL: SQLC regeneration required
-	// The RemoveAssetsFromMemory query has been added to sqlc/queries.sql but needs SQLC regeneration
-	return fmt.Errorf("memory asset associations require SQLC regeneration: run 'make sqlc-gen' in Nix environment")
+	// Convert asset IDs to UUIDs
+	var assetUUIDs []pgtype.UUID
+	for _, assetIDStr := range assetIDs {
+		assetID, err := uuid.Parse(assetIDStr)
+		if err != nil {
+			continue // Skip invalid IDs
+		}
+		assetUUIDs = append(assetUUIDs, pgtype.UUID{Bytes: assetID, Valid: true})
+	}
+
+	if len(assetUUIDs) == 0 {
+		return nil
+	}
+
+	// Remove assets from memory
+	return s.queries.RemoveAssetsFromMemory(ctx, sqlc.RemoveAssetsFromMemoryParams{
+		MemoriesId: memoryUUID,
+		Column2:    assetUUIDs,
+	})
+}
+
+func (s *Service) GetMemoryAssets(ctx context.Context, userID string, memoryID string) ([]string, error) {
+	// Parse memory ID
+	memUUID, err := uuid.Parse(memoryID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid memory ID: %w", err)
+	}
+
+	memoryUUID := pgtype.UUID{Bytes: memUUID, Valid: true}
+
+	// Verify memory ownership
+	dbMemory, err := s.queries.GetMemory(ctx, memoryUUID)
+	if err != nil {
+		return nil, fmt.Errorf("memory not found: %w", err)
+	}
+
+	if uuid.UUID(dbMemory.OwnerId.Bytes).String() != userID {
+		return nil, fmt.Errorf("access denied: memory does not belong to user")
+	}
+
+	// Get assets for this memory
+	assetUUIDs, err := s.queries.GetMemoryAssets(ctx, memoryUUID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get memory assets: %w", err)
+	}
+
+	// Convert to string IDs
+	assetIDs := make([]string, len(assetUUIDs))
+	for i, assetUUID := range assetUUIDs {
+		assetIDs[i] = uuid.UUID(assetUUID.Bytes).String()
+	}
+
+	return assetIDs, nil
 }
 
 func (s *Service) GenerateMemories(ctx context.Context, userID string) error {
