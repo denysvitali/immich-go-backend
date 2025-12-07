@@ -83,11 +83,11 @@
 - [x] Asset deletion and cleanup
 - [x] Asset download with pre-signed URLs
 
-### Album Management Service 🔄
-- [ ] Album CRUD operations
-- [ ] Asset-album associations
-- [ ] Album sharing
-- [ ] Album permissions
+### Album Management Service ✅ COMPLETED
+- [x] Album CRUD operations (CreateAlbum, GetAlbum, GetUserAlbums, UpdateAlbum, DeleteAlbum)
+- [x] Asset-album associations (AddAssetToAlbum, RemoveAssetFromAlbum)
+- [x] Album sharing (ShareAlbum, UnshareAlbum)
+- [x] Album permissions (userHasAlbumAccess with owner and shared user checks)
 
 ## Phase 5: HTTP/gRPC Controllers (PENDING)
 
