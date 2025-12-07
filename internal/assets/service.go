@@ -234,8 +234,7 @@ func (s *Service) CompleteUpload(ctx context.Context, assetID uuid.UUID, reader 
 			attribute.String("type", asset.Type),
 		))
 
-	// TODO: Add storage size metric when size is available
-	// s.storageSize.Add(ctx, size, metric.WithAttributes(attribute.String("operation", "upload")))
+	// Storage size metric is recorded in processAsset after file metadata is retrieved
 
 	return nil
 }
@@ -276,6 +275,10 @@ func (s *Service) processAsset(ctx context.Context, assetID uuid.UUID) {
 	}
 	fileSize := fileMetadata.Size
 	span.SetAttributes(attribute.Int64("file_size", fileSize))
+
+	// Record storage size metric for the uploaded asset
+	s.storageSize.Add(ctx, fileSize,
+		metric.WithAttributes(attribute.String("operation", "upload")))
 
 	// Download file for processing
 	reader, err := s.storage.Download(ctx, asset.OriginalPath)
