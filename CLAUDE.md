@@ -139,9 +139,10 @@ YAML config with environment variable overrides:
 
 ## Current Status
 
-**Phase 4/10** - Core Services (~50% complete)
+**Phase 5/10** - HTTP/gRPC Controllers (~60% complete)
 
-Completed: Infrastructure, storage layer, auth, users, assets
-In progress: Album management, HTTP/gRPC controllers
+Completed: Infrastructure, storage layer, auth, users, assets, albums, 122+ gRPC endpoints
+In progress: HTTP REST gateway completion, additional service endpoints
 Next: Job queue system, testing infrastructure
-- immich-upstream contains the original immich project (original server implementation)
+
+Note: immich-upstream contains the original immich project (original server implementation)
