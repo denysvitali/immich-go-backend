@@ -53,7 +53,7 @@ func TestService_ValidatePassword(t *testing.T) {
 			name:     "empty password",
 			password: "",
 			wantErr:  true,
-			errMsg:   "password cannot be empty",
+			errMsg:   "at least 8 characters",
 		},
 		{
 			name:     "only spaces",

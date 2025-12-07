@@ -20,7 +20,7 @@ func TestNewService(t *testing.T) {
 
 	// Note: This will fail without proper database setup
 	// but tests the service initialization structure
-	service, err := NewService(nil, storageService, cfg)
+	service, err := NewService(nil, storageService, cfg, nil)
 
 	assert.NotNil(t, service)
 	assert.NoError(t, err)
