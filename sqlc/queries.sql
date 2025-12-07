@@ -334,6 +334,17 @@ SET "oauthId" = '',
     "updatedAt" = now()
 WHERE "oauthId" != '';
 
+-- name: UpdateUserOAuthId :one
+UPDATE users
+SET "oauthId" = $2,
+    "updatedAt" = now()
+WHERE id = $1 AND "deletedAt" IS NULL
+RETURNING *;
+
+-- name: GetUserByOAuthId :one
+SELECT * FROM users
+WHERE "oauthId" = $1 AND "deletedAt" IS NULL;
+
 -- name: GetAllUsers :many
 SELECT * FROM users
 WHERE "deletedAt" IS NULL

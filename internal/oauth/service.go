@@ -235,10 +235,35 @@ func (s *Service) GetUserInfo(provider, accessToken string) (*OAuthUserInfo, err
 
 // LinkOAuthAccount links an OAuth account to an existing user
 func (s *Service) LinkOAuthAccount(ctx context.Context, userID uuid.UUID, provider string, providerID string) error {
-	// Store OAuth link in database
-	// This would require adding an oauth_accounts table to track linked accounts
-	// For now, this is a placeholder
-	return fmt.Errorf("LinkOAuthAccount not implemented - needs database schema update")
+	// Store OAuth ID in the user's record
+	userUUID := pgtype.UUID{Bytes: userID, Valid: true}
+	oauthID := fmt.Sprintf("%s:%s", provider, providerID)
+
+	_, err := s.db.UpdateUserOAuthId(ctx, sqlc.UpdateUserOAuthIdParams{
+		ID:      userUUID,
+		OauthId: oauthID,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to link OAuth account: %w", err)
+	}
+
+	return nil
+}
+
+// UnlinkOAuthAccount removes the OAuth link from a user's account
+func (s *Service) UnlinkOAuthAccount(ctx context.Context, userID uuid.UUID) error {
+	// Clear the OAuth ID from the user's record
+	userUUID := pgtype.UUID{Bytes: userID, Valid: true}
+
+	_, err := s.db.UpdateUserOAuthId(ctx, sqlc.UpdateUserOAuthIdParams{
+		ID:      userUUID,
+		OauthId: "", // Clear the OAuth ID
+	})
+	if err != nil {
+		return fmt.Errorf("failed to unlink OAuth account: %w", err)
+	}
+
+	return nil
 }
 
 // FindOrCreateUserByOAuth finds or creates a user based on OAuth info
