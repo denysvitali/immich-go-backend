@@ -31,7 +31,7 @@ func TestCreateMigrationsTable(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("creates migration table successfully", func(t *testing.T) {
-		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS migrations`).
+		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS schema_migrations`).
 			WillReturnResult(sqlmock.NewResult(0, 0))
 
 		err := createMigrationsTable(ctx, db)
@@ -51,7 +51,7 @@ func TestGetCurrentMigrationVersion(t *testing.T) {
 
 	t.Run("returns current version", func(t *testing.T) {
 		rows := sqlmock.NewRows([]string{"version"}).AddRow(5)
-		mock.ExpectQuery(`SELECT COALESCE\(MAX\(version\), 0\) FROM migrations`).
+		mock.ExpectQuery(`SELECT COALESCE\(MAX\(version\), 0\) FROM schema_migrations`).
 			WillReturnRows(rows)
 
 		version, err := getCurrentMigrationVersion(ctx, db)
@@ -64,7 +64,7 @@ func TestGetCurrentMigrationVersion(t *testing.T) {
 
 	t.Run("returns 0 when no migrations", func(t *testing.T) {
 		rows := sqlmock.NewRows([]string{"version"}).AddRow(0)
-		mock.ExpectQuery(`SELECT COALESCE\(MAX\(version\), 0\) FROM migrations`).
+		mock.ExpectQuery(`SELECT COALESCE\(MAX\(version\), 0\) FROM schema_migrations`).
 			WillReturnRows(rows)
 
 		version, err := getCurrentMigrationVersion(ctx, db)
@@ -76,7 +76,7 @@ func TestGetCurrentMigrationVersion(t *testing.T) {
 	})
 
 	t.Run("handles query error", func(t *testing.T) {
-		mock.ExpectQuery(`SELECT COALESCE\(MAX\(version\), 0\) FROM migrations`).
+		mock.ExpectQuery(`SELECT COALESCE\(MAX\(version\), 0\) FROM schema_migrations`).
 			WillReturnError(sql.ErrConnDone)
 
 		version, err := getCurrentMigrationVersion(ctx, db)
@@ -95,12 +95,12 @@ func TestRunMigrations(t *testing.T) {
 
 	t.Run("skips migrations when up to date", func(t *testing.T) {
 		// Create migrations table
-		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS migrations`).
+		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS schema_migrations`).
 			WillReturnResult(sqlmock.NewResult(0, 0))
 
 		// Get current version (assuming we're at version 1 and that's the latest)
 		rows := sqlmock.NewRows([]string{"version"}).AddRow(1)
-		mock.ExpectQuery(`SELECT COALESCE\(MAX\(version\), 0\) FROM migrations`).
+		mock.ExpectQuery(`SELECT COALESCE\(MAX\(version\), 0\) FROM schema_migrations`).
 			WillReturnRows(rows)
 
 		// Since loadMigrations() reads from filesystem, we can't fully test RunMigrations
@@ -109,12 +109,12 @@ func TestRunMigrations(t *testing.T) {
 
 	t.Run("runs pending migrations", func(t *testing.T) {
 		// Create migrations table
-		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS migrations`).
+		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS schema_migrations`).
 			WillReturnResult(sqlmock.NewResult(0, 0))
 
 		// Get current version (0 - no migrations yet)
 		rows := sqlmock.NewRows([]string{"version"}).AddRow(0)
-		mock.ExpectQuery(`SELECT COALESCE\(MAX\(version\), 0\) FROM migrations`).
+		mock.ExpectQuery(`SELECT COALESCE\(MAX\(version\), 0\) FROM schema_migrations`).
 			WillReturnRows(rows)
 
 		// The actual migration running would happen here
@@ -224,14 +224,14 @@ func TestMigrationIdempotency(t *testing.T) {
 	ctx := context.Background()
 
 	// First run
-	mock.ExpectExec(`CREATE TABLE IF NOT EXISTS migrations`).
+	mock.ExpectExec(`CREATE TABLE IF NOT EXISTS schema_migrations`).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
 	err = createMigrationsTable(ctx, db)
 	assert.NoError(t, err)
 
 	// Second run - should also succeed
-	mock.ExpectExec(`CREATE TABLE IF NOT EXISTS migrations`).
+	mock.ExpectExec(`CREATE TABLE IF NOT EXISTS schema_migrations`).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
 	err = createMigrationsTable(ctx, db)

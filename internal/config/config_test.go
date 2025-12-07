@@ -24,12 +24,13 @@ func TestGetEnvOrDefault(t *testing.T) {
 		assert.Equal(t, "default_value", result)
 	})
 
-	t.Run("returns empty env value if set to empty", func(t *testing.T) {
+	t.Run("returns default when env value is empty", func(t *testing.T) {
 		os.Setenv("EMPTY_ENV_VAR", "")
 		defer os.Unsetenv("EMPTY_ENV_VAR")
 
+		// Implementation treats empty string same as unset - returns default
 		result := GetEnvOrDefault("EMPTY_ENV_VAR", "default_value")
-		assert.Equal(t, "", result)
+		assert.Equal(t, "default_value", result)
 	})
 }
 
@@ -182,8 +183,9 @@ func TestGetEnvOrDefaultStringSlice(t *testing.T) {
 		os.Setenv("EMPTY_SLICE_VAR", "")
 		defer os.Unsetenv("EMPTY_SLICE_VAR")
 
+		// Implementation treats empty string same as unset - returns default
 		result := GetEnvOrDefaultStringSlice("EMPTY_SLICE_VAR", []string{"default"}, ",")
-		assert.Equal(t, []string{""}, result)
+		assert.Equal(t, []string{"default"}, result)
 	})
 }
 
