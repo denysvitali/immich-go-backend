@@ -442,8 +442,8 @@ func (q *Queries) CreateApiKey(ctx context.Context, arg CreateApiKeyParams) (Api
 
 const createAsset = `-- name: CreateAsset :one
 INSERT INTO assets (
-    "deviceAssetId", "ownerId", "deviceId", type, "originalPath", 
-    "fileCreatedAt", "fileModifiedAt", "localDateTime", "originalFileName", 
+    "deviceAssetId", "ownerId", "deviceId", type, "originalPath",
+    "fileCreatedAt", "fileModifiedAt", "localDateTime", "originalFileName",
     checksum, "isFavorite", visibility, status
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
@@ -822,6 +822,84 @@ func (q *Queries) CreateLibrary(ctx context.Context, arg CreateLibraryParams) (L
 		&i.DeletedAt,
 		&i.RefreshedAt,
 		&i.UpdateId,
+	)
+	return i, err
+}
+
+const createLibraryAsset = `-- name: CreateLibraryAsset :one
+INSERT INTO assets (
+    "deviceAssetId", "ownerId", "libraryId", "deviceId", type, "originalPath",
+    "fileCreatedAt", "fileModifiedAt", "localDateTime", "originalFileName",
+    checksum, "isFavorite", visibility, status, "isExternal"
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, true)
+RETURNING id, "deviceAssetId", "ownerId", "deviceId", type, "originalPath", "fileCreatedAt", "fileModifiedAt", "isFavorite", duration, "encodedVideoPath", checksum, "livePhotoVideoId", "updatedAt", "createdAt", "originalFileName", "sidecarPath", thumbhash, "isOffline", "libraryId", "isExternal", "deletedAt", "localDateTime", "stackId", "duplicateId", status, "updateId", visibility
+`
+
+type CreateLibraryAssetParams struct {
+	DeviceAssetId    string
+	OwnerId          pgtype.UUID
+	LibraryId        pgtype.UUID
+	DeviceId         string
+	Type             string
+	OriginalPath     string
+	FileCreatedAt    pgtype.Timestamptz
+	FileModifiedAt   pgtype.Timestamptz
+	LocalDateTime    pgtype.Timestamptz
+	OriginalFileName string
+	Checksum         []byte
+	IsFavorite       bool
+	Visibility       AssetVisibilityEnum
+	Status           AssetsStatusEnum
+}
+
+func (q *Queries) CreateLibraryAsset(ctx context.Context, arg CreateLibraryAssetParams) (Asset, error) {
+	row := q.db.QueryRow(ctx, createLibraryAsset,
+		arg.DeviceAssetId,
+		arg.OwnerId,
+		arg.LibraryId,
+		arg.DeviceId,
+		arg.Type,
+		arg.OriginalPath,
+		arg.FileCreatedAt,
+		arg.FileModifiedAt,
+		arg.LocalDateTime,
+		arg.OriginalFileName,
+		arg.Checksum,
+		arg.IsFavorite,
+		arg.Visibility,
+		arg.Status,
+	)
+	var i Asset
+	err := row.Scan(
+		&i.ID,
+		&i.DeviceAssetId,
+		&i.OwnerId,
+		&i.DeviceId,
+		&i.Type,
+		&i.OriginalPath,
+		&i.FileCreatedAt,
+		&i.FileModifiedAt,
+		&i.IsFavorite,
+		&i.Duration,
+		&i.EncodedVideoPath,
+		&i.Checksum,
+		&i.LivePhotoVideoId,
+		&i.UpdatedAt,
+		&i.CreatedAt,
+		&i.OriginalFileName,
+		&i.SidecarPath,
+		&i.Thumbhash,
+		&i.IsOffline,
+		&i.LibraryId,
+		&i.IsExternal,
+		&i.DeletedAt,
+		&i.LocalDateTime,
+		&i.StackId,
+		&i.DuplicateId,
+		&i.Status,
+		&i.UpdateId,
+		&i.Visibility,
 	)
 	return i, err
 }

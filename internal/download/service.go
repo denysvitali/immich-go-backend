@@ -100,8 +100,14 @@ func (s *Service) GetDownloadInfo(ctx context.Context, userID uuid.UUID, req *Do
 			}
 		}
 
-		// For now, estimate file size (TODO: add FileSize field to Asset)
-		totalSize += 1024 * 1024 // 1MB estimate per file
+		// Get file size from EXIF data
+		exif, err := s.db.GetExifByAssetId(ctx, pgtype.UUID{Bytes: assetID, Valid: true})
+		if err == nil && exif.FileSizeInByte.Valid {
+			totalSize += exif.FileSizeInByte.Int64
+		} else {
+			// Fallback to estimate if EXIF data not available
+			totalSize += 1024 * 1024 // 1MB estimate per file
+		}
 		validAssetIDs = append(validAssetIDs, assetID.String())
 	}
 

@@ -119,11 +119,20 @@ AND (sqlc.narg('is_trashed')::boolean IS NULL OR status = CASE WHEN sqlc.narg('i
 
 -- name: CreateAsset :one
 INSERT INTO assets (
-    "deviceAssetId", "ownerId", "deviceId", type, "originalPath", 
-    "fileCreatedAt", "fileModifiedAt", "localDateTime", "originalFileName", 
+    "deviceAssetId", "ownerId", "deviceId", type, "originalPath",
+    "fileCreatedAt", "fileModifiedAt", "localDateTime", "originalFileName",
     checksum, "isFavorite", visibility, status
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+RETURNING *;
+
+-- name: CreateLibraryAsset :one
+INSERT INTO assets (
+    "deviceAssetId", "ownerId", "libraryId", "deviceId", type, "originalPath",
+    "fileCreatedAt", "fileModifiedAt", "localDateTime", "originalFileName",
+    checksum, "isFavorite", visibility, status, "isExternal"
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, true)
 RETURNING *;
 
 -- name: UpdateAsset :one

@@ -2,8 +2,11 @@ package libraries
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
+	"io"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -493,12 +496,92 @@ func (ls *LibraryScanner) scanPath(ctx context.Context, path string, forceRefres
 		}
 
 		// Import the asset
-		// This would integrate with the asset service to properly import the file
-		logrus.Debugf("Would import asset: %s", path)
-		// TODO: Implement actual asset import
+		if err := ls.importAsset(ctx, path); err != nil {
+			logrus.WithError(err).Errorf("Failed to import asset: %s", path)
+			// Continue with other files even if this import fails
+		}
 
 		return nil
 	})
+}
+
+// importAsset creates an asset record in the database for the given file
+func (ls *LibraryScanner) importAsset(ctx context.Context, filePath string) error {
+	// Get file info
+	fileInfo, err := os.Stat(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to get file info: %w", err)
+	}
+
+	// Calculate file checksum
+	checksum, err := ls.calculateChecksum(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to calculate checksum: %w", err)
+	}
+
+	// Determine asset type based on file extension
+	assetType := ls.getAssetType(filePath)
+
+	// Get file timestamps
+	modTime := fileInfo.ModTime()
+	modTimePg := TimeToPgtype(modTime)
+
+	// Create asset record in database
+	_, err = ls.db.CreateLibraryAsset(ctx, sqlc.CreateLibraryAssetParams{
+		DeviceAssetId:    filepath.Base(filePath),
+		OwnerId:          UUIDToPgtype(ls.library.OwnerID),
+		LibraryId:        UUIDToPgtype(ls.library.ID),
+		DeviceId:         "library-scanner",
+		Type:             assetType,
+		OriginalPath:     filePath,
+		FileCreatedAt:    modTimePg,
+		FileModifiedAt:   modTimePg,
+		LocalDateTime:    modTimePg,
+		OriginalFileName: filepath.Base(filePath),
+		Checksum:         checksum,
+		IsFavorite:       false,
+		Visibility:       sqlc.AssetVisibilityEnumTimeline,
+		Status:           sqlc.AssetsStatusEnumActive,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create asset record: %w", err)
+	}
+
+	logrus.Debugf("Imported asset: %s", filePath)
+	return nil
+}
+
+// calculateChecksum calculates the SHA-256 checksum of a file
+func (ls *LibraryScanner) calculateChecksum(filePath string) ([]byte, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return nil, err
+	}
+
+	return hash.Sum(nil), nil
+}
+
+// getAssetType determines the asset type based on file extension
+func (ls *LibraryScanner) getAssetType(path string) string {
+	ext := strings.ToLower(filepath.Ext(path))
+
+	// Video extensions
+	videoExts := map[string]bool{
+		".mp4": true, ".avi": true, ".mov": true, ".mkv": true, ".webm": true,
+		".m4v": true, ".3gp": true, ".wmv": true, ".flv": true, ".mts": true,
+		".m2ts": true, ".mpg": true, ".mpeg": true,
+	}
+
+	if videoExts[ext] {
+		return "VIDEO"
+	}
+	return "IMAGE"
 }
 
 // isSupportedMediaType checks if a file is a supported media type
