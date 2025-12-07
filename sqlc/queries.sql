@@ -1065,6 +1065,12 @@ SET status = 'trashed',
     "updatedAt" = now()
 WHERE id = $1 AND "deletedAt" IS NULL;
 
+-- name: MoveAssetsToTrash :exec
+UPDATE assets
+SET status = 'trashed',
+    "updatedAt" = now()
+WHERE id = ANY($1::uuid[]) AND "ownerId" = $2 AND "deletedAt" IS NULL;
+
 -- ============================================================================
 -- TAG QUERIES
 -- ============================================================================

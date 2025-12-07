@@ -5975,6 +5975,23 @@ func (q *Queries) MoveAssetToTrash(ctx context.Context, id pgtype.UUID) error {
 	return err
 }
 
+const moveAssetsToTrash = `-- name: MoveAssetsToTrash :exec
+UPDATE assets
+SET status = 'trashed',
+    "updatedAt" = now()
+WHERE id = ANY($1::uuid[]) AND "ownerId" = $2 AND "deletedAt" IS NULL
+`
+
+type MoveAssetsToTrashParams struct {
+	Column1 []pgtype.UUID
+	OwnerId pgtype.UUID
+}
+
+func (q *Queries) MoveAssetsToTrash(ctx context.Context, arg MoveAssetsToTrashParams) error {
+	_, err := q.db.Exec(ctx, moveAssetsToTrash, arg.Column1, arg.OwnerId)
+	return err
+}
+
 const permanentlyDeleteAsset = `-- name: PermanentlyDeleteAsset :exec
 UPDATE assets
 SET "deletedAt" = now(),
