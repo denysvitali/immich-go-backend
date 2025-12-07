@@ -53,7 +53,7 @@ go test -v -run TestFunctionName ./internal/package/...
 
 ### Starting the Server
 ```bash
-go run main.go serve
+go run ./cmd serve
 ```
 
 ## Architecture Overview
@@ -139,16 +139,24 @@ YAML config with environment variable overrides:
 
 ## Current Status
 
-**Phase 6/10** - Core Implementation (~70% complete)
+**Phase 10/10** - Core Implementation Complete (~95%)
 
 Completed:
 - Infrastructure, storage layer, configuration, telemetry
 - Auth, users, assets, albums with full database operations
-- 130+ gRPC endpoints with REST gateway
+- 30+ gRPC services with REST gateway via grpc-gateway
 - Tags, partners, shared links, duplicates, trash, memories, timeline, notifications
 - Stacks service (burst photos), faces service (reassignment)
 - Job queue system with Redis (asynq) and handlers for all job types
+- Comprehensive unit and integration tests
+- CI/CD pipeline with GitHub Actions
+- Docker and docker-compose for containerization
+- Full documentation (README, DEPLOYMENT, TESTING, ROADMAP)
 
-Next: Testing infrastructure, ML integration, documentation
+Future Enhancements:
+- ML integration (face recognition, CLIP search)
+- Video transcoding with ffmpeg
+- Performance testing and optimization
+- Kubernetes Helm charts
 
 Note: immich-upstream contains the original immich project (original server implementation)

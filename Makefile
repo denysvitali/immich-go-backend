@@ -62,7 +62,7 @@ setup: ## Set up development environment and generate initial files
 # Build targets
 build: proto-gen ## Build the application
 	@echo "🔨 Building application..."
-	@go build -o bin/immich-go-backend .
+	@go build -o bin/immich-go-backend ./cmd
 	@echo "✅ Build complete: bin/immich-go-backend"
 
 # Test targets
