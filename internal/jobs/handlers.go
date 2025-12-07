@@ -166,10 +166,13 @@ func (h *Handlers) HandleLibraryScan(ctx context.Context, task *asynq.Task) erro
 		"job_id":        payload.ID,
 	}).Info("Scanning library")
 
+	// Get userID from payload
+	userID, err := uuid.Parse(payload.UserID)
+	if err != nil {
+		return fmt.Errorf("invalid user UUID in payload: %w", err)
+	}
+
 	// Perform library scan
-	// Call library scan with correct parameters
-	// TODO: Get userID from context or payload
-	userID := uuid.New() // Placeholder
 	_, err = h.libraryService.ScanLibrary(ctx, libraryID, userID, fullScan, forceRefresh)
 	if err != nil {
 		return fmt.Errorf("library scan failed: %w", err)

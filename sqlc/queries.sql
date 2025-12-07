@@ -354,6 +354,15 @@ ORDER BY "createdAt" DESC;
 SELECT * FROM users
 ORDER BY "createdAt" DESC;
 
+-- name: SearchUsersAdmin :many
+SELECT * FROM users
+WHERE (sqlc.narg('with_deleted')::boolean IS NULL OR sqlc.narg('with_deleted')::boolean = true OR "deletedAt" IS NULL)
+AND (sqlc.narg('email')::text IS NULL OR email ILIKE '%' || sqlc.narg('email') || '%')
+AND (sqlc.narg('name')::text IS NULL OR name ILIKE '%' || sqlc.narg('name') || '%')
+ORDER BY "createdAt" DESC
+LIMIT sqlc.narg('limit')
+OFFSET sqlc.narg('offset');
+
 -- name: GetUserOnboarding :one
 SELECT value FROM user_metadata
 WHERE "userId" = $1 AND key = 'onboarding';
@@ -590,6 +599,12 @@ UPDATE libraries
 SET "deletedAt" = now(),
     "updatedAt" = now()
 WHERE id = $1;
+
+-- name: UpdateLibraryRefreshedAt :exec
+UPDATE libraries
+SET "refreshedAt" = now(),
+    "updatedAt" = now()
+WHERE id = $1 AND "deletedAt" IS NULL;
 
 -- name: GetLibraryAssets :many
 SELECT * FROM assets
@@ -1168,6 +1183,18 @@ WHERE "assetId" IN (
 ORDER BY city
 LIMIT $2;
 
+-- name: GetDistinctCameras :many
+SELECT DISTINCT make, model FROM exif
+WHERE "assetId" IN (
+  SELECT id FROM assets WHERE "ownerId" = $1 AND "deletedAt" IS NULL
+)
+  AND make IS NOT NULL
+  AND make != ''
+  AND model IS NOT NULL
+  AND model != ''
+ORDER BY make, model
+LIMIT $2;
+
 -- name: GetTopPeople :many
 SELECT p.*, COUNT(f."personId") as face_count
 FROM person p
@@ -1382,3 +1409,39 @@ SELECT
     END AS is_elevated
 FROM sessions
 WHERE id = $1;
+
+-- ================== VIEW SERVICE QUERIES ==================
+
+-- name: GetAssetsByOriginalPathPrefix :many
+SELECT * FROM assets
+WHERE "ownerId" = $1
+AND "deletedAt" IS NULL
+AND "originalPath" LIKE $2 || '%'
+AND (sqlc.narg('is_archived')::boolean IS NULL OR visibility = CASE WHEN sqlc.narg('is_archived')::boolean THEN 'archive' ELSE 'timeline' END)
+AND (sqlc.narg('is_favorite')::boolean IS NULL OR "isFavorite" = sqlc.narg('is_favorite'))
+ORDER BY "localDateTime" DESC
+LIMIT $3 OFFSET $4;
+
+-- name: CountAssetsByOriginalPathPrefix :one
+SELECT COUNT(*) FROM assets
+WHERE "ownerId" = $1
+AND "deletedAt" IS NULL
+AND "originalPath" LIKE $2 || '%'
+AND (sqlc.narg('is_archived')::boolean IS NULL OR visibility = CASE WHEN sqlc.narg('is_archived')::boolean THEN 'archive' ELSE 'timeline' END)
+AND (sqlc.narg('is_favorite')::boolean IS NULL OR "isFavorite" = sqlc.narg('is_favorite'));
+
+-- name: GetUniqueOriginalPathPrefixes :many
+SELECT DISTINCT
+    COALESCE(
+        CASE
+            WHEN position('/' IN "originalPath") > 0 THEN
+                substring("originalPath" FROM 1 FOR length("originalPath") - position('/' IN reverse("originalPath")) + 1)
+            ELSE
+                "originalPath"
+        END,
+        ''
+    )::text AS path_prefix
+FROM assets
+WHERE "ownerId" = $1
+AND "deletedAt" IS NULL
+ORDER BY path_prefix;

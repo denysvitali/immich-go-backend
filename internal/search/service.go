@@ -209,17 +209,19 @@ func (s *Service) GetSearchSuggestions(ctx context.Context, userID uuid.UUID, re
 	}
 
 	// Get camera make/model suggestions
-	// TODO: Implement GetDistinctCameras query
-	// if req.IncludeCameras {
-	// 	cameras, err := s.db.GetDistinctCameras(ctx, userID)
-	// 	if err == nil {
-	// 		for _, c := range cameras {
-	// 			if c.Make != "" && c.Model != "" {
-	// 				suggestions.Cameras = append(suggestions.Cameras, fmt.Sprintf("%s %s", c.Make, c.Model))
-	// 			}
-	// 		}
-	// 	}
-	// }
+	if req.IncludeCameras {
+		cameras, err := s.db.GetDistinctCameras(ctx, sqlc.GetDistinctCamerasParams{
+			OwnerId: UUIDToPgtype(userID),
+			Limit:   10,
+		})
+		if err == nil {
+			for _, c := range cameras {
+				if c.Make.Valid && c.Model.Valid && c.Make.String != "" && c.Model.String != "" {
+					suggestions.Cameras = append(suggestions.Cameras, fmt.Sprintf("%s %s", c.Make.String, c.Model.String))
+				}
+			}
+		}
+	}
 
 	return suggestions, nil
 }
@@ -241,66 +243,94 @@ func (s *Service) SearchExplore(ctx context.Context, userID uuid.UUID) (*Explore
 		Categories: []ExploreCategory{},
 	}
 
-	// TODO: Implement explore categories when queries are available
-	return result, nil
-
-	/* TODO: Uncomment when queries are implemented
-	// This Year category
-	thisYear := time.Now().Year()
-	thisYearAssets, err := s.db.GetAssetsByYear(ctx, sqlc.GetAssetsByYearParams{
-		UserID: userID,
-		Year:   int32(thisYear),
-		Limit:  12,
-	})
-	if err == nil && len(thisYearAssets) > 0 {
-		result.Categories = append(result.Categories, ExploreCategory{
-			Name:      fmt.Sprintf("This Year (%d)", thisYear),
-			AssetIDs:  assetIDsToStrings(thisYearAssets),
-			Thumbnail: thisYearAssets[0].ID.String(),
-		})
-	}
+	ownerUUID := UUIDToPgtype(userID)
 
 	// Recent uploads
 	recentAssets, err := s.db.GetRecentAssets(ctx, sqlc.GetRecentAssetsParams{
-		UserID: userID,
-		Limit:  12,
+		OwnerId: ownerUUID,
+		Limit:   12,
 	})
 	if err == nil && len(recentAssets) > 0 {
 		result.Categories = append(result.Categories, ExploreCategory{
 			Name:      "Recently Added",
-			AssetIDs:  assetIDsToStrings(recentAssets),
-			Thumbnail: recentAssets[0].ID.String(),
+			AssetIDs:  assetsToIDs(recentAssets),
+			Thumbnail: PgtypeToUUID(recentAssets[0].ID).String(),
 		})
 	}
 
 	// Favorites
 	favoriteAssets, err := s.db.GetFavoriteAssets(ctx, sqlc.GetFavoriteAssetsParams{
-		UserID: userID,
-		Limit:  12,
+		OwnerId: ownerUUID,
+		Limit:   12,
+		Offset:  0,
 	})
 	if err == nil && len(favoriteAssets) > 0 {
 		result.Categories = append(result.Categories, ExploreCategory{
 			Name:      "Favorites",
-			AssetIDs:  assetIDsToStrings(favoriteAssets),
-			Thumbnail: favoriteAssets[0].ID.String(),
+			AssetIDs:  assetsToIDs(favoriteAssets),
+			Thumbnail: PgtypeToUUID(favoriteAssets[0].ID).String(),
 		})
 	}
 
-	// Videos
-	videoAssets, err := s.db.GetVideoAssets(ctx, sqlc.GetVideoAssetsParams{
-		UserID: userID,
-		Limit:  12,
+	// Archived
+	archivedAssets, err := s.db.GetArchivedAssets(ctx, sqlc.GetArchivedAssetsParams{
+		OwnerId: ownerUUID,
+		Limit:   12,
+		Offset:  0,
 	})
-	if err == nil && len(videoAssets) > 0 {
+	if err == nil && len(archivedAssets) > 0 {
 		result.Categories = append(result.Categories, ExploreCategory{
-			Name:      "Videos",
-			AssetIDs:  assetIDsToStrings(videoAssets),
-			Thumbnail: videoAssets[0].ID.String(),
+			Name:      "Archive",
+			AssetIDs:  assetsToIDs(archivedAssets),
+			Thumbnail: PgtypeToUUID(archivedAssets[0].ID).String(),
 		})
+	}
+
+	// Top people - show people with most assets
+	topPeople, err := s.db.GetTopPeople(ctx, sqlc.GetTopPeopleParams{
+		OwnerId: ownerUUID,
+		Limit:   6,
+	})
+	if err == nil && len(topPeople) > 0 {
+		for _, person := range topPeople {
+			if person.Name != "" {
+				result.Categories = append(result.Categories, ExploreCategory{
+					Name:      person.Name,
+					AssetIDs:  []string{}, // Person category doesn't have asset IDs directly
+					Thumbnail: person.ThumbnailPath,
+				})
+			}
+		}
+	}
+
+	// Top places
+	topPlaces, err := s.db.GetTopPlaces(ctx, 6)
+	if err == nil && len(topPlaces) > 0 {
+		for _, place := range topPlaces {
+			if place.City.Valid && place.City.String != "" {
+				placeName := place.City.String
+				if place.Country.Valid && place.Country.String != "" {
+					placeName = fmt.Sprintf("%s, %s", place.City.String, place.Country.String)
+				}
+				result.Categories = append(result.Categories, ExploreCategory{
+					Name:      placeName,
+					AssetIDs:  []string{},
+					Thumbnail: "",
+				})
+			}
+		}
 	}
 
 	return result, nil
-	*/
+}
+
+// assetsToIDs converts a slice of assets to a slice of ID strings
+func assetsToIDs(assets []sqlc.Asset) []string {
+	ids := make([]string, len(assets))
+	for i, asset := range assets {
+		ids[i] = PgtypeToUUID(asset.ID).String()
+	}
+	return ids
 }
 
 // Request/Response types

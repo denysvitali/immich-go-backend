@@ -288,14 +288,10 @@ func (s *Service) ScanLibrary(ctx context.Context, userID, libraryID uuid.UUID, 
 			logrus.WithError(err).Error("Library scan failed")
 		}
 
-		// TODO: Update refresh timestamp when query is available
-		// now := time.Now()
-		// if err := s.db.UpdateLibraryRefreshedAt(ctx, sqlc.UpdateLibraryRefreshedAtParams{
-		// 	ID:          libraryID,
-		// 	RefreshedAt: &now,
-		// }); err != nil {
-		// 	logrus.WithError(err).Error("Failed to update library refresh timestamp")
-		// }
+		// Update refresh timestamp
+		if err := s.db.UpdateLibraryRefreshedAt(ctx, UUIDToPgtype(libraryID)); err != nil {
+			logrus.WithError(err).Error("Failed to update library refresh timestamp")
+		}
 	}()
 
 	// Return a job ID (simplified for now)
@@ -353,9 +349,15 @@ func (s *Service) ValidateLibrary(ctx context.Context, req ValidateLibraryReques
 			validation.Message = "Path does not exist"
 		} else {
 			validation.IsValid = true
-			// TODO: Check read permissions
-			validation.IsReadable = true
-			validation.Message = "Path is valid and readable"
+			// Check read permissions by attempting to read the directory
+			_, readErr := filepath.Glob(filepath.Join(path, "*"))
+			if readErr != nil {
+				validation.IsReadable = false
+				validation.Message = "Path exists but is not readable"
+			} else {
+				validation.IsReadable = true
+				validation.Message = "Path is valid and readable"
+			}
 		}
 
 		results[path] = validation

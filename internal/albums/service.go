@@ -457,8 +457,7 @@ func (s *Service) userHasAlbumAccess(ctx context.Context, userID uuid.UUID, albu
 		return true
 	}
 
-	// TODO: Check if user is in shared users list
-	// For now, we'll implement a simple check
+	// Check if user is in the shared users list
 	albumUUID, err := stringToUUID(uuidToString(album.ID))
 	if err != nil {
 		return false

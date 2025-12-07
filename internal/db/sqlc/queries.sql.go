@@ -203,6 +203,34 @@ func (q *Queries) CountAssets(ctx context.Context, arg CountAssetsParams) (int64
 	return count, err
 }
 
+const countAssetsByOriginalPathPrefix = `-- name: CountAssetsByOriginalPathPrefix :one
+SELECT COUNT(*) FROM assets
+WHERE "ownerId" = $1
+AND "deletedAt" IS NULL
+AND "originalPath" LIKE $2 || '%'
+AND ($3::boolean IS NULL OR visibility = CASE WHEN $3::boolean THEN 'archive' ELSE 'timeline' END)
+AND ($4::boolean IS NULL OR "isFavorite" = $4)
+`
+
+type CountAssetsByOriginalPathPrefixParams struct {
+	OwnerId    pgtype.UUID
+	Column2    pgtype.Text
+	IsArchived pgtype.Bool
+	IsFavorite pgtype.Bool
+}
+
+func (q *Queries) CountAssetsByOriginalPathPrefix(ctx context.Context, arg CountAssetsByOriginalPathPrefixParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countAssetsByOriginalPathPrefix,
+		arg.OwnerId,
+		arg.Column2,
+		arg.IsArchived,
+		arg.IsFavorite,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countLibraryAssets = `-- name: CountLibraryAssets :one
 SELECT COUNT(*) FROM assets
 WHERE "libraryId" = $1 AND "deletedAt" IS NULL
@@ -2891,6 +2919,84 @@ func (q *Queries) GetAssetsByLocation(ctx context.Context, arg GetAssetsByLocati
 	return items, nil
 }
 
+const getAssetsByOriginalPathPrefix = `-- name: GetAssetsByOriginalPathPrefix :many
+
+SELECT id, "deviceAssetId", "ownerId", "deviceId", type, "originalPath", "fileCreatedAt", "fileModifiedAt", "isFavorite", duration, "encodedVideoPath", checksum, "livePhotoVideoId", "updatedAt", "createdAt", "originalFileName", "sidecarPath", thumbhash, "isOffline", "libraryId", "isExternal", "deletedAt", "localDateTime", "stackId", "duplicateId", status, "updateId", visibility FROM assets
+WHERE "ownerId" = $1
+AND "deletedAt" IS NULL
+AND "originalPath" LIKE $2 || '%'
+AND ($5::boolean IS NULL OR visibility = CASE WHEN $5::boolean THEN 'archive' ELSE 'timeline' END)
+AND ($6::boolean IS NULL OR "isFavorite" = $6)
+ORDER BY "localDateTime" DESC
+LIMIT $3 OFFSET $4
+`
+
+type GetAssetsByOriginalPathPrefixParams struct {
+	OwnerId    pgtype.UUID
+	Column2    pgtype.Text
+	Limit      int32
+	Offset     int32
+	IsArchived pgtype.Bool
+	IsFavorite pgtype.Bool
+}
+
+// ================== VIEW SERVICE QUERIES ==================
+func (q *Queries) GetAssetsByOriginalPathPrefix(ctx context.Context, arg GetAssetsByOriginalPathPrefixParams) ([]Asset, error) {
+	rows, err := q.db.Query(ctx, getAssetsByOriginalPathPrefix,
+		arg.OwnerId,
+		arg.Column2,
+		arg.Limit,
+		arg.Offset,
+		arg.IsArchived,
+		arg.IsFavorite,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Asset
+	for rows.Next() {
+		var i Asset
+		if err := rows.Scan(
+			&i.ID,
+			&i.DeviceAssetId,
+			&i.OwnerId,
+			&i.DeviceId,
+			&i.Type,
+			&i.OriginalPath,
+			&i.FileCreatedAt,
+			&i.FileModifiedAt,
+			&i.IsFavorite,
+			&i.Duration,
+			&i.EncodedVideoPath,
+			&i.Checksum,
+			&i.LivePhotoVideoId,
+			&i.UpdatedAt,
+			&i.CreatedAt,
+			&i.OriginalFileName,
+			&i.SidecarPath,
+			&i.Thumbhash,
+			&i.IsOffline,
+			&i.LibraryId,
+			&i.IsExternal,
+			&i.DeletedAt,
+			&i.LocalDateTime,
+			&i.StackId,
+			&i.DuplicateId,
+			&i.Status,
+			&i.UpdateId,
+			&i.Visibility,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getAssetsByTimeBucket = `-- name: GetAssetsByTimeBucket :many
 SELECT id, "deviceAssetId", "ownerId", "deviceId", type, "originalPath", "fileCreatedAt", "fileModifiedAt", "isFavorite", duration, "encodedVideoPath", checksum, "livePhotoVideoId", "updatedAt", "createdAt", "originalFileName", "sidecarPath", thumbhash, "isOffline", "libraryId", "isExternal", "deletedAt", "localDateTime", "stackId", "duplicateId", status, "updateId", visibility FROM assets
 WHERE "ownerId" = $1 
@@ -3130,6 +3236,49 @@ func (q *Queries) GetAssetsNeedingThumbnails(ctx context.Context, limit int32) (
 			&i.UpdateId,
 			&i.Visibility,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getDistinctCameras = `-- name: GetDistinctCameras :many
+SELECT DISTINCT make, model FROM exif
+WHERE "assetId" IN (
+  SELECT id FROM assets WHERE "ownerId" = $1 AND "deletedAt" IS NULL
+)
+  AND make IS NOT NULL
+  AND make != ''
+  AND model IS NOT NULL
+  AND model != ''
+ORDER BY make, model
+LIMIT $2
+`
+
+type GetDistinctCamerasParams struct {
+	OwnerId pgtype.UUID
+	Limit   int32
+}
+
+type GetDistinctCamerasRow struct {
+	Make  pgtype.Text
+	Model pgtype.Text
+}
+
+func (q *Queries) GetDistinctCameras(ctx context.Context, arg GetDistinctCamerasParams) ([]GetDistinctCamerasRow, error) {
+	rows, err := q.db.Query(ctx, getDistinctCameras, arg.OwnerId, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetDistinctCamerasRow
+	for rows.Next() {
+		var i GetDistinctCamerasRow
+		if err := rows.Scan(&i.Make, &i.Model); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -4904,6 +5053,43 @@ func (q *Queries) GetTrashedAssetsByUser(ctx context.Context, ownerid pgtype.UUI
 	return items, nil
 }
 
+const getUniqueOriginalPathPrefixes = `-- name: GetUniqueOriginalPathPrefixes :many
+SELECT DISTINCT
+    COALESCE(
+        CASE
+            WHEN position('/' IN "originalPath") > 0 THEN
+                substring("originalPath" FROM 1 FOR length("originalPath") - position('/' IN reverse("originalPath")) + 1)
+            ELSE
+                "originalPath"
+        END,
+        ''
+    )::text AS path_prefix
+FROM assets
+WHERE "ownerId" = $1
+AND "deletedAt" IS NULL
+ORDER BY path_prefix
+`
+
+func (q *Queries) GetUniqueOriginalPathPrefixes(ctx context.Context, ownerid pgtype.UUID) ([]string, error) {
+	rows, err := q.db.Query(ctx, getUniqueOriginalPathPrefixes, ownerid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var path_prefix string
+		if err := rows.Scan(&path_prefix); err != nil {
+			return nil, err
+		}
+		items = append(items, path_prefix)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getUser = `-- name: GetUser :one
 SELECT id, email, password, "createdAt", "profileImagePath", "isAdmin", "shouldChangePassword", "deletedAt", "oauthId", "updatedAt", "storageLabel", name, "quotaSizeInBytes", "quotaUsageInBytes", status, "profileChangedAt", "updateId", "avatarColor", "pinCode" FROM users
 WHERE id = $1 AND "deletedAt" IS NULL
@@ -6088,6 +6274,70 @@ func (q *Queries) SearchPlaces(ctx context.Context, arg SearchPlacesParams) ([]S
 	return items, nil
 }
 
+const searchUsersAdmin = `-- name: SearchUsersAdmin :many
+SELECT id, email, password, "createdAt", "profileImagePath", "isAdmin", "shouldChangePassword", "deletedAt", "oauthId", "updatedAt", "storageLabel", name, "quotaSizeInBytes", "quotaUsageInBytes", status, "profileChangedAt", "updateId", "avatarColor", "pinCode" FROM users
+WHERE ($1::boolean IS NULL OR $1::boolean = true OR "deletedAt" IS NULL)
+AND ($2::text IS NULL OR email ILIKE '%' || $2 || '%')
+AND ($3::text IS NULL OR name ILIKE '%' || $3 || '%')
+ORDER BY "createdAt" DESC
+LIMIT $5
+OFFSET $4
+`
+
+type SearchUsersAdminParams struct {
+	WithDeleted pgtype.Bool
+	Email       pgtype.Text
+	Name        pgtype.Text
+	Offset      pgtype.Int4
+	Limit       pgtype.Int4
+}
+
+func (q *Queries) SearchUsersAdmin(ctx context.Context, arg SearchUsersAdminParams) ([]User, error) {
+	rows, err := q.db.Query(ctx, searchUsersAdmin,
+		arg.WithDeleted,
+		arg.Email,
+		arg.Name,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []User
+	for rows.Next() {
+		var i User
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.Password,
+			&i.CreatedAt,
+			&i.ProfileImagePath,
+			&i.IsAdmin,
+			&i.ShouldChangePassword,
+			&i.DeletedAt,
+			&i.OauthId,
+			&i.UpdatedAt,
+			&i.StorageLabel,
+			&i.Name,
+			&i.QuotaSizeInBytes,
+			&i.QuotaUsageInBytes,
+			&i.Status,
+			&i.ProfileChangedAt,
+			&i.UpdateId,
+			&i.AvatarColor,
+			&i.PinCode,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const setSessionPinElevation = `-- name: SetSessionPinElevation :exec
 
 UPDATE sessions
@@ -6575,6 +6825,18 @@ func (q *Queries) UpdateLibrary(ctx context.Context, arg UpdateLibraryParams) (L
 		&i.UpdateId,
 	)
 	return i, err
+}
+
+const updateLibraryRefreshedAt = `-- name: UpdateLibraryRefreshedAt :exec
+UPDATE libraries
+SET "refreshedAt" = now(),
+    "updatedAt" = now()
+WHERE id = $1 AND "deletedAt" IS NULL
+`
+
+func (q *Queries) UpdateLibraryRefreshedAt(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, updateLibraryRefreshedAt, id)
+	return err
 }
 
 const updateMemory = `-- name: UpdateMemory :one

@@ -16,10 +16,20 @@ import (
 )
 
 func (s *Server) GetAllAlbums(ctx context.Context, request *immichv1.GetAllAlbumsRequest) (*immichv1.GetAllAlbumsResponse, error) {
-	// TODO: Get user ID from context/auth
-	// userID := "00000000-0000-0000-0000-000000000000" // Placeholder
+	// Get user ID from context/auth
+	claims, ok := auth.GetClaimsFromStdContext(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	}
 
-	albums, err := s.db.GetAlbums(ctx)
+	uid, err := uuid.Parse(claims.UserID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "invalid user ID: %v", err)
+	}
+	userID := pgtype.UUID{Bytes: uid, Valid: true}
+
+	// Get albums owned by the user
+	albums, err := s.db.GetAlbumsByOwner(ctx, userID)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get albums: %v", err)
 	}

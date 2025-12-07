@@ -8,6 +8,8 @@ import (
 	"github.com/denysvitali/immich-go-backend/internal/config"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/denysvitali/immich-go-backend/internal/telemetry"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
@@ -67,16 +69,67 @@ func (s *Service) GetAssetsByOriginalPath(ctx context.Context, req GetAssetsByOr
 			metric.WithAttributes(attribute.String("operation", "get_assets_by_original_path")))
 	}()
 
-	// TODO: Implement actual query when SQLC queries are available
-	// For now, return empty response
+	// Convert UUID to pgtype.UUID
+	ownerUUID := pgtype.UUID{Bytes: req.UserID, Valid: true}
+
+	// Set default pagination
+	limit := int32(100)
+	offset := int32(0)
+	if req.Take != nil {
+		limit = *req.Take
+	}
+	if req.Skip != nil {
+		offset = *req.Skip
+	}
+
+	// Build query params
+	params := sqlc.GetAssetsByOriginalPathPrefixParams{
+		OwnerId: ownerUUID,
+		Column2: pgtype.Text{String: req.Path, Valid: true},
+		Limit:   limit,
+		Offset:  offset,
+	}
+
+	// Add optional filters
+	if req.IsArchived != nil {
+		params.IsArchived = pgtype.Bool{Bool: *req.IsArchived, Valid: true}
+	}
+	if req.IsFavorite != nil {
+		params.IsFavorite = pgtype.Bool{Bool: *req.IsFavorite, Valid: true}
+	}
+
+	// Get assets from database
+	assets, err := s.db.GetAssetsByOriginalPathPrefix(ctx, params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get assets by path: %w", err)
+	}
+
+	// Get total count
+	countParams := sqlc.CountAssetsByOriginalPathPrefixParams{
+		OwnerId:    ownerUUID,
+		Column2:    pgtype.Text{String: req.Path, Valid: true},
+		IsArchived: params.IsArchived,
+		IsFavorite: params.IsFavorite,
+	}
+	totalCount, err := s.db.CountAssetsByOriginalPathPrefix(ctx, countParams)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count assets by path: %w", err)
+	}
+
+	// Convert to response format
+	assetInfos := make([]*AssetInfo, len(assets))
+	for i, asset := range assets {
+		assetInfos[i] = convertAssetToAssetInfo(&asset)
+	}
+
 	return &GetAssetsByOriginalPathResponse{
-		Assets: []*AssetInfo{},
-		Total:  0,
+		Assets: assetInfos,
+		Total:  int32(totalCount),
 	}, nil
 }
 
-// GetUniqueOriginalPaths retrieves all unique original file paths
-func (s *Service) GetUniqueOriginalPaths(ctx context.Context) (*GetUniqueOriginalPathsResponse, error) {
+// GetUniqueOriginalPaths retrieves all unique original file paths for a user
+func (s *Service) GetUniqueOriginalPaths(ctx context.Context, userID uuid.UUID) (*GetUniqueOriginalPathsResponse, error) {
 	ctx, span := tracer.Start(ctx, "view.get_unique_original_paths")
 	defer span.End()
 
@@ -88,16 +141,24 @@ func (s *Service) GetUniqueOriginalPaths(ctx context.Context) (*GetUniqueOrigina
 			metric.WithAttributes(attribute.String("operation", "get_unique_original_paths")))
 	}()
 
-	// TODO: Implement actual query when SQLC queries are available
-	// For now, return empty response
+	// Convert UUID to pgtype.UUID
+	ownerUUID := pgtype.UUID{Bytes: userID, Valid: true}
+
+	// Get unique paths from database
+	paths, err := s.db.GetUniqueOriginalPathPrefixes(ctx, ownerUUID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get unique paths: %w", err)
+	}
+
 	return &GetUniqueOriginalPathsResponse{
-		Paths: []string{},
+		Paths: paths,
 	}, nil
 }
 
 // Request/Response types
 
 type GetAssetsByOriginalPathRequest struct {
+	UserID     uuid.UUID
 	Path       string
 	IsArchived *bool
 	IsFavorite *bool
@@ -134,3 +195,40 @@ const (
 	AssetType_AUDIO AssetType = 2
 	AssetType_OTHER AssetType = 3
 )
+
+// convertAssetToAssetInfo converts a database asset to an AssetInfo struct
+func convertAssetToAssetInfo(asset *sqlc.Asset) *AssetInfo {
+	// Convert UUID to string
+	assetID := uuid.UUID(asset.ID.Bytes).String()
+
+	// Determine asset type from string
+	var assetType AssetType
+	switch asset.Type {
+	case "IMAGE":
+		assetType = AssetType_IMAGE
+	case "VIDEO":
+		assetType = AssetType_VIDEO
+	case "AUDIO":
+		assetType = AssetType_AUDIO
+	default:
+		assetType = AssetType_OTHER
+	}
+
+	// Check if archived (visibility == 'archive')
+	isArchived := asset.Visibility == sqlc.AssetVisibilityEnumArchive
+
+	// Check if trashed (status == 'trashed')
+	isTrashed := asset.Status == sqlc.AssetsStatusEnumTrashed
+
+	return &AssetInfo{
+		ID:               assetID,
+		DeviceAssetID:    asset.DeviceAssetId,
+		DeviceID:         asset.DeviceId,
+		Type:             assetType,
+		OriginalPath:     asset.OriginalPath,
+		OriginalFileName: asset.OriginalFileName,
+		IsArchived:       isArchived,
+		IsFavorite:       asset.IsFavorite,
+		IsTrashed:        isTrashed,
+	}
+}

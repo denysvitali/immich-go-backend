@@ -73,11 +73,35 @@ func (s *Service) SendNotification(ctx context.Context, req SendNotificationRequ
 			metric.WithAttributes(attribute.String("operation", "send_notification")))
 	}()
 
-	// TODO: Implement actual notification sending when notification system is available
-	// This would involve:
-	// 1. Validating user IDs exist
-	// 2. Creating notification records
-	// 3. Sending via configured channels (email, push, etc.)
+	// Create notification for each user
+	for _, userIDStr := range req.UserIDs {
+		// Parse user ID
+		uid, err := uuid.Parse(userIDStr)
+		if err != nil {
+			return fmt.Errorf("invalid user ID %s: %w", userIDStr, err)
+		}
+		userUUID := pgtype.UUID{Bytes: uid, Valid: true}
+
+		// Verify user exists
+		_, err = s.db.GetUserByID(ctx, userUUID)
+		if err != nil {
+			return fmt.Errorf("user %s not found: %w", userIDStr, err)
+		}
+
+		// Create notification record
+		_, err = s.db.CreateNotification(ctx, sqlc.CreateNotificationParams{
+			UserId:      userUUID,
+			Level:       "info", // Default notification level
+			Type:        "admin_message",
+			Data:        []byte("{}"), // Empty JSON object
+			Title:       req.Subject,
+			Description: pgtype.Text{String: req.Message, Valid: true},
+		})
+		if err != nil {
+			return fmt.Errorf("failed to create notification for user %s: %w", userIDStr, err)
+		}
+	}
+
 	return nil
 }
 
@@ -132,11 +156,37 @@ func (s *Service) SearchUsersAdmin(ctx context.Context, req SearchUsersAdminRequ
 			metric.WithAttributes(attribute.String("operation", "search_users_admin")))
 	}()
 
-	// TODO: Implement actual user search when SQLC queries are available
-	// This should search users with optional filters for email, name, and deleted status
-	// For now, return empty response
+	// Build query parameters
+	params := sqlc.SearchUsersAdminParams{
+		Limit:  pgtype.Int4{Int32: 100, Valid: true}, // Default limit
+		Offset: pgtype.Int4{Int32: 0, Valid: true},
+	}
+
+	// Add optional filters
+	if req.Email != nil {
+		params.Email = pgtype.Text{String: *req.Email, Valid: true}
+	}
+	if req.Name != nil {
+		params.Name = pgtype.Text{String: *req.Name, Valid: true}
+	}
+	if req.WithDeleted != nil {
+		params.WithDeleted = pgtype.Bool{Bool: *req.WithDeleted, Valid: true}
+	}
+
+	// Search users in database
+	users, err := s.db.SearchUsersAdmin(ctx, params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search users: %w", err)
+	}
+
+	// Convert to response format
+	userDtos := make([]*UserAdminResponseDto, len(users))
+	for i, user := range users {
+		userDtos[i] = s.convertUserToDto(&user)
+	}
+
 	return &SearchUsersAdminResponse{
-		Users: []*UserAdminResponseDto{},
+		Users: userDtos,
 	}, nil
 }
 

@@ -5,6 +5,7 @@ import (
 
 	"github.com/denysvitali/immich-go-backend/internal/auth"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
+	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -30,9 +31,16 @@ func (s *Server) GetAssetsByOriginalPath(ctx context.Context, request *immichv1.
 		return nil, status.Error(codes.Unauthenticated, "unauthorized")
 	}
 
+	// Parse user ID from claims
+	userID, err := uuid.Parse(claims.UserID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "invalid user ID: %v", err)
+	}
+
 	// Convert request
 	req := GetAssetsByOriginalPathRequest{
-		Path: request.GetPath(),
+		UserID: userID,
+		Path:   request.GetPath(),
 	}
 
 	if request.IsArchived != nil {
@@ -91,8 +99,14 @@ func (s *Server) GetUniqueOriginalPaths(ctx context.Context, request *immichv1.G
 		return nil, status.Error(codes.Unauthenticated, "unauthorized")
 	}
 
+	// Parse user ID from claims
+	userID, err := uuid.Parse(claims.UserID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "invalid user ID: %v", err)
+	}
+
 	// Call service
-	response, err := s.service.GetUniqueOriginalPaths(ctx)
+	response, err := s.service.GetUniqueOriginalPaths(ctx, userID)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get unique paths: %v", err)
 	}
