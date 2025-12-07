@@ -55,7 +55,7 @@
 - [x] Metrics collection (HTTP, storage, database, assets, users)
 - [x] Proper resource attribution
 
-## Phase 4: Core Services (IN PROGRESS)
+## Phase 4: Core Services ✅ COMPLETED
 
 ### Authentication Service ✅ COMPLETED
 - [x] JWT token generation and validation
@@ -63,8 +63,8 @@
 - [x] Password hashing and validation
 - [x] Session management
 - [x] Authentication middleware
-- [ ] Rate limiting for login attempts
-- [ ] OAuth integration (Google, GitHub, Microsoft)
+- [x] OAuth integration (basic implementation)
+- [ ] Rate limiting for login attempts (future enhancement)
 
 ### User Management Service ✅ COMPLETED
 - [x] User CRUD operations (GetUser, GetUserByEmail, ListUsers, UpdateUser, DeleteUser)
@@ -72,16 +72,17 @@
 - [x] User preferences (full preferences system with JSON storage)
 - [x] Admin user management (UpdateUserAdmin, UpdateUserPassword, soft/hard delete)
 - [x] gRPC endpoints for user operations (GetMyUser, UpdateMyUser, GetUser)
-- [ ] Profile image upload/management (stubs implemented)
-- [ ] User license management (stubs implemented)
+- [ ] Profile image upload/management (future enhancement)
+- [ ] User license management (future enhancement)
 
 ### Asset Management Service ✅ COMPLETED
 - [x] Asset upload handling with S3 pre-signed URLs
 - [x] Asset metadata extraction (EXIF, video metadata)
-- [x] Thumbnail generation (multiple sizes)
+- [x] Thumbnail generation (multiple sizes with dimensions from config)
 - [x] Asset search and filtering
 - [x] Asset deletion and cleanup
 - [x] Asset download with pre-signed URLs
+- [x] Asset stacks (burst photos grouping)
 
 ### Album Management Service ✅ COMPLETED
 - [x] Album CRUD operations (CreateAlbum, GetAlbum, GetUserAlbums, UpdateAlbum, DeleteAlbum)
@@ -89,41 +90,63 @@
 - [x] Album sharing (ShareAlbum, UnshareAlbum)
 - [x] Album permissions (userHasAlbumAccess with owner and shared user checks)
 
-## Phase 5: HTTP/gRPC Controllers (PENDING)
+### Additional Services ✅ COMPLETED
+- [x] Stacks service (burst photo grouping with real DB operations)
+- [x] Faces service (face detection and reassignment)
+- [x] Tags service (full CRUD with asset tagging)
+- [x] Partners service (partnership management)
+- [x] Shared links service (secure sharing with passwords and expiration)
+- [x] Duplicates service (checksum and size-based detection)
+- [x] Trash service (soft delete and restore)
+- [x] Memories service (memory management)
+- [x] Timeline service (timeline view support)
+- [x] Notifications service (notification management)
 
-### HTTP REST API 🔄
-- [ ] Authentication endpoints
-- [ ] User management endpoints
-- [ ] Asset management endpoints
-- [ ] Album management endpoints
-- [ ] Search endpoints
-- [ ] Admin endpoints
+## Phase 5: HTTP/gRPC Controllers ✅ MOSTLY COMPLETE
 
-### gRPC API 🔄 IN PROGRESS
+### HTTP REST API (via grpc-gateway) ✅
+- [x] Authentication endpoints (Login, Logout, Register, ValidateToken)
+- [x] User management endpoints (GetMyUser, UpdateMyUser, preferences)
+- [x] Asset management endpoints (Upload, Download, Search, Delete)
+- [x] Album management endpoints (CRUD, sharing)
+- [x] Search endpoints (metadata search)
+- [x] Admin endpoints (user management, system config)
+
+### gRPC API ✅ MOSTLY COMPLETE
 - [x] Users service endpoints (GetMyUser, UpdateMyUser, GetUser, preferences)
-- [x] Authentication service endpoints (Login, Logout, Register)
-- [x] Basic album service endpoints (CreateAlbum, GetAlbum, etc.)
-- [x] Asset service endpoints (basic CRUD operations)
-- [ ] Complete all remaining protobuf services
-- [ ] Authentication interceptors
-- [ ] Error handling and status codes
-- [ ] Streaming support for large operations
+- [x] Authentication service endpoints (Login, Logout, Register, OAuth)
+- [x] Album service endpoints (full CRUD)
+- [x] Asset service endpoints (full CRUD with search)
+- [x] Tags service endpoints (full tagging operations)
+- [x] Partners service endpoints (partnership management)
+- [x] Shared links service endpoints (secure sharing)
+- [x] Trash service endpoints (delete/restore)
+- [x] Queue service endpoints (job management)
+- [x] Sessions service endpoints (session management)
+- [x] Server info endpoints (config, features, stats)
+- [x] Authentication interceptors
+- [x] Error handling and status codes
+- [ ] Streaming support for large operations (future enhancement)
 
-## Phase 6: Job Queue System (PENDING)
+## Phase 6: Job Queue System ✅ IMPLEMENTED
 
-### Background Jobs 🔄
-- [ ] Redis-based job queue
-- [ ] Thumbnail generation jobs
-- [ ] EXIF extraction jobs
-- [ ] Machine learning jobs (optional)
-- [ ] Backup/sync jobs
-- [ ] Cleanup jobs
+### Background Jobs ✅
+- [x] Redis-based job queue (asynq)
+- [x] Thumbnail generation jobs
+- [x] EXIF/metadata extraction jobs
+- [x] Library scanning jobs
+- [x] Video transcoding jobs (handler ready)
+- [x] Face detection jobs (handler ready)
+- [x] Smart search indexing jobs (handler ready)
+- [x] Duplicate detection jobs
+- [x] Storage migration jobs
 
-### Job Workers 🔄
-- [ ] Configurable worker pools
-- [ ] Job retry logic
-- [ ] Job monitoring and metrics
-- [ ] Dead letter queue handling
+### Job Workers ✅
+- [x] Job handlers for all types
+- [x] Queue management API (list, pause, resume)
+- [x] Job status tracking
+- [ ] Configurable worker pools (future enhancement)
+- [ ] Advanced retry logic (future enhancement)
 
 ## Phase 7: Advanced Features (PENDING)
 
@@ -208,30 +231,34 @@
 
 ## Current Status
 
-**Phase Completed:** 4/10
-**Overall Progress:** ~50%
+**Phase Completed:** 6/10
+**Overall Progress:** ~70%
 
-**Currently Working On:** Phase 4 - Core Services (User Management ✅ Complete, Asset Management ✅ Complete)
-**Next Milestone:** Complete Album Management Service and HTTP/gRPC Controllers
+**Currently Working On:** Phase 7 - Advanced Features (ML integration, video processing)
+**Next Milestone:** Complete testing infrastructure and deployment setup
 
 ## Key Achievements
 
-1. ✅ **Robust Storage Abstraction**: Implemented a comprehensive storage layer supporting local filesystem, S3, and rclone backends with pre-signed URL support
-2. ✅ **Comprehensive Database Layer**: 116 SQLC queries covering all Immich entities with proper error handling
+1. ✅ **Robust Storage Abstraction**: Comprehensive storage layer supporting local filesystem, S3, and rclone backends with pre-signed URL support
+2. ✅ **Comprehensive Database Layer**: 130+ SQLC queries covering all Immich entities with proper error handling
 3. ✅ **Production-Ready Configuration**: Full configuration system with YAML and environment variable support
 4. ✅ **Observability Ready**: OpenTelemetry integration with tracing and metrics
 5. ✅ **Protocol Buffer Integration**: Complete protobuf setup with Nix build system
-6. ✅ **Complete Authentication System**: JWT tokens, user registration/login, session management, password validation
+6. ✅ **Complete Authentication System**: JWT tokens, user registration/login, session management, OAuth support
 7. ✅ **Full User Management**: CRUD operations, profile management, preferences, admin functions with gRPC endpoints
-8. ✅ **Complete Asset Management**: Upload/download with S3 pre-signed URLs, metadata extraction, thumbnail generation, advanced search, and comprehensive deletion with cleanup
+8. ✅ **Complete Asset Management**: Upload/download with S3 pre-signed URLs, metadata extraction, thumbnail generation, advanced search, stacks, and comprehensive deletion with cleanup
+9. ✅ **Album Management**: Full CRUD, sharing, permissions with real database operations
+10. ✅ **Additional Services**: Tags, partners, shared links, duplicates, trash, memories, timeline, notifications
+11. ✅ **Job Queue System**: Redis-based background processing with handlers for all job types
+12. ✅ **gRPC/REST API**: Complete API layer with authentication interceptors
 
 ## Next Steps
 
-1. **Complete Album Management Service** - Album sharing, permissions, and advanced album features
-2. **Implement HTTP/gRPC Controllers** - REST API endpoints and gRPC service implementations
-3. **Add Job Queue System** - Background processing for asset processing, thumbnails, EXIF extraction
-4. **Complete Server Implementation** - HTTP and gRPC servers with middleware
-5. **Add Testing Infrastructure** - Comprehensive unit and integration tests
+1. **Add Testing Infrastructure** - Comprehensive unit and integration tests
+2. **Complete ML Integration** - Face recognition, smart search with CLIP
+3. **Video Processing** - Transcoding and advanced video metadata
+4. **Documentation** - API docs, deployment guides
+5. **Deployment** - Docker, Kubernetes, CI/CD pipeline
 
 ## Technical Decisions Made
 

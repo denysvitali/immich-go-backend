@@ -139,10 +139,16 @@ YAML config with environment variable overrides:
 
 ## Current Status
 
-**Phase 5/10** - HTTP/gRPC Controllers (~60% complete)
+**Phase 6/10** - Core Implementation (~70% complete)
 
-Completed: Infrastructure, storage layer, auth, users, assets, albums, 122+ gRPC endpoints
-In progress: HTTP REST gateway completion, additional service endpoints
-Next: Job queue system, testing infrastructure
+Completed:
+- Infrastructure, storage layer, configuration, telemetry
+- Auth, users, assets, albums with full database operations
+- 130+ gRPC endpoints with REST gateway
+- Tags, partners, shared links, duplicates, trash, memories, timeline, notifications
+- Stacks service (burst photos), faces service (reassignment)
+- Job queue system with Redis (asynq) and handlers for all job types
+
+Next: Testing infrastructure, ML integration, documentation
 
 Note: immich-upstream contains the original immich project (original server implementation)
