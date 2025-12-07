@@ -352,13 +352,16 @@ func (s *Service) generateArchivePath(asset *sqlc.Asset) string {
 
 // checkSharedAccess checks if a user has shared access to an asset
 func (s *Service) checkSharedAccess(ctx context.Context, userID uuid.UUID, assetID uuid.UUID) (bool, error) {
-	// For now, we'll check by iterating through user's shared albums
-	// TODO: Add a more efficient query for checking asset access
+	// Check if asset is shared with user via any album
+	isShared, err := s.db.CheckAssetSharedWithUser(ctx, sqlc.CheckAssetSharedWithUserParams{
+		AssetsId: pgtype.UUID{Bytes: assetID, Valid: true},
+		UsersId:  pgtype.UUID{Bytes: userID, Valid: true},
+	})
+	if err != nil {
+		return false, fmt.Errorf("failed to check asset access: %w", err)
+	}
 
-	// Check if asset is shared via shared link
-	// TODO: Implement shared link checking once SharedLinks service is fixed
-
-	return false, nil
+	return isShared, nil
 }
 
 // checkAlbumAccess checks if a user has access to an album

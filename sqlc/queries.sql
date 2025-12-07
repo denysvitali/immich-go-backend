@@ -64,6 +64,16 @@ SELECT u.*, asu.role FROM users u
 JOIN albums_shared_users_users asu ON u.id = asu."usersId"
 WHERE asu."albumsId" = $1;
 
+-- name: CheckAssetSharedWithUser :one
+SELECT EXISTS(
+    SELECT 1 FROM albums_assets_assets aaa
+    JOIN albums_shared_users_users asuu ON aaa."albumsId" = asuu."albumsId"
+    JOIN albums a ON a.id = aaa."albumsId"
+    WHERE aaa."assetsId" = $1
+    AND asuu."usersId" = $2
+    AND a."deletedAt" IS NULL
+) AS is_shared;
+
 -- name: AddUserToAlbum :exec
 INSERT INTO albums_shared_users_users ("albumsId", "usersId", role)
 VALUES ($1, $2, $3)

@@ -107,6 +107,29 @@ func (q *Queries) CheckAssetExistsByPath(ctx context.Context, originalpath strin
 	return exists, err
 }
 
+const checkAssetSharedWithUser = `-- name: CheckAssetSharedWithUser :one
+SELECT EXISTS(
+    SELECT 1 FROM albums_assets_assets aaa
+    JOIN albums_shared_users_users asuu ON aaa."albumsId" = asuu."albumsId"
+    JOIN albums a ON a.id = aaa."albumsId"
+    WHERE aaa."assetsId" = $1
+    AND asuu."usersId" = $2
+    AND a."deletedAt" IS NULL
+) AS is_shared
+`
+
+type CheckAssetSharedWithUserParams struct {
+	AssetsId pgtype.UUID
+	UsersId  pgtype.UUID
+}
+
+func (q *Queries) CheckAssetSharedWithUser(ctx context.Context, arg CheckAssetSharedWithUserParams) (bool, error) {
+	row := q.db.QueryRow(ctx, checkAssetSharedWithUser, arg.AssetsId, arg.UsersId)
+	var is_shared bool
+	err := row.Scan(&is_shared)
+	return is_shared, err
+}
+
 const checkExistingAssets = `-- name: CheckExistingAssets :many
 SELECT "deviceAssetId" FROM assets
 WHERE "ownerId" = $1 AND "deviceId" = $2 AND "deviceAssetId" = ANY($3::text[]) AND "deletedAt" IS NULL
