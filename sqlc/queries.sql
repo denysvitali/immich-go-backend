@@ -1464,3 +1464,96 @@ FROM assets
 WHERE "ownerId" = $1
 AND "deletedAt" IS NULL
 ORDER BY path_prefix;
+
+-- ============================================================================
+-- ASSET STACK QUERIES
+-- ============================================================================
+
+-- name: CreateStack :one
+INSERT INTO asset_stack (id, "primaryAssetId", "ownerId")
+VALUES (gen_uuid_v7(), $1, $2)
+RETURNING *;
+
+-- name: GetStack :one
+SELECT * FROM asset_stack
+WHERE id = $1;
+
+-- name: GetStackByPrimaryAsset :one
+SELECT * FROM asset_stack
+WHERE "primaryAssetId" = $1;
+
+-- name: GetStackWithAssets :one
+SELECT
+    s.*,
+    COUNT(a.id) as asset_count
+FROM asset_stack s
+LEFT JOIN assets a ON a."stackId" = s.id AND a."deletedAt" IS NULL
+WHERE s.id = $1
+GROUP BY s.id;
+
+-- name: GetStackAssets :many
+SELECT * FROM assets
+WHERE "stackId" = $1 AND "deletedAt" IS NULL
+ORDER BY "localDateTime" DESC;
+
+-- name: GetUserStacks :many
+SELECT
+    s.*,
+    COUNT(a.id) as asset_count
+FROM asset_stack s
+LEFT JOIN assets a ON a."stackId" = s.id AND a."deletedAt" IS NULL
+WHERE s."ownerId" = $1
+GROUP BY s.id
+ORDER BY s.id DESC
+LIMIT $2 OFFSET $3;
+
+-- name: CountUserStacks :one
+SELECT COUNT(*) FROM asset_stack
+WHERE "ownerId" = $1;
+
+-- name: UpdateStackPrimaryAsset :one
+UPDATE asset_stack
+SET "primaryAssetId" = $2
+WHERE id = $1
+RETURNING *;
+
+-- name: DeleteStack :exec
+DELETE FROM asset_stack
+WHERE id = $1;
+
+-- name: DeleteStacksByIds :exec
+DELETE FROM asset_stack
+WHERE id = ANY($1::uuid[]);
+
+-- name: AddAssetsToStack :exec
+UPDATE assets
+SET "stackId" = $1,
+    "updatedAt" = now(),
+    "updateId" = immich_uuid_v7()
+WHERE id = ANY($2::uuid[]) AND "deletedAt" IS NULL;
+
+-- name: RemoveAssetsFromStack :exec
+UPDATE assets
+SET "stackId" = NULL,
+    "updatedAt" = now(),
+    "updateId" = immich_uuid_v7()
+WHERE id = ANY($1::uuid[]) AND "deletedAt" IS NULL;
+
+-- name: ClearStackAssets :exec
+UPDATE assets
+SET "stackId" = NULL,
+    "updatedAt" = now(),
+    "updateId" = immich_uuid_v7()
+WHERE "stackId" = $1 AND "deletedAt" IS NULL;
+
+-- name: SearchStacks :many
+SELECT
+    s.*,
+    COUNT(a.id) as asset_count
+FROM asset_stack s
+LEFT JOIN assets a ON a."stackId" = s.id AND a."deletedAt" IS NULL
+WHERE s."ownerId" = $1
+AND (sqlc.narg('primary_asset_id')::uuid IS NULL OR s."primaryAssetId" = sqlc.narg('primary_asset_id'))
+GROUP BY s.id
+ORDER BY s.id DESC
+LIMIT $2 OFFSET $3;

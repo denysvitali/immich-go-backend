@@ -59,6 +59,24 @@ func (q *Queries) AddAssetsToMemory(ctx context.Context, arg AddAssetsToMemoryPa
 	return err
 }
 
+const addAssetsToStack = `-- name: AddAssetsToStack :exec
+UPDATE assets
+SET "stackId" = $1,
+    "updatedAt" = now(),
+    "updateId" = immich_uuid_v7()
+WHERE id = ANY($2::uuid[]) AND "deletedAt" IS NULL
+`
+
+type AddAssetsToStackParams struct {
+	StackId pgtype.UUID
+	Column2 []pgtype.UUID
+}
+
+func (q *Queries) AddAssetsToStack(ctx context.Context, arg AddAssetsToStackParams) error {
+	_, err := q.db.Exec(ctx, addAssetsToStack, arg.StackId, arg.Column2)
+	return err
+}
+
 const addTagToAsset = `-- name: AddTagToAsset :exec
 INSERT INTO tag_asset ("tagsId", "assetsId")
 VALUES ($1, $2)
@@ -181,6 +199,19 @@ WHERE id = $1
 
 func (q *Queries) ClearSessionPinElevation(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, clearSessionPinElevation, id)
+	return err
+}
+
+const clearStackAssets = `-- name: ClearStackAssets :exec
+UPDATE assets
+SET "stackId" = NULL,
+    "updatedAt" = now(),
+    "updateId" = immich_uuid_v7()
+WHERE "stackId" = $1 AND "deletedAt" IS NULL
+`
+
+func (q *Queries) ClearStackAssets(ctx context.Context, stackid pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, clearStackAssets, stackid)
 	return err
 }
 
@@ -320,6 +351,18 @@ WHERE "userId" = $1
 
 func (q *Queries) CountUserSessions(ctx context.Context, userid pgtype.UUID) (int64, error) {
 	row := q.db.QueryRow(ctx, countUserSessions, userid)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countUserStacks = `-- name: CountUserStacks :one
+SELECT COUNT(*) FROM asset_stack
+WHERE "ownerId" = $1
+`
+
+func (q *Queries) CountUserStacks(ctx context.Context, ownerid pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countUserStacks, ownerid)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -1288,6 +1331,28 @@ func (q *Queries) CreateSmartSearch(ctx context.Context, arg CreateSmartSearchPa
 	return i, err
 }
 
+const createStack = `-- name: CreateStack :one
+
+INSERT INTO asset_stack (id, "primaryAssetId", "ownerId")
+VALUES (gen_uuid_v7(), $1, $2)
+RETURNING id, "primaryAssetId", "ownerId"
+`
+
+type CreateStackParams struct {
+	PrimaryAssetId pgtype.UUID
+	OwnerId        pgtype.UUID
+}
+
+// ============================================================================
+// ASSET STACK QUERIES
+// ============================================================================
+func (q *Queries) CreateStack(ctx context.Context, arg CreateStackParams) (AssetStack, error) {
+	row := q.db.QueryRow(ctx, createStack, arg.PrimaryAssetId, arg.OwnerId)
+	var i AssetStack
+	err := row.Scan(&i.ID, &i.PrimaryAssetId, &i.OwnerId)
+	return i, err
+}
+
 const createTag = `-- name: CreateTag :one
 INSERT INTO tags ("userId", value, color)
 VALUES ($1, $2, $3)
@@ -1584,6 +1649,26 @@ WHERE id = $1
 
 func (q *Queries) DeleteSharedLink(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deleteSharedLink, id)
+	return err
+}
+
+const deleteStack = `-- name: DeleteStack :exec
+DELETE FROM asset_stack
+WHERE id = $1
+`
+
+func (q *Queries) DeleteStack(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteStack, id)
+	return err
+}
+
+const deleteStacksByIds = `-- name: DeleteStacksByIds :exec
+DELETE FROM asset_stack
+WHERE id = ANY($1::uuid[])
+`
+
+func (q *Queries) DeleteStacksByIds(ctx context.Context, dollar_1 []pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteStacksByIds, dollar_1)
 	return err
 }
 
@@ -4618,6 +4703,114 @@ func (q *Queries) GetSmartSearch(ctx context.Context, assetid pgtype.UUID) ([]Sm
 	return items, nil
 }
 
+const getStack = `-- name: GetStack :one
+SELECT id, "primaryAssetId", "ownerId" FROM asset_stack
+WHERE id = $1
+`
+
+func (q *Queries) GetStack(ctx context.Context, id pgtype.UUID) (AssetStack, error) {
+	row := q.db.QueryRow(ctx, getStack, id)
+	var i AssetStack
+	err := row.Scan(&i.ID, &i.PrimaryAssetId, &i.OwnerId)
+	return i, err
+}
+
+const getStackAssets = `-- name: GetStackAssets :many
+SELECT id, "deviceAssetId", "ownerId", "deviceId", type, "originalPath", "fileCreatedAt", "fileModifiedAt", "isFavorite", duration, "encodedVideoPath", checksum, "livePhotoVideoId", "updatedAt", "createdAt", "originalFileName", "sidecarPath", thumbhash, "isOffline", "libraryId", "isExternal", "deletedAt", "localDateTime", "stackId", "duplicateId", status, "updateId", visibility FROM assets
+WHERE "stackId" = $1 AND "deletedAt" IS NULL
+ORDER BY "localDateTime" DESC
+`
+
+func (q *Queries) GetStackAssets(ctx context.Context, stackid pgtype.UUID) ([]Asset, error) {
+	rows, err := q.db.Query(ctx, getStackAssets, stackid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Asset
+	for rows.Next() {
+		var i Asset
+		if err := rows.Scan(
+			&i.ID,
+			&i.DeviceAssetId,
+			&i.OwnerId,
+			&i.DeviceId,
+			&i.Type,
+			&i.OriginalPath,
+			&i.FileCreatedAt,
+			&i.FileModifiedAt,
+			&i.IsFavorite,
+			&i.Duration,
+			&i.EncodedVideoPath,
+			&i.Checksum,
+			&i.LivePhotoVideoId,
+			&i.UpdatedAt,
+			&i.CreatedAt,
+			&i.OriginalFileName,
+			&i.SidecarPath,
+			&i.Thumbhash,
+			&i.IsOffline,
+			&i.LibraryId,
+			&i.IsExternal,
+			&i.DeletedAt,
+			&i.LocalDateTime,
+			&i.StackId,
+			&i.DuplicateId,
+			&i.Status,
+			&i.UpdateId,
+			&i.Visibility,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getStackByPrimaryAsset = `-- name: GetStackByPrimaryAsset :one
+SELECT id, "primaryAssetId", "ownerId" FROM asset_stack
+WHERE "primaryAssetId" = $1
+`
+
+func (q *Queries) GetStackByPrimaryAsset(ctx context.Context, primaryassetid pgtype.UUID) (AssetStack, error) {
+	row := q.db.QueryRow(ctx, getStackByPrimaryAsset, primaryassetid)
+	var i AssetStack
+	err := row.Scan(&i.ID, &i.PrimaryAssetId, &i.OwnerId)
+	return i, err
+}
+
+const getStackWithAssets = `-- name: GetStackWithAssets :one
+SELECT
+    s.id, s."primaryAssetId", s."ownerId",
+    COUNT(a.id) as asset_count
+FROM asset_stack s
+LEFT JOIN assets a ON a."stackId" = s.id AND a."deletedAt" IS NULL
+WHERE s.id = $1
+GROUP BY s.id
+`
+
+type GetStackWithAssetsRow struct {
+	ID             pgtype.UUID
+	PrimaryAssetId pgtype.UUID
+	OwnerId        pgtype.UUID
+	AssetCount     int64
+}
+
+func (q *Queries) GetStackWithAssets(ctx context.Context, id pgtype.UUID) (GetStackWithAssetsRow, error) {
+	row := q.db.QueryRow(ctx, getStackWithAssets, id)
+	var i GetStackWithAssetsRow
+	err := row.Scan(
+		&i.ID,
+		&i.PrimaryAssetId,
+		&i.OwnerId,
+		&i.AssetCount,
+	)
+	return i, err
+}
+
 const getStorageUsageByUser = `-- name: GetStorageUsageByUser :one
 SELECT 
     "ownerId",
@@ -5549,6 +5742,56 @@ func (q *Queries) GetUserSessions(ctx context.Context, userid pgtype.UUID) ([]Se
 	return items, nil
 }
 
+const getUserStacks = `-- name: GetUserStacks :many
+SELECT
+    s.id, s."primaryAssetId", s."ownerId",
+    COUNT(a.id) as asset_count
+FROM asset_stack s
+LEFT JOIN assets a ON a."stackId" = s.id AND a."deletedAt" IS NULL
+WHERE s."ownerId" = $1
+GROUP BY s.id
+ORDER BY s.id DESC
+LIMIT $2 OFFSET $3
+`
+
+type GetUserStacksParams struct {
+	OwnerId pgtype.UUID
+	Limit   int32
+	Offset  int32
+}
+
+type GetUserStacksRow struct {
+	ID             pgtype.UUID
+	PrimaryAssetId pgtype.UUID
+	OwnerId        pgtype.UUID
+	AssetCount     int64
+}
+
+func (q *Queries) GetUserStacks(ctx context.Context, arg GetUserStacksParams) ([]GetUserStacksRow, error) {
+	rows, err := q.db.Query(ctx, getUserStacks, arg.OwnerId, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetUserStacksRow
+	for rows.Next() {
+		var i GetUserStacksRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.PrimaryAssetId,
+			&i.OwnerId,
+			&i.AssetCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getUsers = `-- name: GetUsers :many
 SELECT id, email, password, "createdAt", "profileImagePath", "isAdmin", "shouldChangePassword", "deletedAt", "oauthId", "updatedAt", "storageLabel", name, "quotaSizeInBytes", "quotaUsageInBytes", status, "profileChangedAt", "updateId", "avatarColor", "pinCode" FROM users
 WHERE "deletedAt" IS NULL
@@ -5822,6 +6065,19 @@ type RemoveAssetsFromMemoryParams struct {
 
 func (q *Queries) RemoveAssetsFromMemory(ctx context.Context, arg RemoveAssetsFromMemoryParams) error {
 	_, err := q.db.Exec(ctx, removeAssetsFromMemory, arg.MemoriesId, arg.Column2)
+	return err
+}
+
+const removeAssetsFromStack = `-- name: RemoveAssetsFromStack :exec
+UPDATE assets
+SET "stackId" = NULL,
+    "updatedAt" = now(),
+    "updateId" = immich_uuid_v7()
+WHERE id = ANY($1::uuid[]) AND "deletedAt" IS NULL
+`
+
+func (q *Queries) RemoveAssetsFromStack(ctx context.Context, dollar_1 []pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, removeAssetsFromStack, dollar_1)
 	return err
 }
 
@@ -6365,6 +6621,63 @@ func (q *Queries) SearchPlaces(ctx context.Context, arg SearchPlacesParams) ([]S
 	for rows.Next() {
 		var i SearchPlacesRow
 		if err := rows.Scan(&i.City, &i.State, &i.Country); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const searchStacks = `-- name: SearchStacks :many
+SELECT
+    s.id, s."primaryAssetId", s."ownerId",
+    COUNT(a.id) as asset_count
+FROM asset_stack s
+LEFT JOIN assets a ON a."stackId" = s.id AND a."deletedAt" IS NULL
+WHERE s."ownerId" = $1
+AND ($4::uuid IS NULL OR s."primaryAssetId" = $4)
+GROUP BY s.id
+ORDER BY s.id DESC
+LIMIT $2 OFFSET $3
+`
+
+type SearchStacksParams struct {
+	OwnerId        pgtype.UUID
+	Limit          int32
+	Offset         int32
+	PrimaryAssetID pgtype.UUID
+}
+
+type SearchStacksRow struct {
+	ID             pgtype.UUID
+	PrimaryAssetId pgtype.UUID
+	OwnerId        pgtype.UUID
+	AssetCount     int64
+}
+
+func (q *Queries) SearchStacks(ctx context.Context, arg SearchStacksParams) ([]SearchStacksRow, error) {
+	rows, err := q.db.Query(ctx, searchStacks,
+		arg.OwnerId,
+		arg.Limit,
+		arg.Offset,
+		arg.PrimaryAssetID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SearchStacksRow
+	for rows.Next() {
+		var i SearchStacksRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.PrimaryAssetId,
+			&i.OwnerId,
+			&i.AssetCount,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -7170,6 +7483,25 @@ func (q *Queries) UpdateSmartSearch(ctx context.Context, arg UpdateSmartSearchPa
 	row := q.db.QueryRow(ctx, updateSmartSearch, arg.AssetId, arg.Embedding)
 	var i SmartSearch
 	err := row.Scan(&i.AssetId, &i.Embedding)
+	return i, err
+}
+
+const updateStackPrimaryAsset = `-- name: UpdateStackPrimaryAsset :one
+UPDATE asset_stack
+SET "primaryAssetId" = $2
+WHERE id = $1
+RETURNING id, "primaryAssetId", "ownerId"
+`
+
+type UpdateStackPrimaryAssetParams struct {
+	ID             pgtype.UUID
+	PrimaryAssetId pgtype.UUID
+}
+
+func (q *Queries) UpdateStackPrimaryAsset(ctx context.Context, arg UpdateStackPrimaryAssetParams) (AssetStack, error) {
+	row := q.db.QueryRow(ctx, updateStackPrimaryAsset, arg.ID, arg.PrimaryAssetId)
+	var i AssetStack
+	err := row.Scan(&i.ID, &i.PrimaryAssetId, &i.OwnerId)
 	return i, err
 }
 
