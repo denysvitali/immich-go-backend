@@ -498,18 +498,27 @@ func (s *Service) GetAsset(ctx context.Context, assetID uuid.UUID, userID uuid.U
 		// Continue without thumbnails
 	}
 
-	// Convert asset files to thumbnails
+	// Convert asset files to thumbnails with dimensions from thumbnail config
 	var thumbnails []AssetThumbnail
 	for _, file := range assetFiles {
 		// Only include thumbnail files
 		if file.Type == string(ThumbnailTypePreview) || file.Type == string(ThumbnailTypeWebp) || file.Type == string(ThumbnailTypeThumb) {
+			thumbType := ThumbnailType(file.Type)
+			width, height := s.thumbnailGen.GetThumbnailDimensions(thumbType)
+
+			// Get file size from storage metadata
+			var size int64
+			if metadata, err := s.storage.GetAssetMetadata(ctx, file.Path); err == nil {
+				size = metadata.Size
+			}
+
 			thumbnails = append(thumbnails, AssetThumbnail{
 				AssetID: uuid.MustParse(uuidToString(file.AssetId)),
 				Type:    file.Type,
 				Path:    file.Path,
-				Width:   0, // TODO: Store dimensions in asset_files or calculate
-				Height:  0,
-				Size:    0, // TODO: Store size in asset_files or calculate
+				Width:   width,
+				Height:  height,
+				Size:    size,
 			})
 		}
 	}
@@ -739,18 +748,23 @@ func (s *Service) SearchAssets(ctx context.Context, req SearchRequest) (*SearchR
 			// Continue without thumbnails
 		}
 
-		// Convert asset files to thumbnails
+		// Convert asset files to thumbnails with dimensions from thumbnail config
 		var thumbnails []AssetThumbnail
 		for _, file := range assetFiles {
 			// Only include thumbnail files
 			if file.Type == string(ThumbnailTypePreview) || file.Type == string(ThumbnailTypeWebp) || file.Type == string(ThumbnailTypeThumb) {
+				thumbType := ThumbnailType(file.Type)
+				width, height := s.thumbnailGen.GetThumbnailDimensions(thumbType)
+
+				// Get file size from storage metadata (skip for search to avoid N+1 queries)
+				// Size will be fetched when getting individual asset details
 				thumbnails = append(thumbnails, AssetThumbnail{
 					AssetID: uuid.MustParse(uuidToString(file.AssetId)),
 					Type:    file.Type,
 					Path:    file.Path,
-					Width:   0, // TODO: Store dimensions in asset_files or calculate
-					Height:  0,
-					Size:    0, // TODO: Store size in asset_files or calculate
+					Width:   width,
+					Height:  height,
+					Size:    0, // Size fetched on individual asset retrieval
 				})
 			}
 		}
@@ -995,7 +1009,7 @@ func (s *Service) convertToAssetInfo(asset sqlc.Asset, thumbnails []AssetThumbna
 		Metadata: AssetMetadata{
 			Filename:    asset.OriginalFileName,
 			ContentType: s.getMimeTypeFromAssetType(asset.Type),
-			Size:        0, // TODO: Store size in database
+			Size:        0, // Size is populated from EXIF data below
 		},
 	}
 

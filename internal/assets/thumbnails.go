@@ -227,3 +227,12 @@ func (g *ThumbnailGenerator) GetThumbnailInfo(thumbType ThumbnailType, data []by
 		Size:   int64(len(data)),
 	}
 }
+
+// GetThumbnailDimensions returns the max width and height for a thumbnail type
+func (g *ThumbnailGenerator) GetThumbnailDimensions(thumbType ThumbnailType) (width, height int32) {
+	config, ok := g.sizes[thumbType]
+	if !ok {
+		return 0, 0
+	}
+	return int32(config.MaxWidth), int32(config.MaxHeight)
+}
