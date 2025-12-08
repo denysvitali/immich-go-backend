@@ -1,3 +1,4 @@
+//go:build integration
 // +build integration
 
 package sessions
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	"github.com/denysvitali/immich-go-backend/internal/auth"
+	"github.com/denysvitali/immich-go-backend/internal/config"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/denysvitali/immich-go-backend/internal/db/testdb"
 	"github.com/google/uuid"
@@ -43,9 +45,13 @@ func createTestService(t *testing.T, tdb *testdb.TestDB) *Service {
 	logger := logrus.New()
 	logger.SetLevel(logrus.WarnLevel)
 
-	// Create auth service with test secret
-	authService, err := auth.NewService(tdb.Queries, "test-jwt-secret-key-for-testing", logger)
-	require.NoError(t, err)
+	// Create auth config for testing
+	authConfig := config.AuthConfig{
+		JWTSecret: "test-jwt-secret-key-for-testing",
+	}
+
+	// Create auth service with test config
+	authService := auth.NewService(authConfig, tdb.Queries)
 
 	return NewService(tdb.Queries, authService, logger)
 }

@@ -233,9 +233,9 @@ func (s *Server) GetSyncStream(req *immichv1.GetSyncStreamRequest, stream immich
 				syncResponse = &immichv1.SyncStreamResponse{
 					Event: &immichv1.SyncStreamResponse_PartnerEvent{
 						PartnerEvent: &immichv1.PartnerSyncEvent{
-							Type:       event.Action,
-							PartnerId:  event.ResourceID,
-							Timestamp:  timestamppb.New(event.Timestamp),
+							Type:      event.Action,
+							PartnerId: event.ResourceID,
+							Timestamp: timestamppb.New(event.Timestamp),
 						},
 					},
 				}

@@ -38,7 +38,7 @@ func (s *Server) GetTimeBucket(ctx context.Context, req *immichv1.GetTimeBucketR
 		AlbumID:    req.GetAlbumId(),
 		IsFavorite: req.GetIsFavorite(),
 		TimeBucket: "day", // Default to day
-		Limit:      50,     // Default limit
+		Limit:      50,    // Default limit
 		Offset:     0,
 	}
 
@@ -121,10 +121,10 @@ func (s *Server) GetTimeBuckets(ctx context.Context, req *immichv1.GetTimeBucket
 func parseTimeBucket(timeBucket string) (*time.Time, error) {
 	// Try different formats
 	formats := []string{
-		"2006-01-02",          // Day
-		"2006-01",             // Month
-		"2006",                // Year
-		time.RFC3339,          // Full timestamp
+		"2006-01-02", // Day
+		"2006-01",    // Month
+		"2006",       // Year
+		time.RFC3339, // Full timestamp
 	}
 
 	for _, format := range formats {

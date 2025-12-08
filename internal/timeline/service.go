@@ -20,24 +20,24 @@ func NewService(queries *sqlc.Queries) *Service {
 }
 
 type TimeBucket struct {
-	Date       string   `json:"date"`       // YYYY-MM-DD format
-	Count      int      `json:"count"`       // Number of assets
-	AssetIDs   []string `json:"assetIds"`   // First few asset IDs for preview
-	StartDate  time.Time `json:"startDate"`
-	EndDate    time.Time `json:"endDate"`
+	Date      string    `json:"date"`     // YYYY-MM-DD format
+	Count     int       `json:"count"`    // Number of assets
+	AssetIDs  []string  `json:"assetIds"` // First few asset IDs for preview
+	StartDate time.Time `json:"startDate"`
+	EndDate   time.Time `json:"endDate"`
 }
 
 type TimelineOptions struct {
-	UserID       string
-	PartnerIDs   []string
-	AlbumID      string
-	IsArchived   bool
-	IsFavorite   bool
-	StartDate    *time.Time
-	EndDate      *time.Time
-	TimeBucket   string // "day", "month", "year"
-	Limit        int
-	Offset       int
+	UserID     string
+	PartnerIDs []string
+	AlbumID    string
+	IsArchived bool
+	IsFavorite bool
+	StartDate  *time.Time
+	EndDate    *time.Time
+	TimeBucket string // "day", "month", "year"
+	Limit      int
+	Offset     int
 }
 
 func (s *Service) GetTimeBuckets(ctx context.Context, opts TimelineOptions) ([]*TimeBucket, error) {

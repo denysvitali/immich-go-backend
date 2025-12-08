@@ -73,8 +73,8 @@ func (s *Server) GetServerFeatures(ctx context.Context, empty *emptypb.Empty) (*
 func (s *Server) GetServerLicense(ctx context.Context, empty *emptypb.Empty) (*immichv1.LicenseResponse, error) {
 	// Return an open-source license response
 	return &immichv1.LicenseResponse{
-		ActivatedAt: timestamppb.Now(),
-		LicenseKey:  "OPEN-SOURCE",
+		ActivatedAt:   timestamppb.Now(),
+		LicenseKey:    "OPEN-SOURCE",
 		ActivationKey: "AGPL-3.0",
 	}, nil
 }
@@ -82,8 +82,8 @@ func (s *Server) GetServerLicense(ctx context.Context, empty *emptypb.Empty) (*i
 func (s *Server) SetServerLicense(ctx context.Context, request *immichv1.LicenseKeyRequest) (*immichv1.LicenseResponse, error) {
 	// For open-source implementation, accept any license key but always return open-source
 	return &immichv1.LicenseResponse{
-		ActivatedAt: timestamppb.Now(),
-		LicenseKey:  request.LicenseKey,
+		ActivatedAt:   timestamppb.Now(),
+		LicenseKey:    request.LicenseKey,
 		ActivationKey: "AGPL-3.0",
 	}, nil
 }

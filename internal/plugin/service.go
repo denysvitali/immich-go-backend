@@ -163,11 +163,11 @@ func (s *Service) initializeBuiltinPlugins() {
 		ConfigSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
-				"bucket":     map[string]interface{}{"type": "string"},
-				"region":     map[string]interface{}{"type": "string"},
-				"endpoint":   map[string]interface{}{"type": "string"},
-				"accessKey":  map[string]interface{}{"type": "string"},
-				"secretKey":  map[string]interface{}{"type": "string", "format": "password"},
+				"bucket":    map[string]interface{}{"type": "string"},
+				"region":    map[string]interface{}{"type": "string"},
+				"endpoint":  map[string]interface{}{"type": "string"},
+				"accessKey": map[string]interface{}{"type": "string"},
+				"secretKey": map[string]interface{}{"type": "string", "format": "password"},
 			},
 			"required": []string{"bucket", "region"},
 		},

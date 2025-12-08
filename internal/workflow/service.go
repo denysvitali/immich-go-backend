@@ -21,14 +21,14 @@ var tracer = telemetry.GetTracer("workflow")
 type TriggerType string
 
 const (
-	TriggerTypeAssetUploaded TriggerType = "asset_uploaded"
-	TriggerTypeAssetDeleted  TriggerType = "asset_deleted"
-	TriggerTypeAlbumCreated  TriggerType = "album_created"
-	TriggerTypeAlbumUpdated  TriggerType = "album_updated"
-	TriggerTypeUserCreated   TriggerType = "user_created"
-	TriggerTypeScheduled     TriggerType = "scheduled"
-	TriggerTypeManual        TriggerType = "manual"
-	TriggerTypeFaceDetected  TriggerType = "face_detected"
+	TriggerTypeAssetUploaded  TriggerType = "asset_uploaded"
+	TriggerTypeAssetDeleted   TriggerType = "asset_deleted"
+	TriggerTypeAlbumCreated   TriggerType = "album_created"
+	TriggerTypeAlbumUpdated   TriggerType = "album_updated"
+	TriggerTypeUserCreated    TriggerType = "user_created"
+	TriggerTypeScheduled      TriggerType = "scheduled"
+	TriggerTypeManual         TriggerType = "manual"
+	TriggerTypeFaceDetected   TriggerType = "face_detected"
 	TriggerTypeDuplicateFound TriggerType = "duplicate_found"
 )
 
@@ -36,14 +36,14 @@ const (
 type ActionType string
 
 const (
-	ActionTypeAddTag           ActionType = "add_tag"
-	ActionTypeRemoveTag        ActionType = "remove_tag"
-	ActionTypeMoveToAlbum      ActionType = "move_to_album"
-	ActionTypeSetVisibility    ActionType = "set_visibility"
-	ActionTypeSendNotification ActionType = "send_notification"
-	ActionTypeWebhook          ActionType = "webhook"
-	ActionTypeRunPlugin        ActionType = "run_plugin"
-	ActionTypeSetMetadata      ActionType = "set_metadata"
+	ActionTypeAddTag            ActionType = "add_tag"
+	ActionTypeRemoveTag         ActionType = "remove_tag"
+	ActionTypeMoveToAlbum       ActionType = "move_to_album"
+	ActionTypeSetVisibility     ActionType = "set_visibility"
+	ActionTypeSendNotification  ActionType = "send_notification"
+	ActionTypeWebhook           ActionType = "webhook"
+	ActionTypeRunPlugin         ActionType = "run_plugin"
+	ActionTypeSetMetadata       ActionType = "set_metadata"
 	ActionTypeGenerateThumbnail ActionType = "generate_thumbnail"
 )
 

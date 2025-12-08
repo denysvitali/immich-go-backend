@@ -42,14 +42,14 @@ func (s *Server) SearchMemories(ctx context.Context, req *immichv1.SearchMemorie
 	var protoMemories []*immichv1.Memory
 	for _, mem := range memories {
 		protoMem := &immichv1.Memory{
-			Id:       mem.ID,
-			OwnerId:  mem.UserID,
-			Type:     immichv1.MemoryType_MEMORY_TYPE_ON_THIS_DAY,
-			MemoryAt: timestamppb.New(mem.Date),
+			Id:        mem.ID,
+			OwnerId:   mem.UserID,
+			Type:      immichv1.MemoryType_MEMORY_TYPE_ON_THIS_DAY,
+			MemoryAt:  timestamppb.New(mem.Date),
 			CreatedAt: timestamppb.New(mem.CreatedAt),
 			UpdatedAt: timestamppb.New(mem.UpdatedAt),
-			IsSaved:  false,
-			Assets:   []*immichv1.Asset{}, // Empty for now
+			IsSaved:   false,
+			Assets:    []*immichv1.Asset{}, // Empty for now
 		}
 
 		// Apply filters if provided

@@ -206,12 +206,12 @@ type ffprobeOutput struct {
 }
 
 type ffprobeStream struct {
-	CodecType   string `json:"codec_type"`
-	CodecName   string `json:"codec_name"`
-	Width       int    `json:"width"`
-	Height      int    `json:"height"`
-	Duration    string `json:"duration"`
-	RFrameRate  string `json:"r_frame_rate"`
+	CodecType    string `json:"codec_type"`
+	CodecName    string `json:"codec_name"`
+	Width        int    `json:"width"`
+	Height       int    `json:"height"`
+	Duration     string `json:"duration"`
+	RFrameRate   string `json:"r_frame_rate"`
 	AvgFrameRate string `json:"avg_frame_rate"`
 }
 

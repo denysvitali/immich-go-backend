@@ -37,7 +37,6 @@ import (
 	"github.com/denysvitali/immich-go-backend/internal/plugin"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 	"github.com/denysvitali/immich-go-backend/internal/queue"
-	"github.com/denysvitali/immich-go-backend/internal/workflow"
 	"github.com/denysvitali/immich-go-backend/internal/search"
 	"github.com/denysvitali/immich-go-backend/internal/sessions"
 	"github.com/denysvitali/immich-go-backend/internal/sharedlinks"
@@ -52,6 +51,7 @@ import (
 	"github.com/denysvitali/immich-go-backend/internal/users"
 	"github.com/denysvitali/immich-go-backend/internal/view"
 	"github.com/denysvitali/immich-go-backend/internal/websocket"
+	"github.com/denysvitali/immich-go-backend/internal/workflow"
 )
 
 var (

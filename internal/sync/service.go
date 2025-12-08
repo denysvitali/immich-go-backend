@@ -26,7 +26,7 @@ type Service struct {
 	lastSync      map[string]time.Time
 
 	// Event broadcasting for real-time sync
-	eventMutex sync.RWMutex
+	eventMutex       sync.RWMutex
 	eventSubscribers map[string][]chan *SyncEvent // userID -> list of subscriber channels
 }
 
@@ -51,12 +51,12 @@ type SyncState struct {
 
 // SyncEvent represents a real-time sync event
 type SyncEvent struct {
-	Type      string    // "asset", "album", "partner"
-	Action    string    // "upsert", "delete"
-	UserID    string    // User who owns the resource
-	ResourceID string   // ID of the asset/album/partner
-	Timestamp time.Time
-	Data      interface{} // Optional additional data
+	Type       string // "asset", "album", "partner"
+	Action     string // "upsert", "delete"
+	UserID     string // User who owns the resource
+	ResourceID string // ID of the asset/album/partner
+	Timestamp  time.Time
+	Data       interface{} // Optional additional data
 }
 
 // DeltaSyncResult contains changes since last sync
@@ -356,10 +356,10 @@ func (s *Service) broadcastEvent(userID string, event *SyncEvent) {
 	}
 
 	s.logger.WithFields(logrus.Fields{
-		"userID": userID,
-		"type":   event.Type,
-		"action": event.Action,
-		"resourceID": event.ResourceID,
+		"userID":      userID,
+		"type":        event.Type,
+		"action":      event.Action,
+		"resourceID":  event.ResourceID,
 		"subscribers": len(subscribers),
 	}).Debug("Broadcasting sync event")
 

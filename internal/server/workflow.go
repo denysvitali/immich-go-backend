@@ -3,8 +3,8 @@ package server
 import (
 	"context"
 
-	"github.com/denysvitali/immich-go-backend/internal/workflow"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
+	"github.com/denysvitali/immich-go-backend/internal/workflow"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"

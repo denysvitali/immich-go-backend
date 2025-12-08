@@ -32,11 +32,11 @@ func (s *Server) GetTimeBucket(ctx context.Context, request *immichv1.GetTimeBuc
 
 	// Get assets for this day
 	opts := timeline.TimelineOptions{
-		UserID:   claims.UserID,
+		UserID:    claims.UserID,
 		StartDate: &dayDetail.StartDate,
 		EndDate:   &dayDetail.EndDate,
-		Limit:    100,
-		Offset:   0,
+		Limit:     100,
+		Offset:    0,
 	}
 
 	assetIDs, err := s.timelineService.GetTimelineAssets(ctx, opts)

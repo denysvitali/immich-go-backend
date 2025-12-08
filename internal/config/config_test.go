@@ -309,10 +309,10 @@ func TestJobsConfig(t *testing.T) {
 
 func TestFeatureConfig(t *testing.T) {
 	cfg := FeatureConfig{
-		MachineLearningEnabled: false,
-		FaceRecognitionEnabled: false,
-		ObjectDetectionEnabled: false,
-		CLIPSearchEnabled:      false,
+		MachineLearningEnabled:  false,
+		FaceRecognitionEnabled:  false,
+		ObjectDetectionEnabled:  false,
+		CLIPSearchEnabled:       false,
 		VideoTranscodingEnabled: true,
 	}
 

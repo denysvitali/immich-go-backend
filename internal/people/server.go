@@ -115,7 +115,7 @@ func (s *Server) CreatePerson(ctx context.Context, request *immichv1.CreatePerso
 		OwnerId:       userUUID,
 		Name:          request.GetName(),
 		BirthDate:     birthDatePG,
-		ThumbnailPath: "", // Initially empty
+		ThumbnailPath: "",            // Initially empty
 		FaceAssetId:   pgtype.UUID{}, // Initially null
 		IsHidden:      false,
 	})
@@ -580,6 +580,6 @@ func (s *Server) GetPersonThumbnail(ctx context.Context, request *immichv1.GetPe
 	// For now, return a response with the thumbnail path
 	return &immichv1.GetPersonThumbnailResponse{
 		ThumbnailData: []byte(person.ThumbnailPath), // In real impl, this would be actual image data
-		ContentType:   "text/plain", // In real impl, this would be image/jpeg or image/png
+		ContentType:   "text/plain",                 // In real impl, this would be image/jpeg or image/png
 	}, nil
 }
