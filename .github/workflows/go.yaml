@@ -306,13 +306,106 @@ jobs:
       with:
         sarif_file: 'trivy-results.sarif'
 
-  # Job 5: Build Docker Image (if Dockerfile exists)
+  # Job 5: Integration Tests with Docker
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: build  # Wait for protobuf generation
+
+    services:
+      # PostgreSQL service for integration tests (backup if testcontainers fails)
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: immich
+          POSTGRES_PASSWORD: immich
+          POSTGRES_DB: immich_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        cache: true
+
+    - name: Install Nix
+      uses: cachix/install-nix-action@v25
+      with:
+        github_access_token: ${{ secrets.GITHUB_TOKEN }}
+        nix_path: nixpkgs=channel:nixos-25.05
+
+    - name: Setup Nix Cache
+      uses: cachix/cachix-action@v13
+      with:
+        name: devenv
+
+    - name: Cache generated protobuf files
+      uses: actions/cache@v4
+      id: proto-cache
+      with:
+        path: internal/proto/gen
+        key: ${{ runner.os }}-proto-${{ hashFiles('internal/proto/**/*.proto', 'buf.gen.yaml', 'buf.work.yaml', 'internal/proto/buf.yaml') }}
+        restore-keys: |
+          ${{ runner.os }}-proto-
+
+    - name: Generate Protocol Buffers if not cached
+      if: steps.proto-cache.outputs.cache-hit != 'true'
+      run: |
+        echo "🔨 Generating protocol buffers for integration tests..."
+        nix develop --command bash -c "
+          echo '🧹 Cleaning previous generated files...'
+          rm -rf internal/proto/gen
+
+          echo '🔨 Running buf generate...'
+          buf generate
+
+          echo '✅ Protocol buffer generation complete!'
+        "
+
+    - name: Verify generated files exist
+      run: |
+        if [ ! -d "internal/proto/gen" ] || [ -z "$(ls -A internal/proto/gen)" ]; then
+          echo "❌ No protocol buffer files were generated"
+          exit 1
+        fi
+        echo "✅ Generated $(find internal/proto/gen -name '*.go' | wc -l) Go files"
+
+    - name: Download Go dependencies
+      run: go mod download
+
+    - name: Run Integration Tests
+      env:
+        # Enable Docker for testcontainers
+        TESTCONTAINERS_RYUK_DISABLED: "true"
+        DOCKER_HOST: unix:///var/run/docker.sock
+      run: |
+        echo "🧪 Running integration tests with Docker..."
+        go test -v -tags=integration -race -timeout=10m ./internal/... 2>&1 | tee integration-test-results.txt
+
+    - name: Upload Integration Test Results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: integration-test-results
+        path: integration-test-results.txt
+
+  # Job 6: Build Docker Image (if Dockerfile exists)
   docker:
     name: Build Docker Image
     runs-on: ubuntu-latest
-    needs: [build, lint, proto-check]
+    needs: [build, lint, proto-check, integration-tests]
     if: success()
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
