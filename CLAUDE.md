@@ -2,161 +2,91 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## CRITICAL REQUIREMENTS - NO MOCKS OR STUBS
+## Critical: No Mocks or Stubs
 
-### MANDATORY RULES
-1. **NO STUB IMPLEMENTATIONS** - Every method MUST have real functionality
-2. **NO MOCK DATA** - All responses MUST come from actual database operations
-3. **NO PLACEHOLDER VALUES** - Use real data from PostgreSQL via SQLC
-4. **NO "TODO: Implement later" RESPONSES** - Implement it NOW with real database queries
-5. **NO HARDCODED TEST DATA** - All data must be read from or written to the database
-
-### When implementing ANY service method:
-- Use SQLC queries to interact with the database
-- Create new SQLC queries if needed in `sqlc/queries.sql`
-- Handle errors properly and return meaningful responses
-- Perform actual CRUD operations on the database
+Every service method MUST use real SQLC database queries. No stub implementations, mock data, placeholder values, or "TODO: implement later" patterns. If a SQLC query doesn't exist yet, add it to `sqlc/queries.sql` and regenerate.
 
 ## Development Commands
 
-### Environment Setup
+**Prerequisites:** Nix package manager. Enter the dev environment first:
 ```bash
-nix develop          # Enter Nix development environment (required)
-make setup           # Generate initial files (run after pulling changes)
+nix develop
 ```
 
-### Build & Test
+**Local infrastructure** (PostgreSQL 16, Redis 7):
 ```bash
-make build           # Build to bin/immich-go-backend
-make test            # Run tests
-make test-verbose    # Run tests with verbose output
-make ci-check        # Run all CI checks (proto-gen, lint, test)
+docker-compose up -d
 ```
 
-### Code Generation
-```bash
-make proto-gen       # Generate protocol buffer Go files
-make sqlc-gen        # Generate SQL code (run after modifying sqlc/*.sql)
-make proto-check     # Verify protobuf definitions
-```
+| Task | Command |
+|------|---------|
+| Build | `make build` |
+| Run server | `go run ./cmd serve` |
+| Run all tests | `make test` |
+| Run single test | `go test -v -run TestFunctionName ./internal/package/...` |
+| Lint | `make lint` |
+| Format | `make fmt` |
+| Generate protobuf code | `make proto-gen` |
+| Generate SQLC code | `make sqlc-gen` |
+| Full CI check | `make ci-check` |
+| Initial setup after clone | `make setup` |
 
-### Code Quality
-```bash
-make fmt             # Format Go code
-make lint            # Run linters
-```
+## Architecture
 
-### Running a Single Test
-```bash
-go test -v -run TestFunctionName ./internal/package/...
-```
+Go backend for Immich (~28 gRPC services) with S3-first storage. Dual-protocol: gRPC on port 3002, REST via grpc-gateway on port 3001.
 
-### Starting the Server
-```bash
-go run ./cmd serve
-```
+### Request flow
 
-## Architecture Overview
+HTTP/REST client → grpc-gateway → gRPC service → service layer → SQLC queries → PostgreSQL
 
-This is a Go backend for Immich with an S3-first architecture. The project uses:
-- **PostgreSQL** with SQLC for type-safe queries
-- **gRPC** with grpc-gateway for REST compatibility
-- **OpenTelemetry** for observability
-- **Nix** for reproducible builds
+Async work goes through asynq (Redis-backed job queue).
 
-### Key Directories
+### Key directories
 
-```
-internal/
-├── server/           # gRPC server implementations and HTTP gateway
-├── db/sqlc/          # Generated database code (DO NOT EDIT)
-├── proto/gen/        # Generated protobuf code (DO NOT EDIT)
-├── storage/          # Storage abstraction (local, S3, rclone)
-├── auth/             # JWT authentication and middleware
-├── users/            # User management service
-├── assets/           # Asset management with metadata extraction
-├── albums/           # Album management service
-└── [other services]/ # Domain-specific services
-sqlc/
-├── queries.sql       # SQL query definitions (1300+ lines, 116+ queries)
-└── schema.sql        # Database schema
-```
+- `cmd/` — CLI entry point (Cobra). Subcommands: `serve`, `migrate`, `version`
+- `internal/server/server.go` — Wires all services, gRPC server, HTTP gateway, WebSocket hub, auth middleware
+- `internal/<service>/service.go` — Domain services (auth, users, assets, albums, etc.). Each holds `*sqlc.Queries` + `*config.Config` + OTel metrics
+- `internal/proto/` — `.proto` files defining all gRPC services
+- `internal/proto/gen/` — Generated protobuf Go code (**do not edit**)
+- `internal/db/sqlc/` — Generated SQLC Go code (**do not edit**)
+- `internal/db/testdb/` — Test helpers using testcontainers (real PostgreSQL)
+- `internal/storage/` — Storage abstraction: Local, S3 (pre-signed URLs), Rclone
+- `internal/jobs/` — Async job queue (asynq/Redis)
+- `sqlc/queries.sql` — All SQL query definitions (edit this, then `make sqlc-gen`)
+- `sqlc/schema.sql` — Database schema
 
-### Service Pattern
-
-Services follow a consistent pattern:
+### Service pattern
 
 ```go
 type Service struct {
     db     *sqlc.Queries
     config *config.Config
-    // OpenTelemetry metrics
 }
 
-func NewService(queries *sqlc.Queries, cfg *config.Config) (*Service, error) {
-    // Initialize metrics
-    return &Service{...}, nil
-}
-
-func (s *Service) DoSomething(ctx context.Context, req Request) (*Response, error) {
+func (s *Service) DoSomething(ctx context.Context, req *pb.Request) (*pb.Response, error) {
     ctx, span := tracer.Start(ctx, "service.do_something")
     defer span.End()
-    // Use s.db.QueryName(ctx, params) for database operations
+    // Use s.db.QueryName(ctx, params)
 }
 ```
 
-### Server Structure
+### Adding a new feature
 
-The main server (`internal/server/server.go`) wires together:
-- All service implementations
-- gRPC server with registered handlers
-- HTTP REST gateway via grpc-gateway
-- WebSocket hub for real-time updates
-- Authentication middleware
+1. Add SQL queries in `sqlc/queries.sql` → `make sqlc-gen`
+2. Add protobuf definitions in `internal/proto/` → `make proto-gen`
+3. Create `internal/<feature>/service.go` following the service pattern
+4. Wire into `internal/server/server.go`
 
-### Adding New Features
+### Testing
 
-1. **Add SQL queries** in `sqlc/queries.sql`, then run `make sqlc-gen`
-2. **Add protobuf definitions** in `internal/proto/`, then run `make proto-gen`
-3. **Create service** in `internal/<feature>/service.go` following the pattern above
-4. **Wire into server** in `internal/server/server.go`
-
-### Storage Backends
-
-Three backends via unified `StorageBackend` interface:
-- **Local** - filesystem storage
-- **S3** - AWS S3 compatible with pre-signed URLs
-- **Rclone** - universal backend (40+ cloud providers)
-
-Pre-signed URLs enable direct client uploads/downloads to S3.
+Integration tests use `testcontainers-go` to spin up real PostgreSQL containers. Use `internal/db/testdb.SetupTestDB()` to get a `*sqlc.Queries` backed by a real database with the schema applied. Tests require Docker.
 
 ### Configuration
 
-YAML config with environment variable overrides:
-- `config.yaml` - template
-- `config.yaml.local` - local overrides (gitignored)
-- Environment: `IMMICH_SECTION_KEY` pattern
+YAML config with env var overrides (`IMMICH_SECTION_KEY` pattern):
+- `config.yaml` — template
+- `config.yaml.local` — local overrides (gitignored)
 
-## Current Status
+### Linting
 
-**Phase 10/10** - Core Implementation Complete (~95%)
-
-Completed:
-- Infrastructure, storage layer, configuration, telemetry
-- Auth, users, assets, albums with full database operations
-- 30+ gRPC services with REST gateway via grpc-gateway
-- Tags, partners, shared links, duplicates, trash, memories, timeline, notifications
-- Stacks service (burst photos), faces service (reassignment)
-- Job queue system with Redis (asynq) and handlers for all job types
-- Comprehensive unit and integration tests
-- CI/CD pipeline with GitHub Actions
-- Docker and docker-compose for containerization
-- Full documentation (README, DEPLOYMENT, TESTING, ROADMAP)
-
-Future Enhancements:
-- ML integration (face recognition, CLIP search)
-- Video transcoding with ffmpeg
-- Performance testing and optimization
-- Kubernetes Helm charts
-
-Note: immich-upstream contains the original immich project (original server implementation)
+Uses `golangci-lint` with: errcheck, staticcheck, gosec, govet, gofmt, gofumpt, goimports, misspell, gocritic, and others. Generated proto files (`internal/proto/gen/`, `*.pb.go`, `*.pb.gw.go`) are excluded.
