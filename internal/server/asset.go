@@ -20,7 +20,6 @@ import (
 	"github.com/denysvitali/immich-go-backend/internal/assets"
 	"github.com/denysvitali/immich-go-backend/internal/auth"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
-	"github.com/denysvitali/immich-go-backend/internal/jobs"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 )
 
