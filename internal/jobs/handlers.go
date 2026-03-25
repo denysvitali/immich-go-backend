@@ -1,7 +1,6 @@
 package jobs
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -146,18 +145,6 @@ func (h *Handlers) HandleThumbnailGeneration(ctx context.Context, task *asynq.Ta
 	}
 
 	return nil
-}
-
-// thumbnailContentType returns the MIME content type for a thumbnail given its raw bytes.
-// It exists as a helper so callers can determine content type from already-encoded data.
-func thumbnailContentType(data []byte) string {
-	if len(data) >= 3 && data[0] == 0xFF && data[1] == 0xD8 {
-		return "image/jpeg"
-	}
-	if len(data) >= 4 && bytes.Equal(data[:4], []byte{0x52, 0x49, 0x46, 0x46}) {
-		return "image/webp"
-	}
-	return "image/jpeg"
 }
 
 // MetadataExtractionPayload contains data for metadata extraction

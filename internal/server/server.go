@@ -294,6 +294,10 @@ func NewServer(cfg *config.Config, db *db.Conn) (*Server, error) {
 		jobService, err = jobs.NewService(jobCfg)
 		if err != nil {
 			logrus.WithError(err).Warn("Failed to initialize job service, background processing disabled")
+		} else {
+			// Register real job handlers so enqueued jobs are processed
+			jobHandlers := jobs.NewHandlers(db.Queries, assetService, libraryService, storageService)
+			jobHandlers.RegisterAllHandlers(jobService)
 		}
 	} else {
 		logrus.Warn("Job service not configured, background processing disabled")
