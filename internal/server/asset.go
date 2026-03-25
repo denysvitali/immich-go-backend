@@ -20,6 +20,7 @@ import (
 	"github.com/denysvitali/immich-go-backend/internal/assets"
 	"github.com/denysvitali/immich-go-backend/internal/auth"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
+	"github.com/denysvitali/immich-go-backend/internal/jobs"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 )
 
@@ -168,12 +169,36 @@ func (s *Server) UploadAsset(ctx context.Context, request *immichv1.UploadAssetR
 		fileModifiedAt = assetData.FileModifiedAt
 	}
 
+	// Determine storage path and optionally store the file.
+	// If the request carries raw file bytes (FileContent), upload them to the
+	// storage backend and use the server-generated path as OriginalPath.
+	// Otherwise fall back to the client-supplied OriginalPath.
+	originalPath := assetData.OriginalPath
+	fileContent := request.FileContent
+	if len(fileContent) > 0 {
+		storageService := s.assetService.GetStorageService()
+		uploadResult, uploadErr := storageService.UploadAsset(
+			ctx,
+			claims.UserID,
+			assetData.OriginalFileName,
+			bytes.NewReader(fileContent),
+			int64(len(fileContent)),
+		)
+		if uploadErr != nil {
+			// Log but continue — the asset will be created with the client-supplied
+			// path so that the DB record is not lost.
+			logrus.WithError(uploadErr).Warn("UploadAsset: failed to store file in storage backend")
+		} else {
+			originalPath = uploadResult.Path
+		}
+	}
+
 	asset, err := s.db.CreateAsset(ctx, sqlc.CreateAssetParams{
 		DeviceAssetId:    assetData.DeviceAssetId,
 		OwnerId:          userID,
 		DeviceId:         assetData.DeviceId,
 		Type:             assetType,
-		OriginalPath:     assetData.OriginalPath,
+		OriginalPath:     originalPath,
 		FileCreatedAt:    pgtype.Timestamptz{Time: fileCreatedAt.AsTime(), Valid: true},
 		FileModifiedAt:   pgtype.Timestamptz{Time: fileModifiedAt.AsTime(), Valid: true},
 		LocalDateTime:    pgtype.Timestamptz{Time: fileCreatedAt.AsTime(), Valid: true},
@@ -185,6 +210,38 @@ func (s *Server) UploadAsset(ctx context.Context, request *immichv1.UploadAssetR
 	})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to create asset: %v", err)
+	}
+
+	// Enqueue background jobs for thumbnail generation and metadata extraction.
+	// When Redis / the job service is unavailable, fall back to an in-process goroutine
+	// (only when the file was actually stored so that processing can read it).
+	assetUUID := uuid.UUID(asset.ID.Bytes)
+	assetIDStr := assetUUID.String()
+
+	if s.jobService != nil {
+		thumbPayload := &jobs.JobPayload{
+			ID:        fmt.Sprintf("thumb-%s", assetIDStr),
+			UserID:    claims.UserID,
+			Data:      map[string]interface{}{"asset_id": assetIDStr},
+			CreatedAt: time.Now(),
+		}
+		if enqErr := s.jobService.EnqueueJob(ctx, jobs.JobTypeThumbnailGeneration, thumbPayload); enqErr != nil {
+			logrus.WithError(enqErr).Warn("UploadAsset: failed to enqueue thumbnail generation job")
+		}
+
+		metaPayload := &jobs.JobPayload{
+			ID:        fmt.Sprintf("meta-%s", assetIDStr),
+			UserID:    claims.UserID,
+			Data:      map[string]interface{}{"asset_id": assetIDStr},
+			CreatedAt: time.Now(),
+		}
+		if enqErr := s.jobService.EnqueueJob(ctx, jobs.JobTypeMetadataExtraction, metaPayload); enqErr != nil {
+			logrus.WithError(enqErr).Warn("UploadAsset: failed to enqueue metadata extraction job")
+		}
+	} else if len(fileContent) > 0 {
+		// No job queue configured — trigger in-process background processing.
+		// Only runs when the file was actually stored so processAsset can read it.
+		s.assetService.TriggerProcessing(assetUUID)
 	}
 
 	return s.convertAssetToProto(asset), nil
