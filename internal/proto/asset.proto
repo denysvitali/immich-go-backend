@@ -218,6 +218,7 @@ message UploadAssetRequest {
   CreateAssetRequest asset_data = 1;
   optional string key = 2;
   optional string checksum = 3; // x-immich-checksum header
+  optional bytes file_content = 4; // raw file bytes for server-side upload
 }
 
 // Update asset request

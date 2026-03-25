@@ -9,6 +9,7 @@ plugins:
   - name: grpc-gateway
     out: internal/proto
     opt: module=github.com/denysvitali/immich-go-backend,allow_delete_body=true
-  - name: openapiv2
-    out: internal/proto
-    opt: allow_delete_body=true
+# openapiv2 disabled: protoc-gen-openapiv2 not available in current environment
+#  - name: openapiv2
+#    out: internal/proto
+#    opt: allow_delete_body=true
