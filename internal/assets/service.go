@@ -239,6 +239,12 @@ func (s *Service) CompleteUpload(ctx context.Context, assetID uuid.UUID, reader 
 	return nil
 }
 
+// TriggerProcessing starts background processing for an already-uploaded asset.
+// It is a public wrapper around processAsset, suitable for use when job queue is unavailable.
+func (s *Service) TriggerProcessing(assetID uuid.UUID) {
+	go s.processAsset(context.Background(), assetID)
+}
+
 // processAsset handles background processing of an uploaded asset
 func (s *Service) processAsset(ctx context.Context, assetID uuid.UUID) {
 	ctx, span := tracer.Start(ctx, "assets.process_asset",
