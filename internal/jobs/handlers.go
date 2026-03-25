@@ -1,9 +1,14 @@
 package jobs
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"mime"
+	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
@@ -75,28 +80,84 @@ func (h *Handlers) HandleThumbnailGeneration(ctx context.Context, task *asynq.Ta
 		return fmt.Errorf("failed to get asset: %w", err)
 	}
 
-	// Generate thumbnails using asset service
-	sizes := []string{"thumbnail", "preview", "thumbnail_big"}
-	for _, size := range sizes {
-		err := h.generateThumbnail(ctx, &asset, size)
-		if err != nil {
-			h.logger.WithError(err).Warnf("Failed to generate %s thumbnail", size)
+	// Only generate thumbnails for image assets
+	if !strings.EqualFold(asset.Type, string(assets.AssetTypeImage)) {
+		h.logger.WithFields(logrus.Fields{
+			"asset_id":   asset.ID,
+			"asset_type": asset.Type,
+		}).Info("Skipping thumbnail generation for non-image asset")
+		return nil
+	}
+
+	// Download the original asset from storage
+	reader, err := h.storageService.Download(ctx, asset.OriginalPath)
+	if err != nil {
+		return fmt.Errorf("failed to download original asset: %w", err)
+	}
+	defer reader.Close()
+
+	// Generate all thumbnail sizes at once
+	generator := assets.NewThumbnailGenerator()
+	thumbnails, err := generator.GenerateThumbnails(ctx, reader, asset.OriginalFileName)
+	if err != nil {
+		return fmt.Errorf("failed to generate thumbnails: %w", err)
+	}
+
+	// Content type mapping per thumbnail type
+	thumbContentType := map[assets.ThumbnailType]string{
+		assets.ThumbnailTypePreview: "image/jpeg",
+		assets.ThumbnailTypeWebp:   "image/jpeg", // falls back to JPEG encoding
+		assets.ThumbnailTypeThumb:  "image/jpeg",
+	}
+
+	// Upload each thumbnail and record it in the database
+	for thumbType, data := range thumbnails {
+		thumbPath := generator.GetThumbnailPath(asset.OriginalPath, thumbType)
+		contentType := thumbContentType[thumbType]
+
+		if err := h.storageService.UploadBytes(ctx, thumbPath, data, contentType); err != nil {
+			h.logger.WithError(err).WithFields(logrus.Fields{
+				"asset_id":   asset.ID,
+				"thumb_type": thumbType,
+				"thumb_path": thumbPath,
+			}).Warn("Failed to upload thumbnail")
+			continue
 		}
+
+		if _, err := h.db.CreateAssetFile(ctx, sqlc.CreateAssetFileParams{
+			AssetId: asset.ID,
+			Type:    string(thumbType),
+			Path:    thumbPath,
+		}); err != nil {
+			h.logger.WithError(err).WithFields(logrus.Fields{
+				"asset_id":   asset.ID,
+				"thumb_type": thumbType,
+				"thumb_path": thumbPath,
+			}).Warn("Failed to store thumbnail record in database")
+			continue
+		}
+
+		h.logger.WithFields(logrus.Fields{
+			"asset_id":   asset.ID,
+			"thumb_type": thumbType,
+			"thumb_path": thumbPath,
+			"size_bytes": len(data),
+		}).Debug("Thumbnail generated and stored")
 	}
 
 	return nil
 }
 
-// generateThumbnail generates a single thumbnail
-func (h *Handlers) generateThumbnail(ctx context.Context, asset *sqlc.Asset, size string) error {
-	// This would integrate with the actual thumbnail generation logic
-	// For now, we'll just log the operation
-	h.logger.WithFields(logrus.Fields{
-		"asset_id": asset.ID,
-		"size":     size,
-	}).Debug("Generating thumbnail")
-
-	return nil
+// thumbnailContentType returns the MIME content type for a thumbnail given its raw bytes.
+// It exists as a helper so callers can determine content type from already-encoded data.
+func thumbnailContentType(data []byte) string {
+	if len(data) >= 3 && data[0] == 0xFF && data[1] == 0xD8 {
+		return "image/jpeg"
+	}
+	if len(data) >= 4 && bytes.Equal(data[:4], []byte{0x52, 0x49, 0x46, 0x46}) {
+		return "image/webp"
+	}
+	return "image/jpeg"
 }
 
 // MetadataExtractionPayload contains data for metadata extraction
@@ -121,13 +182,135 @@ func (h *Handlers) HandleMetadataExtraction(ctx context.Context, task *asynq.Tas
 		return fmt.Errorf("invalid asset UUID: %w", err)
 	}
 
-	h.logger.WithFields(logrus.Fields{
+	pgAssetID := pgtype.UUID{Bytes: assetID, Valid: true}
+
+	log := h.logger.WithFields(logrus.Fields{
 		"asset_id": assetID,
 		"job_id":   payload.ID,
-	}).Info("Extracting metadata")
+	})
+	log.Info("Extracting metadata")
 
-	// Extract metadata using asset service
-	// This would call the actual metadata extraction logic
+	// 1. Fetch asset from DB.
+	asset, err := h.db.GetAsset(ctx, pgAssetID)
+	if err != nil {
+		return fmt.Errorf("failed to get asset %s: %w", assetID, err)
+	}
+
+	// 2. Get file metadata from storage (size, content type).
+	fileMeta, err := h.storageService.GetAssetMetadata(ctx, asset.OriginalPath)
+	if err != nil {
+		return fmt.Errorf("failed to get storage metadata for asset %s: %w", assetID, err)
+	}
+	fileSize := fileMeta.Size
+
+	// 3. Determine content type from the filename extension.
+	contentType := mime.TypeByExtension(filepath.Ext(asset.OriginalFileName))
+	if contentType == "" {
+		// Fall back to whatever the storage backend reported.
+		contentType = fileMeta.ContentType
+	}
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+
+	// 4. Download the file from storage.
+	reader, err := h.storageService.Download(ctx, asset.OriginalPath)
+	if err != nil {
+		return fmt.Errorf("failed to download asset %s for metadata extraction: %w", assetID, err)
+	}
+	defer reader.Close()
+
+	// 5. Extract metadata.
+	extractor := assets.NewMetadataExtractor()
+	meta, err := extractor.ExtractMetadata(ctx, reader, asset.OriginalFileName, contentType, fileSize)
+	if err != nil {
+		// ExtractMetadata itself never returns a hard error — but guard anyway.
+		log.WithError(err).Warn("Metadata extraction returned an error; continuing with partial data")
+	}
+
+	log.WithFields(logrus.Fields{
+		"content_type": contentType,
+		"file_size":    fileSize,
+		"has_exif":     meta.DateTaken != nil || meta.Make != nil || meta.Width != nil,
+	}).Debug("Metadata extracted")
+
+	// 6. Build SQLC params and write EXIF data to DB.
+	exifParams := sqlc.CreateOrUpdateExifParams{
+		AssetId:     pgAssetID,
+		Description: "", // non-nullable in schema; populated below if present
+	}
+
+	if meta.Make != nil {
+		exifParams.Make = pgtype.Text{String: *meta.Make, Valid: true}
+	}
+	if meta.Model != nil {
+		exifParams.Model = pgtype.Text{String: *meta.Model, Valid: true}
+	}
+	if meta.Width != nil {
+		exifParams.ExifImageWidth = pgtype.Int4{Int32: *meta.Width, Valid: true}
+	}
+	if meta.Height != nil {
+		exifParams.ExifImageHeight = pgtype.Int4{Int32: *meta.Height, Valid: true}
+	}
+	exifParams.FileSizeInByte = pgtype.Int8{Int64: fileSize, Valid: true}
+	if meta.LensModel != nil {
+		exifParams.LensModel = pgtype.Text{String: *meta.LensModel, Valid: true}
+	}
+	if meta.FNumber != nil {
+		exifParams.FNumber = pgtype.Float8{Float64: *meta.FNumber, Valid: true}
+	}
+	if meta.FocalLength != nil {
+		exifParams.FocalLength = pgtype.Float8{Float64: *meta.FocalLength, Valid: true}
+	}
+	if meta.ISO != nil {
+		exifParams.Iso = pgtype.Int4{Int32: *meta.ISO, Valid: true}
+	}
+	if meta.Latitude != nil {
+		exifParams.Latitude = pgtype.Float8{Float64: *meta.Latitude, Valid: true}
+	}
+	if meta.Longitude != nil {
+		exifParams.Longitude = pgtype.Float8{Float64: *meta.Longitude, Valid: true}
+	}
+	if meta.City != nil {
+		exifParams.City = pgtype.Text{String: *meta.City, Valid: true}
+	}
+	if meta.State != nil {
+		exifParams.State = pgtype.Text{String: *meta.State, Valid: true}
+	}
+	if meta.Country != nil {
+		exifParams.Country = pgtype.Text{String: *meta.Country, Valid: true}
+	}
+	if meta.Description != nil {
+		exifParams.Description = *meta.Description
+	}
+	if meta.DateTaken != nil {
+		exifParams.DateTimeOriginal = pgtype.Timestamptz{Time: *meta.DateTaken, Valid: true}
+		exifParams.ModifyDate = pgtype.Timestamptz{Time: *meta.DateTaken, Valid: true}
+	}
+
+	if _, err := h.db.CreateOrUpdateExif(ctx, exifParams); err != nil {
+		return fmt.Errorf("failed to persist EXIF data for asset %s: %w", assetID, err)
+	}
+
+	log.WithFields(logrus.Fields{
+		"make":       meta.Make,
+		"model":      meta.Model,
+		"date_taken": meta.DateTaken,
+		"width":      meta.Width,
+		"height":     meta.Height,
+		"latitude":   meta.Latitude,
+		"longitude":  meta.Longitude,
+	}).Info("Metadata extraction complete")
+
+	// 7. Update the asset job status to record that metadata extraction finished.
+	now := time.Now()
+	if _, err := h.db.UpdateAssetJobStatus(ctx, sqlc.UpdateAssetJobStatusParams{
+		AssetId:             pgAssetID,
+		MetadataExtractedAt: pgtype.Timestamptz{Time: now, Valid: true},
+	}); err != nil {
+		// Non-fatal: the EXIF data was already written; just warn.
+		log.WithError(err).Warn("Failed to update asset job status after metadata extraction")
+	}
 
 	return nil
 }
