@@ -419,7 +419,7 @@ func (s *Service) UninstallPlugin(ctx context.Context, pluginID string, removeDa
 
 // GetPluginConfig returns the configuration for a plugin
 func (s *Service) GetPluginConfig(ctx context.Context, pluginID string) (map[string]interface{}, map[string]interface{}, error) {
-	ctx, span := tracer.Start(ctx, "plugin.get_plugin_config",
+	_, span := tracer.Start(ctx, "plugin.get_plugin_config",
 		trace.WithAttributes(attribute.String("plugin_id", pluginID)))
 	defer span.End()
 

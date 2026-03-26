@@ -55,7 +55,7 @@ func NewService(queries *sqlc.Queries, cfg *config.Config) (*Service, error) {
 
 // GetMaintenanceMode returns the current maintenance mode state
 func (s *Service) GetMaintenanceMode(ctx context.Context) (*MaintenanceState, error) {
-	ctx, span := tracer.Start(ctx, "maintenance.get_mode")
+	_, span := tracer.Start(ctx, "maintenance.get_mode")
 	defer span.End()
 
 	s.mu.RLock()
@@ -75,7 +75,7 @@ func (s *Service) GetMaintenanceMode(ctx context.Context) (*MaintenanceState, er
 
 // StartMaintenance enables maintenance mode
 func (s *Service) StartMaintenance(ctx context.Context, username string) (string, error) {
-	ctx, span := tracer.Start(ctx, "maintenance.start",
+	_, span := tracer.Start(ctx, "maintenance.start",
 		trace.WithAttributes(attribute.String("username", username)))
 	defer span.End()
 
@@ -110,7 +110,7 @@ func (s *Service) StartMaintenance(ctx context.Context, username string) (string
 
 // StopMaintenance disables maintenance mode
 func (s *Service) StopMaintenance(ctx context.Context) error {
-	ctx, span := tracer.Start(ctx, "maintenance.stop")
+	_, span := tracer.Start(ctx, "maintenance.stop")
 	defer span.End()
 
 	s.mu.Lock()
@@ -127,7 +127,7 @@ func (s *Service) StopMaintenance(ctx context.Context) error {
 
 // ValidateMaintenanceToken validates a maintenance JWT token
 func (s *Service) ValidateMaintenanceToken(ctx context.Context, tokenString string) (*MaintenanceClaims, error) {
-	ctx, span := tracer.Start(ctx, "maintenance.validate_token")
+	_, span := tracer.Start(ctx, "maintenance.validate_token")
 	defer span.End()
 
 	s.mu.RLock()
@@ -143,7 +143,6 @@ func (s *Service) ValidateMaintenanceToken(ctx context.Context, tokenString stri
 		}
 		return []byte(s.state.Secret), nil
 	})
-
 	if err != nil {
 		span.RecordError(err)
 		return nil, fmt.Errorf("invalid token: %w", err)

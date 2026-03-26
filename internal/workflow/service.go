@@ -287,7 +287,7 @@ func (s *Service) ListWorkflows(ctx context.Context) ([]*WorkflowInfo, error) {
 
 // GetWorkflow returns a specific workflow by ID
 func (s *Service) GetWorkflow(ctx context.Context, workflowID string) (*WorkflowInfo, error) {
-	ctx, span := tracer.Start(ctx, "workflow.get_workflow",
+	_, span := tracer.Start(ctx, "workflow.get_workflow",
 		trace.WithAttributes(attribute.String("workflow_id", workflowID)))
 	defer span.End()
 
@@ -468,7 +468,7 @@ func (s *Service) TriggerWorkflow(ctx context.Context, workflowID string, trigge
 
 // GetWorkflowExecutions returns execution history for a workflow
 func (s *Service) GetWorkflowExecutions(ctx context.Context, workflowID string, limit, offset int, statusFilter *ExecutionStatus) ([]*ExecutionInfo, int, error) {
-	ctx, span := tracer.Start(ctx, "workflow.get_workflow_executions",
+	_, span := tracer.Start(ctx, "workflow.get_workflow_executions",
 		trace.WithAttributes(attribute.String("workflow_id", workflowID)))
 	defer span.End()
 

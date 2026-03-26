@@ -76,14 +76,14 @@ func SetupTestDB(t *testing.T) *TestDB {
 	// Get connection string
 	connStr, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
 	if err != nil {
-		pgContainer.Terminate(ctx)
+		_ = pgContainer.Terminate(ctx)
 		t.Fatalf("Failed to get connection string: %v", err)
 	}
 
 	// Connect with pgx pool
 	pool, err := pgxpool.New(ctx, connStr)
 	if err != nil {
-		pgContainer.Terminate(ctx)
+		_ = pgContainer.Terminate(ctx)
 		t.Fatalf("Failed to connect to database: %v", err)
 	}
 
@@ -115,7 +115,7 @@ func SetupTestDB(t *testing.T) *TestDB {
 	// Apply schema
 	if _, err := pool.Exec(ctx, schema); err != nil {
 		pool.Close()
-		pgContainer.Terminate(ctx)
+		_ = pgContainer.Terminate(ctx)
 		t.Fatalf("Failed to apply schema: %v", err)
 	}
 
@@ -179,14 +179,14 @@ func SetupSharedTestDB() (*TestDB, error) {
 
 		connStr, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
 		if err != nil {
-			pgContainer.Terminate(ctx)
+			_ = pgContainer.Terminate(ctx)
 			initErr = fmt.Errorf("failed to get connection string: %w", err)
 			return
 		}
 
 		pool, err := pgxpool.New(ctx, connStr)
 		if err != nil {
-			pgContainer.Terminate(ctx)
+			_ = pgContainer.Terminate(ctx)
 			initErr = fmt.Errorf("failed to connect to database: %w", err)
 			return
 		}
@@ -219,7 +219,7 @@ func SetupSharedTestDB() (*TestDB, error) {
 		// Apply schema
 		if _, err := pool.Exec(ctx, schema); err != nil {
 			pool.Close()
-			pgContainer.Terminate(ctx)
+			_ = pgContainer.Terminate(ctx)
 			initErr = fmt.Errorf("failed to apply schema: %w", err)
 			return
 		}
@@ -255,7 +255,7 @@ func (tdb *TestDB) Close(ctx context.Context) {
 		tdb.DB.Close()
 	}
 	if tdb.Container != nil {
-		tdb.Container.Terminate(ctx)
+		_ = tdb.Container.Terminate(ctx)
 	}
 }
 

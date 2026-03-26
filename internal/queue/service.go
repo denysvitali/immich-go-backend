@@ -144,7 +144,7 @@ func NewService(queries *sqlc.Queries, cfg *config.Config) (*Service, error) {
 
 // GetAllQueues returns information about all queues
 func (s *Service) GetAllQueues(ctx context.Context) ([]QueueInfo, error) {
-	ctx, span := tracer.Start(ctx, "queue.get_all")
+	_, span := tracer.Start(ctx, "queue.get_all")
 	defer span.End()
 
 	s.mu.RLock()
@@ -167,7 +167,7 @@ func (s *Service) GetAllQueues(ctx context.Context) ([]QueueInfo, error) {
 
 // GetQueue returns information about a specific queue
 func (s *Service) GetQueue(ctx context.Context, name string) (*QueueInfo, error) {
-	ctx, span := tracer.Start(ctx, "queue.get",
+	_, span := tracer.Start(ctx, "queue.get",
 		trace.WithAttributes(attribute.String("queue_name", name)))
 	defer span.End()
 
@@ -189,7 +189,7 @@ func (s *Service) GetQueue(ctx context.Context, name string) (*QueueInfo, error)
 
 // UpdateQueue updates a queue (pause/resume)
 func (s *Service) UpdateQueue(ctx context.Context, name string, isPaused *bool) (*QueueInfo, error) {
-	ctx, span := tracer.Start(ctx, "queue.update",
+	_, span := tracer.Start(ctx, "queue.update",
 		trace.WithAttributes(attribute.String("queue_name", name)))
 	defer span.End()
 
@@ -216,7 +216,7 @@ func (s *Service) UpdateQueue(ctx context.Context, name string, isPaused *bool) 
 
 // GetQueueJobs returns jobs from a specific queue
 func (s *Service) GetQueueJobs(ctx context.Context, name string, statuses []JobStatus, limit, offset int) ([]*Job, int, error) {
-	ctx, span := tracer.Start(ctx, "queue.get_jobs",
+	_, span := tracer.Start(ctx, "queue.get_jobs",
 		trace.WithAttributes(
 			attribute.String("queue_name", name),
 			attribute.Int("limit", limit),
@@ -269,7 +269,7 @@ func (s *Service) GetQueueJobs(ctx context.Context, name string, statuses []JobS
 
 // ClearQueueJobs clears jobs from a queue
 func (s *Service) ClearQueueJobs(ctx context.Context, name string, includeFailed bool) error {
-	ctx, span := tracer.Start(ctx, "queue.clear_jobs",
+	_, span := tracer.Start(ctx, "queue.clear_jobs",
 		trace.WithAttributes(
 			attribute.String("queue_name", name),
 			attribute.Bool("include_failed", includeFailed),
@@ -312,7 +312,7 @@ func (s *Service) ClearQueueJobs(ctx context.Context, name string, includeFailed
 
 // AddJob adds a job to a queue
 func (s *Service) AddJob(ctx context.Context, queueName QueueName, jobName string, data interface{}) (string, error) {
-	ctx, span := tracer.Start(ctx, "queue.add_job",
+	_, span := tracer.Start(ctx, "queue.add_job",
 		trace.WithAttributes(
 			attribute.String("queue_name", string(queueName)),
 			attribute.String("job_name", jobName),
@@ -349,7 +349,7 @@ func (s *Service) AddJob(ctx context.Context, queueName QueueName, jobName strin
 
 // GetJob returns a job by ID
 func (s *Service) GetJob(ctx context.Context, jobID string) (*Job, error) {
-	ctx, span := tracer.Start(ctx, "queue.get_job",
+	_, span := tracer.Start(ctx, "queue.get_job",
 		trace.WithAttributes(attribute.String("job_id", jobID)))
 	defer span.End()
 
@@ -366,7 +366,7 @@ func (s *Service) GetJob(ctx context.Context, jobID string) (*Job, error) {
 
 // UpdateJobStatus updates the status of a job
 func (s *Service) UpdateJobStatus(ctx context.Context, jobID string, status JobStatus, errorMsg string) error {
-	ctx, span := tracer.Start(ctx, "queue.update_job_status",
+	_, span := tracer.Start(ctx, "queue.update_job_status",
 		trace.WithAttributes(
 			attribute.String("job_id", jobID),
 			attribute.String("status", string(status)),

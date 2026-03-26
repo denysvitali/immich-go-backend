@@ -153,7 +153,6 @@ func TestGetAssetTypeFromContentType(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.contentType, func(t *testing.T) {
 			got := extractor.getAssetTypeFromContentType(tc.contentType)
 			assert.Equal(t, tc.want, got, "unexpected asset type for content type %q", tc.contentType)
@@ -208,7 +207,6 @@ func TestParseISO6709Location(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			gotLat, gotLon := parseISO6709Location(tc.input)
 			assert.InDelta(t, tc.wantLat, gotLat, 1e-6, "latitude mismatch")

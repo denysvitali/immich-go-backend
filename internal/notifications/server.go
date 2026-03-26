@@ -74,7 +74,7 @@ func (s *Server) GetNotifications(ctx context.Context, req *immichv1.GetNotifica
 		}
 
 		// Add data if present
-		if notif.Data != nil && len(notif.Data) > 0 {
+		if len(notif.Data) > 0 {
 			dataStruct, err := structpb.NewStruct(notif.Data)
 			if err == nil {
 				protoNotif.Data = dataStruct

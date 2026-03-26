@@ -2,9 +2,6 @@ package timeline
 
 import (
 	"context"
-	"fmt"
-	"strconv"
-	"time"
 
 	"github.com/denysvitali/immich-go-backend/internal/auth"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
@@ -115,29 +112,4 @@ func (s *Server) GetTimeBuckets(ctx context.Context, req *immichv1.GetTimeBucket
 	return &immichv1.GetTimeBucketsResponse{
 		Buckets: protoBuckets,
 	}, nil
-}
-
-// Helper function to parse time bucket string (e.g., "2024-01-15")
-func parseTimeBucket(timeBucket string) (*time.Time, error) {
-	// Try different formats
-	formats := []string{
-		"2006-01-02", // Day
-		"2006-01",    // Month
-		"2006",       // Year
-		time.RFC3339, // Full timestamp
-	}
-
-	for _, format := range formats {
-		if t, err := time.Parse(format, timeBucket); err == nil {
-			return &t, nil
-		}
-	}
-
-	// Try parsing as unix timestamp
-	if ts, err := strconv.ParseInt(timeBucket, 10, 64); err == nil {
-		t := time.Unix(ts, 0)
-		return &t, nil
-	}
-
-	return nil, fmt.Errorf("invalid time bucket format: %s", timeBucket)
 }

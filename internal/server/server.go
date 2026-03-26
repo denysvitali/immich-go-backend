@@ -598,20 +598,20 @@ func (s *Server) Shutdown(ctx context.Context) error {
 // - redis://:password@localhost:6379
 // - redis://:password@localhost:6379/0
 // - rediss://... (TLS)
-func parseRedisURL(redisURL string) (addr string, password string, db int) {
+func parseRedisURL(redisURL string) (string, string, int) {
 	// Default values
-	addr = "localhost:6379"
-	password = ""
-	db = 0
+	addr := "localhost:6379"
+	password := ""
+	db := 0
 
 	if redisURL == "" {
-		return
+		return addr, password, db
 	}
 
 	parsed, err := url.Parse(redisURL)
 	if err != nil {
 		logrus.WithError(err).Warn("Failed to parse Redis URL, using defaults")
-		return
+		return addr, password, db
 	}
 
 	// Extract host:port
@@ -619,7 +619,7 @@ func parseRedisURL(redisURL string) (addr string, password string, db int) {
 		addr = parsed.Host
 		// Add default port if not specified
 		if !strings.Contains(addr, ":") {
-			addr = addr + ":6379"
+			addr += ":6379"
 		}
 	}
 
@@ -636,5 +636,5 @@ func parseRedisURL(redisURL string) (addr string, password string, db int) {
 		}
 	}
 
-	return
+	return addr, password, db
 }

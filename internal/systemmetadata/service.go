@@ -139,13 +139,13 @@ func (s *Service) GetReverseGeocodingState(ctx context.Context) (*GetReverseGeoc
 	lastUpdate := int32(0)
 	if len(updateMetadata.Value) > 0 {
 		// Parse as int32
-		fmt.Sscanf(string(updateMetadata.Value), "%d", &lastUpdate)
+		_, _ = fmt.Sscanf(string(updateMetadata.Value), "%d", &lastUpdate)
 	}
 
 	lastFile := int32(0)
 	if len(fileMetadata.Value) > 0 {
 		// Parse as int32
-		fmt.Sscanf(string(fileMetadata.Value), "%d", &lastFile)
+		_, _ = fmt.Sscanf(string(fileMetadata.Value), "%d", &lastFile)
 	}
 
 	return &GetReverseGeocodingStateResponse{

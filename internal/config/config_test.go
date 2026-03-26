@@ -343,7 +343,7 @@ auth:
   jwt_secret: "test-secret"
   password_min_length: 10
 `
-		err := os.WriteFile(configPath, []byte(configContent), 0644)
+		err := os.WriteFile(configPath, []byte(configContent), 0o600)
 		require.NoError(t, err)
 
 		// Test loading - Note: LoadConfig may not be exported

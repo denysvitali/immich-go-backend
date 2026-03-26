@@ -82,7 +82,8 @@ func (s *Service) GetFaces(ctx context.Context, req GetFacesRequest) (*GetFacesR
 	var faces []sqlc.AssetFace
 	var err error
 
-	if req.AssetID != "" {
+	switch {
+	case req.AssetID != "":
 		// Get faces by asset
 		var assetID uuid.UUID
 		assetID, err = uuid.Parse(req.AssetID)
@@ -93,7 +94,7 @@ func (s *Service) GetFaces(ctx context.Context, req GetFacesRequest) (*GetFacesR
 		if err != nil {
 			return nil, fmt.Errorf("failed to get faces for asset: %w", err)
 		}
-	} else if req.PersonID != "" {
+	case req.PersonID != "":
 		// Get faces by person
 		var personID uuid.UUID
 		personID, err = uuid.Parse(req.PersonID)
@@ -104,7 +105,7 @@ func (s *Service) GetFaces(ctx context.Context, req GetFacesRequest) (*GetFacesR
 		if err != nil {
 			return nil, fmt.Errorf("failed to get faces for person: %w", err)
 		}
-	} else {
+	default:
 		// Return empty if no filter specified
 		faces = []sqlc.AssetFace{}
 	}

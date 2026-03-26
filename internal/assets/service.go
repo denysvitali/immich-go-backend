@@ -1044,11 +1044,11 @@ func (s *Service) convertToAssetInfo(asset sqlc.Asset, thumbnails []AssetThumbna
 			info.Metadata.Size = exif.FileSizeInByte.Int64
 		}
 		if exif.ExifImageWidth.Valid {
-			width := int32(exif.ExifImageWidth.Int32)
+			width := exif.ExifImageWidth.Int32
 			info.Metadata.Width = &width
 		}
 		if exif.ExifImageHeight.Valid {
-			height := int32(exif.ExifImageHeight.Int32)
+			height := exif.ExifImageHeight.Int32
 			info.Metadata.Height = &height
 		}
 		if exif.Make.Valid {
@@ -1067,7 +1067,7 @@ func (s *Service) convertToAssetInfo(asset sqlc.Asset, thumbnails []AssetThumbna
 			info.Metadata.FocalLength = &exif.FocalLength.Float64
 		}
 		if exif.Iso.Valid {
-			iso := int32(exif.Iso.Int32)
+			iso := exif.Iso.Int32
 			info.Metadata.ISO = &iso
 		}
 		if exif.ExposureTime.Valid {
