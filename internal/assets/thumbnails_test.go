@@ -241,16 +241,16 @@ func TestCalculateDimensions(t *testing.T) {
 	g := NewThumbnailGenerator()
 
 	tests := []struct {
-		name           string
-		origW, origH   int
-		maxW, maxH     int
-		expectW        int
-		expectH        int
+		name            string
+		origW, origH    int
+		maxW, maxH      int
+		expectW         int
+		expectH         int
 		expectUnchanged bool
 	}{
 		{
-			name:            "image smaller than max — returned unchanged",
-			origW:           100, origH: 80,
+			name:  "image smaller than max — returned unchanged",
+			origW: 100, origH: 80,
 			maxW: 1440, maxH: 1440,
 			expectW: 100, expectH: 80,
 			expectUnchanged: true,
@@ -283,7 +283,7 @@ func TestCalculateDimensions(t *testing.T) {
 			name:  "exactly at max — returned unchanged",
 			origW: 1440, origH: 1440,
 			maxW: 1440, maxH: 1440,
-			expectW:         1440, expectH: 1440,
+			expectW: 1440, expectH: 1440,
 			expectUnchanged: true,
 		},
 	}

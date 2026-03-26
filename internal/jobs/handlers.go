@@ -105,8 +105,8 @@ func (h *Handlers) HandleThumbnailGeneration(ctx context.Context, task *asynq.Ta
 	// Content type mapping per thumbnail type
 	thumbContentType := map[assets.ThumbnailType]string{
 		assets.ThumbnailTypePreview: "image/jpeg",
-		assets.ThumbnailTypeWebp:   "image/jpeg", // falls back to JPEG encoding
-		assets.ThumbnailTypeThumb:  "image/jpeg",
+		assets.ThumbnailTypeWebp:    "image/jpeg", // falls back to JPEG encoding
+		assets.ThumbnailTypeThumb:   "image/jpeg",
 	}
 
 	// Upload each thumbnail and record it in the database
