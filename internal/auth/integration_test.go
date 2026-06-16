@@ -144,11 +144,12 @@ func TestIntegration_Login(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = tdb.Queries.CreateUser(ctx, sqlc.CreateUserParams{
-		ID:       userUUID,
-		Email:    "login@test.com",
-		Name:     "Login User",
-		Password: string(hashedPassword),
-		IsAdmin:  false,
+		ID:          userUUID,
+		Email:       "login@test.com",
+		Name:        "Login User",
+		Password:    string(hashedPassword),
+		IsAdmin:     false,
+		IsOnboarded: false,
 	})
 	require.NoError(t, err)
 
@@ -190,11 +191,12 @@ func TestIntegration_LoginInvalidPassword(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = tdb.Queries.CreateUser(ctx, sqlc.CreateUserParams{
-		ID:       userUUID,
-		Email:    "wrongpass@test.com",
-		Name:     "Wrong Pass User",
-		Password: string(hashedPassword),
-		IsAdmin:  false,
+		ID:          userUUID,
+		Email:       "wrongpass@test.com",
+		Name:        "Wrong Pass User",
+		Password:    string(hashedPassword),
+		IsAdmin:     false,
+		IsOnboarded: false,
 	})
 	require.NoError(t, err)
 
@@ -265,11 +267,12 @@ func TestIntegration_LoginDeletedUser(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = tdb.Queries.CreateUser(ctx, sqlc.CreateUserParams{
-		ID:       userUUID,
-		Email:    "deleted@test.com",
-		Name:     "Deleted User",
-		Password: string(hashedPassword),
-		IsAdmin:  false,
+		ID:          userUUID,
+		Email:       "deleted@test.com",
+		Name:        "Deleted User",
+		Password:    string(hashedPassword),
+		IsAdmin:     false,
+		IsOnboarded: false,
 	})
 	require.NoError(t, err)
 
@@ -383,11 +386,12 @@ func TestIntegration_ChangePassword(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = tdb.Queries.CreateUser(ctx, sqlc.CreateUserParams{
-		ID:       userUUID,
-		Email:    "changepass@test.com",
-		Name:     "Change Pass User",
-		Password: string(hashedPassword),
-		IsAdmin:  false,
+		ID:          userUUID,
+		Email:       "changepass@test.com",
+		Name:        "Change Pass User",
+		Password:    string(hashedPassword),
+		IsAdmin:     false,
+		IsOnboarded: false,
 	})
 	require.NoError(t, err)
 

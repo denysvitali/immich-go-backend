@@ -641,6 +641,7 @@ func (s *Service) dbUserToUserInfo(user sqlc.User) *UserInfo {
 		Email:                user.Email,
 		Name:                 user.Name,
 		IsAdmin:              user.IsAdmin,
+		IsOnboarded:          user.IsOnboarded,
 		ShouldChangePassword: user.ShouldChangePassword,
 		Status:               user.Status,
 		CreatedAt:            user.CreatedAt.Time,

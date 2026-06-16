@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -323,5 +324,8 @@ func SkipIfNoDocker(t *testing.T) {
 	t.Helper()
 	if os.Getenv("SKIP_INTEGRATION_TESTS") != "" {
 		t.Skip("Skipping integration test (SKIP_INTEGRATION_TESTS is set)")
+	}
+	if _, err := exec.LookPath("docker"); err != nil {
+		t.Skip("Skipping integration test (docker not installed)")
 	}
 }

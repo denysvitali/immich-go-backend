@@ -63,12 +63,13 @@ type AuthResponse struct {
 
 // UserInfo represents user information
 type UserInfo struct {
-	ID        string    `json:"id"`
-	Email     string    `json:"email"`
-	Name      string    `json:"name"`
-	IsAdmin   bool      `json:"is_admin"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID          string    `json:"id"`
+	Email       string    `json:"email"`
+	Name        string    `json:"name"`
+	IsAdmin     bool      `json:"is_admin"`
+	IsOnboarded bool      `json:"is_onboarded"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 // RefreshRequest represents a token refresh request
@@ -154,17 +155,31 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (*AuthResponse, e
 		span.RecordError(err)
 	}
 
+	// On the user's first successful login, mark them as onboarded
+	isOnboarded := user.IsOnboarded
+	if !isOnboarded {
+		if err := s.queries.SetUserOnboarded(ctx, sqlc.SetUserOnboardedParams{
+			ID:          user.ID,
+			IsOnboarded: true,
+		}); err != nil {
+			span.RecordError(err)
+		} else {
+			isOnboarded = true
+		}
+	}
+
 	return &AuthResponse{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 		ExpiresAt:    expiresAt,
 		User: UserInfo{
-			ID:        uuidToString(user.ID),
-			Email:     user.Email,
-			Name:      user.Name,
-			IsAdmin:   user.IsAdmin,
-			CreatedAt: timestamptzToTime(user.CreatedAt),
-			UpdatedAt: timestamptzToTime(user.UpdatedAt),
+			ID:          uuidToString(user.ID),
+			Email:       user.Email,
+			Name:        user.Name,
+			IsAdmin:     user.IsAdmin,
+			IsOnboarded: isOnboarded,
+			CreatedAt:   timestamptzToTime(user.CreatedAt),
+			UpdatedAt:   timestamptzToTime(user.UpdatedAt),
 		},
 	}, nil
 }
@@ -236,11 +251,12 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest) (*AuthRespo
 	}
 
 	createUserParams := sqlc.CreateUserParams{
-		ID:       userUUID,
-		Email:    req.Email,
-		Name:     req.Name,
-		Password: string(hashedPassword),
-		IsAdmin:  false, // New users are not admin by default
+		ID:          userUUID,
+		Email:       req.Email,
+		Name:        req.Name,
+		Password:    string(hashedPassword),
+		IsAdmin:     false, // New users are not admin by default
+		IsOnboarded: false, // New users have not completed onboarding
 	}
 
 	user, err := s.queries.CreateUser(ctx, createUserParams)
@@ -279,12 +295,13 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest) (*AuthRespo
 		RefreshToken: refreshToken,
 		ExpiresAt:    expiresAt,
 		User: UserInfo{
-			ID:        uuidToString(user.ID),
-			Email:     user.Email,
-			Name:      user.Name,
-			IsAdmin:   user.IsAdmin,
-			CreatedAt: timestamptzToTime(user.CreatedAt),
-			UpdatedAt: timestamptzToTime(user.UpdatedAt),
+			ID:          uuidToString(user.ID),
+			Email:       user.Email,
+			Name:        user.Name,
+			IsAdmin:     user.IsAdmin,
+			IsOnboarded: user.IsOnboarded,
+			CreatedAt:   timestamptzToTime(user.CreatedAt),
+			UpdatedAt:   timestamptzToTime(user.UpdatedAt),
 		},
 	}, nil
 }
@@ -383,12 +400,13 @@ func (s *Service) RefreshToken(ctx context.Context, req RefreshRequest) (*AuthRe
 		RefreshToken: newRefreshToken,
 		ExpiresAt:    expiresAt,
 		User: UserInfo{
-			ID:        uuidToString(user.ID),
-			Email:     user.Email,
-			Name:      user.Name,
-			IsAdmin:   user.IsAdmin,
-			CreatedAt: timestamptzToTime(user.CreatedAt),
-			UpdatedAt: timestamptzToTime(user.UpdatedAt),
+			ID:          uuidToString(user.ID),
+			Email:       user.Email,
+			Name:        user.Name,
+			IsAdmin:     user.IsAdmin,
+			IsOnboarded: user.IsOnboarded,
+			CreatedAt:   timestamptzToTime(user.CreatedAt),
+			UpdatedAt:   timestamptzToTime(user.UpdatedAt),
 		},
 	}, nil
 }

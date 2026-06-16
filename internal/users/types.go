@@ -12,6 +12,7 @@ type UserInfo struct {
 	Email                string     `json:"email"`
 	Name                 string     `json:"name"`
 	IsAdmin              bool       `json:"isAdmin"`
+	IsOnboarded          bool       `json:"isOnboarded"`
 	ShouldChangePassword bool       `json:"shouldChangePassword"`
 	Status               string     `json:"status"`
 	CreatedAt            time.Time  `json:"createdAt"`
