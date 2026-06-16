@@ -353,7 +353,18 @@ jobs:
         CREATE EXTENSION IF NOT EXISTS "pg_trgm" WITH SCHEMA public;
         DROP EXTENSION IF EXISTS "unaccent" CASCADE;
         CREATE EXTENSION "unaccent" WITH SCHEMA public;
-        CREATE TEXT SEARCH DICTIONARY IF NOT EXISTS public.unaccent (TEMPLATE = public.unaccent, RULES = 'unaccent');
+        DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1
+            FROM pg_catalog.pg_ts_dict d
+            JOIN pg_catalog.pg_namespace n ON n.oid = d.dictnamespace
+            WHERE n.nspname = 'public' AND d.dictname = 'unaccent'
+          ) THEN
+            CREATE TEXT SEARCH DICTIONARY public.unaccent (TEMPLATE = public.unaccent, RULES = 'unaccent');
+          END IF;
+        END
+        $$;
         SELECT public.unaccent('public.unaccent'::regdictionary, 'Hotel');
         SQL
 

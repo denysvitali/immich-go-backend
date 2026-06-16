@@ -1,5 +1,16 @@
 CREATE EXTENSION IF NOT EXISTS "unaccent" WITH SCHEMA public;
-CREATE TEXT SEARCH DICTIONARY IF NOT EXISTS public.unaccent (TEMPLATE = public.unaccent, RULES = 'unaccent');
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_ts_dict d
+    JOIN pg_catalog.pg_namespace n ON n.oid = d.dictnamespace
+    WHERE n.nspname = 'public' AND d.dictname = 'unaccent'
+  ) THEN
+    CREATE TEXT SEARCH DICTIONARY public.unaccent (TEMPLATE = public.unaccent, RULES = 'unaccent');
+  END IF;
+END
+$$;
 
 CREATE FUNCTION public.immich_uuid_v7(p_timestamp timestamp with time zone DEFAULT clock_timestamp()) RETURNS uuid
     LANGUAGE sql
