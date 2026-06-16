@@ -352,8 +352,6 @@ jobs:
         CREATE EXTENSION IF NOT EXISTS "earthdistance" WITH SCHEMA public;
         CREATE EXTENSION IF NOT EXISTS "pg_trgm" WITH SCHEMA public;
         CREATE EXTENSION IF NOT EXISTS "unaccent" WITH SCHEMA public;
-        CREATE TEXT SEARCH DICTIONARY IF NOT EXISTS public.unaccent (TEMPLATE = unaccent, RULES = 'unaccent');
-        ALTER DATABASE immich SET check_function_bodies = off;
         SQL
 
         for i in {1..30}; do
