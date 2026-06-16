@@ -1734,6 +1734,16 @@ func (q *Queries) DeleteUser(ctx context.Context, id pgtype.UUID) error {
 	return err
 }
 
+const deleteUserLicenseData = `-- name: DeleteUserLicenseData :exec
+DELETE FROM user_metadata
+WHERE "userId" = $1 AND key = 'license'
+`
+
+func (q *Queries) DeleteUserLicenseData(ctx context.Context, userid pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteUserLicenseData, userid)
+	return err
+}
+
 const deleteUserRefreshTokens = `-- name: DeleteUserRefreshTokens :exec
 DELETE FROM sessions
 WHERE "userId" = $1
@@ -5694,6 +5704,18 @@ func (q *Queries) GetUserByOAuthId(ctx context.Context, oauthid string) (User, e
 	return i, err
 }
 
+const getUserLicenseData = `-- name: GetUserLicenseData :one
+SELECT value FROM user_metadata
+WHERE "userId" = $1 AND key = 'license'
+`
+
+func (q *Queries) GetUserLicenseData(ctx context.Context, userid pgtype.UUID) ([]byte, error) {
+	row := q.db.QueryRow(ctx, getUserLicenseData, userid)
+	var value []byte
+	err := row.Scan(&value)
+	return value, err
+}
+
 const getUserMetadata = `-- name: GetUserMetadata :one
 SELECT "userId", key, value FROM user_metadata
 WHERE "userId" = $1 AND key = $2
@@ -6931,6 +6953,25 @@ func (q *Queries) SetSystemMetadata(ctx context.Context, arg SetSystemMetadataPa
 	var i SystemMetadatum
 	err := row.Scan(&i.Key, &i.Value)
 	return i, err
+}
+
+const setUserLicenseData = `-- name: SetUserLicenseData :one
+INSERT INTO user_metadata ("userId", key, value)
+VALUES ($1, 'license', $2)
+ON CONFLICT ("userId", key) DO UPDATE SET value = $2
+RETURNING value
+`
+
+type SetUserLicenseDataParams struct {
+	UserId pgtype.UUID
+	Value  []byte
+}
+
+func (q *Queries) SetUserLicenseData(ctx context.Context, arg SetUserLicenseDataParams) ([]byte, error) {
+	row := q.db.QueryRow(ctx, setUserLicenseData, arg.UserId, arg.Value)
+	var value []byte
+	err := row.Scan(&value)
+	return value, err
 }
 
 const setUserMetadata = `-- name: SetUserMetadata :one

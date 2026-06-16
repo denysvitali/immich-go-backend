@@ -19,7 +19,7 @@ The active roadmap is API parity and behavior hardening against upstream Immich,
 
 - [x] Implement rate limiting for login attempts.
 - [x] Implement profile image upload and management.
-- [ ] Implement user license management.
+- [x] Implement user license management.
 - [ ] Add streaming support for large gRPC operations.
 - [ ] Implement configurable worker pools for background jobs.
 - [ ] Add advanced retry logic for background jobs.

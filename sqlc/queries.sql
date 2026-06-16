@@ -434,6 +434,20 @@ VALUES ($1, 'preferences', $2)
 ON CONFLICT ("userId", key) DO UPDATE SET value = $2
 RETURNING value;
 
+-- name: GetUserLicenseData :one
+SELECT value FROM user_metadata
+WHERE "userId" = $1 AND key = 'license';
+
+-- name: SetUserLicenseData :one
+INSERT INTO user_metadata ("userId", key, value)
+VALUES ($1, 'license', $2)
+ON CONFLICT ("userId", key) DO UPDATE SET value = $2
+RETURNING value;
+
+-- name: DeleteUserLicenseData :exec
+DELETE FROM user_metadata
+WHERE "userId" = $1 AND key = 'license';
+
 -- EXIF queries
 -- name: GetAssetExif :one
 SELECT * FROM exif

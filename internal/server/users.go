@@ -3,12 +3,16 @@ package server
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -20,6 +24,12 @@ import (
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 	"github.com/denysvitali/immich-go-backend/internal/users"
 )
+
+type userLicenseMetadata struct {
+	ActivatedAt   time.Time `json:"activatedAt"`
+	ActivationKey string    `json:"activationKey"`
+	LicenseKey    string    `json:"licenseKey"`
+}
 
 func (s *Server) GetMyUser(ctx context.Context, empty *emptypb.Empty) (*immichv1.UserAdminResponse, error) {
 	// Get user ID from context/auth
@@ -85,26 +95,103 @@ func (s *Server) UpdateMyUser(ctx context.Context, request *immichv1.UserUpdateM
 }
 
 func (s *Server) GetUserLicense(ctx context.Context, empty *emptypb.Empty) (*immichv1.UserLicenseResponse, error) {
-	// License functionality would be implemented here
-	return &immichv1.UserLicenseResponse{
-		LicenseKey:    "",
-		ActivatedAt:   nil,
-		ActivationKey: "",
-	}, nil
+	userUUID, err := userUUIDFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := s.db.GetUserLicenseData(ctx, userUUID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return &immichv1.UserLicenseResponse{}, nil
+		}
+		return nil, SanitizedInternal(ctx, "failed to get user license", err)
+	}
+
+	license, err := parseUserLicense(data)
+	if err != nil {
+		return nil, SanitizedInternal(ctx, "failed to parse user license", err)
+	}
+
+	return userLicenseToProto(license), nil
 }
 
 func (s *Server) SetUserLicense(ctx context.Context, request *immichv1.UserLicenseKeyRequest) (*immichv1.UserLicenseResponse, error) {
-	// License activation would be implemented here
-	return &immichv1.UserLicenseResponse{
-		LicenseKey:    request.LicenseKey,
-		ActivatedAt:   timestamppb.Now(),
+	userUUID, err := userUUIDFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	license := userLicenseMetadata{
+		ActivatedAt:   time.Now().UTC(),
 		ActivationKey: request.ActivationKey,
-	}, nil
+		LicenseKey:    request.LicenseKey,
+	}
+	data, err := json.Marshal(license)
+	if err != nil {
+		return nil, SanitizedInternal(ctx, "failed to encode user license", err)
+	}
+
+	data, err = s.db.SetUserLicenseData(ctx, sqlc.SetUserLicenseDataParams{
+		UserId: userUUID,
+		Value:  data,
+	})
+	if err != nil {
+		return nil, SanitizedInternal(ctx, "failed to set user license", err)
+	}
+
+	license, err = parseUserLicense(data)
+	if err != nil {
+		return nil, SanitizedInternal(ctx, "failed to parse user license", err)
+	}
+
+	return userLicenseToProto(license), nil
 }
 
 func (s *Server) DeleteUserLicense(ctx context.Context, empty *emptypb.Empty) (*emptypb.Empty, error) {
-	// License deletion would be implemented here
+	userUUID, err := userUUIDFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.db.DeleteUserLicenseData(ctx, userUUID); err != nil {
+		return nil, SanitizedInternal(ctx, "failed to delete user license", err)
+	}
+
 	return &emptypb.Empty{}, nil
+}
+
+func userUUIDFromContext(ctx context.Context) (pgtype.UUID, error) {
+	claims, ok := auth.GetClaimsFromStdContext(ctx)
+	if !ok {
+		return pgtype.UUID{}, status.Error(codes.Unauthenticated, "unauthorized")
+	}
+
+	userID, err := uuid.Parse(claims.UserID)
+	if err != nil {
+		return pgtype.UUID{}, status.Error(codes.Internal, "invalid user ID")
+	}
+
+	return pgtype.UUID{Bytes: userID, Valid: true}, nil
+}
+
+func parseUserLicense(data []byte) (userLicenseMetadata, error) {
+	var license userLicenseMetadata
+	if err := json.Unmarshal(data, &license); err != nil {
+		return userLicenseMetadata{}, err
+	}
+	return license, nil
+}
+
+func userLicenseToProto(license userLicenseMetadata) *immichv1.UserLicenseResponse {
+	response := &immichv1.UserLicenseResponse{
+		ActivationKey: license.ActivationKey,
+		LicenseKey:    license.LicenseKey,
+	}
+	if !license.ActivatedAt.IsZero() {
+		response.ActivatedAt = timestamppb.New(license.ActivatedAt)
+	}
+	return response
 }
 
 func (s *Server) GetMyPreferences(ctx context.Context, empty *emptypb.Empty) (*immichv1.UserPreferencesResponse, error) {
