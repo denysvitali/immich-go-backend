@@ -26,6 +26,17 @@ RUN arch="$(apk --print-arch)" && \
     chmod +x /usr/local/bin/buf && \
     buf --version
 
+# The Go protoc plugins buf invokes during `buf generate` (when the
+# committed internal/proto/gen/ is missing or stale). Pinned to the
+# same versions the CI workflow uses — bump deliberately with
+# .github/workflows/go.yaml.
+RUN GOBIN=/usr/local/bin go install \
+      google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.6 && \
+    GOBIN=/usr/local/bin go install \
+      google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1 && \
+    GOBIN=/usr/local/bin go install \
+      github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-grpc-gateway@v2.27.1
+
 WORKDIR /src
 
 # Cache go.mod/go.sum first so dependency downloads are reused across builds.
