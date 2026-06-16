@@ -11,8 +11,10 @@ import (
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/denysvitali/immich-go-backend/internal/activity"
 	"github.com/denysvitali/immich-go-backend/internal/admin"
@@ -563,6 +565,12 @@ func (s *Server) HTTPHandler() http.Handler {
 }
 
 func (s *Server) handleWs(mux *runtime.ServeMux) http.Handler {
+	marshaler := &runtime.JSONPb{
+		MarshalOptions: protojson.MarshalOptions{
+			EmitDefaultValues: true,
+		},
+	}
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/socket.io/" {
 			s.wsHub.HandleWebSocket(w, r)
@@ -572,8 +580,36 @@ func (s *Server) handleWs(mux *runtime.ServeMux) http.Handler {
 			http.Redirect(w, r, mobileOAuthRedirectURL(r.URL.RawQuery), http.StatusTemporaryRedirect)
 			return
 		}
+		if r.Method == http.MethodGet && r.URL.Path == "/api/users/me" {
+			ctx := gatewayIncomingContext(r)
+			resp, err := s.GetMyUser(ctx, &emptypb.Empty{})
+			if err != nil {
+				runtime.HTTPError(ctx, mux, marshaler, w, r, err)
+				return
+			}
+			writeProtoJSON(w, marshaler, resp)
+			return
+		}
 		mux.ServeHTTP(w, r)
 	})
+}
+
+func gatewayIncomingContext(r *http.Request) context.Context {
+	md := metadata.MD{}
+	if authorization := r.Header.Get("Authorization"); authorization != "" {
+		md.Set("authorization", authorization)
+	}
+	return metadata.NewIncomingContext(r.Context(), md)
+}
+
+func writeProtoJSON(w http.ResponseWriter, marshaler runtime.Marshaler, msg proto.Message) {
+	data, err := marshaler.Marshal(msg)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", marshaler.ContentType(msg))
+	_, _ = w.Write(data)
 }
 
 func loggingMiddleware(handlerFunc runtime.HandlerFunc) runtime.HandlerFunc {
