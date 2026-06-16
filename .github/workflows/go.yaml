@@ -42,8 +42,10 @@ jobs:
     - name: Install buf
       uses: bufbuild/buf-action@v1
       with:
+        # setup_only stops the action from running its default
+        # buf build + buf push (which fail for v1 buf.work.yaml).
+        setup_only: true
         version: ${{ env.BUF_VERSION }}
-        push: false
 
     - name: Cache generated protobuf files
       uses: actions/cache@v4
@@ -104,8 +106,10 @@ jobs:
     - name: Install buf
       uses: bufbuild/buf-action@v1
       with:
+        # setup_only stops the action from running its default
+        # buf build + buf push (which fail for v1 buf.work.yaml).
+        setup_only: true
         version: ${{ env.BUF_VERSION }}
-        push: false
 
     - name: Cache generated protobuf files
       uses: actions/cache@v4
@@ -158,8 +162,10 @@ jobs:
     - name: Install buf
       uses: bufbuild/buf-action@v1
       with:
+        # setup_only stops the action from running its default
+        # buf build + buf push (which fail for v1 buf.work.yaml).
+        setup_only: true
         version: ${{ env.BUF_VERSION }}
-        push: false
 
     - name: Lint Protocol Buffers
       run: buf lint
@@ -220,8 +226,10 @@ jobs:
     - name: Install buf
       uses: bufbuild/buf-action@v1
       with:
+        # setup_only stops the action from running its default
+        # buf build + buf push (which fail for v1 buf.work.yaml).
+        setup_only: true
         version: ${{ env.BUF_VERSION }}
-        push: false
 
     - name: Cache generated protobuf files
       uses: actions/cache@v4
