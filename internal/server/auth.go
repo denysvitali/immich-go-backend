@@ -50,6 +50,7 @@ func (s *Server) Login(ctx context.Context, req *immichv1.LoginRequest) (*immich
 		ProfileImagePath:     "", // Not available in current UserInfo
 		IsAdmin:              loginResponse.User.IsAdmin,
 		ShouldChangePassword: false, // Not available in current UserInfo
+		IsOnboarded:          loginResponse.User.IsOnboarded,
 	}, nil
 }
 
@@ -100,6 +101,7 @@ func (s *Server) AdminSignUp(ctx context.Context, req *immichv1.AdminSignUpReque
 		ProfileImagePath:     "", // Not available in current implementation
 		IsAdmin:              response.User.IsAdmin,
 		ShouldChangePassword: false, // Not available in current implementation
+		IsOnboarded:          response.User.IsOnboarded,
 	}, nil
 }
 

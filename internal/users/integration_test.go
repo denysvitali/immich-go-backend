@@ -34,11 +34,12 @@ func TestIntegration_CreateAndGetUser(t *testing.T) {
 	require.NoError(t, err)
 
 	createdUser, err := tdb.Queries.CreateUser(ctx, sqlc.CreateUserParams{
-		ID:       userUUID,
-		Email:    "integration@test.com",
-		Name:     "Integration Test User",
-		Password: "$2a$10$hashedpassword",
-		IsAdmin:  false,
+		ID:          userUUID,
+		Email:       "integration@test.com",
+		Name:        "Integration Test User",
+		Password:    "$2a$10$hashedpassword",
+		IsAdmin:     false,
+		IsOnboarded: false,
 	})
 	require.NoError(t, err)
 
@@ -81,11 +82,12 @@ func TestIntegration_GetUserByEmail(t *testing.T) {
 
 	email := "email-lookup@test.com"
 	_, err = tdb.Queries.CreateUser(ctx, sqlc.CreateUserParams{
-		ID:       userUUID,
-		Email:    email,
-		Name:     "Email Lookup User",
-		Password: "$2a$10$hashedpassword",
-		IsAdmin:  false,
+		ID:          userUUID,
+		Email:       email,
+		Name:        "Email Lookup User",
+		Password:    "$2a$10$hashedpassword",
+		IsAdmin:     false,
+		IsOnboarded: false,
 	})
 	require.NoError(t, err)
 
@@ -137,11 +139,12 @@ func TestIntegration_ListUsers(t *testing.T) {
 		require.NoError(t, err)
 
 		_, err = tdb.Queries.CreateUser(ctx, sqlc.CreateUserParams{
-			ID:       userUUID,
-			Email:    "user" + string(rune('0'+i)) + "@test.com",
-			Name:     "Test User " + string(rune('0'+i)),
-			Password: "$2a$10$hashedpassword",
-			IsAdmin:  false,
+			ID:          userUUID,
+			Email:       "user" + string(rune('0'+i)) + "@test.com",
+			Name:        "Test User " + string(rune('0'+i)),
+			Password:    "$2a$10$hashedpassword",
+			IsAdmin:     false,
+			IsOnboarded: false,
 		})
 		require.NoError(t, err)
 	}
@@ -182,11 +185,12 @@ func TestIntegration_UpdateUser(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = tdb.Queries.CreateUser(ctx, sqlc.CreateUserParams{
-		ID:       userUUID,
-		Email:    "update@test.com",
-		Name:     "Original Name",
-		Password: "$2a$10$hashedpassword",
-		IsAdmin:  false,
+		ID:          userUUID,
+		Email:       "update@test.com",
+		Name:        "Original Name",
+		Password:    "$2a$10$hashedpassword",
+		IsAdmin:     false,
+		IsOnboarded: false,
 	})
 	require.NoError(t, err)
 
@@ -225,11 +229,12 @@ func TestIntegration_UpdateUserPassword(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = tdb.Queries.CreateUser(ctx, sqlc.CreateUserParams{
-		ID:       userUUID,
-		Email:    "password@test.com",
-		Name:     "Password User",
-		Password: "$2a$10$oldpassword",
-		IsAdmin:  false,
+		ID:          userUUID,
+		Email:       "password@test.com",
+		Name:        "Password User",
+		Password:    "$2a$10$oldpassword",
+		IsAdmin:     false,
+		IsOnboarded: false,
 	})
 	require.NoError(t, err)
 
@@ -262,11 +267,12 @@ func TestIntegration_DeleteUser(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = tdb.Queries.CreateUser(ctx, sqlc.CreateUserParams{
-		ID:       userUUID,
-		Email:    "delete@test.com",
-		Name:     "Delete User",
-		Password: "$2a$10$hashedpassword",
-		IsAdmin:  false,
+		ID:          userUUID,
+		Email:       "delete@test.com",
+		Name:        "Delete User",
+		Password:    "$2a$10$hashedpassword",
+		IsAdmin:     false,
+		IsOnboarded: false,
 	})
 	require.NoError(t, err)
 
@@ -330,11 +336,12 @@ func TestIntegration_UniqueEmailConstraint(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = tdb.Queries.CreateUser(ctx, sqlc.CreateUserParams{
-		ID:       userUUID1,
-		Email:    "unique@test.com",
-		Name:     "First User",
-		Password: "$2a$10$hashedpassword",
-		IsAdmin:  false,
+		ID:          userUUID1,
+		Email:       "unique@test.com",
+		Name:        "First User",
+		Password:    "$2a$10$hashedpassword",
+		IsAdmin:     false,
+		IsOnboarded: false,
 	})
 	require.NoError(t, err)
 
@@ -345,11 +352,12 @@ func TestIntegration_UniqueEmailConstraint(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = tdb.Queries.CreateUser(ctx, sqlc.CreateUserParams{
-		ID:       userUUID2,
-		Email:    "unique@test.com", // Same email
-		Name:     "Second User",
-		Password: "$2a$10$hashedpassword",
-		IsAdmin:  false,
+		ID:          userUUID2,
+		Email:       "unique@test.com", // Same email
+		Name:        "Second User",
+		Password:    "$2a$10$hashedpassword",
+		IsAdmin:     false,
+		IsOnboarded: false,
 	})
 	assert.Error(t, err) // Should fail due to unique constraint
 }

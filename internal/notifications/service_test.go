@@ -24,11 +24,12 @@ func createTestUser(t *testing.T, tdb *testdb.TestDB, email string) uuid.UUID {
 	userUUID := pgtype.UUID{Bytes: userID, Valid: true}
 
 	_, err := tdb.Queries.CreateUser(ctx, sqlc.CreateUserParams{
-		ID:       userUUID,
-		Email:    email,
-		Name:     "Test User",
-		Password: "hashedpassword",
-		IsAdmin:  false,
+		ID:          userUUID,
+		Email:       email,
+		Name:        "Test User",
+		Password:    "hashedpassword",
+		IsAdmin:     false,
+		IsOnboarded: false,
 	})
 	require.NoError(t, err)
 

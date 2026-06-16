@@ -282,11 +282,12 @@ func (s *Service) FindOrCreateUserByOAuth(ctx context.Context, userInfo *OAuthUs
 	}
 
 	newUser, err := s.db.CreateUser(ctx, sqlc.CreateUserParams{
-		ID:       pgtype.UUID{Bytes: uuid.New(), Valid: true},
-		Email:    userInfo.Email,
-		Name:     userInfo.Name,
-		Password: base64.URLEncoding.EncodeToString(randomPass), // Random password for OAuth users
-		IsAdmin:  false,
+		ID:          pgtype.UUID{Bytes: uuid.New(), Valid: true},
+		Email:       userInfo.Email,
+		Name:        userInfo.Name,
+		Password:    base64.URLEncoding.EncodeToString(randomPass), // Random password for OAuth users
+		IsAdmin:     false,
+		IsOnboarded: false,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create user: %w", err)

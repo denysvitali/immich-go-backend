@@ -249,8 +249,8 @@ WHERE "deletedAt" IS NULL
 ORDER BY "createdAt" DESC;
 
 -- name: CreateUser :one
-INSERT INTO users (id, email, name, password, "isAdmin")
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO users (id, email, name, password, "isAdmin", "isOnboarded")
+VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING *;
 
 -- name: UpdateUser :one
@@ -390,6 +390,16 @@ WHERE "userId" = $1 AND key = 'onboarding';
 INSERT INTO user_metadata ("userId", key, value)
 VALUES ($1, 'onboarding', $2)
 ON CONFLICT ("userId", key) DO UPDATE SET value = $2;
+
+-- name: GetUserOnboarded :one
+SELECT "isOnboarded" FROM users
+WHERE id = $1 AND "deletedAt" IS NULL;
+
+-- name: SetUserOnboarded :exec
+UPDATE users
+SET "isOnboarded" = $2,
+    "updatedAt" = now()
+WHERE id = $1;
 
 -- User Preferences queries using user_metadata table
 -- name: GetUserPreferencesData :one

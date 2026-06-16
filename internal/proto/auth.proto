@@ -112,6 +112,7 @@ message LoginResponse {
   string profile_image_path = 5;
   bool is_admin = 6;
   bool should_change_password = 7;
+  bool is_onboarded = 8;
 }
 
 // Admin sign up request
