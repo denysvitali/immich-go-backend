@@ -13,6 +13,7 @@ permissions:
 
 env:
   GO_VERSION: '1.24'
+  BUF_VERSION: '1.49.0'
 
 # Cancel in-progress runs for the same ref when a new commit is pushed.
 concurrency:
@@ -22,9 +23,11 @@ concurrency:
 jobs:
   # Job 1: Build and unit tests.
   # This is the critical path — everything else can fan out from it.
+  # No Nix here: setup-go + buf-action give us everything we need in <30s.
   build:
     name: Build and Test
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
     - name: Checkout code
@@ -36,28 +39,10 @@ jobs:
         go-version: ${{ env.GO_VERSION }}
         cache: true
 
-    # actions/setup-go only caches ~/go/pkg/mod. Cache the build cache too
-    # so subsequent runs can skip recompiling unchanged packages.
-    - name: Cache Go build cache
-      uses: actions/cache@v4
+    - name: Install buf
+      uses: bufbuild/buf-action@v1
       with:
-        path: ~/.cache/go-build
-        key: ${{ runner.os }}-gobuild-${{ hashFiles('**/go.sum') }}
-        restore-keys: |
-          ${{ runner.os }}-gobuild-
-
-    - name: Install Nix
-      uses: cachix/install-nix-action@v25
-      with:
-        github_access_token: ${{ secrets.GITHUB_TOKEN }}
-        nix_path: nixpkgs=channel:nixos-25.05
-
-    - name: Setup Nix Cache
-      uses: cachix/cachix-action@v13
-      with:
-        name: devenv
-        # Never push — only pull from cache. Safe for forks/PRs.
-        skipPush: true
+        buf_version: ${{ env.BUF_VERSION }}
 
     - name: Cache generated protobuf files
       uses: actions/cache@v4
@@ -68,54 +53,42 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-proto-
 
-    - name: Generate Protocol Buffers with Nix
+    - name: Generate Protocol Buffers
       if: steps.proto-cache.outputs.cache-hit != 'true'
       run: |
-        echo "🔨 Generating protocol buffers using Nix environment..."
-        nix develop --command bash -c "
-          echo '🧹 Cleaning previous generated files...'
-          rm -rf internal/proto/gen
-          echo '🔨 Running buf generate...'
-          buf generate
-          echo '✅ Protocol buffer generation complete!'
-        "
+        rm -rf internal/proto/gen
+        buf generate
 
     - name: Verify generated files exist
       run: |
         if [ ! -d "internal/proto/gen" ] || [ -z "$(ls -A internal/proto/gen)" ]; then
-          echo "❌ No protocol buffer files were generated"
+          echo "::error::No protocol buffer files were generated"
           exit 1
         fi
-        echo "✅ Generated $(find internal/proto/gen -name '*.go' | wc -l) Go files"
-
-    - name: Download Go dependencies
-      run: go mod download
+        echo "Generated $(find internal/proto/gen -name '*.go' | wc -l) Go files"
 
     - name: Build application
-      run: |
-        echo "🔨 Building application..."
-        go build -o bin/immich-go-backend ./cmd
+      run: go build -o bin/immich-go-backend ./cmd
 
-    - name: Run tests
-      run: |
-        echo "🧪 Running tests..."
-        go test -race -coverprofile=coverage.out ./...
+    - name: Run unit tests
+      # Race + integration build tag live in the integration-tests job
+      # so this stays fast (~30s on a warm cache).
+      run: go test -short -count=1 -timeout=5m ./...
 
     - name: Upload coverage to Codecov
-      # Non-blocking: codecov flakes shouldn't fail CI.
       continue-on-error: true
-      uses: codecov/codecov-action@v4
+      uses: codecov/codecov-action@v5
       with:
-        file: ./coverage.out
         flags: unittests
         name: codecov-umbrella
         token: ${{ secrets.CODECOV_TOKEN }}
 
   # Job 2: Code Quality and Linting.
-  # Runs in parallel with build; only needs protos (already cached) and Go source.
+  # Runs in parallel with build. No Nix; uses buf-action and setup-go.
   lint:
     name: Code Quality
     runs-on: ubuntu-latest
+    timeout-minutes: 8
 
     steps:
     - name: Checkout code
@@ -127,25 +100,10 @@ jobs:
         go-version: ${{ env.GO_VERSION }}
         cache: true
 
-    - name: Cache Go build cache
-      uses: actions/cache@v4
+    - name: Install buf
+      uses: bufbuild/buf-action@v1
       with:
-        path: ~/.cache/go-build
-        key: ${{ runner.os }}-gobuild-${{ hashFiles('**/go.sum') }}
-        restore-keys: |
-          ${{ runner.os }}-gobuild-
-
-    - name: Install Nix
-      uses: cachix/install-nix-action@v25
-      with:
-        github_access_token: ${{ secrets.GITHUB_TOKEN }}
-        nix_path: nixpkgs=channel:nixos-25.05
-
-    - name: Setup Nix Cache
-      uses: cachix/cachix-action@v13
-      with:
-        name: devenv
-        skipPush: true
+        buf_version: ${{ env.BUF_VERSION }}
 
     - name: Cache generated protobuf files
       uses: actions/cache@v4
@@ -156,43 +114,24 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-proto-
 
-    - name: Generate Protocol Buffers if not cached
+    - name: Generate Protocol Buffers
       if: steps.proto-cache.outputs.cache-hit != 'true'
       run: |
-        echo "🔨 Generating protocol buffers for linting..."
-        nix develop --command bash -c "
-          echo '🧹 Cleaning previous generated files...'
-          rm -rf internal/proto/gen
-          echo '🔨 Running buf generate...'
-          buf generate
-          echo '✅ Protocol buffer generation complete!'
-        "
-
-    - name: Verify generated files exist
-      run: |
-        if [ ! -d "internal/proto/gen" ] || [ -z "$(ls -A internal/proto/gen)" ]; then
-          echo "❌ No protocol buffer files were generated"
-          exit 1
-        fi
-
-    - name: Download Go dependencies
-      run: go mod download
+        rm -rf internal/proto/gen
+        buf generate
 
     - name: Check formatting
       run: |
-        echo "🔍 Checking Go code formatting..."
         if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
-          echo "❌ The following files are not formatted:"
+          echo "::error::The following files are not formatted:"
           gofmt -s -l .
           echo "Run 'gofmt -s -w .' to fix formatting issues"
           exit 1
         fi
-        echo "✅ All Go files are properly formatted"
+        echo "All Go files are properly formatted"
 
     - name: Run go vet
-      run: |
-        echo "🔍 Running go vet..."
-        go vet ./...
+      run: go vet ./...
 
     - name: Run golangci-lint
       uses: golangci/golangci-lint-action@v6
@@ -202,9 +141,11 @@ jobs:
 
   # Job 3: Protocol Buffer Linting and Breaking Change Detection.
   # No `needs:` — runs in parallel with build/lint/security.
+  # Pure buf-action — no Nix needed.
   proto-check:
     name: Protocol Buffer Checks
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     steps:
     - name: Checkout code
@@ -212,34 +153,26 @@ jobs:
       with:
         fetch-depth: 0
 
-    - name: Install Nix
-      uses: cachix/install-nix-action@v25
+    - name: Install buf
+      uses: bufbuild/buf-action@v1
       with:
-        github_access_token: ${{ secrets.GITHUB_TOKEN }}
-        nix_path: nixpkgs=channel:nixos-25.05
-
-    - name: Setup Nix Cache
-      uses: cachix/cachix-action@v13
-      with:
-        name: devenv
-        skipPush: true
+        buf_version: ${{ env.BUF_VERSION }}
 
     - name: Lint Protocol Buffers
-      run: |
-        echo "🔍 Linting protocol buffer definitions..."
-        nix develop --command buf lint
+      run: buf lint
 
     - name: Check for breaking changes
       if: github.event_name == 'pull_request'
       run: |
-        echo "🔍 Checking for breaking changes in protocol buffers..."
-        nix develop --command buf breaking --against 'https://github.com/${{ github.repository }}.git#branch=${{ github.base_ref }}'
+        buf breaking --against 'https://github.com/${{ github.repository }}.git#branch=${{ github.base_ref }}'
 
   # Job 4: Security Scanning.
-  # Runs in parallel with build/lint. Skips generated proto code.
+  # Gosec runs on every push/PR. Trivy (slow vuln-DB pull) moved to a
+  # nightly workflow in security-nightly.yaml.
   security:
     name: Security Scan
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     steps:
     - name: Checkout code
@@ -250,50 +183,6 @@ jobs:
       with:
         go-version: ${{ env.GO_VERSION }}
         cache: true
-
-    - name: Cache Go build cache
-      uses: actions/cache@v4
-      with:
-        path: ~/.cache/go-build
-        key: ${{ runner.os }}-gobuild-${{ hashFiles('**/go.sum') }}
-        restore-keys: |
-          ${{ runner.os }}-gobuild-
-
-    - name: Install Nix
-      uses: cachix/install-nix-action@v25
-      with:
-        github_access_token: ${{ secrets.GITHUB_TOKEN }}
-        nix_path: nixpkgs=channel:nixos-25.05
-
-    - name: Setup Nix Cache
-      uses: cachix/cachix-action@v13
-      with:
-        name: devenv
-        skipPush: true
-
-    - name: Cache generated protobuf files
-      uses: actions/cache@v4
-      id: proto-cache
-      with:
-        path: internal/proto/gen
-        key: ${{ runner.os }}-proto-${{ hashFiles('internal/proto/**/*.proto', 'buf.gen.yaml', 'buf.work.yaml', 'internal/proto/buf.yaml') }}
-        restore-keys: |
-          ${{ runner.os }}-proto-
-
-    - name: Generate Protocol Buffers if not cached
-      if: steps.proto-cache.outputs.cache-hit != 'true'
-      run: |
-        echo "🔨 Generating protocol buffers for security scanning..."
-        nix develop --command bash -c "
-          echo '🧹 Cleaning previous generated files...'
-          rm -rf internal/proto/gen
-          echo '🔨 Running buf generate...'
-          buf generate
-          echo '✅ Protocol buffer generation complete!'
-        "
-
-    - name: Download Go dependencies
-      run: go mod download
 
     - name: Run Gosec Security Scanner
       uses: securego/gosec@master
@@ -308,43 +197,12 @@ jobs:
       with:
         sarif_file: 'gosec-results.sarif'
 
-    - name: Run Trivy vulnerability scanner
-      uses: aquasecurity/trivy-action@master
-      with:
-        scan-type: 'fs'
-        scan-ref: '.'
-        # Skip generated dirs to speed up scanning.
-        ignore-unfixed: true
-        format: 'sarif'
-        output: 'trivy-results.sarif'
-        severity: 'CRITICAL,HIGH'
-
-    - name: Upload Trivy scan results to GitHub Security tab
-      if: always()
-      uses: github/codeql-action/upload-sarif@v3
-      with:
-        sarif_file: 'trivy-results.sarif'
-
-  # Job 5: Integration Tests with Docker.
-  # Runs in parallel with the rest.
+  # Job 5: Integration Tests with Docker (testcontainers).
+  # No Nix here — we only need Go, the cached protos, and Docker.
   integration-tests:
     name: Integration Tests
     runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: immich
-          POSTGRES_PASSWORD: immich
-          POSTGRES_DB: immich_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+    timeout-minutes: 15
 
     steps:
     - name: Checkout code
@@ -356,25 +214,10 @@ jobs:
         go-version: ${{ env.GO_VERSION }}
         cache: true
 
-    - name: Cache Go build cache
-      uses: actions/cache@v4
+    - name: Install buf
+      uses: bufbuild/buf-action@v1
       with:
-        path: ~/.cache/go-build
-        key: ${{ runner.os }}-gobuild-${{ hashFiles('**/go.sum') }}
-        restore-keys: |
-          ${{ runner.os }}-gobuild-
-
-    - name: Install Nix
-      uses: cachix/install-nix-action@v25
-      with:
-        github_access_token: ${{ secrets.GITHUB_TOKEN }}
-        nix_path: nixpkgs=channel:nixos-25.05
-
-    - name: Setup Nix Cache
-      uses: cachix/cachix-action@v13
-      with:
-        name: devenv
-        skipPush: true
+        buf_version: ${{ env.BUF_VERSION }}
 
     - name: Cache generated protobuf files
       uses: actions/cache@v4
@@ -385,36 +228,26 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-proto-
 
-    - name: Generate Protocol Buffers if not cached
+    - name: Generate Protocol Buffers
       if: steps.proto-cache.outputs.cache-hit != 'true'
       run: |
-        echo "🔨 Generating protocol buffers for integration tests..."
-        nix develop --command bash -c "
-          echo '🧹 Cleaning previous generated files...'
-          rm -rf internal/proto/gen
-          echo '🔨 Running buf generate...'
-          buf generate
-          echo '✅ Protocol buffer generation complete!'
-        "
+        rm -rf internal/proto/gen
+        buf generate
 
     - name: Verify generated files exist
       run: |
         if [ ! -d "internal/proto/gen" ] || [ -z "$(ls -A internal/proto/gen)" ]; then
-          echo "❌ No protocol buffer files were generated"
+          echo "::error::No protocol buffer files were generated"
           exit 1
         fi
-
-    - name: Download Go dependencies
-      run: go mod download
+        echo "Generated $(find internal/proto/gen -name '*.go' | wc -l) Go files"
 
     - name: Run Integration Tests
       env:
-        # Enable Docker for testcontainers
         TESTCONTAINERS_RYUK_DISABLED: "true"
         DOCKER_HOST: unix:///var/run/docker.sock
       run: |
-        echo "🧪 Running integration tests with Docker..."
-        go test -tags=integration -race -timeout=10m ./internal/... 2>&1 | tee integration-test-results.txt
+        go test -tags=integration -race -timeout=10m -count=1 ./internal/... 2>&1 | tee integration-test-results.txt
 
     - name: Upload Integration Test Results
       if: always()
