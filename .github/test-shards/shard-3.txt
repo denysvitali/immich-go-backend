@@ -1,0 +1,10 @@
+github.com/denysvitali/immich-go-backend/internal/plugin
+github.com/denysvitali/immich-go-backend/internal/queue
+github.com/denysvitali/immich-go-backend/internal/search
+github.com/denysvitali/immich-go-backend/internal/server
+github.com/denysvitali/immich-go-backend/internal/sessions
+github.com/denysvitali/immich-go-backend/internal/sharedlinks
+github.com/denysvitali/immich-go-backend/internal/stacks
+github.com/denysvitali/immich-go-backend/internal/storage
+github.com/denysvitali/immich-go-backend/internal/sync
+github.com/denysvitali/immich-go-backend/internal/systemconfig

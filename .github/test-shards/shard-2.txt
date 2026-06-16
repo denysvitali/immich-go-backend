@@ -1,0 +1,10 @@
+github.com/denysvitali/immich-go-backend/internal/jobs
+github.com/denysvitali/immich-go-backend/internal/libraries
+github.com/denysvitali/immich-go-backend/internal/maintenance
+github.com/denysvitali/immich-go-backend/internal/map
+github.com/denysvitali/immich-go-backend/internal/memories
+github.com/denysvitali/immich-go-backend/internal/notifications
+github.com/denysvitali/immich-go-backend/internal/oauth
+github.com/denysvitali/immich-go-backend/internal/openapicoverage
+github.com/denysvitali/immich-go-backend/internal/partners
+github.com/denysvitali/immich-go-backend/internal/people

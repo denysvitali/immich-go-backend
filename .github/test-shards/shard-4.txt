@@ -1,0 +1,9 @@
+github.com/denysvitali/immich-go-backend/internal/systemmetadata
+github.com/denysvitali/immich-go-backend/internal/tags
+github.com/denysvitali/immich-go-backend/internal/telemetry
+github.com/denysvitali/immich-go-backend/internal/timeline
+github.com/denysvitali/immich-go-backend/internal/trash
+github.com/denysvitali/immich-go-backend/internal/users
+github.com/denysvitali/immich-go-backend/internal/view
+github.com/denysvitali/immich-go-backend/internal/websocket
+github.com/denysvitali/immich-go-backend/internal/workflow

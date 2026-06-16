@@ -1,69 +1,68 @@
 # Multi-stage Dockerfile for immich-go-backend
-# Uses Alpine for user creation and Nix for build environment
+# - builder:  golang:1.24-alpine + buf CLI (GitHub release) to (re)generate protos
+# - runtime:  scratch with a static binary and CA certs
+#
+# The protos under internal/proto/gen/ are committed, so buf generate is a
+# no-op when those files exist. We keep the buf install as a safety net so
+# the image still builds from a clean checkout without the generated files.
 
-# Stage 1: Build environment using Nix
-FROM nixos/nix:latest AS builder
+# ---------- Stage 1: build ----------
+FROM golang:1.24-alpine AS builder
 
-# Configure Nix for container environments
-RUN mkdir -p /etc/nix && \
-    echo "sandbox = false" >> /etc/nix/nix.conf && \
-    echo "experimental-features = nix-command flakes" >> /etc/nix/nix.conf && \
-    echo "filter-syscalls = false" >> /etc/nix/nix.conf && \
-    echo "restrict-eval = false" >> /etc/nix/nix.conf
+# Install build deps in one layer. git is needed by `go mod` for some modules;
+# ca-certificates is needed for `go install` to talk to proxy.golang.org / github.com.
+RUN apk add --no-cache git ca-certificates curl
 
-# Set working directory
-WORKDIR /app
+# Pin buf to a known-good version. Bump deliberately.
+ARG BUF_VERSION=1.70.0
+RUN arch="$(apk --print-arch)" && \
+    case "$arch" in \
+      x86_64)  buf_arch=Linux-x86_64   ;; \
+      aarch64) buf_arch=Linux-aarch64  ;; \
+      *) echo "unsupported arch: $arch" && exit 1 ;; \
+    esac && \
+    curl -fsSL "https://github.com/bufbuild/buf/releases/download/v${BUF_VERSION}/buf-${buf_arch}" \
+      -o /usr/local/bin/buf && \
+    chmod +x /usr/local/bin/buf && \
+    buf --version
 
-# Copy Nix configuration files first for better caching
-COPY flake.nix flake.lock shell.nix ./
+WORKDIR /src
 
-# Copy the entire project (Nix needs access to all files for the flake)
+# Cache go.mod/go.sum first so dependency downloads are reused across builds.
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Now copy the rest of the source. Generated protos are committed, so
+# `buf generate` is a no-op when internal/proto/gen/ is populated.
 COPY . .
 
-# Build the application using the Nix development environment
-RUN nix develop --impure --option sandbox false --command bash -c '\
-    echo "🔍 Verifying tools are available..." && \
-    which go && \
-    echo "🔍 Checking if protocol buffers are already generated..." && \
-    if [ -d "internal/proto/gen" ] && [ "$(find internal/proto/gen -name "*.pb.go" | wc -l)" -gt 0 ]; then \
-        echo "✅ Protocol buffers already generated, skipping generation"; \
+# Idempotent proto regen, then a static, stripped binary.
+RUN if [ -d "internal/proto/gen" ] && \
+       [ "$(find internal/proto/gen -name '*.pb.go' 2>/dev/null | wc -l)" -gt 0 ]; then \
+      echo "protos already generated, skipping buf"; \
     else \
-        echo "🔨 Generating protocol buffers..." && \
-        which protoc protoc-gen-go protoc-gen-go-grpc buf && \
-        ./scripts/generate-protos.sh; \
+      echo "generating protos with buf"; \
+      buf generate; \
     fi && \
-    echo "📦 Building application with static linking..." && \
     CGO_ENABLED=0 GOOS=linux go build \
-        -a -installsuffix cgo \
-        -ldflags "-extldflags \"-static\" -s -w" \
-        -o immich-go-backend \
-        ./cmd \
-'
+      -a -installsuffix cgo \
+      -ldflags "-extldflags \"-static\" -s -w" \
+      -o /out/immich-go-backend \
+      ./cmd
 
-# Stage 2: User creation stage using Alpine
-FROM alpine:latest AS user-creator
-
-# Create a non-root user using Alpine's adduser
+# ---------- Stage 2: minimal user + certs ----------
+FROM alpine:3.20 AS runtime-base
 RUN adduser -D -s /bin/sh -u 1001 appuser
 
-# Stage 3: Final minimal runtime image
+# ---------- Stage 3: final scratch image ----------
 FROM scratch
 
-# Copy user information from Alpine stage
-COPY --from=user-creator /etc/passwd /etc/passwd
-COPY --from=user-creator /etc/group /etc/group
+COPY --from=runtime-base /etc/passwd       /etc/passwd
+COPY --from=runtime-base /etc/group        /etc/group
+COPY --from=runtime-base /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
-# Copy SSL certificates from Alpine
-COPY --from=user-creator /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=builder /out/immich-go-backend /immich-go-backend
 
-# Copy the binary from builder stage
-COPY --from=builder /app/immich-go-backend /immich-go-backend
-
-# Switch to non-root user
 USER 1001:1001
-
-# Expose the default port (adjust if needed)
 EXPOSE 8080
-
-# Set the entrypoint
 ENTRYPOINT ["/immich-go-backend"]

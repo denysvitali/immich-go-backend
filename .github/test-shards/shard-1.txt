@@ -1,0 +1,10 @@
+github.com/denysvitali/immich-go-backend/internal/activity
+github.com/denysvitali/immich-go-backend/internal/admin
+github.com/denysvitali/immich-go-backend/internal/albums
+github.com/denysvitali/immich-go-backend/internal/apikeys
+github.com/denysvitali/immich-go-backend/internal/assets
+github.com/denysvitali/immich-go-backend/internal/auth
+github.com/denysvitali/immich-go-backend/internal/db
+github.com/denysvitali/immich-go-backend/internal/download
+github.com/denysvitali/immich-go-backend/internal/duplicates
+github.com/denysvitali/immich-go-backend/internal/faces
