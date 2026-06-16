@@ -33,9 +33,9 @@ type userLicenseMetadata struct {
 
 func (s *Server) GetMyUser(ctx context.Context, empty *emptypb.Empty) (*immichv1.UserAdminResponse, error) {
 	// Get user ID from context/auth
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	claims, err := s.claimsFromContext(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	userID, err := uuid.Parse(claims.UserID)
@@ -95,7 +95,7 @@ func (s *Server) UpdateMyUser(ctx context.Context, request *immichv1.UserUpdateM
 }
 
 func (s *Server) GetUserLicense(ctx context.Context, empty *emptypb.Empty) (*immichv1.UserLicenseResponse, error) {
-	userUUID, err := userUUIDFromContext(ctx)
+	userUUID, err := s.userUUIDFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +117,7 @@ func (s *Server) GetUserLicense(ctx context.Context, empty *emptypb.Empty) (*imm
 }
 
 func (s *Server) SetUserLicense(ctx context.Context, request *immichv1.UserLicenseKeyRequest) (*immichv1.UserLicenseResponse, error) {
-	userUUID, err := userUUIDFromContext(ctx)
+	userUUID, err := s.userUUIDFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -149,7 +149,7 @@ func (s *Server) SetUserLicense(ctx context.Context, request *immichv1.UserLicen
 }
 
 func (s *Server) DeleteUserLicense(ctx context.Context, empty *emptypb.Empty) (*emptypb.Empty, error) {
-	userUUID, err := userUUIDFromContext(ctx)
+	userUUID, err := s.userUUIDFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -161,10 +161,19 @@ func (s *Server) DeleteUserLicense(ctx context.Context, empty *emptypb.Empty) (*
 	return &emptypb.Empty{}, nil
 }
 
-func userUUIDFromContext(ctx context.Context) (pgtype.UUID, error) {
+func (s *Server) claimsFromContext(ctx context.Context) (*auth.Claims, error) {
 	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return pgtype.UUID{}, status.Error(codes.Unauthenticated, "unauthorized")
+	if ok && claims != nil {
+		return claims, nil
+	}
+
+	return s.getUserFromContext(ctx)
+}
+
+func (s *Server) userUUIDFromContext(ctx context.Context) (pgtype.UUID, error) {
+	claims, err := s.claimsFromContext(ctx)
+	if err != nil {
+		return pgtype.UUID{}, err
 	}
 
 	userID, err := uuid.Parse(claims.UserID)
@@ -238,9 +247,9 @@ func (s *Server) UpdateMyPreferences(ctx context.Context, request *immichv1.User
 
 func (s *Server) CreateProfileImage(ctx context.Context, request *immichv1.CreateProfileImageRequest) (*immichv1.CreateProfileImageResponse, error) {
 	// Get user ID from context
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	claims, err := s.claimsFromContext(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	userID, err := uuid.Parse(claims.UserID)
@@ -295,9 +304,9 @@ func (s *Server) CreateProfileImage(ctx context.Context, request *immichv1.Creat
 }
 
 func (s *Server) DeleteProfileImage(ctx context.Context, empty *emptypb.Empty) (*emptypb.Empty, error) {
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	claims, err := s.claimsFromContext(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	userID, err := uuid.Parse(claims.UserID)
