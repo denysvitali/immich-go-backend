@@ -130,7 +130,7 @@ CREATE FUNCTION public.f_concat_ws(text, text[]) RETURNS text
 
 CREATE FUNCTION public.f_unaccent(text) RETURNS text
     LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
-    RETURN public.unaccent($1);
+    RETURN public.unaccent('public.unaccent'::regdictionary, $1);
 
 
 --

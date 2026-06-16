@@ -351,7 +351,8 @@ jobs:
         CREATE EXTENSION IF NOT EXISTS "cube" WITH SCHEMA public;
         CREATE EXTENSION IF NOT EXISTS "earthdistance" WITH SCHEMA public;
         CREATE EXTENSION IF NOT EXISTS "pg_trgm" WITH SCHEMA public;
-        CREATE EXTENSION IF NOT EXISTS "unaccent" WITH SCHEMA public;
+        DROP EXTENSION IF EXISTS "unaccent" CASCADE;
+        CREATE EXTENSION "unaccent" WITH SCHEMA public;
         SQL
 
         for i in {1..30}; do
