@@ -26,7 +26,7 @@ func (s *Server) SetMaintenanceMode(ctx context.Context, req *immichv1.SetMainte
 	case immichv1.MaintenanceAction_MAINTENANCE_ACTION_START:
 		token, err := s.maintenanceService.StartMaintenance(ctx, claims.Email)
 		if err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to start maintenance mode: %v", err)
+			return nil, SanitizedInternal(ctx, "failed to start maintenance mode", err)
 		}
 		return &immichv1.SetMaintenanceModeResponse{
 			IsMaintenanceMode: true,
@@ -36,7 +36,7 @@ func (s *Server) SetMaintenanceMode(ctx context.Context, req *immichv1.SetMainte
 	case immichv1.MaintenanceAction_MAINTENANCE_ACTION_STOP:
 		err := s.maintenanceService.StopMaintenance(ctx)
 		if err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to stop maintenance mode: %v", err)
+			return nil, SanitizedInternal(ctx, "failed to stop maintenance mode", err)
 		}
 		return &immichv1.SetMaintenanceModeResponse{
 			IsMaintenanceMode: false,
@@ -52,7 +52,7 @@ func (s *Server) MaintenanceLogin(ctx context.Context, req *immichv1.Maintenance
 	// Check if we're in maintenance mode
 	state, err := s.maintenanceService.GetMaintenanceMode(ctx)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get maintenance mode state: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to get maintenance mode state", err)
 	}
 
 	if !state.IsMaintenanceMode {
@@ -84,7 +84,7 @@ func (s *Server) MaintenanceLogin(ctx context.Context, req *immichv1.Maintenance
 func (s *Server) GetMaintenanceStatus(ctx context.Context, _ *emptypb.Empty) (*immichv1.MaintenanceStatusResponse, error) {
 	state, err := s.maintenanceService.GetMaintenanceMode(ctx)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get maintenance mode state: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to get maintenance mode state", err)
 	}
 
 	response := &immichv1.MaintenanceStatusResponse{

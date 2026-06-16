@@ -31,7 +31,7 @@ func (s *Server) GetMyUser(ctx context.Context, empty *emptypb.Empty) (*immichv1
 
 	userID, err := uuid.Parse(claims.UserID)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "invalid user ID: %v", err)
+		return nil, SanitizedInternal(ctx, "invalid user ID", err)
 	}
 
 	user, err := s.userService.GetUser(ctx, userID)
@@ -39,7 +39,7 @@ func (s *Server) GetMyUser(ctx context.Context, empty *emptypb.Empty) (*immichv1
 		if users.IsNotFoundError(err) {
 			return nil, status.Errorf(codes.NotFound, "user not found: %v", err)
 		}
-		return nil, status.Errorf(codes.Internal, "failed to get user: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to get user", err)
 	}
 
 	return s.convertUserToAdminProto(user), nil
@@ -54,7 +54,7 @@ func (s *Server) UpdateMyUser(ctx context.Context, request *immichv1.UserUpdateM
 
 	userID, err := uuid.Parse(claims.UserID)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "invalid user ID: %v", err)
+		return nil, SanitizedInternal(ctx, "invalid user ID", err)
 	}
 
 	// Build update request
@@ -79,7 +79,7 @@ func (s *Server) UpdateMyUser(ctx context.Context, request *immichv1.UserUpdateM
 		if users.IsValidationError(err) {
 			return nil, status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
 		}
-		return nil, status.Errorf(codes.Internal, "failed to update user: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to update user", err)
 	}
 
 	return s.convertUserToAdminProto(user), nil
@@ -159,7 +159,7 @@ func (s *Server) CreateProfileImage(ctx context.Context, request *immichv1.Creat
 
 	userID, err := uuid.Parse(claims.UserID)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "invalid user ID: %v", err)
+		return nil, SanitizedInternal(ctx, "invalid user ID", err)
 	}
 	userUUID := pgtype.UUID{Bytes: userID, Valid: true}
 
@@ -188,7 +188,7 @@ func (s *Server) CreateProfileImage(ctx context.Context, request *immichv1.Creat
 
 	// Upload the profile image
 	if err := storageService.Upload(ctx, profilePath, bytes.NewReader(request.File), contentType); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to upload profile image: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to upload profile image", err)
 	}
 
 	// Update user record with profile image path
@@ -206,7 +206,7 @@ func (s *Server) CreateProfileImage(ctx context.Context, request *immichv1.Creat
 	})
 	if err != nil {
 		// Profile image cleanup on failure would go here
-		return nil, status.Errorf(codes.Internal, "failed to update user profile: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to update user profile", err)
 	}
 
 	return &immichv1.CreateProfileImageResponse{
@@ -232,7 +232,7 @@ func (s *Server) GetUser(ctx context.Context, request *immichv1.GetUserRequest) 
 		if users.IsNotFoundError(err) {
 			return nil, status.Errorf(codes.NotFound, "user not found: %v", err)
 		}
-		return nil, status.Errorf(codes.Internal, "failed to get user: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to get user", err)
 	}
 
 	return s.convertUserToProto(user), nil
@@ -265,14 +265,14 @@ func (s *Server) GetProfileImage(ctx context.Context, request *immichv1.GetProfi
 	// Download the profile image
 	imageData, err := storageService.Download(ctx, user.ProfileImagePath)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to retrieve profile image: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to retrieve profile image", err)
 	}
 	defer imageData.Close()
 
 	// Read image data
 	data, err := io.ReadAll(imageData)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to read image data: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to read image data", err)
 	}
 
 	// Determine content type from file extension
@@ -398,7 +398,7 @@ func (s *Server) ListUsers(ctx context.Context, _ *emptypb.Empty) (*immichv1.Lis
 	// Get all users from service
 	usersList, err := s.userService.GetAllUsers(ctx)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to list users: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to list users", err)
 	}
 
 	// Convert to proto
@@ -422,12 +422,12 @@ func (s *Server) GetOnboarding(ctx context.Context, _ *emptypb.Empty) (*immichv1
 
 	userID, err := uuid.Parse(claims.UserID)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "invalid user ID: %v", err)
+		return nil, SanitizedInternal(ctx, "invalid user ID", err)
 	}
 
 	onboarding, err := s.userService.GetUserOnboarding(ctx, userID)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get onboarding status: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to get onboarding status", err)
 	}
 
 	return &immichv1.OnboardingResponse{
@@ -445,12 +445,12 @@ func (s *Server) UpdateOnboarding(ctx context.Context, req *immichv1.OnboardingU
 
 	userID, err := uuid.Parse(claims.UserID)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "invalid user ID: %v", err)
+		return nil, SanitizedInternal(ctx, "invalid user ID", err)
 	}
 
 	onboarding, err := s.userService.UpdateUserOnboarding(ctx, userID, req.IsOnboarded)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to update onboarding status: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to update onboarding status", err)
 	}
 
 	return &immichv1.OnboardingResponse{

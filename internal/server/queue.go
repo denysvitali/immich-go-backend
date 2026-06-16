@@ -25,7 +25,7 @@ func (s *Server) ListQueues(ctx context.Context, _ *emptypb.Empty) (*immichv1.Li
 
 	queues, err := s.queueService.GetAllQueues(ctx)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get queues: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to get queues", err)
 	}
 
 	var protoQueues []*immichv1.QueueInfo

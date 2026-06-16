@@ -32,7 +32,7 @@ func (s *Server) GetApiKeys(ctx context.Context, _ *emptypb.Empty) (*immichv1.Ge
 	// Get all API keys for the user
 	keys, err := apiKeyService.GetAPIKeysByUser(ctx, userID)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get API keys: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to get API keys", err)
 	}
 
 	// Convert to response format
@@ -71,7 +71,7 @@ func (s *Server) CreateApiKey(ctx context.Context, req *immichv1.CreateApiKeyReq
 	// Create the API key
 	apiKey, rawKey, err := apiKeyService.CreateAPIKey(ctx, userID, req.Name)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to create API key: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to create API key", err)
 	}
 
 	// Return response with the raw key (only shown once)
@@ -105,7 +105,7 @@ func (s *Server) DeleteApiKey(ctx context.Context, req *immichv1.DeleteApiKeyReq
 
 	// Delete the API key
 	if err := apiKeyService.DeleteAPIKey(ctx, keyID, userID); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to delete API key: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to delete API key", err)
 	}
 
 	return &emptypb.Empty{}, nil
@@ -130,7 +130,7 @@ func (s *Server) UpdateApiKey(ctx context.Context, req *immichv1.UpdateApiKeyReq
 	// Get all API keys for the user to verify the key exists
 	keys, err := s.queries.GetApiKeysByUser(ctx, pgUserID)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get API keys: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to get API keys", err)
 	}
 
 	// Check if the key ID exists for this user
@@ -172,7 +172,7 @@ func (s *Server) GetApiKey(ctx context.Context, req *immichv1.GetApiKeyRequest) 
 
 	keys, err := s.queries.GetApiKeysByUser(ctx, pgUserID)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get API keys: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to get API keys", err)
 	}
 
 	// Find the specific key

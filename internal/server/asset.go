@@ -33,7 +33,7 @@ func (s *Server) GetAssets(ctx context.Context, request *immichv1.GetAssetsReque
 
 	uid, err := uuid.Parse(claims.UserID)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "invalid user ID: %v", err)
+		return nil, SanitizedInternal(ctx, "invalid user ID", err)
 	}
 	userID := pgtype.UUID{Bytes: uid, Valid: true}
 
@@ -75,7 +75,7 @@ func (s *Server) GetAssets(ctx context.Context, request *immichv1.GetAssetsReque
 		IsTrashed:  isTrashed,
 	})
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get assets: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to get assets", err)
 	}
 
 	// Get total count for pagination
@@ -87,7 +87,7 @@ func (s *Server) GetAssets(ctx context.Context, request *immichv1.GetAssetsReque
 		IsTrashed:  isTrashed,
 	})
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to count assets: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to count assets", err)
 	}
 
 	// Convert to proto
@@ -129,7 +129,7 @@ func (s *Server) UploadAsset(ctx context.Context, request *immichv1.UploadAssetR
 
 	uid, err := uuid.Parse(claims.UserID)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "invalid user ID: %v", err)
+		return nil, SanitizedInternal(ctx, "invalid user ID", err)
 	}
 	userID := pgtype.UUID{Bytes: uid, Valid: true}
 
@@ -209,7 +209,7 @@ func (s *Server) UploadAsset(ctx context.Context, request *immichv1.UploadAssetR
 		Status:           sqlc.AssetsStatusEnumActive,
 	})
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to create asset: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to create asset", err)
 	}
 
 	// Enqueue background jobs for thumbnail generation and metadata extraction.
@@ -267,7 +267,7 @@ func (s *Server) UpdateAsset(ctx context.Context, request *immichv1.UpdateAssetR
 		IsArchived: isArchived,
 	})
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to update asset: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to update asset", err)
 	}
 
 	return s.convertAssetToProto(asset), nil
@@ -323,7 +323,7 @@ func (s *Server) DeleteAssets(ctx context.Context, request *immichv1.DeleteAsset
 		Column1: assetUUIDs,
 		Column2: request.Force,
 	}); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to delete assets: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to delete assets", err)
 	}
 
 	return &emptypb.Empty{}, nil
@@ -338,7 +338,7 @@ func (s *Server) CheckExistingAssets(ctx context.Context, request *immichv1.Chec
 
 	uid, err := uuid.Parse(claims.UserID)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "invalid user ID: %v", err)
+		return nil, SanitizedInternal(ctx, "invalid user ID", err)
 	}
 	userID := pgtype.UUID{Bytes: uid, Valid: true}
 
@@ -348,7 +348,7 @@ func (s *Server) CheckExistingAssets(ctx context.Context, request *immichv1.Chec
 		Column3:  request.DeviceAssetIds,
 	})
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to check existing assets: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to check existing assets", err)
 	}
 
 	// Create map of existing IDs
@@ -386,13 +386,13 @@ func (s *Server) GetAssetStatistics(ctx context.Context, request *immichv1.GetAs
 
 	uid, err := uuid.Parse(claims.UserID)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "invalid user ID: %v", err)
+		return nil, SanitizedInternal(ctx, "invalid user ID", err)
 	}
 	userID := pgtype.UUID{Bytes: uid, Valid: true}
 
 	stats, err := s.db.GetAssetStatistics(ctx, userID)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get asset statistics: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to get asset statistics", err)
 	}
 
 	return &immichv1.AssetStatisticsResponse{
@@ -411,7 +411,7 @@ func (s *Server) GetAllUserAssetsByDeviceId(ctx context.Context, request *immich
 
 	uid, err := uuid.Parse(claims.UserID)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "invalid user ID: %v", err)
+		return nil, SanitizedInternal(ctx, "invalid user ID", err)
 	}
 	userID := pgtype.UUID{Bytes: uid, Valid: true}
 
@@ -420,7 +420,7 @@ func (s *Server) GetAllUserAssetsByDeviceId(ctx context.Context, request *immich
 		DeviceId: request.DeviceId,
 	})
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get assets by device ID: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to get assets by device ID", err)
 	}
 
 	// Convert UUIDs to strings
@@ -443,7 +443,7 @@ func (s *Server) GetRandom(ctx context.Context, request *immichv1.GetRandomReque
 
 	uid, err := uuid.Parse(claims.UserID)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "invalid user ID: %v", err)
+		return nil, SanitizedInternal(ctx, "invalid user ID", err)
 	}
 	userID := pgtype.UUID{Bytes: uid, Valid: true}
 
@@ -457,7 +457,7 @@ func (s *Server) GetRandom(ctx context.Context, request *immichv1.GetRandomReque
 		Limit:   count,
 	})
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get random assets: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to get random assets", err)
 	}
 
 	protoAssets := make([]*immichv1.Asset, len(assets))
@@ -498,14 +498,14 @@ func (s *Server) DownloadAsset(ctx context.Context, request *immichv1.DownloadAs
 	// Download the asset
 	assetData, err := storageService.Download(ctx, asset.OriginalPath)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to retrieve asset: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to retrieve asset", err)
 	}
 	defer assetData.Close()
 
 	// Read asset data
 	data, err := io.ReadAll(assetData)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to read asset data: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to read asset data", err)
 	}
 
 	// Determine content type based on file extension
@@ -624,13 +624,13 @@ func (s *Server) GetAssetThumbnail(ctx context.Context, request *immichv1.GetAss
 		// If thumbnail doesn't exist, try to generate it
 		originalData, err := storageService.Download(ctx, asset.OriginalPath)
 		if err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to retrieve original asset: %v", err)
+			return nil, SanitizedInternal(ctx, "failed to retrieve original asset", err)
 		}
 
 		// Generate thumbnails
 		thumbnails, err := generator.GenerateThumbnails(ctx, originalData, asset.OriginalFileName)
 		if err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to generate thumbnail: %v", err)
+			return nil, SanitizedInternal(ctx, "failed to generate thumbnail", err)
 		}
 
 		// Get the requested thumbnail type
@@ -655,7 +655,7 @@ func (s *Server) GetAssetThumbnail(ctx context.Context, request *immichv1.GetAss
 	// Read thumbnail data
 	thumbData, err := io.ReadAll(thumbnailData)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to read thumbnail data: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to read thumbnail data", err)
 	}
 
 	return &immichv1.GetAssetThumbnailResponse{
@@ -705,14 +705,14 @@ func (s *Server) PlayAssetVideo(ctx context.Context, request *immichv1.PlayAsset
 
 	videoStream, err := storageService.Download(ctx, asset.OriginalPath)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to retrieve video: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to retrieve video", err)
 	}
 	defer videoStream.Close()
 
 	// Read video data (this is simplified - in production you'd want streaming)
 	videoData, err := io.ReadAll(videoStream)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to read video data: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to read video data", err)
 	}
 
 	return &immichv1.PlayAssetVideoResponse{

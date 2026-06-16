@@ -24,14 +24,14 @@ func (s *Server) GetAllAlbums(ctx context.Context, request *immichv1.GetAllAlbum
 
 	uid, err := uuid.Parse(claims.UserID)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "invalid user ID: %v", err)
+		return nil, SanitizedInternal(ctx, "invalid user ID", err)
 	}
 	userID := pgtype.UUID{Bytes: uid, Valid: true}
 
 	// Get albums owned by the user
 	albums, err := s.db.GetAlbumsByOwner(ctx, userID)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get albums: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to get albums", err)
 	}
 
 	immichAlbums := make([]*immichv1.Album, len(albums))
@@ -50,7 +50,7 @@ func (s *Server) CreateAlbum(ctx context.Context, request *immichv1.CreateAlbumR
 
 	uid, err := uuid.Parse(claims.UserID)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "invalid user ID: %v", err)
+		return nil, SanitizedInternal(ctx, "invalid user ID", err)
 	}
 	userID := pgtype.UUID{Bytes: uid, Valid: true}
 
@@ -60,7 +60,7 @@ func (s *Server) CreateAlbum(ctx context.Context, request *immichv1.CreateAlbumR
 		Description: request.Description,
 	})
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to create album: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to create album", err)
 	}
 
 	// Add assets to album if provided
@@ -125,7 +125,7 @@ func (s *Server) UpdateAlbumInfo(ctx context.Context, request *immichv1.UpdateAl
 		IsActivityEnabled:     isActivityEnabled,
 	})
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to update album: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to update album", err)
 	}
 
 	return s.convertAlbumToProto(album), nil
@@ -138,7 +138,7 @@ func (s *Server) DeleteAlbum(ctx context.Context, request *immichv1.DeleteAlbumR
 	}
 
 	if err := s.db.DeleteAlbum(ctx, albumID); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to delete album: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to delete album", err)
 	}
 
 	return &emptypb.Empty{}, nil
@@ -235,7 +235,7 @@ func (s *Server) AddUsersToAlbum(ctx context.Context, request *immichv1.AddUsers
 	// Return updated album
 	album, err := s.db.GetAlbum(ctx, albumID)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get updated album: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to get updated album", err)
 	}
 
 	return s.convertAlbumToProto(album), nil
@@ -256,7 +256,7 @@ func (s *Server) RemoveUserFromAlbum(ctx context.Context, request *immichv1.Remo
 		AlbumsId: albumID,
 		UsersId:  userID,
 	}); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to remove user from album: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to remove user from album", err)
 	}
 
 	return &emptypb.Empty{}, nil
@@ -283,7 +283,7 @@ func (s *Server) UpdateAlbumUser(ctx context.Context, request *immichv1.UpdateAl
 		UsersId:  userID,
 		Role:     role,
 	}); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to update album user: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to update album user", err)
 	}
 
 	return &emptypb.Empty{}, nil
@@ -298,13 +298,13 @@ func (s *Server) GetAlbumStatistics(ctx context.Context, request *immichv1.GetAl
 
 	uid, err := uuid.Parse(claims.UserID)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "invalid user ID: %v", err)
+		return nil, SanitizedInternal(ctx, "invalid user ID", err)
 	}
 	userID := pgtype.UUID{Bytes: uid, Valid: true}
 
 	stats, err := s.db.GetAlbumStatistics(ctx, userID)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get album statistics: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to get album statistics", err)
 	}
 
 	return &immichv1.AlbumStatisticsResponse{

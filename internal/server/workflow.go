@@ -25,7 +25,7 @@ func (s *Server) ListWorkflows(ctx context.Context, _ *emptypb.Empty) (*immichv1
 
 	workflows, err := s.workflowService.ListWorkflows(ctx)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to list workflows: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to list workflows", err)
 	}
 
 	protoWorkflows := make([]*immichv1.WorkflowInfo, 0, len(workflows))
@@ -86,7 +86,7 @@ func (s *Server) CreateWorkflow(ctx context.Context, req *immichv1.CreateWorkflo
 
 	w, err := s.workflowService.CreateWorkflow(ctx, req.Name, description, trigger, actions, enabled, claims.UserID)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to create workflow: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to create workflow", err)
 	}
 
 	return workflowToProto(w), nil
@@ -119,7 +119,7 @@ func (s *Server) UpdateWorkflow(ctx context.Context, req *immichv1.UpdateWorkflo
 
 	w, err := s.workflowService.UpdateWorkflow(ctx, req.WorkflowId, req.Name, req.Description, trigger, actions)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to update workflow: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to update workflow", err)
 	}
 
 	return workflowToProto(w), nil
@@ -138,7 +138,7 @@ func (s *Server) DeleteWorkflow(ctx context.Context, req *immichv1.DeleteWorkflo
 
 	err = s.workflowService.DeleteWorkflow(ctx, req.WorkflowId)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to delete workflow: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to delete workflow", err)
 	}
 
 	return &emptypb.Empty{}, nil
@@ -162,7 +162,7 @@ func (s *Server) TriggerWorkflow(ctx context.Context, req *immichv1.TriggerWorkf
 
 	exec, err := s.workflowService.TriggerWorkflow(ctx, req.WorkflowId, triggerData)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to trigger workflow: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to trigger workflow", err)
 	}
 
 	return executionToProto(exec), nil
@@ -196,7 +196,7 @@ func (s *Server) GetWorkflowExecutions(ctx context.Context, req *immichv1.GetWor
 
 	executions, total, err := s.workflowService.GetWorkflowExecutions(ctx, req.WorkflowId, limit, offset, statusFilter)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get workflow executions: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to get workflow executions", err)
 	}
 
 	protoExecutions := make([]*immichv1.WorkflowExecutionInfo, 0, len(executions))
@@ -223,7 +223,7 @@ func (s *Server) SetWorkflowEnabled(ctx context.Context, req *immichv1.SetWorkfl
 
 	w, err := s.workflowService.SetWorkflowEnabled(ctx, req.WorkflowId, req.Enabled)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to update workflow: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to update workflow", err)
 	}
 
 	return workflowToProto(w), nil

@@ -27,7 +27,7 @@ func (s *Server) GetTimeBucket(ctx context.Context, request *immichv1.GetTimeBuc
 	// Get day detail from timeline service
 	dayDetail, err := s.timelineService.GetDayDetail(ctx, claims.UserID, bucketTime)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get time bucket: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to get time bucket", err)
 	}
 
 	// Get assets for this day
@@ -41,7 +41,7 @@ func (s *Server) GetTimeBucket(ctx context.Context, request *immichv1.GetTimeBuc
 
 	assetIDs, err := s.timelineService.GetTimelineAssets(ctx, opts)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get assets: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to get assets", err)
 	}
 
 	// Convert asset IDs to Asset objects
@@ -78,7 +78,7 @@ func (s *Server) GetTimeBuckets(ctx context.Context, request *immichv1.GetTimeBu
 	// Get time buckets from timeline service
 	buckets, err := s.timelineService.GetTimeBuckets(ctx, opts)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get time buckets: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to get time buckets", err)
 	}
 
 	// Convert to proto response

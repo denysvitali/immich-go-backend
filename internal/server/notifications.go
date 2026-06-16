@@ -21,7 +21,7 @@ func (s *Server) GetNotifications(ctx context.Context, req *immichv1.GetNotifica
 	// Get notifications from notifications service
 	notifications, err := s.notificationsService.GetNotifications(ctx, claims.UserID, false)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get notifications: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to get notifications", err)
 	}
 
 	// Convert to proto notifications
@@ -57,7 +57,7 @@ func (s *Server) UpdateNotification(ctx context.Context, req *immichv1.UpdateNot
 	if req.ReadAt != nil {
 		err := s.notificationsService.MarkAsRead(ctx, claims.UserID, req.Id)
 		if err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to update notification: %v", err)
+			return nil, SanitizedInternal(ctx, "failed to update notification", err)
 		}
 	}
 
@@ -76,7 +76,7 @@ func (s *Server) DeleteNotification(ctx context.Context, req *immichv1.DeleteNot
 	// Delete notification
 	err := s.notificationsService.DeleteNotification(ctx, claims.UserID, req.Id)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to delete notification: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to delete notification", err)
 	}
 
 	return &emptypb.Empty{}, nil
@@ -94,7 +94,7 @@ func (s *Server) UpdateNotifications(ctx context.Context, req *immichv1.UpdateNo
 	if req.GetReadAt() != nil {
 		err := s.notificationsService.MarkAllAsRead(ctx, claims.UserID)
 		if err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to update notifications: %v", err)
+			return nil, SanitizedInternal(ctx, "failed to update notifications", err)
 		}
 	}
 
