@@ -484,7 +484,7 @@ func (s *Server) GetRecentlyAddedAssets(ctx context.Context, request *immichv1.G
 	userID := pgtype.UUID{Bytes: uid, Valid: true}
 
 	// Default to 12 when limit is 0, cap at 100 to prevent abuse
-	limit := uint32(request.GetLimit())
+	limit := request.GetLimit()
 	if limit == 0 {
 		limit = 12
 	}
