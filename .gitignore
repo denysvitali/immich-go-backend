@@ -14,8 +14,10 @@
 # Downloaded files
 *.tar.gz
 *.json
+!/e2e/package.json
 api.swagger.json
 immich-openapi-specs.json
+node_modules/
 
 # Temporary test scripts
 test_*.sh

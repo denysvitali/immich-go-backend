@@ -267,3 +267,198 @@ jobs:
       with:
         name: integration-test-results
         path: integration-test-results.txt
+
+  # Job 6: Browser E2E against the upstream Immich frontend.
+  # This starts our backend and runs Immich's real web app in dev/proxy mode
+  # with IMMICH_SERVER_URL pointed at the Go backend.
+  frontend-e2e:
+    name: Frontend E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+    - name: Checkout backend
+      uses: actions/checkout@v4
+
+    - name: Checkout upstream Immich
+      uses: actions/checkout@v4
+      with:
+        repository: immich-app/immich
+        ref: v2.7.5
+        path: immich-upstream
+
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        cache: true
+
+    - name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: '24.14.0'
+
+    - name: Enable pnpm
+      run: |
+        corepack enable pnpm
+        corepack prepare pnpm@10.33.2 --activate
+        pnpm --version
+
+    - name: Build backend
+      run: go build -o bin/immich-go-backend ./cmd
+
+    - name: Start dependencies
+      run: |
+        docker run -d --name e2e-postgres \
+          -e POSTGRES_DB=immich \
+          -e POSTGRES_USER=immich \
+          -e POSTGRES_PASSWORD=immich \
+          -p 5432:5432 \
+          docker.io/tensorchord/pgvecto-rs:pg17-v0.4.0
+        docker run -d --name e2e-redis -p 6379:6379 redis:7-alpine
+
+        for i in {1..60}; do
+          if docker exec e2e-postgres pg_isready -U immich -d immich >/dev/null 2>&1; then
+            break
+          fi
+          sleep 1
+        done
+
+        docker exec e2e-postgres psql -U immich -d immich -v ON_ERROR_STOP=1 <<'SQL'
+        CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+        CREATE EXTENSION IF NOT EXISTS "vectors";
+        CREATE EXTENSION IF NOT EXISTS "cube";
+        CREATE EXTENSION IF NOT EXISTS "earthdistance";
+        CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+        CREATE EXTENSION IF NOT EXISTS "unaccent";
+        SQL
+
+        for i in {1..30}; do
+          if docker exec e2e-redis redis-cli ping >/dev/null 2>&1; then
+            exit 0
+          fi
+          sleep 1
+        done
+        echo "::error::Redis did not become ready"
+        exit 1
+
+    - name: Configure backend
+      run: |
+        cat > e2e-config.yaml <<'YAML'
+        server:
+          address: "127.0.0.1:3001"
+          grpc_address: "127.0.0.1:3002"
+          read_timeout: 30s
+          write_timeout: 30s
+          shutdown_timeout: 10s
+
+        database:
+          url: "postgres://immich:immich@127.0.0.1:5432/immich?sslmode=disable"
+          max_open_conns: 10
+          max_idle_conns: 5
+          max_conn_lifetime: 1h
+
+        logging:
+          level: "info"
+          format: "json"
+          output: "stdout"
+
+        auth:
+          jwt_secret: "e2e-test-secret-key-with-at-least-32-bytes"
+          jwt_expiry: "24h"
+          jwt_refresh_expiry: "168h"
+          jwt_issuer: "immich-go-backend-e2e"
+          registration_enabled: true
+          login_rate_limit: 20
+          login_rate_window: "1m"
+
+        storage:
+          backend: "local"
+          local:
+            root_path: "./e2e-uploads"
+            file_mode: "0644"
+            dir_mode: "0755"
+          upload:
+            max_file_size: 104857600
+            allowed_extensions: [".jpg", ".jpeg", ".png", ".webp", ".mp4"]
+            allowed_mime_types: ["image/jpeg", "image/png", "image/webp", "video/mp4"]
+
+        jobs:
+          enabled: false
+          redis_url: "redis://127.0.0.1:6379/0"
+
+        redis:
+          host: "127.0.0.1"
+          port: 6379
+          db: 0
+        YAML
+
+    - name: Start backend
+      run: |
+        ./bin/immich-go-backend --config e2e-config.yaml migrate
+        ./bin/immich-go-backend --config e2e-config.yaml serve > backend-e2e.log 2>&1 &
+        echo $! > backend-e2e.pid
+
+        for i in {1..60}; do
+          if curl -fsS http://127.0.0.1:3001/api/server/about >/dev/null; then
+            exit 0
+          fi
+          sleep 1
+        done
+        echo "::error::Backend did not become ready"
+        cat backend-e2e.log
+        exit 1
+
+    - name: Install upstream frontend dependencies
+      run: |
+        pnpm --dir immich-upstream \
+          --filter @immich/sdk \
+          --filter immich-web \
+          install \
+          --frozen-lockfile
+
+    - name: Start upstream frontend
+      run: |
+        (
+          cd immich-upstream
+          IMMICH_SERVER_URL=http://127.0.0.1:3001 pnpm --filter immich-web dev
+        ) > immich-web-e2e.log 2>&1 &
+        echo $! > immich-web-e2e.pid
+
+        for i in {1..90}; do
+          if curl -fsS http://127.0.0.1:3000 >/dev/null; then
+            exit 0
+          fi
+          sleep 1
+        done
+        echo "::error::Upstream frontend did not become ready"
+        cat immich-web-e2e.log
+        exit 1
+
+    - name: Install E2E dependencies
+      run: |
+        pnpm --dir e2e install --frozen-lockfile
+        pnpm --dir e2e exec playwright install --with-deps chromium
+
+    - name: Run frontend E2E tests
+      env:
+        IMMICH_WEB_URL: http://127.0.0.1:3000
+      run: pnpm --dir e2e test
+
+    - name: Upload E2E artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: frontend-e2e-artifacts
+        path: |
+          backend-e2e.log
+          immich-web-e2e.log
+          e2e/playwright-report
+          e2e/test-results
+
+    - name: Stop E2E services
+      if: always()
+      run: |
+        if [ -f backend-e2e.pid ]; then kill "$(cat backend-e2e.pid)" || true; fi
+        if [ -f immich-web-e2e.pid ]; then kill "$(cat immich-web-e2e.pid)" || true; fi
+        docker rm -f e2e-postgres e2e-redis || true
