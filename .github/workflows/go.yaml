@@ -42,7 +42,8 @@ jobs:
     - name: Install buf
       uses: bufbuild/buf-action@v1
       with:
-        buf_version: ${{ env.BUF_VERSION }}
+        version: ${{ env.BUF_VERSION }}
+        push: false
 
     - name: Cache generated protobuf files
       uses: actions/cache@v4
@@ -103,7 +104,8 @@ jobs:
     - name: Install buf
       uses: bufbuild/buf-action@v1
       with:
-        buf_version: ${{ env.BUF_VERSION }}
+        version: ${{ env.BUF_VERSION }}
+        push: false
 
     - name: Cache generated protobuf files
       uses: actions/cache@v4
@@ -156,7 +158,8 @@ jobs:
     - name: Install buf
       uses: bufbuild/buf-action@v1
       with:
-        buf_version: ${{ env.BUF_VERSION }}
+        version: ${{ env.BUF_VERSION }}
+        push: false
 
     - name: Lint Protocol Buffers
       run: buf lint
@@ -217,7 +220,8 @@ jobs:
     - name: Install buf
       uses: bufbuild/buf-action@v1
       with:
-        buf_version: ${{ env.BUF_VERSION }}
+        version: ${{ env.BUF_VERSION }}
+        push: false
 
     - name: Cache generated protobuf files
       uses: actions/cache@v4
