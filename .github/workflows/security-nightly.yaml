@@ -1,0 +1,44 @@
+name: Security Scan (nightly)
+
+# Trivy's filesystem scan pulls a full vulnerability DB on every run
+# (~100MB download) and is too slow to run on every push/PR. Schedule
+# it nightly + on manual dispatch instead. Results still land in the
+# GitHub Security tab.
+
+on:
+  schedule:
+    # 06:00 UTC every day.
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  trivy:
+    name: Trivy Vulnerability Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner (filesystem)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          ignore-unfixed: true
+          format: 'sarif'
+          output: 'trivy-fs-results.sarif'
+          severity: 'CRITICAL,HIGH'
+          # Skip generated dirs and Go vendor cache to speed up scanning.
+          skip-dirs: 'internal/proto/gen,internal/db/sqlc'
+
+      - name: Upload Trivy fs results to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-fs-results.sarif'
