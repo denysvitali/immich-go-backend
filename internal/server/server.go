@@ -568,6 +568,10 @@ func (s *Server) handleWs(mux *runtime.ServeMux) http.Handler {
 			s.wsHub.HandleWebSocket(w, r)
 			return
 		}
+		if r.Method == http.MethodGet && r.URL.Path == "/api/oauth/mobile-redirect" {
+			http.Redirect(w, r, mobileOAuthRedirectURL(r.URL.RawQuery), http.StatusTemporaryRedirect)
+			return
+		}
 		mux.ServeHTTP(w, r)
 	})
 }

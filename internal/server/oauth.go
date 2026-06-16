@@ -14,8 +14,14 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
+const mobileOAuthCallbackURL = "app.immich:///oauth-callback"
+
 // Ensure Server implements OAuthServiceServer
 var _ immichv1.OAuthServiceServer = (*Server)(nil)
+
+func mobileOAuthRedirectURL(rawQuery string) string {
+	return fmt.Sprintf("%s?%s", mobileOAuthCallbackURL, rawQuery)
+}
 
 // AuthorizeOAuth initiates OAuth authorization flow
 func (s *Server) AuthorizeOAuth(ctx context.Context, req *immichv1.AuthorizeOAuthRequest) (*immichv1.AuthorizeOAuthResponse, error) {
