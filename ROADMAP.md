@@ -1,313 +1,76 @@
-# Immich Go Backend Implementation Roadmap
+# Immich Go Backend Roadmap
 
 ## Upstream Compatibility Check (2026-06-16)
 
 **Current stable Immich baseline:** v2.7.5 (released 2026-04-13)
 **Latest upstream preview:** v3.0.0-rc.0 (released 2026-06-15)
-**Current repo status:** all original 10 phases ✅; recent session shipped (1) `isOnboarded` on `LoginResponse`, (2) sanitized internal errors via `SanitizedInternal` helper, (3) `openapi-coverage` subcommand, (4) asset-viewer integration tests, (5) CI speedup from ~12 min to ~2.3 min wall-clock.
 **Sources:** [Immich releases](https://github.com/immich-app/immich/releases), [Immich OpenAPI spec](https://github.com/immich-app/immich/blob/main/open-api/immich-openapi-specs.json), [OAuth docs](https://docs.immich.app/administration/oauth)
 
-The earlier phase checklist tracks implementation breadth, but it overstates compatibility. The active roadmap is now API parity and behavior hardening against upstream Immich, using v2.7.5 as the stable target and v3.0.0-rc.0 as forward-looking input.
+The active roadmap is API parity and behavior hardening against upstream Immich, using v2.7.5 as the stable target and v3.0.0-rc.0 as forward-looking input.
 
 ### Latest Immich Changes To Track
-- [x] v2 stable auth surface check: no current `/auth/refresh` endpoint in upstream OpenAPI; treat the README refresh-token item as stale until a client requires it.
-- [x] v2 stable OAuth mobile redirect route: `/api/oauth/mobile-redirect` should forward to `app.immich:///oauth-callback` with original query parameters.
+
 - [ ] v2.7.x shared link and auth fixes: review shared-link asset removal permissions and version-check rate limiting/deduplication.
 - [ ] v2.7.x media fixes: verify original filename hiding when metadata is disabled and people search behavior for short queries.
-- [x] v3 RC breaking API changes: remove old timeline sync assumptions, audit removed endpoints, album ownership model changes, **sanitized error responses** (done — `internal/server/errors.go` `SanitizedInternal` helper now wraps all 97 `codes.Internal` call sites), and structured validation errors.
-- [ ] v3 RC new capabilities: workflows/plugins parity, HLS real-time transcoding, integrity report jobs, **recently added assets** (in progress), OAuth backchannel logout, full-path search, album map markers, and user upload heatmap.
+- [ ] v3 RC new capabilities: workflows/plugins parity, HLS real-time transcoding, integrity report jobs, recently added assets, OAuth backchannel logout, full-path search, album map markers, and user upload heatmap.
 - [ ] v3 RC database/runtime changes: assess pgvecto.rs removal implications and duration-in-milliseconds response changes.
 
-### Active Compatibility Backlog
-- [x] Implement `/api/oauth/mobile-redirect` HTTP redirect compatibility.
-- [x] Audit OAuth callback/login responses against upstream `LoginResponseDto`, including cookie behavior. *(Added `isOnboarded` field; mark-on-first-login semantics; integration tests gated behind `//go:build integration`.)*
-- [x] Replace internal-error details in public API responses with sanitized messages. *(New `SanitizedInternal(ctx, publicMsg, err)` helper in `internal/server/errors.go`; migrated 97 call sites across 14 server files.)*
-- [x] Add upstream OpenAPI diff tooling or a generated endpoint coverage report. *(New `immich-go-backend openapi-coverage` subcommand; JSON + markdown output; matches upstream Immich OpenAPI paths against the generated grpc-gateway routes.)*
-- [x] Expand integration tests around mobile-login, shared links, timeline, and asset-viewer API flows. *(New `internal/server/asset_viewer_integration_test.go` covers `GetAsset` / `GetAssetThumbnail` / `GetAssetOriginal` with real testcontainers Postgres; existing suites for mobile-redirect, shared links, and timeline already comprehensive.)*
+## Active Backlog
 
-### Recently Shipped (2026-06-16 session)
-| Change | Commit | Notes |
-|--------|--------|-------|
-| `is_onboarded` on `LoginResponse` (upstream `LoginResponseDto` parity) | `322876e` + `e879c74` | Auto-marked `true` on first successful login; integration tests gated behind `//go:build integration` |
-| Sanitized internal errors (97 sites) | `b02cfb0` | `SanitizedInternal(ctx, publicMsg, err)` records `err` on the OTel span but never includes it in the gRPC status message |
-| OpenAPI coverage subcommand | `0e566e4` + `ba6b4d3` + `1bdaf05` | `immich-go-backend openapi-coverage -md` prints a coverage report (JSON + markdown) |
-| Asset viewer integration tests | `bbad77e` | `GetAsset`, `GetAssetThumbnail`, `GetAssetOriginal` with user isolation |
-| CI speedup | `5e2de87` + `eb48f2d` + `b805175` | 12 min → 2.3 min. No Nix in non-Docker jobs; Trivy moved to nightly; `bufbuild/buf-action@v1` with `setup_only: true` |
-
-## Phase 1: Infrastructure Setup ✅ COMPLETED
-
-### Database & Schema ✅
-- [x] Analyze original Immich database schema
-- [x] Create comprehensive SQLC queries (116 queries covering all entities)
-- [x] Fix column name mismatches with schema
-- [x] Generate SQLC code successfully
-
-### Protocol Buffers ✅
-- [x] Set up Nix development environment
-- [x] Install protoc, buf, and Go protobuf plugins
-- [x] Generate all .pb.go and _grpc.pb.go files
-- [x] Verify protobuf compilation
-
-### Dependencies ✅
-- [x] Add rclone dependency for filesystem abstraction
-- [x] Add OpenTelemetry dependencies for observability
-- [x] Add AWS SDK v2 for S3 support
-- [x] Add all required Go modules
-
-## Phase 2: Storage Abstraction Layer ✅ COMPLETED
-
-### Storage Interface ✅
-- [x] Design comprehensive storage interface
-- [x] Support for multiple backends (local, S3, rclone)
-- [x] Pre-signed URL support for direct client uploads/downloads
-- [x] Proper error handling and OpenTelemetry tracing
-
-### Storage Backends ✅
-- [x] Local filesystem backend with proper error handling
-- [x] S3 backend with pre-signed URL support
-- [x] Rclone backend for universal filesystem support
-- [x] Storage factory with configuration validation
-
-### Storage Service ✅
-- [x] High-level storage service wrapper
-- [x] Asset upload/download with validation
-- [x] File type and size validation
-- [x] Path generation with hash-based distribution
-- [x] Metadata extraction and management
-
-## Phase 3: Configuration & Telemetry ✅ COMPLETED
-
-### Configuration System ✅
-- [x] Comprehensive configuration structure
-- [x] Support for YAML files and environment variables
-- [x] Validation and default values
-- [x] Feature flags for optional functionality
-
-### Telemetry & Observability ✅
-- [x] OpenTelemetry setup with autoexport
-- [x] Tracing instrumentation
-- [x] Metrics collection (HTTP, storage, database, assets, users)
-- [x] Proper resource attribution
-
-## Phase 4: Core Services ✅ COMPLETED
-
-### Authentication Service ✅ COMPLETED
-- [x] JWT token generation and validation
-- [x] User registration and login
-- [x] Password hashing and validation
-- [x] Session management
-- [x] Authentication middleware
-- [x] OAuth integration (basic implementation)
-- [ ] Rate limiting for login attempts (future enhancement)
-
-### User Management Service ✅ COMPLETED
-- [x] User CRUD operations (GetUser, GetUserByEmail, ListUsers, UpdateUser, DeleteUser)
-- [x] Profile management (basic profile updates, avatar colors)
-- [x] User preferences (full preferences system with JSON storage)
-- [x] Admin user management (UpdateUserAdmin, UpdateUserPassword, soft/hard delete)
-- [x] gRPC endpoints for user operations (GetMyUser, UpdateMyUser, GetUser)
-- [ ] Profile image upload/management (future enhancement)
-- [ ] User license management (future enhancement)
-
-### Asset Management Service ✅ COMPLETED
-- [x] Asset upload handling with S3 pre-signed URLs
-- [x] Asset metadata extraction (EXIF, video metadata)
-- [x] Thumbnail generation (multiple sizes with dimensions from config)
-- [x] Asset search and filtering
-- [x] Asset deletion and cleanup
-- [x] Asset download with pre-signed URLs
-- [x] Asset stacks (burst photos grouping)
-
-### Album Management Service ✅ COMPLETED
-- [x] Album CRUD operations (CreateAlbum, GetAlbum, GetUserAlbums, UpdateAlbum, DeleteAlbum)
-- [x] Asset-album associations (AddAssetToAlbum, RemoveAssetFromAlbum)
-- [x] Album sharing (ShareAlbum, UnshareAlbum)
-- [x] Album permissions (userHasAlbumAccess with owner and shared user checks)
-
-### Additional Services ✅ COMPLETED
-- [x] Stacks service (burst photo grouping with real DB operations)
-- [x] Faces service (face detection and reassignment)
-- [x] Tags service (full CRUD with asset tagging)
-- [x] Partners service (partnership management)
-- [x] Shared links service (secure sharing with passwords and expiration)
-- [x] Duplicates service (checksum and size-based detection)
-- [x] Trash service (soft delete and restore)
-- [x] Memories service (memory management)
-- [x] Timeline service (timeline view support)
-- [x] Notifications service (notification management)
-
-## Phase 5: HTTP/gRPC Controllers ✅ COMPLETED
-
-### HTTP REST API (via grpc-gateway) ✅
-- [x] Authentication endpoints (Login, Logout, Register, ValidateToken)
-- [x] User management endpoints (GetMyUser, UpdateMyUser, preferences)
-- [x] Asset management endpoints (Upload, Download, Search, Delete)
-- [x] Album management endpoints (CRUD, sharing)
-- [x] Search endpoints (metadata search)
-- [x] Admin endpoints (user management, system config)
-
-### gRPC API ✅ COMPLETED
-- [x] Users service endpoints (GetMyUser, UpdateMyUser, GetUser, preferences)
-- [x] Authentication service endpoints (Login, Logout, Register, OAuth)
-- [x] Album service endpoints (full CRUD)
-- [x] Asset service endpoints (full CRUD with search)
-- [x] Tags service endpoints (full tagging operations)
-- [x] Partners service endpoints (partnership management)
-- [x] Shared links service endpoints (secure sharing)
-- [x] Trash service endpoints (delete/restore)
-- [x] Queue service endpoints (job management)
-- [x] Sessions service endpoints (session management)
-- [x] Server info endpoints (config, features, stats)
-- [x] Authentication interceptors
-- [x] Error handling and status codes
-- [ ] Streaming support for large operations (future enhancement)
-
-## Phase 6: Job Queue System ✅ COMPLETED
-
-### Background Jobs ✅
-- [x] Redis-based job queue (asynq)
-- [x] Thumbnail generation jobs
-- [x] EXIF/metadata extraction jobs
-- [x] Library scanning jobs
-- [x] Video transcoding jobs (handler ready)
-- [x] Face detection jobs (handler ready)
-- [x] Smart search indexing jobs (handler ready)
-- [x] Duplicate detection jobs
-- [x] Storage migration jobs
-
-### Job Workers ✅
-- [x] Job handlers for all types
-- [x] Queue management API (list, pause, resume)
-- [x] Job status tracking
-- [ ] Configurable worker pools (future enhancement)
-- [ ] Advanced retry logic (future enhancement)
-
-## Phase 7: Server Implementation ✅ COMPLETED
-
-### HTTP Server ✅
-- [x] HTTP server with grpc-gateway integration
-- [x] Middleware for authentication
-- [x] Request logging middleware
-- [x] WebSocket support for real-time updates
-- [x] Health check endpoints (via server info)
-
-### gRPC Server ✅
-- [x] gRPC server setup with all services registered
-- [x] Authentication interceptors
-- [x] Logging middleware
-- [x] All 30+ services registered
-
-### Server Management ✅
-- [x] Graceful shutdown
-- [x] Signal handling (SIGTERM, SIGINT)
-- [x] CLI with Cobra (serve, migrate, version commands)
-- [x] Configuration from file and environment
-
-## Phase 8: Testing & Quality Assurance ✅ COMPLETED
-
-### Unit Tests ✅
-- [x] Storage layer tests (local_test.go)
-- [x] Service layer tests (users, auth, albums, assets)
-- [x] Configuration tests (config_test.go)
-- [x] Database migration tests (migrate_test.go)
-
-### Integration Tests ✅
-- [x] Database integration tests with testdb package
-- [x] Stacks service integration tests
-- [x] Duplicates service integration tests
-- [x] Faces service integration tests
-- [x] Shared links service integration tests
-- [x] Trash service integration tests
-- [x] Memories service integration tests
-- [x] Sessions service integration tests
-- [x] Notifications service integration tests
-- [x] API keys service integration tests
-- [x] Timeline service integration tests
-- [x] Libraries service integration tests
-- [x] Auth service integration tests
-- [x] Users service integration tests
-
-### Performance Tests 🔄 (Future Enhancement)
-- [ ] Load testing
-- [ ] Storage performance tests
-- [ ] Database performance tests
-- [ ] Memory usage optimization
-
-## Phase 9: Advanced Features 🔄 (Future Enhancement)
-
-### Machine Learning Integration 🔄
-- [ ] Face recognition (optional)
-- [ ] Object detection (optional)
-- [ ] CLIP search (optional)
-- [ ] ML-based duplicate detection (optional)
-
-### Video Processing 🔄
-- [ ] Video transcoding (handler ready, needs ffmpeg integration)
-- [ ] Video thumbnail generation
-- [ ] Video metadata extraction (basic support exists)
-
-## Phase 10: Documentation & Deployment ✅ COMPLETED
-
-### Documentation ✅
-- [x] README.md with project overview
-- [x] CLAUDE.md with development guidelines
-- [x] DEPLOYMENT.md with deployment instructions
-- [x] TESTING.md with testing guidelines
-- [x] ROADMAP.md with project status
-
-### Deployment ✅
-- [x] Dockerfile (multi-stage with Nix)
-- [x] docker-compose.yml for local development
-- [x] CI/CD pipeline (GitHub Actions)
-- [x] Security scanning (Gosec, Trivy)
-- [x] Protocol buffer linting and breaking change detection
-
-### Monitoring ✅
-- [x] OpenTelemetry metrics integration
-- [x] Prometheus-compatible metrics
-- [ ] Grafana dashboards (future enhancement)
-- [ ] Alerting rules (future enhancement)
-
-## Current Status
-
-**Phases Completed:** 10/10 for the original prototype milestone
-**Overall Compatibility Progress:** ~60% API coverage estimate
-
-The Immich Go Backend has broad service coverage, real database operations, and production-style infrastructure, but it is not yet production-ready or fully Immich-compatible. The remaining work is primarily upstream API parity, client behavior compatibility, security hardening, and regression coverage.
-
-## Key Achievements
-
-1. ✅ **Robust Storage Abstraction**: Comprehensive storage layer supporting local filesystem, S3, and rclone backends with pre-signed URL support
-2. ✅ **Comprehensive Database Layer**: 130+ SQLC queries covering all Immich entities with proper error handling
-3. ✅ **Production-Ready Configuration**: Full configuration system with YAML and environment variable support
-4. ✅ **Observability Ready**: OpenTelemetry integration with tracing and metrics
-5. ✅ **Protocol Buffer Integration**: Complete protobuf setup with Nix build system
-6. ✅ **Complete Authentication System**: JWT tokens, user registration/login, session management, OAuth support
-7. ✅ **Full User Management**: CRUD operations, profile management, preferences, admin functions with gRPC endpoints
-8. ✅ **Complete Asset Management**: Upload/download with S3 pre-signed URLs, metadata extraction, thumbnail generation, advanced search, stacks, and comprehensive deletion with cleanup
-9. ✅ **Album Management**: Full CRUD, sharing, permissions with real database operations
-10. ✅ **Additional Services**: Tags, partners, shared links, duplicates, trash, memories, timeline, notifications
-11. ✅ **Job Queue System**: Redis-based background processing with handlers for all job types
-12. ✅ **gRPC/REST API**: Complete API layer with 30+ services and authentication interceptors
-13. ✅ **Comprehensive Testing**: Unit tests and integration tests for all major services
-14. ✅ **CI/CD Pipeline**: GitHub Actions with build, test, lint, security scanning, and Docker build
-15. ✅ **Containerization**: Multi-stage Dockerfile and docker-compose for development
+- [ ] Implement rate limiting for login attempts.
+- [ ] Implement profile image upload and management.
+- [ ] Implement user license management.
+- [ ] Add streaming support for large gRPC operations.
+- [ ] Implement configurable worker pools for background jobs.
+- [ ] Add advanced retry logic for background jobs.
+- [ ] Review shared-link asset removal permissions.
+- [ ] Add version-check rate limiting and deduplication.
+- [ ] Verify original filename hiding when metadata is disabled.
+- [ ] Verify people search behavior for short queries.
+- [ ] Implement workflows/plugins parity.
+- [ ] Implement HLS real-time transcoding.
+- [ ] Implement integrity report jobs.
+- [ ] Finish recently added assets endpoint behavior.
+- [ ] Implement OAuth backchannel logout.
+- [ ] Implement full-path search.
+- [ ] Implement album map markers.
+- [ ] Implement user upload heatmap.
+- [ ] Assess pgvecto.rs removal implications.
+- [ ] Assess duration-in-milliseconds response changes.
 
 ## Future Enhancements
 
-1. **ML Integration** - Face recognition, smart search with CLIP (optional)
-2. **Video Processing** - Full transcoding pipeline with ffmpeg
-3. **Performance Testing** - Load testing and optimization
-4. **Monitoring Dashboards** - Grafana dashboards and alerting
-5. **Kubernetes Deployment** - Helm charts for production deployment
+### Performance & Reliability
+- [ ] Load testing.
+- [ ] Storage performance tests.
+- [ ] Database performance tests.
+- [ ] Memory usage optimization.
+- [ ] Configurable worker pools for background jobs.
+- [ ] Advanced retry logic for background jobs.
+
+### Machine Learning Integration (optional)
+- [ ] Face recognition.
+- [ ] Object detection.
+- [ ] CLIP search.
+- [ ] ML-based duplicate detection.
+
+### Video Processing
+- [ ] Video transcoding (handler ready, needs ffmpeg integration).
+- [ ] Video thumbnail generation.
+- [ ] Video metadata extraction.
+
+### Monitoring & Operations
+- [ ] Grafana dashboards.
+- [ ] Alerting rules.
+- [ ] Kubernetes deployment with Helm charts.
 
 ## Technical Decisions Made
 
-- **Storage**: Rclone-based abstraction for maximum flexibility
-- **Database**: SQLC for type-safe SQL queries
-- **Observability**: OpenTelemetry with autoexport for vendor-neutral monitoring
-- **Configuration**: YAML + environment variables for 12-factor app compliance
-- **Build System**: Nix for reproducible builds
-- **Architecture**: Clean architecture with clear separation of concerns
-- **API**: gRPC with grpc-gateway for REST compatibility
-- **Testing**: Integration tests with Docker-based PostgreSQL
+- **Storage**: Rclone-based abstraction for maximum flexibility.
+- **Database**: SQLC for type-safe SQL queries.
+- **Observability**: OpenTelemetry with autoexport for vendor-neutral monitoring.
+- **Configuration**: YAML + environment variables for 12-factor app compliance.
+- **Build System**: Nix for reproducible builds.
+- **Architecture**: Clean architecture with clear separation of concerns.
+- **API**: gRPC with grpc-gateway for REST compatibility.
+- **Testing**: Integration tests with Docker-based PostgreSQL.
