@@ -18,7 +18,7 @@ The active roadmap is API parity and behavior hardening against upstream Immich,
 ## Active Backlog
 
 - [x] Implement rate limiting for login attempts.
-- [ ] Implement profile image upload and management.
+- [x] Implement profile image upload and management.
 - [ ] Implement user license management.
 - [ ] Add streaming support for large gRPC operations.
 - [ ] Implement configurable worker pools for background jobs.

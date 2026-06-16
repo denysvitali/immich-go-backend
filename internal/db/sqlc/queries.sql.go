@@ -226,6 +226,43 @@ func (q *Queries) ClearUserPinCode(ctx context.Context, id pgtype.UUID) error {
 	return err
 }
 
+const clearUserProfileImage = `-- name: ClearUserProfileImage :one
+UPDATE users
+SET "profileImagePath" = '',
+    "profileChangedAt" = now(),
+    "updatedAt" = now()
+WHERE id = $1 AND "deletedAt" IS NULL
+RETURNING id, email, password, "createdAt", "profileImagePath", "isAdmin", "shouldChangePassword", "deletedAt", "oauthId", "updatedAt", "storageLabel", name, "quotaSizeInBytes", "quotaUsageInBytes", status, "profileChangedAt", "updateId", "avatarColor", "pinCode", "isOnboarded"
+`
+
+func (q *Queries) ClearUserProfileImage(ctx context.Context, id pgtype.UUID) (User, error) {
+	row := q.db.QueryRow(ctx, clearUserProfileImage, id)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.Password,
+		&i.CreatedAt,
+		&i.ProfileImagePath,
+		&i.IsAdmin,
+		&i.ShouldChangePassword,
+		&i.DeletedAt,
+		&i.OauthId,
+		&i.UpdatedAt,
+		&i.StorageLabel,
+		&i.Name,
+		&i.QuotaSizeInBytes,
+		&i.QuotaUsageInBytes,
+		&i.Status,
+		&i.ProfileChangedAt,
+		&i.UpdateId,
+		&i.AvatarColor,
+		&i.PinCode,
+		&i.IsOnboarded,
+	)
+	return i, err
+}
+
 const countAssets = `-- name: CountAssets :one
 SELECT COUNT(*) FROM assets
 WHERE "ownerId" = $1 
@@ -6947,6 +6984,48 @@ type SetUserPinCodeParams struct {
 func (q *Queries) SetUserPinCode(ctx context.Context, arg SetUserPinCodeParams) error {
 	_, err := q.db.Exec(ctx, setUserPinCode, arg.PinCode, arg.ID)
 	return err
+}
+
+const setUserProfileImage = `-- name: SetUserProfileImage :one
+UPDATE users
+SET "profileImagePath" = $2,
+    "profileChangedAt" = now(),
+    "updatedAt" = now()
+WHERE id = $1 AND "deletedAt" IS NULL
+RETURNING id, email, password, "createdAt", "profileImagePath", "isAdmin", "shouldChangePassword", "deletedAt", "oauthId", "updatedAt", "storageLabel", name, "quotaSizeInBytes", "quotaUsageInBytes", status, "profileChangedAt", "updateId", "avatarColor", "pinCode", "isOnboarded"
+`
+
+type SetUserProfileImageParams struct {
+	ID               pgtype.UUID
+	ProfileImagePath string
+}
+
+func (q *Queries) SetUserProfileImage(ctx context.Context, arg SetUserProfileImageParams) (User, error) {
+	row := q.db.QueryRow(ctx, setUserProfileImage, arg.ID, arg.ProfileImagePath)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.Password,
+		&i.CreatedAt,
+		&i.ProfileImagePath,
+		&i.IsAdmin,
+		&i.ShouldChangePassword,
+		&i.DeletedAt,
+		&i.OauthId,
+		&i.UpdatedAt,
+		&i.StorageLabel,
+		&i.Name,
+		&i.QuotaSizeInBytes,
+		&i.QuotaUsageInBytes,
+		&i.Status,
+		&i.ProfileChangedAt,
+		&i.UpdateId,
+		&i.AvatarColor,
+		&i.PinCode,
+		&i.IsOnboarded,
+	)
+	return i, err
 }
 
 const softDeleteUser = `-- name: SoftDeleteUser :exec

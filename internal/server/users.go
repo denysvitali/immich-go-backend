@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -192,17 +191,9 @@ func (s *Server) CreateProfileImage(ctx context.Context, request *immichv1.Creat
 	}
 
 	// Update user record with profile image path
-	now := time.Now()
-	_, err = s.db.UpdateUser(ctx, sqlc.UpdateUserParams{
-		ID:                   userUUID,
-		Email:                pgtype.Text{Valid: false}, // Don't update email
-		Name:                 pgtype.Text{Valid: false}, // Don't update name
-		IsAdmin:              pgtype.Bool{Valid: false}, // Don't update admin status
-		AvatarColor:          pgtype.Text{Valid: false}, // Don't update avatar color
-		ProfileImagePath:     pgtype.Text{String: profilePath, Valid: true},
-		ShouldChangePassword: pgtype.Bool{Valid: false}, // Don't update password change flag
-		QuotaSizeInBytes:     pgtype.Int8{Valid: false}, // Don't update quota
-		StorageLabel:         pgtype.Text{Valid: false}, // Don't update storage label
+	updatedUser, err := s.db.SetUserProfileImage(ctx, sqlc.SetUserProfileImageParams{
+		ID:               userUUID,
+		ProfileImagePath: profilePath,
 	})
 	if err != nil {
 		// Profile image cleanup on failure would go here
@@ -212,12 +203,40 @@ func (s *Server) CreateProfileImage(ctx context.Context, request *immichv1.Creat
 	return &immichv1.CreateProfileImageResponse{
 		UserId:           userID.String(),
 		ProfileImagePath: profilePath,
-		ProfileChangedAt: timestamppb.New(now),
+		ProfileChangedAt: timestamppb.New(updatedUser.ProfileChangedAt.Time),
 	}, nil
 }
 
 func (s *Server) DeleteProfileImage(ctx context.Context, empty *emptypb.Empty) (*emptypb.Empty, error) {
-	// Profile image deletion would be implemented here
+	claims, ok := auth.GetClaimsFromStdContext(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	}
+
+	userID, err := uuid.Parse(claims.UserID)
+	if err != nil {
+		return nil, SanitizedInternal(ctx, "invalid user ID", err)
+	}
+	userUUID := pgtype.UUID{Bytes: userID, Valid: true}
+
+	user, err := s.db.GetUserByID(ctx, userUUID)
+	if err != nil {
+		return nil, status.Errorf(codes.NotFound, "user not found: %v", err)
+	}
+
+	if user.ProfileImagePath == "" {
+		return &emptypb.Empty{}, nil
+	}
+
+	storageService := s.assetService.GetStorageService()
+	if err := storageService.DeleteAsset(ctx, user.ProfileImagePath); err != nil {
+		return nil, SanitizedInternal(ctx, "failed to delete profile image", err)
+	}
+
+	if _, err := s.db.ClearUserProfileImage(ctx, userUUID); err != nil {
+		return nil, SanitizedInternal(ctx, "failed to update user profile", err)
+	}
+
 	return &emptypb.Empty{}, nil
 }
 

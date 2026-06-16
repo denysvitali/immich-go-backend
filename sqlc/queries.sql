@@ -273,6 +273,22 @@ SET name = COALESCE(sqlc.narg('name'), name),
 WHERE id = $1 AND "deletedAt" IS NULL
 RETURNING *;
 
+-- name: SetUserProfileImage :one
+UPDATE users
+SET "profileImagePath" = $2,
+    "profileChangedAt" = now(),
+    "updatedAt" = now()
+WHERE id = $1 AND "deletedAt" IS NULL
+RETURNING *;
+
+-- name: ClearUserProfileImage :one
+UPDATE users
+SET "profileImagePath" = '',
+    "profileChangedAt" = now(),
+    "updatedAt" = now()
+WHERE id = $1 AND "deletedAt" IS NULL
+RETURNING *;
+
 -- name: DeleteUser :exec
 UPDATE users
 SET "deletedAt" = now(),
