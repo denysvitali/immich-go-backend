@@ -1,3 +1,6 @@
+CREATE EXTENSION IF NOT EXISTS "unaccent" WITH SCHEMA public;
+CREATE TEXT SEARCH DICTIONARY IF NOT EXISTS public.unaccent (TEMPLATE = public.unaccent, RULES = 'unaccent');
+
 CREATE FUNCTION public.immich_uuid_v7(p_timestamp timestamp with time zone DEFAULT clock_timestamp()) RETURNS uuid
     LANGUAGE sql
     AS $$
