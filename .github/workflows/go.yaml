@@ -293,6 +293,12 @@ jobs:
         go-version: ${{ env.GO_VERSION }}
         cache: true
 
+    - name: Install buf
+      uses: bufbuild/buf-action@v1
+      with:
+        setup_only: true
+        version: ${{ env.BUF_VERSION }}
+
     - name: Setup Node
       uses: actions/setup-node@v4
       with:
@@ -303,6 +309,21 @@ jobs:
         corepack enable pnpm
         corepack prepare pnpm@10.33.2 --activate
         pnpm --version
+
+    - name: Cache generated protobuf files
+      uses: actions/cache@v4
+      id: proto-cache
+      with:
+        path: internal/proto/gen
+        key: ${{ runner.os }}-proto-${{ hashFiles('internal/proto/**/*.proto', 'buf.gen.yaml', 'buf.work.yaml', 'internal/proto/buf.yaml') }}
+        restore-keys: |
+          ${{ runner.os }}-proto-
+
+    - name: Generate Protocol Buffers
+      if: steps.proto-cache.outputs.cache-hit != 'true'
+      run: |
+        rm -rf internal/proto/gen
+        buf generate
 
     - name: Build backend
       run: go build -o bin/immich-go-backend ./cmd
