@@ -25,7 +25,7 @@ func (s *Server) ListPlugins(ctx context.Context, _ *emptypb.Empty) (*immichv1.L
 
 	plugins, err := s.pluginService.ListPlugins(ctx)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to list plugins: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to list plugins", err)
 	}
 
 	protoPlugins := make([]*immichv1.PluginInfo, 0, len(plugins))
@@ -70,7 +70,7 @@ func (s *Server) InstallPlugin(ctx context.Context, req *immichv1.InstallPluginR
 
 	p, err := s.pluginService.InstallPlugin(ctx, req.Source, req.Version)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to install plugin: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to install plugin", err)
 	}
 
 	return pluginToProto(p), nil
@@ -94,7 +94,7 @@ func (s *Server) UninstallPlugin(ctx context.Context, req *immichv1.UninstallPlu
 
 	err = s.pluginService.UninstallPlugin(ctx, req.PluginId, removeData)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to uninstall plugin: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to uninstall plugin", err)
 	}
 
 	return &emptypb.Empty{}, nil
@@ -140,7 +140,7 @@ func (s *Server) UpdatePluginConfig(ctx context.Context, req *immichv1.UpdatePlu
 	config := req.Config.AsMap()
 	updatedConfig, err := s.pluginService.UpdatePluginConfig(ctx, req.PluginId, config)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to update plugin config: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to update plugin config", err)
 	}
 
 	configStruct, _ := structpb.NewStruct(updatedConfig)
@@ -169,7 +169,7 @@ func (s *Server) SetPluginEnabled(ctx context.Context, req *immichv1.SetPluginEn
 
 	p, err := s.pluginService.SetPluginEnabled(ctx, req.PluginId, req.Enabled)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to update plugin: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to update plugin", err)
 	}
 
 	return pluginToProto(p), nil

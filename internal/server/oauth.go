@@ -31,7 +31,7 @@ func (s *Server) AuthorizeOAuth(ctx context.Context, req *immichv1.AuthorizeOAut
 	// Generate state for CSRF protection
 	state, err := oauthService.GenerateState()
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to generate state: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to generate state", err)
 	}
 
 	// Store state in session/cache (simplified - should use proper session storage)
@@ -61,25 +61,25 @@ func (s *Server) CallbackOAuth(ctx context.Context, req *immichv1.CallbackOAuthR
 	// Exchange code for token
 	accessToken, err := oauthService.ExchangeCodeForToken(req.Provider, req.Code)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to exchange code: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to exchange code", err)
 	}
 
 	// Get user info from provider
 	userInfo, err := oauthService.GetUserInfo(req.Provider, accessToken)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get user info: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to get user info", err)
 	}
 
 	// Find or create user
 	user, err := oauthService.FindOrCreateUserByOAuth(ctx, userInfo)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to find or create user: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to find or create user", err)
 	}
 
 	// Generate JWT token for the user
 	token, err := s.authService.GenerateToken(user.ID.String(), user.Email, 24*time.Hour)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to generate token: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to generate token", err)
 	}
 
 	// Set cookie in response metadata
@@ -88,7 +88,7 @@ func (s *Server) CallbackOAuth(ctx context.Context, req *immichv1.CallbackOAuthR
 			token, int(24*time.Hour.Seconds())),
 	)
 	if err := grpc.SetHeader(ctx, md); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to set cookie: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to set cookie", err)
 	}
 
 	return &immichv1.CallbackOAuthResponse{
@@ -138,7 +138,7 @@ func (s *Server) LinkOAuthAccount(ctx context.Context, req *immichv1.LinkOAuthAc
 
 	// Link the OAuth account
 	if err := oauthService.LinkOAuthAccount(ctx, userID, req.Provider, req.ProviderId); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to link account: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to link account", err)
 	}
 
 	return &immichv1.LinkOAuthAccountResponse{
@@ -159,7 +159,7 @@ func (s *Server) UnlinkOAuthAccount(ctx context.Context, _ *emptypb.Empty) (*imm
 
 	// Unlink the OAuth account
 	if err := oauthService.UnlinkOAuthAccount(ctx, userID); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to unlink account: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to unlink account", err)
 	}
 
 	return &immichv1.UnlinkOAuthAccountResponse{

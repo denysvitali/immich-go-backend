@@ -64,7 +64,7 @@ func (s *Server) Logout(ctx context.Context, req *emptypb.Empty) (*immichv1.Logo
 	// Invalidate the session
 	err = s.authService.Logout(ctx, userID.String())
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "logout failed: %v", err)
+		return nil, SanitizedInternal(ctx, "logout failed", err)
 	}
 
 	// Clear cookies
@@ -89,7 +89,7 @@ func (s *Server) AdminSignUp(ctx context.Context, req *immichv1.AdminSignUpReque
 	// Register the user (they'll be admin if this is the first user)
 	response, err := s.authService.Register(ctx, registerRequest)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "admin registration failed: %v", err)
+		return nil, SanitizedInternal(ctx, "admin registration failed", err)
 	}
 
 	// The Register method already returns the token in AuthResponse
@@ -116,7 +116,7 @@ func (s *Server) ValidateToken(ctx context.Context, req *emptypb.Empty) (*immich
 	// Get user details - just validate that the user exists
 	_, err = s.userService.GetUser(ctx, userID)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get user: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to get user", err)
 	}
 
 	return &immichv1.ValidateTokenResponse{
@@ -141,7 +141,7 @@ func (s *Server) ChangePassword(ctx context.Context, req *immichv1.ChangePasswor
 		if authErr, ok := err.(*auth.AuthError); ok && authErr.Type == auth.ErrInvalidCredentials {
 			return nil, status.Errorf(codes.InvalidArgument, "current password is incorrect")
 		}
-		return nil, status.Errorf(codes.Internal, "failed to change password: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to change password", err)
 	}
 
 	return &emptypb.Empty{}, nil
@@ -158,13 +158,13 @@ func (s *Server) GetAuthStatus(ctx context.Context, req *emptypb.Empty) (*immich
 	// Get user details to check if they have a password set
 	_, err = s.userService.GetUser(ctx, userID)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get user: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to get user", err)
 	}
 
 	// Check if user has a PIN code set
 	hasPinCode, err := s.authService.HasPinCode(ctx, userID.String())
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to check PIN code status: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to check PIN code status", err)
 	}
 
 	// Check if session is elevated
@@ -194,7 +194,7 @@ func (s *Server) SetupPinCode(ctx context.Context, req *immichv1.PinCodeSetupReq
 
 	err = s.authService.SetupPinCode(ctx, userID.String(), req.PinCode)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to setup PIN code: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to setup PIN code", err)
 	}
 
 	return &emptypb.Empty{}, nil
@@ -212,7 +212,7 @@ func (s *Server) ChangePinCode(ctx context.Context, req *immichv1.PinCodeChangeR
 		if authErr, ok := err.(*auth.AuthError); ok && authErr.Type == auth.ErrInvalidCredentials {
 			return nil, status.Errorf(codes.InvalidArgument, "current PIN code is incorrect")
 		}
-		return nil, status.Errorf(codes.Internal, "failed to change PIN code: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to change PIN code", err)
 	}
 
 	return &emptypb.Empty{}, nil
@@ -230,7 +230,7 @@ func (s *Server) ResetPinCode(ctx context.Context, req *immichv1.PinCodeResetReq
 		if authErr, ok := err.(*auth.AuthError); ok && authErr.Type == auth.ErrInvalidCredentials {
 			return nil, status.Errorf(codes.InvalidArgument, "password is incorrect")
 		}
-		return nil, status.Errorf(codes.Internal, "failed to reset PIN code: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to reset PIN code", err)
 	}
 
 	return &emptypb.Empty{}, nil
@@ -253,7 +253,7 @@ func (s *Server) UnlockSession(ctx context.Context, req *immichv1.SessionUnlockR
 		if authErr, ok := err.(*auth.AuthError); ok && authErr.Type == auth.ErrInvalidCredentials {
 			return nil, status.Errorf(codes.InvalidArgument, "PIN code is incorrect")
 		}
-		return nil, status.Errorf(codes.Internal, "failed to unlock session: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to unlock session", err)
 	}
 
 	return &emptypb.Empty{}, nil
@@ -273,7 +273,7 @@ func (s *Server) LockSession(ctx context.Context, req *emptypb.Empty) (*emptypb.
 
 	err = s.authService.LockSession(ctx, sessionID)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to lock session: %v", err)
+		return nil, SanitizedInternal(ctx, "failed to lock session", err)
 	}
 
 	return &emptypb.Empty{}, nil
