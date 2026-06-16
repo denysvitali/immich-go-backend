@@ -345,7 +345,7 @@ jobs:
           sleep 1
         done
 
-        docker exec e2e-postgres psql -U immich -d immich -v ON_ERROR_STOP=1 <<'SQL'
+        docker exec -i e2e-postgres psql -U immich -d immich -v ON_ERROR_STOP=1 <<'SQL'
         DROP EXTENSION IF EXISTS "earthdistance" CASCADE;
         DROP EXTENSION IF EXISTS "cube" CASCADE;
         DROP EXTENSION IF EXISTS "pg_trgm" CASCADE;
