@@ -13,6 +13,7 @@ const (
 	ErrTokenGeneration    AuthErrorType = "token_generation"
 	ErrTokenStorage       AuthErrorType = "token_storage"
 	ErrTokenDeletion      AuthErrorType = "token_deletion"
+	ErrRateLimited        AuthErrorType = "rate_limited"
 
 	// User errors
 	ErrUserNotFound AuthErrorType = "user_not_found"

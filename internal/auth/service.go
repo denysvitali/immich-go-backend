@@ -20,15 +20,17 @@ var tracer = otel.Tracer("immich-go-backend/auth")
 
 // Service provides authentication functionality
 type Service struct {
-	config  config.AuthConfig
-	queries *sqlc.Queries
+	config       config.AuthConfig
+	queries      *sqlc.Queries
+	loginLimiter *loginRateLimiter
 }
 
 // NewService creates a new authentication service
 func NewService(config config.AuthConfig, queries *sqlc.Queries) *Service {
 	return &Service{
-		config:  config,
-		queries: queries,
+		config:       config,
+		queries:      queries,
+		loginLimiter: newLoginRateLimiter(config.LoginRateLimit, config.LoginRateWindow),
 	}
 }
 
@@ -89,9 +91,18 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (*AuthResponse, e
 		trace.WithAttributes(attribute.String("auth.email", req.Email)))
 	defer span.End()
 
+	loginKey := loginRateLimitKey(req.Email)
+	if !s.allowLoginAttempt(loginKey) {
+		return nil, &AuthError{
+			Type:    ErrRateLimited,
+			Message: "Too many failed login attempts",
+		}
+	}
+
 	// Validate password complexity
 	if err := s.validatePassword(req.Password); err != nil {
 		span.RecordError(err)
+		s.recordFailedLogin(loginKey)
 		return nil, &AuthError{
 			Type:    ErrInvalidCredentials,
 			Message: "Invalid password format",
@@ -103,6 +114,7 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (*AuthResponse, e
 	user, err := s.queries.GetUserByEmail(ctx, req.Email)
 	if err != nil {
 		span.RecordError(err)
+		s.recordFailedLogin(loginKey)
 		return nil, &AuthError{
 			Type:    ErrInvalidCredentials,
 			Message: "Invalid email or password",
@@ -112,6 +124,7 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (*AuthResponse, e
 
 	// Check if user is deleted
 	if user.DeletedAt.Valid {
+		s.recordFailedLogin(loginKey)
 		return nil, &AuthError{
 			Type:    ErrUserDeleted,
 			Message: "User account has been deleted",
@@ -121,12 +134,15 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (*AuthResponse, e
 	// Verify password
 	if passwordErr := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); passwordErr != nil {
 		span.RecordError(passwordErr)
+		s.recordFailedLogin(loginKey)
 		return nil, &AuthError{
 			Type:    ErrInvalidCredentials,
 			Message: "Invalid email or password",
 			Err:     passwordErr,
 		}
 	}
+
+	s.resetLoginAttempts(loginKey)
 
 	// Generate tokens
 	accessToken, refreshToken, expiresAt, err := s.generateTokens(uuidToString(user.ID), user.Email, user.IsAdmin)

@@ -23,6 +23,9 @@ func (s *Server) Login(ctx context.Context, req *immichv1.LoginRequest) (*immich
 
 	loginResponse, err := s.authService.Login(ctx, *loginRequest)
 	if err != nil {
+		if authErr, ok := err.(*auth.AuthError); ok && authErr.Type == auth.ErrRateLimited {
+			return nil, status.Error(codes.ResourceExhausted, "too many failed login attempts")
+		}
 		return nil, status.Errorf(codes.Unauthenticated, "login failed: %v", err)
 	}
 
