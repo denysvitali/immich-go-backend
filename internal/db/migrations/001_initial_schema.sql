@@ -525,7 +525,7 @@ CREATE TABLE public.exif (
 
 CREATE TABLE public.face_search (
     "faceId" uuid NOT NULL,
-    embedding public.vector(512) NOT NULL
+    embedding vectors.vector(512) NOT NULL
 );
 
 
@@ -822,7 +822,7 @@ CREATE TABLE public.shared_links (
 
 CREATE TABLE public.smart_search (
     "assetId" uuid NOT NULL,
-    embedding public.vector(512) NOT NULL
+    embedding vectors.vector(512) NOT NULL
 );
 
 
@@ -1920,7 +1920,7 @@ CREATE UNIQUE INDEX "UQ_assets_owner_library_checksum" ON public.assets USING bt
 -- Name: clip_index; Type: INDEX; Schema: public; Owner: immich
 --
 
-CREATE INDEX clip_index ON public.smart_search USING vchordrq (embedding public.vector_cosine_ops) WITH (options='
+CREATE INDEX clip_index ON public.smart_search USING vchordrq (embedding vectors.vector_cosine_ops) WITH (options='
         residual_quantization = false
         [build.internal]
         lists = [1]
@@ -1941,7 +1941,7 @@ CREATE INDEX exif_city ON public.exif USING btree (city);
 -- Name: face_index; Type: INDEX; Schema: public; Owner: immich
 --
 
-CREATE INDEX face_index ON public.face_search USING vchordrq (embedding public.vector_cosine_ops) WITH (options='
+CREATE INDEX face_index ON public.face_search USING vchordrq (embedding vectors.vector_cosine_ops) WITH (options='
         residual_quantization = false
         [build.internal]
         lists = [1]
