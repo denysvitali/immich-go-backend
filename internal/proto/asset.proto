@@ -132,6 +132,13 @@ service AssetService {
       get: "/api/assets/{asset_id}/video/playback"
     };
   }
+
+  // Get recently added assets
+  rpc GetRecentlyAddedAssets(GetRecentlyAddedAssetsRequest) returns (GetRecentlyAddedAssetsResponse) {
+    option (google.api.http) = {
+      get: "/api/assets/recently-added"
+    };
+  }
 }
 
 // Asset message
@@ -359,4 +366,14 @@ message PlayAssetVideoRequest {
 message PlayAssetVideoResponse {
   bytes data = 1;
   string content_type = 2;
+}
+
+// Get recently added assets request
+message GetRecentlyAddedAssetsRequest {
+  uint32 limit = 1; // 0 -> use server default of 12
+}
+
+// Get recently added assets response
+message GetRecentlyAddedAssetsResponse {
+  repeated Asset assets = 1;
 }

@@ -4462,6 +4462,67 @@ func (q *Queries) GetRecentAssets(ctx context.Context, arg GetRecentAssetsParams
 	return items, nil
 }
 
+const getRecentlyAddedAssets = `-- name: GetRecentlyAddedAssets :many
+SELECT id, "deviceAssetId", "ownerId", "deviceId", type, "originalPath", "fileCreatedAt", "fileModifiedAt", "isFavorite", duration, "encodedVideoPath", checksum, "livePhotoVideoId", "updatedAt", "createdAt", "originalFileName", "sidecarPath", thumbhash, "isOffline", "libraryId", "isExternal", "deletedAt", "localDateTime", "stackId", "duplicateId", status, "updateId", visibility FROM assets
+WHERE "ownerId" = $1 AND "deletedAt" IS NULL AND status = 'active'
+ORDER BY "fileCreatedAt" DESC
+LIMIT $2
+`
+
+type GetRecentlyAddedAssetsParams struct {
+	OwnerId pgtype.UUID
+	Limit   int32
+}
+
+func (q *Queries) GetRecentlyAddedAssets(ctx context.Context, arg GetRecentlyAddedAssetsParams) ([]Asset, error) {
+	rows, err := q.db.Query(ctx, getRecentlyAddedAssets, arg.OwnerId, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Asset
+	for rows.Next() {
+		var i Asset
+		if err := rows.Scan(
+			&i.ID,
+			&i.DeviceAssetId,
+			&i.OwnerId,
+			&i.DeviceId,
+			&i.Type,
+			&i.OriginalPath,
+			&i.FileCreatedAt,
+			&i.FileModifiedAt,
+			&i.IsFavorite,
+			&i.Duration,
+			&i.EncodedVideoPath,
+			&i.Checksum,
+			&i.LivePhotoVideoId,
+			&i.UpdatedAt,
+			&i.CreatedAt,
+			&i.OriginalFileName,
+			&i.SidecarPath,
+			&i.Thumbhash,
+			&i.IsOffline,
+			&i.LibraryId,
+			&i.IsExternal,
+			&i.DeletedAt,
+			&i.LocalDateTime,
+			&i.StackId,
+			&i.DuplicateId,
+			&i.Status,
+			&i.UpdateId,
+			&i.Visibility,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getRefreshToken = `-- name: GetRefreshToken :one
 SELECT id, token, "createdAt", "updatedAt", "userId", "deviceType", "deviceOS", "updateId", "pinExpiresAt", "expiresAt", "parentId" FROM sessions
 WHERE token = $1 AND ("expiresAt" IS NULL OR "expiresAt" > now())

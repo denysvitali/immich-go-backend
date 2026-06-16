@@ -181,6 +181,12 @@ WHERE "ownerId" = $1 AND "deletedAt" IS NULL AND status = 'active'
 ORDER BY RANDOM()
 LIMIT $2;
 
+-- name: GetRecentlyAddedAssets :many
+SELECT * FROM assets
+WHERE "ownerId" = $1 AND "deletedAt" IS NULL AND status = 'active'
+ORDER BY "fileCreatedAt" DESC
+LIMIT $2;
+
 -- name: UpdateAssetStatus :one
 UPDATE assets
 SET status = $2,

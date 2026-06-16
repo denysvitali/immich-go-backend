@@ -470,6 +470,46 @@ func (s *Server) GetRandom(ctx context.Context, request *immichv1.GetRandomReque
 	}, nil
 }
 
+func (s *Server) GetRecentlyAddedAssets(ctx context.Context, request *immichv1.GetRecentlyAddedAssetsRequest) (*immichv1.GetRecentlyAddedAssetsResponse, error) {
+	// Get user ID from context/auth
+	claims, ok := auth.GetClaimsFromStdContext(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	}
+
+	uid, err := uuid.Parse(claims.UserID)
+	if err != nil {
+		return nil, SanitizedInternal(ctx, "invalid user ID", err)
+	}
+	userID := pgtype.UUID{Bytes: uid, Valid: true}
+
+	// Default to 12 when limit is 0, cap at 100 to prevent abuse
+	limit := uint32(request.GetLimit())
+	if limit == 0 {
+		limit = 12
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	assets, err := s.db.GetRecentlyAddedAssets(ctx, sqlc.GetRecentlyAddedAssetsParams{
+		OwnerId: userID,
+		Limit:   int32(limit),
+	})
+	if err != nil {
+		return nil, SanitizedInternal(ctx, "failed to get recently added assets", err)
+	}
+
+	protoAssets := make([]*immichv1.Asset, len(assets))
+	for i, asset := range assets {
+		protoAssets[i] = s.convertAssetToProto(asset)
+	}
+
+	return &immichv1.GetRecentlyAddedAssetsResponse{
+		Assets: protoAssets,
+	}, nil
+}
+
 func (s *Server) RunAssetJobs(ctx context.Context, request *immichv1.RunAssetJobsRequest) (*emptypb.Empty, error) {
 	// Asset job processing would be implemented here
 	// For now, just return success
