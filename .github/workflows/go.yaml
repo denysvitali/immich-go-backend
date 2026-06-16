@@ -346,12 +346,17 @@ jobs:
         done
 
         docker exec e2e-postgres psql -U immich -d immich -v ON_ERROR_STOP=1 <<'SQL'
-        CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA public;
-        CREATE EXTENSION IF NOT EXISTS "vectors" WITH SCHEMA public;
-        CREATE EXTENSION IF NOT EXISTS "cube" WITH SCHEMA public;
-        CREATE EXTENSION IF NOT EXISTS "earthdistance" WITH SCHEMA public;
-        CREATE EXTENSION IF NOT EXISTS "pg_trgm" WITH SCHEMA public;
+        DROP EXTENSION IF EXISTS "earthdistance" CASCADE;
+        DROP EXTENSION IF EXISTS "cube" CASCADE;
+        DROP EXTENSION IF EXISTS "pg_trgm" CASCADE;
+        DROP EXTENSION IF EXISTS "uuid-ossp" CASCADE;
+        DROP EXTENSION IF EXISTS "vectors" CASCADE;
         DROP EXTENSION IF EXISTS "unaccent" CASCADE;
+        CREATE EXTENSION "uuid-ossp" WITH SCHEMA public;
+        CREATE EXTENSION "vectors" WITH SCHEMA public;
+        CREATE EXTENSION "cube" WITH SCHEMA public;
+        CREATE EXTENSION "earthdistance" WITH SCHEMA public;
+        CREATE EXTENSION "pg_trgm" WITH SCHEMA public;
         CREATE EXTENSION "unaccent" WITH SCHEMA public;
         DO $$
         BEGIN
