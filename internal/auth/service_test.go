@@ -6,6 +6,7 @@ import (
 
 	"github.com/denysvitali/immich-go-backend/internal/config"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -197,10 +198,14 @@ func TestGenerateUserID(t *testing.T) {
 	id1, err := service.generateUserID()
 	require.NoError(t, err)
 	assert.NotEmpty(t, id1)
+	_, err = uuid.Parse(id1)
+	require.NoError(t, err)
 
 	id2, err := service.generateUserID()
 	require.NoError(t, err)
 	assert.NotEmpty(t, id2)
+	_, err = uuid.Parse(id2)
+	require.NoError(t, err)
 
 	// IDs should be unique
 	assert.NotEqual(t, id1, id2)

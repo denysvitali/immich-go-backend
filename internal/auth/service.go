@@ -2,14 +2,13 @@ package auth
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/base64"
 	"fmt"
 	"time"
 
 	"github.com/denysvitali/immich-go-backend/internal/config"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -647,11 +646,7 @@ func (s *Service) storeRefreshToken(ctx context.Context, userID, token string) e
 
 // generateUserID generates a unique user ID
 func (s *Service) generateUserID() (string, error) {
-	bytes := make([]byte, 16)
-	if _, err := rand.Read(bytes); err != nil {
-		return "", err
-	}
-	return base64.URLEncoding.EncodeToString(bytes), nil
+	return uuid.NewString(), nil
 }
 
 // HasPinCode checks if the user has a PIN code set
