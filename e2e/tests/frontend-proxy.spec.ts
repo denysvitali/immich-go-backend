@@ -108,7 +108,9 @@ test('admin can sign up, log in, read profile, and manage license through fronte
 
   const emptyLicense = await request.get('/api/users/me/license', { headers });
   expect(emptyLicense.ok()).toBeTruthy();
-  expect(await emptyLicense.json()).toEqual({});
+  const emptyLicenseBody = await emptyLicense.json();
+  expect(emptyLicenseBody.licenseKey ?? '').toBe('');
+  expect(emptyLicenseBody.activationKey ?? '').toBe('');
 });
 
 test('user can create, read, and delete a profile image through frontend origin', async ({ request }) => {

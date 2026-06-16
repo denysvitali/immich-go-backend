@@ -453,7 +453,7 @@ func (s *Server) HTTPHandler() http.Handler {
 				EmitDefaultValues: true,
 			},
 		}),
-		runtime.WithMiddlewares(loggingMiddleware),
+		runtime.WithMiddlewares(loggingMiddleware, s.authContextMiddleware),
 		runtime.WithForwardResponseOption(httpResponseModifier),
 	)
 
@@ -620,6 +620,25 @@ func loggingMiddleware(handlerFunc runtime.HandlerFunc) runtime.HandlerFunc {
 			"query":  r.URL.RawQuery,
 		}).Info("Handling request")
 		handlerFunc(w, r, pathParams)
+	}
+}
+
+func (s *Server) authContextMiddleware(handlerFunc runtime.HandlerFunc) runtime.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request, pathParams map[string]string) {
+		authHeader := r.Header.Get("Authorization")
+		if !strings.HasPrefix(authHeader, "Bearer ") {
+			handlerFunc(w, r, pathParams)
+			return
+		}
+
+		claims, err := s.authService.ValidateToken(strings.TrimPrefix(authHeader, "Bearer "))
+		if err != nil {
+			handlerFunc(w, r, pathParams)
+			return
+		}
+
+		ctx := context.WithValue(r.Context(), auth.ClaimsContextKey, claims)
+		handlerFunc(w, r.WithContext(ctx), pathParams)
 	}
 }
 

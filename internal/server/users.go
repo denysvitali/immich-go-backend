@@ -451,6 +451,10 @@ func (s *Server) convertUserToAdminProto(user *users.UserInfo) *immichv1.UserAdm
 		response.ProfileImagePath = *user.ProfileImagePath
 	}
 
+	if user.ProfileChangedAt != nil {
+		response.ProfileChangedAt = timestamppb.New(*user.ProfileChangedAt)
+	}
+
 	if user.QuotaSizeInBytes != nil {
 		response.QuotaSizeInBytes = user.QuotaSizeInBytes
 	}

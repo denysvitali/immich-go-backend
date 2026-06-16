@@ -8,7 +8,7 @@ export default defineConfig({
     timeout: 10_000,
   },
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 1 : 0,
+  retries: 0,
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',
   use: {
     baseURL: process.env.IMMICH_WEB_URL ?? 'http://127.0.0.1:3000',
