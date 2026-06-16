@@ -95,6 +95,9 @@ func ParseGatewayDir(dir string) ([]GatewayRoute, error) {
 		if err != nil {
 			return nil, fmt.Errorf("open %q: %w", file, err)
 		}
+		// Per-file warnings are dropped here: ParseGatewayDir's contract
+		// is routes + error only. parseGatewayFile still returns them
+		// for callers that want the detail (e.g. tests).
 		routes, _, err := parseGatewayFile(f, file)
 		_ = f.Close()
 		if err != nil {
