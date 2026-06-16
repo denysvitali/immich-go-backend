@@ -353,6 +353,8 @@ jobs:
         CREATE EXTENSION IF NOT EXISTS "pg_trgm" WITH SCHEMA public;
         DROP EXTENSION IF EXISTS "unaccent" CASCADE;
         CREATE EXTENSION "unaccent" WITH SCHEMA public;
+        CREATE TEXT SEARCH DICTIONARY IF NOT EXISTS public.unaccent (TEMPLATE = public.unaccent, RULES = 'unaccent');
+        SELECT public.unaccent('public.unaccent'::regdictionary, 'Hotel');
         SQL
 
         for i in {1..30}; do
