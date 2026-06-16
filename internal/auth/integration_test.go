@@ -53,6 +53,40 @@ func TestIntegration_Register(t *testing.T) {
 	assert.Equal(t, "New User", user.Name)
 }
 
+func TestIntegration_AdminSignUpFirstUser(t *testing.T) {
+	testdb.SkipIfNoDocker(t)
+
+	tdb := testdb.SetupTestDB(t)
+	ctx := context.Background()
+
+	cfg := config.AuthConfig{
+		JWTSecret:           "test-secret-key-for-testing-only-needs-32-chars",
+		JWTExpiry:           time.Hour,
+		RegistrationEnabled: true,
+		PasswordMinLength:   8,
+	}
+
+	service := NewService(cfg, tdb.Queries)
+
+	first, err := service.AdminSignUp(ctx, RegisterRequest{
+		Email:    "admin-signup@test.com",
+		Password: "SecurePass123!",
+		Name:     "Admin User",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, first)
+	assert.True(t, first.User.IsAdmin)
+
+	second, err := service.AdminSignUp(ctx, RegisterRequest{
+		Email:    "second-signup@test.com",
+		Password: "SecurePass123!",
+		Name:     "Second User",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, second)
+	assert.False(t, second.User.IsAdmin)
+}
+
 func TestIntegration_RegisterDuplicate(t *testing.T) {
 	testdb.SkipIfNoDocker(t)
 

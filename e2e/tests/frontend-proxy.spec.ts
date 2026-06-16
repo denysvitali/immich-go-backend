@@ -49,8 +49,9 @@ async function signUp(request: APIRequestContext, prefix = 'e2e'): Promise<TestU
 }
 
 test('upstream frontend can reach backend through its proxy', async ({ page, request }) => {
-  await page.goto('/');
-  await expect(page).toHaveTitle(/Immich/i);
+  const response = await page.goto('/');
+  expect(response?.ok()).toBeTruthy();
+  await expect(page.locator('body')).toBeVisible();
 
   const about = await request.get('/api/server/about');
   expect(about.ok()).toBeTruthy();

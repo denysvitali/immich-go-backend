@@ -89,8 +89,8 @@ func (s *Server) AdminSignUp(ctx context.Context, req *immichv1.AdminSignUpReque
 		Name:     req.Name,
 	}
 
-	// Register the user (they'll be admin if this is the first user)
-	response, err := s.authService.Register(ctx, registerRequest)
+	// Register the first setup user as admin.
+	response, err := s.authService.AdminSignUp(ctx, registerRequest)
 	if err != nil {
 		return nil, SanitizedInternal(ctx, "admin registration failed", err)
 	}

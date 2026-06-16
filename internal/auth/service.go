@@ -9,6 +9,7 @@ import (
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -201,6 +202,24 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (*AuthResponse, e
 
 // Register creates a new user account
 func (s *Service) Register(ctx context.Context, req RegisterRequest) (*AuthResponse, error) {
+	return s.register(ctx, req, false)
+}
+
+// AdminSignUp creates the initial administrator account during setup.
+func (s *Service) AdminSignUp(ctx context.Context, req RegisterRequest) (*AuthResponse, error) {
+	userCount, err := s.queries.CountUsers(ctx, pgtype.Bool{Valid: false})
+	if err != nil {
+		return nil, &AuthError{
+			Type:    ErrUserCreation,
+			Message: "Failed to count existing users",
+			Err:     err,
+		}
+	}
+
+	return s.register(ctx, req, userCount == 0)
+}
+
+func (s *Service) register(ctx context.Context, req RegisterRequest, isAdmin bool) (*AuthResponse, error) {
 	ctx, span := tracer.Start(ctx, "auth.Register",
 		trace.WithAttributes(attribute.String("auth.email", req.Email)))
 	defer span.End()
@@ -270,7 +289,7 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest) (*AuthRespo
 		Email:       req.Email,
 		Name:        req.Name,
 		Password:    string(hashedPassword),
-		IsAdmin:     false, // New users are not admin by default
+		IsAdmin:     isAdmin,
 		IsOnboarded: false, // New users have not completed onboarding
 	}
 

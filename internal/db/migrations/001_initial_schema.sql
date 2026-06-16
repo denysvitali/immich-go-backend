@@ -906,7 +906,8 @@ CREATE TABLE public.users (
     "profileChangedAt" timestamp with time zone DEFAULT now() NOT NULL,
     "updateId" uuid DEFAULT public.immich_uuid_v7() NOT NULL,
     "avatarColor" character varying,
-    "pinCode" character varying
+    "pinCode" character varying,
+    "isOnboarded" boolean DEFAULT false NOT NULL
 );
 
 
