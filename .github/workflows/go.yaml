@@ -335,7 +335,7 @@ jobs:
           -e POSTGRES_USER=immich \
           -e POSTGRES_PASSWORD=immich \
           -p 5432:5432 \
-          docker.io/tensorchord/pgvecto-rs:pg17-v0.4.0
+          docker.io/tensorchord/vchord-suite:pg17-latest
         docker run -d --name e2e-redis -p 6379:6379 redis:7-alpine
 
         for i in {1..60}; do
@@ -350,11 +350,12 @@ jobs:
         DROP EXTENSION IF EXISTS "cube" CASCADE;
         DROP EXTENSION IF EXISTS "pg_trgm" CASCADE;
         DROP EXTENSION IF EXISTS "uuid-ossp" CASCADE;
-        DROP EXTENSION IF EXISTS "vectors" CASCADE;
+        DROP EXTENSION IF EXISTS "vchord" CASCADE;
+        DROP EXTENSION IF EXISTS "vector" CASCADE;
         DROP EXTENSION IF EXISTS "unaccent" CASCADE;
         CREATE EXTENSION "uuid-ossp" WITH SCHEMA public;
-        CREATE SCHEMA IF NOT EXISTS vectors;
-        CREATE EXTENSION "vectors" WITH SCHEMA vectors;
+        CREATE EXTENSION "vector" WITH SCHEMA public;
+        CREATE EXTENSION "vchord" CASCADE;
         CREATE EXTENSION "cube" WITH SCHEMA public;
         CREATE EXTENSION "earthdistance" WITH SCHEMA public;
         CREATE EXTENSION "pg_trgm" WITH SCHEMA public;

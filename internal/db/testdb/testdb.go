@@ -59,7 +59,7 @@ func SetupTestDB(t *testing.T) *TestDB {
 
 	// Create PostgreSQL container with required extensions
 	pgContainer, err := postgres.Run(ctx,
-		"docker.io/tensorchord/pgvecto-rs:pg17-v0.4.0",
+		"docker.io/tensorchord/vchord-suite:pg17-latest",
 		postgres.WithDatabase("immich_test"),
 		postgres.WithUsername("test"),
 		postgres.WithPassword("test"),
@@ -99,7 +99,8 @@ func SetupTestDB(t *testing.T) *TestDB {
 	// Create required extensions
 	extensions := []string{
 		`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`,
-		`CREATE EXTENSION IF NOT EXISTS "vectors"`,
+		`CREATE EXTENSION IF NOT EXISTS "vector"`,
+		`CREATE EXTENSION IF NOT EXISTS "vchord" CASCADE`,
 		`CREATE EXTENSION IF NOT EXISTS "cube"`,
 		`CREATE EXTENSION IF NOT EXISTS "earthdistance"`,
 		`CREATE EXTENSION IF NOT EXISTS "pg_trgm"`,
@@ -163,7 +164,7 @@ func SetupSharedTestDB() (*TestDB, error) {
 		schema := string(schemaBytes)
 
 		pgContainer, err := postgres.Run(ctx,
-			"docker.io/tensorchord/pgvecto-rs:pg17-v0.4.0",
+			"docker.io/tensorchord/vchord-suite:pg17-latest",
 			postgres.WithDatabase("immich_test"),
 			postgres.WithUsername("test"),
 			postgres.WithPassword("test"),
@@ -203,7 +204,8 @@ func SetupSharedTestDB() (*TestDB, error) {
 		// Create required extensions
 		extensions := []string{
 			`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`,
-			`CREATE EXTENSION IF NOT EXISTS "vectors"`,
+			`CREATE EXTENSION IF NOT EXISTS "vector"`,
+			`CREATE EXTENSION IF NOT EXISTS "vchord" CASCADE`,
 			`CREATE EXTENSION IF NOT EXISTS "cube"`,
 			`CREATE EXTENSION IF NOT EXISTS "earthdistance"`,
 			`CREATE EXTENSION IF NOT EXISTS "pg_trgm"`,
