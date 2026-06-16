@@ -350,10 +350,8 @@ jobs:
         DROP EXTENSION IF EXISTS "cube" CASCADE;
         DROP EXTENSION IF EXISTS "pg_trgm" CASCADE;
         DROP EXTENSION IF EXISTS "uuid-ossp" CASCADE;
-        DROP EXTENSION IF EXISTS "vectors" CASCADE;
         DROP EXTENSION IF EXISTS "unaccent" CASCADE;
         CREATE EXTENSION "uuid-ossp" WITH SCHEMA public;
-        CREATE EXTENSION "vectors" WITH SCHEMA public;
         CREATE EXTENSION "cube" WITH SCHEMA public;
         CREATE EXTENSION "earthdistance" WITH SCHEMA public;
         CREATE EXTENSION "pg_trgm" WITH SCHEMA public;
