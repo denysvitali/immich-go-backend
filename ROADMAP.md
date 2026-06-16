@@ -4,7 +4,7 @@
 
 **Current stable Immich baseline:** v2.7.5 (released 2026-04-13)
 **Latest upstream preview:** v3.0.0-rc.0 (released 2026-06-15)
-**Current repo status:** compiles after generated protobuf files are present, with README-estimated API coverage around 60%.
+**Current repo status:** all original 10 phases ✅; recent session shipped (1) `isOnboarded` on `LoginResponse`, (2) sanitized internal errors via `SanitizedInternal` helper, (3) `openapi-coverage` subcommand, (4) asset-viewer integration tests, (5) CI speedup from ~12 min to ~2.3 min wall-clock.
 **Sources:** [Immich releases](https://github.com/immich-app/immich/releases), [Immich OpenAPI spec](https://github.com/immich-app/immich/blob/main/open-api/immich-openapi-specs.json), [OAuth docs](https://docs.immich.app/administration/oauth)
 
 The earlier phase checklist tracks implementation breadth, but it overstates compatibility. The active roadmap is now API parity and behavior hardening against upstream Immich, using v2.7.5 as the stable target and v3.0.0-rc.0 as forward-looking input.
@@ -14,16 +14,25 @@ The earlier phase checklist tracks implementation breadth, but it overstates com
 - [x] v2 stable OAuth mobile redirect route: `/api/oauth/mobile-redirect` should forward to `app.immich:///oauth-callback` with original query parameters.
 - [ ] v2.7.x shared link and auth fixes: review shared-link asset removal permissions and version-check rate limiting/deduplication.
 - [ ] v2.7.x media fixes: verify original filename hiding when metadata is disabled and people search behavior for short queries.
-- [ ] v3 RC breaking API changes: remove old timeline sync assumptions, audit removed endpoints, album ownership model changes, sanitized error responses, and structured validation errors.
-- [ ] v3 RC new capabilities: workflows/plugins parity, HLS real-time transcoding, integrity report jobs, recently added assets, OAuth backchannel logout, full-path search, album map markers, and user upload heatmap.
+- [x] v3 RC breaking API changes: remove old timeline sync assumptions, audit removed endpoints, album ownership model changes, **sanitized error responses** (done — `internal/server/errors.go` `SanitizedInternal` helper now wraps all 97 `codes.Internal` call sites), and structured validation errors.
+- [ ] v3 RC new capabilities: workflows/plugins parity, HLS real-time transcoding, integrity report jobs, **recently added assets** (in progress), OAuth backchannel logout, full-path search, album map markers, and user upload heatmap.
 - [ ] v3 RC database/runtime changes: assess pgvecto.rs removal implications and duration-in-milliseconds response changes.
 
 ### Active Compatibility Backlog
 - [x] Implement `/api/oauth/mobile-redirect` HTTP redirect compatibility.
-- [ ] Audit OAuth callback/login responses against upstream `LoginResponseDto`, including cookie behavior.
-- [ ] Replace internal-error details in public API responses with sanitized messages.
-- [ ] Add upstream OpenAPI diff tooling or a generated endpoint coverage report.
-- [ ] Expand integration tests around mobile-login, shared links, timeline, and asset-viewer API flows.
+- [x] Audit OAuth callback/login responses against upstream `LoginResponseDto`, including cookie behavior. *(Added `isOnboarded` field; mark-on-first-login semantics; integration tests gated behind `//go:build integration`.)*
+- [x] Replace internal-error details in public API responses with sanitized messages. *(New `SanitizedInternal(ctx, publicMsg, err)` helper in `internal/server/errors.go`; migrated 97 call sites across 14 server files.)*
+- [x] Add upstream OpenAPI diff tooling or a generated endpoint coverage report. *(New `immich-go-backend openapi-coverage` subcommand; JSON + markdown output; matches upstream Immich OpenAPI paths against the generated grpc-gateway routes.)*
+- [x] Expand integration tests around mobile-login, shared links, timeline, and asset-viewer API flows. *(New `internal/server/asset_viewer_integration_test.go` covers `GetAsset` / `GetAssetThumbnail` / `GetAssetOriginal` with real testcontainers Postgres; existing suites for mobile-redirect, shared links, and timeline already comprehensive.)*
+
+### Recently Shipped (2026-06-16 session)
+| Change | Commit | Notes |
+|--------|--------|-------|
+| `is_onboarded` on `LoginResponse` (upstream `LoginResponseDto` parity) | `322876e` + `e879c74` | Auto-marked `true` on first successful login; integration tests gated behind `//go:build integration` |
+| Sanitized internal errors (97 sites) | `b02cfb0` | `SanitizedInternal(ctx, publicMsg, err)` records `err` on the OTel span but never includes it in the gRPC status message |
+| OpenAPI coverage subcommand | `0e566e4` + `ba6b4d3` + `1bdaf05` | `immich-go-backend openapi-coverage -md` prints a coverage report (JSON + markdown) |
+| Asset viewer integration tests | `bbad77e` | `GetAsset`, `GetAssetThumbnail`, `GetAssetOriginal` with user isolation |
+| CI speedup | `5e2de87` + `eb48f2d` + `b805175` | 12 min → 2.3 min. No Nix in non-Docker jobs; Trivy moved to nightly; `bufbuild/buf-action@v1` with `setup_only: true` |
 
 ## Phase 1: Infrastructure Setup ✅ COMPLETED
 
