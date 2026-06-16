@@ -76,7 +76,7 @@ func RegisterAuthServiceHandlerServer(ctx context.Context, mux *runtime.ServeMux
 	return nil
 }
 `
-	if err := os.WriteFile(filepath.Join(dir, "auth.pb.gw.go"), []byte(fixture), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "auth.pb.gw.go"), []byte(fixture), 0o600); err != nil {
 		t.Fatalf("write fixture: %v", err)
 	}
 
@@ -180,7 +180,7 @@ func TestReportShape(t *testing.T) {
 }
 `
 	specPath := filepath.Join(dir, "spec.json")
-	if err := os.WriteFile(specPath, []byte(spec), 0o644); err != nil {
+	if err := os.WriteFile(specPath, []byte(spec), 0o600); err != nil {
 		t.Fatalf("write spec: %v", err)
 	}
 

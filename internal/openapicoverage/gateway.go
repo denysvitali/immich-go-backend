@@ -89,20 +89,16 @@ func ParseGatewayDir(dir string) ([]GatewayRoute, error) {
 	// with the same HTTP verb and path template. We dedupe by RPC.
 	type key = string
 	seen := make(map[key]GatewayRoute)
-	warnings := []string{}
 
 	for _, file := range matches {
 		f, err := os.Open(file)
 		if err != nil {
 			return nil, fmt.Errorf("open %q: %w", file, err)
 		}
-		routes, warns, err := parseGatewayFile(f, file)
+		routes, _, err := parseGatewayFile(f, file)
 		_ = f.Close()
 		if err != nil {
 			return nil, err
-		}
-		for _, w := range warns {
-			warnings = append(warnings, fmt.Sprintf("%s: %s", filepath.Base(file), w))
 		}
 		for _, r := range routes {
 			k := r.RPC() + "|" + r.HTTPMethod
