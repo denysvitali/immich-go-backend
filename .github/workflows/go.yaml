@@ -499,6 +499,15 @@ jobs:
           e2e/playwright-report
           e2e/test-results
 
+    - name: Upload E2E videos
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: frontend-e2e-videos
+        path: e2e/test-results/**/*.webm
+        if-no-files-found: warn
+        archive: false
+
     - name: Stop E2E services
       if: always()
       run: |
