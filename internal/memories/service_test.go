@@ -234,6 +234,73 @@ func TestIntegration_GetMemories_UserIsolation(t *testing.T) {
 	assert.Len(t, memories2, 1)
 }
 
+// TestIntegration_GetMemories_PopulatesAssetIDs verifies that the
+// Memory.AssetIDs slice returned from service.GetMemories is populated
+// from the memories_assets_assets join table. Previously the field was
+// hard-coded to []string{}, which made the corresponding Memory.assets
+// proto field always empty.
+func TestIntegration_GetMemories_PopulatesAssetIDs(t *testing.T) {
+	testdb.SkipIfNoDocker(t)
+
+	tdb := testdb.SetupTestDB(t)
+	ctx := context.Background()
+
+	service := NewService(tdb.Queries)
+
+	userID := createTestUser(t, tdb, "assetids@test.com")
+	asset1ID := createTestAsset(t, tdb, userID, "a1")
+	asset2ID := createTestAsset(t, tdb, userID, "a2")
+	orphanAssetID := createTestAsset(t, tdb, userID, "orphan")
+
+	// Memory with two linked assets, plus an unrelated orphan asset.
+	linked, err := service.CreateMemory(ctx, &Memory{
+		UserID: userID.String(),
+		Title:  "With Assets",
+		Type:   "custom",
+	})
+	require.NoError(t, err)
+	require.NoError(t, service.AddAssetsToMemory(ctx, userID.String(), linked.ID, []string{
+		asset1ID.String(),
+		asset2ID.String(),
+	}))
+
+	// Memory with no linked assets.
+	empty, err := service.CreateMemory(ctx, &Memory{
+		UserID: userID.String(),
+		Title:  "Empty",
+		Type:   "custom",
+	})
+	require.NoError(t, err)
+
+	memories, err := service.GetMemories(ctx, userID.String())
+	require.NoError(t, err)
+	require.Len(t, memories, 2)
+
+	byID := make(map[string]*Memory, len(memories))
+	for _, m := range memories {
+		byID[m.ID] = m
+	}
+
+	// Linked memory: AssetIDs must contain exactly the two added assets
+	// and must NOT include the orphan.
+	linkedMem := byID[linked.ID]
+	require.NotNil(t, linkedMem)
+	assert.Len(t, linkedMem.AssetIDs, 2, "linked memory should have both asset IDs")
+	gotIDs := map[string]bool{}
+	for _, id := range linkedMem.AssetIDs {
+		gotIDs[id] = true
+	}
+	assert.True(t, gotIDs[asset1ID.String()])
+	assert.True(t, gotIDs[asset2ID.String()])
+	assert.False(t, gotIDs[orphanAssetID.String()], "orphan asset must not leak in")
+
+	// Memory without assets: AssetIDs must be the empty slice (not nil
+	// with len 0; this matters because the proto layer iterates it).
+	emptyMem := byID[empty.ID]
+	require.NotNil(t, emptyMem)
+	assert.Empty(t, emptyMem.AssetIDs)
+}
+
 func TestIntegration_UpdateMemory(t *testing.T) {
 	testdb.SkipIfNoDocker(t)
 

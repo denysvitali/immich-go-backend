@@ -546,6 +546,13 @@ WHERE "memoriesId" = $1 AND "assetsId" = ANY($2::uuid[]);
 SELECT "assetsId" FROM memories_assets_assets
 WHERE "memoriesId" = $1;
 
+-- name: GetAssetsByMemoryID :many
+SELECT a.* FROM assets a
+JOIN memories_assets_assets ma ON a.id = ma."assetsId"
+WHERE ma."memoriesId" = $1
+AND a."deletedAt" IS NULL
+ORDER BY a."fileCreatedAt" DESC;
+
 -- ============================================================================
 -- PEOPLE & FACES QUERIES
 -- ============================================================================
@@ -1080,6 +1087,10 @@ WHERE a."ownerId" = $1
 AND a."deletedAt" IS NULL
 AND e."fileSizeInByte" = $2
 ORDER BY a."fileCreatedAt" DESC;
+
+-- name: GetAssetsByIDs :many
+SELECT * FROM assets
+WHERE id = ANY($1::uuid[]) AND "deletedAt" IS NULL;
 
 -- name: GetRecentAssets :many
 SELECT * FROM assets

@@ -51,40 +51,64 @@ func (s *Service) GetMemories(ctx context.Context, userID string) ([]*Memory, er
 	// Convert to Memory structs
 	memories := make([]*Memory, 0, len(dbMemories))
 	for _, dbMem := range dbMemories {
-		// Parse JSON data to get type and other metadata
-		var data map[string]interface{}
-		if err := json.Unmarshal(dbMem.Data, &data); err != nil {
-			data = make(map[string]interface{})
+		memory, err := s.hydrateMemory(ctx, dbMem, userID)
+		if err != nil {
+			return nil, err
 		}
-
-		memoryType := dbMem.Type
-		if memoryType == "" {
-			memoryType = "on_this_day"
-		}
-
-		// Extract title from data or use default
-		title, _ := data["title"].(string)
-		if title == "" {
-			title = "Memory"
-		}
-
-		// Extract description
-		description, _ := data["description"].(string)
-
-		memories = append(memories, &Memory{
-			ID:          uuid.UUID(dbMem.ID.Bytes).String(),
-			UserID:      userID,
-			Title:       title,
-			Description: description,
-			Date:        dbMem.MemoryAt.Time,
-			Type:        memoryType,
-			AssetIDs:    []string{}, // Would need to query memory_assets table
-			CreatedAt:   dbMem.CreatedAt.Time,
-			UpdatedAt:   dbMem.UpdatedAt.Time,
-		})
+		memories = append(memories, memory)
 	}
 
 	return memories, nil
+}
+
+// hydrateMemory converts a sqlc.Memory row into the service Memory type,
+// populating AssetIDs from the memories_assets_assets join table.
+func (s *Service) hydrateMemory(ctx context.Context, dbMem sqlc.Memory, userID string) (*Memory, error) {
+	// Parse JSON data to get type and other metadata
+	var data map[string]interface{}
+	if err := json.Unmarshal(dbMem.Data, &data); err != nil {
+		data = make(map[string]interface{})
+	}
+
+	memoryType := dbMem.Type
+	if memoryType == "" {
+		memoryType = "on_this_day"
+	}
+
+	// Extract title from data or use default
+	title, _ := data["title"].(string)
+	if title == "" {
+		title = "Memory"
+	}
+
+	// Extract description
+	description, _ := data["description"].(string)
+
+	// Look up the asset IDs linked to this memory so callers can fetch
+	// the full asset rows. Failures here are non-fatal: a memory without
+	// linked assets is still valid.
+	memUUID := pgtype.UUID{Bytes: dbMem.ID.Bytes, Valid: true}
+	assetUUIDs, err := s.queries.GetMemoryAssets(ctx, memUUID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load memory assets: %w", err)
+	}
+
+	assetIDs := make([]string, 0, len(assetUUIDs))
+	for _, a := range assetUUIDs {
+		assetIDs = append(assetIDs, uuid.UUID(a.Bytes).String())
+	}
+
+	return &Memory{
+		ID:          uuid.UUID(dbMem.ID.Bytes).String(),
+		UserID:      userID,
+		Title:       title,
+		Description: description,
+		Date:        dbMem.MemoryAt.Time,
+		Type:        memoryType,
+		AssetIDs:    assetIDs,
+		CreatedAt:   dbMem.CreatedAt.Time,
+		UpdatedAt:   dbMem.UpdatedAt.Time,
+	}, nil
 }
 
 func (s *Service) GetMemory(ctx context.Context, userID string, memoryID string) (*Memory, error) {
