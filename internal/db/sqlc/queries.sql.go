@@ -3075,6 +3075,69 @@ func (q *Queries) GetAssetsByDeviceId(ctx context.Context, arg GetAssetsByDevice
 	return items, nil
 }
 
+const getAssetsByFileSizeAndUser = `-- name: GetAssetsByFileSizeAndUser :many
+SELECT a.id, a."deviceAssetId", a."ownerId", a."deviceId", a.type, a."originalPath", a."fileCreatedAt", a."fileModifiedAt", a."isFavorite", a.duration, a."encodedVideoPath", a.checksum, a."livePhotoVideoId", a."updatedAt", a."createdAt", a."originalFileName", a."sidecarPath", a.thumbhash, a."isOffline", a."libraryId", a."isExternal", a."deletedAt", a."localDateTime", a."stackId", a."duplicateId", a.status, a."updateId", a.visibility FROM assets a
+JOIN exif e ON a.id = e."assetId"
+WHERE a."ownerId" = $1
+AND a."deletedAt" IS NULL
+AND e."fileSizeInByte" = $2
+ORDER BY a."fileCreatedAt" DESC
+`
+
+type GetAssetsByFileSizeAndUserParams struct {
+	OwnerId        pgtype.UUID
+	FileSizeInByte pgtype.Int8
+}
+
+func (q *Queries) GetAssetsByFileSizeAndUser(ctx context.Context, arg GetAssetsByFileSizeAndUserParams) ([]Asset, error) {
+	rows, err := q.db.Query(ctx, getAssetsByFileSizeAndUser, arg.OwnerId, arg.FileSizeInByte)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Asset
+	for rows.Next() {
+		var i Asset
+		if err := rows.Scan(
+			&i.ID,
+			&i.DeviceAssetId,
+			&i.OwnerId,
+			&i.DeviceId,
+			&i.Type,
+			&i.OriginalPath,
+			&i.FileCreatedAt,
+			&i.FileModifiedAt,
+			&i.IsFavorite,
+			&i.Duration,
+			&i.EncodedVideoPath,
+			&i.Checksum,
+			&i.LivePhotoVideoId,
+			&i.UpdatedAt,
+			&i.CreatedAt,
+			&i.OriginalFileName,
+			&i.SidecarPath,
+			&i.Thumbhash,
+			&i.IsOffline,
+			&i.LibraryId,
+			&i.IsExternal,
+			&i.DeletedAt,
+			&i.LocalDateTime,
+			&i.StackId,
+			&i.DuplicateId,
+			&i.Status,
+			&i.UpdateId,
+			&i.Visibility,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getAssetsByLocation = `-- name: GetAssetsByLocation :many
 
 SELECT a.id, a."deviceAssetId", a."ownerId", a."deviceId", a.type, a."originalPath", a."fileCreatedAt", a."fileModifiedAt", a."isFavorite", a.duration, a."encodedVideoPath", a.checksum, a."livePhotoVideoId", a."updatedAt", a."createdAt", a."originalFileName", a."sidecarPath", a.thumbhash, a."isOffline", a."libraryId", a."isExternal", a."deletedAt", a."localDateTime", a."stackId", a."duplicateId", a.status, a."updateId", a.visibility FROM assets a

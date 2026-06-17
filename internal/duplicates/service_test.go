@@ -392,6 +392,87 @@ func TestIntegration_FindDuplicatesBySize_InvalidUserID(t *testing.T) {
 	assert.Contains(t, err.Error(), "invalid user ID")
 }
 
+// TestIntegration_FindDuplicatesBySize_RespectsUserOwnership verifies the
+// server-side WHERE "ownerId" = $1 clause. Two users with assets of the
+// same file size must each only see their own assets.
+func TestIntegration_FindDuplicatesBySize_RespectsUserOwnership(t *testing.T) {
+	testdb.SkipIfNoDocker(t)
+
+	tdb := testdb.SetupTestDB(t)
+	ctx := context.Background()
+
+	cfg := &config.Config{}
+	service, err := NewService(tdb.Queries, cfg)
+	require.NoError(t, err)
+
+	userA := createTestUser(t, tdb, "owner-a@test.com")
+	userB := createTestUser(t, tdb, "owner-b@test.com")
+	sharedSize := int64(2048)
+
+	// Each user has 2 assets at sharedSize plus 1 asset at a different size.
+	createTestAssetWithExif(t, tdb, userA, "a1", []byte("a-checksum-1"), sharedSize)
+	createTestAssetWithExif(t, tdb, userA, "a2", []byte("a-checksum-2"), sharedSize)
+	createTestAssetWithExif(t, tdb, userA, "a3", []byte("a-checksum-3"), sharedSize+1)
+	createTestAssetWithExif(t, tdb, userB, "b1", []byte("b-checksum-1"), sharedSize)
+	createTestAssetWithExif(t, tdb, userB, "b2", []byte("b-checksum-2"), sharedSize)
+
+	dupsA, err := service.FindDuplicatesBySize(ctx, userA.String(), sharedSize)
+	require.NoError(t, err)
+	assert.Len(t, dupsA, 2, "userA should see exactly 2 duplicates at sharedSize")
+
+	dupsB, err := service.FindDuplicatesBySize(ctx, userB.String(), sharedSize)
+	require.NoError(t, err)
+	assert.Len(t, dupsB, 2, "userB should see exactly 2 duplicates at sharedSize")
+
+	// Cross-leak check: userA's results must not include any of userB's
+	// device-asset ids, and vice versa.
+	userBDeviceIDs := map[string]struct{}{"b1": {}, "b2": {}}
+	for _, d := range dupsA {
+		_, leaked := userBDeviceIDs[d.DeviceAssetID]
+		assert.False(t, leaked, "userA's response leaked userB's asset %q", d.DeviceAssetID)
+	}
+	userADeviceIDs := map[string]struct{}{"a1": {}, "a2": {}}
+	for _, d := range dupsB {
+		_, leaked := userADeviceIDs[d.DeviceAssetID]
+		assert.False(t, leaked, "userB's response leaked userA's asset %q", d.DeviceAssetID)
+	}
+}
+
+// TestIntegration_FindDuplicatesBySize_ExcludesSoftDeleted verifies the
+// server-side AND a."deletedAt" IS NULL filter. A soft-deleted asset at
+// the target size must NOT appear in the results.
+func TestIntegration_FindDuplicatesBySize_ExcludesSoftDeleted(t *testing.T) {
+	testdb.SkipIfNoDocker(t)
+
+	tdb := testdb.SetupTestDB(t)
+	ctx := context.Background()
+
+	cfg := &config.Config{}
+	service, err := NewService(tdb.Queries, cfg)
+	require.NoError(t, err)
+
+	userID := createTestUser(t, tdb, "deleted-asset@test.com")
+	targetSize := int64(4096)
+
+	liveID := createTestAssetWithExif(t, tdb, userID, "live-asset", []byte("live-checksum"), targetSize)
+	createTestAssetWithExif(t, tdb, userID, "deleted-asset", []byte("deleted-checksum"), targetSize)
+
+	// Soft-delete the live asset (force=true sets deletedAt = now()).
+	// After this, both seeded assets should be excluded from the result:
+	// the "deleted-asset" because it was hard-deleted later, and the
+	// "live-asset" because the WHERE a."deletedAt" IS NULL filter drops it.
+	_ = tdb.Queries.DeleteAssets(ctx, sqlc.DeleteAssetsParams{
+		Column1: []pgtype.UUID{{Bytes: liveID, Valid: true}},
+		Column2: true, // true -> status='deleted', deletedAt=now()
+	})
+	require.NoError(t, err)
+
+	duplicates, err := service.FindDuplicatesBySize(ctx, userID.String(), targetSize)
+	require.NoError(t, err)
+	assert.Empty(t, duplicates, "soft-deleted assets must be excluded")
+}
+
+// mustUUID converts a [16]byte into a uuid.UUID; fails the test if it
 func TestIntegration_AssetTypeConversion(t *testing.T) {
 	testdb.SkipIfNoDocker(t)
 

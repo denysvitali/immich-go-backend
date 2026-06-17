@@ -227,34 +227,27 @@ func (s *Service) FindDuplicatesBySize(ctx context.Context, userID string, sizeB
 	}
 	userUUID := pgtype.UUID{Bytes: uid, Valid: true}
 
-	// Get assets by file size using GetAssetsByFileSizeAndUser query
-	// Since this query doesn't exist yet, we need to get all user assets and filter
-	assets, err := s.db.GetUserAssets(ctx, sqlc.GetUserAssetsParams{
-		OwnerId: userUUID,
-		Limit:   pgtype.Int4{Int32: 1000, Valid: true},
-		Offset:  pgtype.Int4{Int32: 0, Valid: true},
+	// Server-side filter by ownerId + file size in a single query so we
+	// don't cap at 1000 assets or N+1-fetch every exif row.
+	assets, err := s.db.GetAssetsByFileSizeAndUser(ctx, sqlc.GetAssetsByFileSizeAndUserParams{
+		OwnerId:        userUUID,
+		FileSizeInByte: pgtype.Int8{Int64: sizeBytes, Valid: true},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user assets: %w", err)
+		return nil, fmt.Errorf("failed to get assets by file size: %w", err)
 	}
 
-	// Filter by size and convert to DuplicateAsset
-	var duplicates []*DuplicateAsset
+	duplicates := make([]*DuplicateAsset, 0, len(assets))
 	for _, asset := range assets {
-		// Get exif data to check file size
-		exif, err := s.db.GetExifByAssetId(ctx, asset.ID)
-		if err == nil && exif.FileSizeInByte.Valid && exif.FileSizeInByte.Int64 == sizeBytes {
-			dupAsset := &DuplicateAsset{
-				AssetID:        uuid.UUID(asset.ID.Bytes).String(),
-				DeviceAssetID:  asset.DeviceAssetId,
-				DeviceID:       asset.DeviceId,
-				Checksum:       hex.EncodeToString(asset.Checksum),
-				Type:           s.convertAssetType(asset.Type),
-				OriginalPath:   asset.OriginalPath,
-				FileSizeInByte: sizeBytes,
-			}
-			duplicates = append(duplicates, dupAsset)
-		}
+		duplicates = append(duplicates, &DuplicateAsset{
+			AssetID:        uuid.UUID(asset.ID.Bytes).String(),
+			DeviceAssetID:  asset.DeviceAssetId,
+			DeviceID:       asset.DeviceId,
+			Checksum:       hex.EncodeToString(asset.Checksum),
+			Type:           s.convertAssetType(asset.Type),
+			OriginalPath:   asset.OriginalPath,
+			FileSizeInByte: sizeBytes,
+		})
 	}
 
 	return duplicates, nil

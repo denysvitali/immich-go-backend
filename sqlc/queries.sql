@@ -1073,6 +1073,14 @@ ORDER BY a1."localDateTime" DESC;
 SELECT * FROM assets
 WHERE checksum = $1 AND "deletedAt" IS NULL;
 
+-- name: GetAssetsByFileSizeAndUser :many
+SELECT a.* FROM assets a
+JOIN exif e ON a.id = e."assetId"
+WHERE a."ownerId" = $1
+AND a."deletedAt" IS NULL
+AND e."fileSizeInByte" = $2
+ORDER BY a."fileCreatedAt" DESC;
+
 -- name: GetRecentAssets :many
 SELECT * FROM assets
 WHERE "ownerId" = $1 
