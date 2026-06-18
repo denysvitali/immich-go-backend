@@ -15,6 +15,7 @@ import (
 
 	"github.com/denysvitali/immich-go-backend/internal/config"
 	"github.com/denysvitali/immich-go-backend/internal/db"
+	"github.com/denysvitali/immich-go-backend/internal/embedded"
 	"github.com/denysvitali/immich-go-backend/internal/server"
 )
 
@@ -87,16 +88,50 @@ func initConfig() {
 func runServer(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
+	// Optionally start an embedded Postgres before connecting. When enabled
+	// (IMMICH_EMBEDDED_DB=true) we replace cfg.Database.URL with the
+	// generated DSN and run migrations inside the same lifecycle so a
+	// single-binary demo deployment only needs the Immich web bundle as a
+	// second artefact.
+	var embeddedPG *embedded.Runtime
+	if embedded.IsEnabled() {
+		runtime, err := embedded.Start(embedded.DefaultConfig())
+		if err != nil {
+			return fmt.Errorf("embedded postgres: %w", err)
+		}
+		embeddedPG = runtime
+		cfg.Database.URL = runtime.DSN()
+	}
+
 	// Connect to database
 	database, err := db.New(ctx, cfg.Database.URL)
 	if err != nil {
+		if embeddedPG != nil {
+			_ = embeddedPG.Stop()
+		}
 		return fmt.Errorf("failed to connect to database: %w", err)
 	}
 	defer func() {
 		if err := database.Close(); err != nil {
 			logrus.WithError(err).Error("Failed to close database connection")
 		}
+		if embeddedPG != nil {
+			if err := embeddedPG.Stop(); err != nil {
+				logrus.WithError(err).Error("Failed to stop embedded postgres")
+			}
+		}
 	}()
+
+	// Auto-migrate when configured (default: true). Kept opt-out so
+	// production deployments using a managed DB can disable migrations
+	// during `serve` and rely on the explicit `migrate` subcommand or a
+	// separate release_command step.
+	if cfg.Database.AutoMigrate {
+		logrus.Info("running database migrations")
+		if err := db.RunMigrations(ctx, database.DB()); err != nil {
+			return fmt.Errorf("run migrations: %w", err)
+		}
+	}
 
 	// Create server
 	srv, err := server.NewServer(cfg, database)

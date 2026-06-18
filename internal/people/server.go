@@ -2,11 +2,15 @@ package people
 
 import (
 	"context"
+	"io"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/denysvitali/immich-go-backend/internal/auth"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
+	"github.com/denysvitali/immich-go-backend/internal/storage"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"google.golang.org/grpc/codes"
@@ -18,12 +22,30 @@ import (
 type Server struct {
 	immichv1.UnimplementedPeopleServiceServer
 	queries *sqlc.Queries
+	storage *storage.Service
 }
 
-// NewServer creates a new people server
-func NewServer(queries *sqlc.Queries) *Server {
+// NewServer creates a new people server. The storage service is required
+// for GetPersonThumbnail to read the actual thumbnail bytes from the
+// configured backend (local, S3, or rclone).
+func NewServer(queries *sqlc.Queries, storageSvc *storage.Service) *Server {
 	return &Server{
 		queries: queries,
+		storage: storageSvc,
+	}
+}
+
+// thumbnailContentType maps a thumbnail path's extension to the right
+// MIME type. Defaults to image/jpeg when the extension is unknown since
+// person thumbnails are produced by the face-detection pipeline as JPEGs.
+func thumbnailContentType(path string) string {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".png":
+		return "image/png"
+	case ".webp":
+		return "image/webp"
+	default:
+		return "image/jpeg"
 	}
 }
 
@@ -576,10 +598,24 @@ func (s *Server) GetPersonThumbnail(ctx context.Context, request *immichv1.GetPe
 		return nil, status.Error(codes.NotFound, "thumbnail not found")
 	}
 
-	// In a real implementation, we would read the thumbnail file and return it
-	// For now, return a response with the thumbnail path
+	// Storage backend is required to read the actual thumbnail bytes.
+	if s.storage == nil {
+		return nil, status.Error(codes.FailedPrecondition, "storage backend not configured")
+	}
+
+	reader, err := s.storage.Download(ctx, person.ThumbnailPath)
+	if err != nil {
+		return nil, status.Errorf(codes.NotFound, "thumbnail not found in storage: %v", err)
+	}
+	defer reader.Close()
+
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to read thumbnail: %v", err)
+	}
+
 	return &immichv1.GetPersonThumbnailResponse{
-		ThumbnailData: []byte(person.ThumbnailPath), // In real impl, this would be actual image data
-		ContentType:   "text/plain",                 // In real impl, this would be image/jpeg or image/png
+		ThumbnailData: data,
+		ContentType:   thumbnailContentType(person.ThumbnailPath),
 	}, nil
 }

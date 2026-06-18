@@ -1,10 +1,21 @@
 # Multi-stage Dockerfile for immich-go-backend
+# - web:      the official immich-server image provides the baked web bundle
 # - builder:  golang:1.24-alpine + buf CLI (GitHub release) to (re)generate protos
-# - runtime:  scratch with a static binary and CA certs
+# - runtime:  alpine (shell + CA certs + a non-root user) — needed because
+#              the demo mode downloads a Postgres binary at startup via
+#              github.com/fergusstrange/embedded-postgres
 #
 # The protos under internal/proto/gen/ are committed, so buf generate is a
 # no-op when those files exist. We keep the buf install as a safety net so
 # the image still builds from a clean checkout without the generated files.
+
+# ---------- Stage 0: web bundle ----------
+# The official Immich server image bundles the SvelteKit web build at
+# /build/www (see immich-app/immich v2.4.0 server/Dockerfile). We pull the
+# matching tag so the frontend API surface stays in sync with the backend's
+# gRPC services. Override with `--build-arg IMMICH_VERSION=v2.x.y`.
+ARG IMMICH_VERSION=v2.4.0
+FROM ghcr.io/immich-app/immich-server:${IMMICH_VERSION} AS web
 
 # ---------- Stage 1: build ----------
 FROM golang:1.24-alpine AS builder
@@ -61,19 +72,33 @@ RUN if [ -d "internal/proto/gen" ] && \
       -o /out/immich-go-backend \
       ./cmd
 
-# ---------- Stage 2: minimal user + certs ----------
-FROM alpine:3.20 AS runtime-base
-RUN adduser -D -s /bin/sh -u 1001 appuser
+# ---------- Stage 2: minimal runtime ----------
+# Alpine (not scratch) so the embedded-postgres library can exec the
+# downloaded Postgres binary, which expects a libc + reasonable /tmp.
+FROM alpine:3.20
 
-# ---------- Stage 3: final scratch image ----------
-FROM scratch
+# ca-certificates for outbound HTTPS (downloads the embedded Postgres
+# binary and any future asset). tini reaps zombies and forwards signals,
+# which matters because we `exec` into the backend binary.
+RUN apk add --no-cache ca-certificates tini curl \
+ && adduser -D -s /bin/sh -u 1001 appuser \
+ && mkdir -p /data /app/web \
+ && chown -R appuser:appuser /data /app
 
-COPY --from=runtime-base /etc/passwd       /etc/passwd
-COPY --from=runtime-base /etc/group        /etc/group
-COPY --from=runtime-base /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+# Web bundle copied from the official Immich server image.
+COPY --from=web --chown=appuser:appuser /build/www /app/web
 
-COPY --from=builder /out/immich-go-backend /immich-go-backend
+# Static binary.
+COPY --from=builder --chown=appuser:appuser /out/immich-go-backend /app/immich-go-backend
 
-USER 1001:1001
-EXPOSE 8080
-ENTRYPOINT ["/immich-go-backend"]
+USER appuser
+WORKDIR /app
+
+# Expose the REST + gRPC ports. Fly uses 3001 as the public-facing port
+# (configured in fly.toml `internal_port = 3001`); 3002 is internal-only.
+EXPOSE 3001 3002
+
+# Tini forwards SIGTERM/SIGINT to the child process so graceful shutdown
+# can stop the embedded Postgres cleanly.
+ENTRYPOINT ["/sbin/tini", "--", "/app/immich-go-backend"]
+CMD ["serve"]

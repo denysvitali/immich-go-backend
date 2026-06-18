@@ -37,6 +37,11 @@ type Config struct {
 
 	// Feature flags
 	Features FeatureConfig `yaml:"features"`
+
+	// WebUIDir is the directory containing a static frontend build (e.g.
+	// the Immich web dist). When empty, the API is exposed directly with
+	// no HTML UI. Set via IMMICH_WEBUI_DIR or `webui_dir` in YAML.
+	WebUIDir string `yaml:"webui_dir" env:"IMMICH_WEBUI_DIR" default:""`
 }
 
 // ServerConfig represents server configuration
@@ -416,9 +421,17 @@ func loadFromEnv(config *Config) error {
 	if val := os.Getenv("SERVER_ADDRESS"); val != "" {
 		config.Server.Address = val
 	}
+	if val := os.Getenv("SERVER_GRPC_ADDRESS"); val != "" {
+		config.Server.GRPCAddress = val
+	}
 
 	if val := os.Getenv("DATABASE_URL"); val != "" {
 		config.Database.URL = val
+	}
+	if val := os.Getenv("IMMICH_DATABASE_AUTO_MIGRATE"); val != "" {
+		if b, err := strconv.ParseBool(val); err == nil {
+			config.Database.AutoMigrate = b
+		}
 	}
 
 	if val := os.Getenv("AUTH_JWT_SECRET"); val != "" {
@@ -427,6 +440,16 @@ func loadFromEnv(config *Config) error {
 
 	if val := os.Getenv("STORAGE_BACKEND"); val != "" {
 		config.Storage.Backend = val
+	}
+	if val := os.Getenv("STORAGE_LOCAL_ROOT"); val != "" {
+		config.Storage.Local.RootPath = val
+	}
+	if val := os.Getenv("UPLOAD_TEMP_DIR"); val != "" {
+		config.Storage.Upload.TempDir = val
+	}
+
+	if val := os.Getenv("IMMICH_WEBUI_DIR"); val != "" {
+		config.WebUIDir = val
 	}
 
 	// Add more environment variable mappings as needed

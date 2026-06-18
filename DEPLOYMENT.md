@@ -277,3 +277,147 @@ tar -xzf immich-files.tar.gz
 ## License
 
 See LICENSE file for details.
+
+## Demo Deployment on Fly.io
+
+A single-machine demo Fly app runs the full stack — backend, frontend,
+and an embedded PostgreSQL — on one machine. Use it to host a public
+preview without provisioning a managed Postgres or a separate web app.
+
+### What you get
+
+- `immich-go-backend` binary serving REST on `:3001` and gRPC on `:3002`
+- An embedded Postgres cluster (`github.com/fergusstrange/embedded-postgres`)
+  started by the binary on `127.0.0.1:5433`, with the cluster and cached
+  binaries persisted on a Fly volume
+- The official Immich web bundle (from `ghcr.io/immich-app/immich-server`)
+  baked into the Docker image and served as static files from `/`
+
+### Prerequisites
+
+- [`flyctl`](https://fly.io/docs/hands-on/install-flyctl/) ≥ the latest
+  stable release
+- A Fly account (`fly auth signup`)
+- A unique Fly app name (used as the URL — e.g. `immich-go-demo.fly.dev`)
+
+### One-time setup
+
+```bash
+# 1. Pick a unique app name and update it in fly.toml.
+#    The included fly.toml uses `immich-go-demo`.
+fly apps create immich-go-demo
+
+# 2. Create the persistent volume that holds the embedded Postgres
+#    cluster, cached Postgres binaries, and uploaded media.
+fly volumes create immich_data --size 10 --region iad
+
+# 3. Set the JWT secret as a Fly secret (never commit it).
+fly secrets set AUTH_JWT_SECRET="$(openssl rand -hex 32)"
+
+# 4. Deploy.
+fly deploy
+```
+
+The first deploy takes a few minutes: the Dockerfile pulls the official
+Immich server image to extract its web bundle, downloads the ~30 MB
+embedded Postgres binary on startup, initialises a fresh cluster, runs
+migrations, and then starts serving.
+
+### How it works
+
+- `Dockerfile` stage 0 is `FROM ghcr.io/immich-app/immich-server:<tag>`
+  — the official Immich server image bundles the SvelteKit web build at
+  `/build/www` (see `immich-app/immich` `server/Dockerfile`). The final
+  stage copies that bundle to `/app/web`.
+- The `Dockerfile` final stage is `alpine:3.20` (not `scratch`) so the
+  embedded Postgres binary — which the library downloads and `exec`s at
+  startup — has the libc it expects.
+- On `serve`, when `IMMICH_EMBEDDED_DB=true` is set, the binary
+  (`internal/embedded/postgres.go`) starts an embedded Postgres that
+  binds to `127.0.0.1:5433` and writes its cluster under
+  `/data/pg`. The cached Postgres binaries live under `/data/pg-bin` so
+  subsequent restarts skip the download.
+- The HTTP handler is wrapped by `internal/webui.Handler` which serves
+  files from `IMMICH_WEBUI_DIR=/app/web`. API and websocket routes are
+  matched first; extension-less paths fall back to `index.html` for SPA
+  routing.
+- The `[[mounts]]` block in `fly.toml` mounts a single named volume
+  (`immich_data`) at `/data`, covering both Postgres data and
+  user-uploaded media.
+
+### Environment variables
+
+The `fly.toml` `[env]` block sets the non-secret defaults. Override
+with `flyctl env set` or in `fly.toml`:
+
+| Variable                    | Default                                  | Purpose                                                |
+|-----------------------------|------------------------------------------|--------------------------------------------------------|
+| `IMMICH_WEBUI_DIR`          | `/app/web`                               | Directory containing the static frontend bundle        |
+| `IMMICH_EMBEDDED_DB`        | `true`                                   | Start the embedded Postgres on `serve`                 |
+| `IMMICH_DATABASE_AUTO_MIGRATE` | `true`                                | Run schema migrations during `serve` (default on)      |
+| `STORAGE_BACKEND`           | `local`                                  | Storage backend (`local` for demo, `s3` for production)|
+| `STORAGE_LOCAL_ROOT`        | `/data/uploads`                          | Where uploads are stored on the local backend          |
+| `UPLOAD_TEMP_DIR`           | `/data/tmp`                              | Scratch directory for in-flight uploads                |
+| `SERVER_ADDRESS`            | `0.0.0.0:3001`                           | REST/gRPC-gateway bind address                         |
+| `SERVER_GRPC_ADDRESS`       | `0.0.0.0:3002`                           | gRPC bind address                                      |
+| `AUTH_JWT_SECRET`           | —                                        | **Required.** Set as a Fly secret.                     |
+
+### Health checks and URLs
+
+- Health: `GET /api/server/ping` (configured in `fly.toml`'s
+  `[[services.http_checks]]`).
+- REST API: `https://<app-name>.fly.dev/api/...`
+- Web UI: `https://<app-name>.fly.dev/` — open in a browser to log in
+  and use the demo.
+
+### Customising the frontend version
+
+To pin a different Immich web version, pass the `IMMICH_VERSION` build
+arg on the command line:
+
+```bash
+fly deploy --build-arg IMMICH_VERSION=v2.5.0
+```
+
+The Dockerfile defaults to `v2.4.0`. Note that the backend's gRPC API
+surface is what the frontend talks to, so the frontend version should
+match a release whose proto schema this backend implements.
+
+### Limitations
+
+This is a **demo** configuration:
+
+- **Single machine only.** Don't scale to multiple machines — the
+  embedded Postgres is local to the machine and the asynq job queue
+  expects a single-process Redis (or no jobs at all). For production,
+  point `DATABASE_URL` at a managed Postgres and run the embedded
+  mode only when you need a one-shot preview.
+- **No ML/face-recognition.** The ML backend is a separate service in
+  the official Immich stack; this demo doesn't ship one. Search and
+  duplicates fall back to their non-ML paths.
+- **gRPC port 3002 is internal-only.** Expose it via Fly's private
+  network if you want a mobile app to connect via gRPC; the public
+  HTTPS endpoint is the REST gateway at 3001.
+
+### Troubleshooting
+
+**Machine boots but health check fails for 2+ minutes.** Expected on
+first deploy — the embedded Postgres is downloading its binary and
+initialising the cluster. Tail the logs:
+
+```bash
+fly logs
+```
+
+You should see `embedded postgres ready` followed by `Starting HTTP
+server on 0.0.0.0:3001`. After that, the health check passes.
+
+**`AUTH_JWT_SECRET is required`.** Set it via `fly secrets set
+AUTH_JWT_SECRET=...` and redeploy.
+
+**Frontend shows 404 on `/`.** Confirm `IMMICH_WEBUI_DIR=/app/web`
+points at a directory containing `index.html`. Inspect the image:
+
+```bash
+fly ssh console -C "ls /app/web"
+```

@@ -1,0 +1,123 @@
+# fly.toml — Fly.io configuration for the immich-go-backend demo app.
+#
+# This runs the full Immich Go backend stack on a single Fly machine:
+#   - the Go backend binary serves REST (3001) and gRPC (3002)
+#   - an embedded Postgres is launched in-process by the binary
+#     (no external Postgres needed)
+#   - the official Immich web frontend is baked into the image and served
+#     as static files at /
+#
+# Persistent state lives on the `immich_data` volume mounted at /data,
+# which holds:
+#   /data/pg       — the embedded Postgres cluster
+#   /data/pg-bin   — cached Postgres binaries (downloaded once)
+#   /data/uploads  — uploaded media
+#   /data/library  — library imports
+#   /data/thumbs   — generated thumbnails
+#   /data/profile  — user avatars
+#   /data/video    — encoded/transcoded video
+
+app = "immich-go-demo"
+primary_region = "iad"
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
+
+[build]
+  dockerfile = "Dockerfile"
+  # Pin the frontend version baked into the image. Override with
+  # `fly deploy --build-arg IMMICH_VERSION=v2.x.y`.
+  [build.args]
+    IMMICH_VERSION = "v2.4.0"
+
+# ---- Env (non-secret) ----
+# Only IMMICH_WEBUI_DIR is honoured via env by the current config.go;
+# the rest are read from /app/config.yaml produced at deploy time (see
+# the "config.yaml" volume mount below) or baked into the image.
+[env]
+  IMMICH_WEBUI_DIR = "/app/web"
+  IMMICH_EMBEDDED_DB = "true"
+  IMMICH_DATABASE_AUTO_MIGRATE = "true"
+  # Storage paths — point local filesystem backend at /data so uploads
+  # survive restarts. Embedded Postgres writes its cluster under
+  # /data/pg; uploaded media and generated artefacts live under
+  # /data/{uploads,thumbs,profile,library,video}.
+  STORAGE_BACKEND = "local"
+  STORAGE_LOCAL_ROOT = "/data/uploads"
+  UPLOAD_TEMP_DIR = "/data/tmp"
+  # Listen on all interfaces inside the machine.
+  SERVER_ADDRESS = "0.0.0.0:3001"
+  SERVER_GRPC_ADDRESS = "0.0.0.0:3002"
+
+# ---- Persistent volume ----
+# One named volume mounted at /data covers both the embedded Postgres
+# cluster and the local storage backend. Size is GB; 10 GB holds a
+# reasonable demo photo library.
+[[mounts]]
+  source = "immich_data"
+  destination = "/data"
+
+# ---- Single machine ----
+# Demo workloads don't need horizontal scale. A single shared machine
+# keeps the embedded Postgres cluster coherent. Bump cpu_count / memory
+# if you plan to upload a large library.
+[processes]
+  app = "/app/immich-go-backend serve"
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "2gb"
+  cpu_kind = "shared"
+  cpus = 2
+
+# ---- Service: HTTP/REST ----
+# Public traffic is HTTPS on 443 and HTTP on 80 — Fly terminates TLS and
+# forwards plain HTTP to internal_port 3001 (the backend's REST port).
+[[services]]
+  protocol = "tcp"
+  internal_port = 3001
+  auto_start_machines = true
+  auto_stop_machines = "off"
+  min_machines_running = 1
+
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+    force_https = true
+
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+
+  # Health check against the standard Immich /api/server/ping endpoint.
+  # First start can take 30-60s while embedded-postgres downloads the
+  # Postgres binary (~30 MB) and initialises a cluster, so we give the
+  # machine plenty of grace before declaring it unhealthy.
+  [services.concurrency]
+    type = "connections"
+    hard_limit = 250
+    soft_limit = 200
+
+  [[services.http_checks]]
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "120s"
+    method = "get"
+    path = "/api/server/ping"
+
+  [[services.tcp_checks]]
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "120s"
+
+# ---- Internal-only gRPC port ----
+# Exposed on 3002 to other apps in the same Fly organisation via
+# 6PN / private network. Not mapped to a public port.
+[[services]]
+  protocol = "tcp"
+  internal_port = 3002
+  auto_start_machines = false
+  auto_stop_machines = "off"
+  min_machines_running = 1
+
+  [[services.ports]]
+    port = 3002

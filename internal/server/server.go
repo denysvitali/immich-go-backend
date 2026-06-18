@@ -53,6 +53,7 @@ import (
 	"github.com/denysvitali/immich-go-backend/internal/users"
 	"github.com/denysvitali/immich-go-backend/internal/view"
 	"github.com/denysvitali/immich-go-backend/internal/websocket"
+	"github.com/denysvitali/immich-go-backend/internal/webui"
 	"github.com/denysvitali/immich-go-backend/internal/workflow"
 )
 
@@ -192,7 +193,7 @@ func NewServer(cfg *config.Config, db *db.Conn) (*Server, error) {
 	trashService := trash.NewServer(db.Queries)
 	tagsService := tags.NewServer(db.Queries)
 	mapService := mapservice.NewServer(db.Queries)
-	peopleService := people.NewServer(db.Queries)
+	peopleService := people.NewServer(db.Queries, storageService)
 	partnersService := partners.NewServer(db.Queries)
 	activityService := activity.NewServer(db.Queries)
 
@@ -561,7 +562,11 @@ func (s *Server) HTTPHandler() http.Handler {
 	if err := immichv1.RegisterWorkflowServiceHandlerServer(ctx, mux, s); err != nil {
 		logrus.WithError(err).Error("Failed to register WorkflowService handler")
 	}
-	return s.handleWs(mux)
+	// Outermost wrapper serves a static frontend (e.g. the Immich web build)
+	// from s.config.WebUIDir. Unmatched requests fall through to the API mux
+	// so REST/gRPC routes keep working. Empty WebUIDir is a transparent
+	// passthrough — the API is reachable directly.
+	return webui.Handler(s.config.WebUIDir, s.handleWs(mux))
 }
 
 func (s *Server) handleWs(mux *runtime.ServeMux) http.Handler {
