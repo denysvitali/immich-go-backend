@@ -1,76 +1,90 @@
-# Immich Go Backend Roadmap
+# Roadmap
 
-## Upstream Compatibility Check (2026-06-16)
+The active target is **API parity** with upstream Immich so the official web UI and mobile apps work against this backend without modification. We track upstream's `v2.7.x` stable line and watch `v3.0.0-rc.x` for forward-looking changes.
 
-**Current stable Immich baseline:** v2.7.5 (released 2026-04-13)
-**Latest upstream preview:** v3.0.0-rc.0 (released 2026-06-15)
-**Sources:** [Immich releases](https://github.com/immich-app/immich/releases), [Immich OpenAPI spec](https://github.com/immich-app/immich/blob/main/open-api/immich-openapi-specs.json), [OAuth docs](https://docs.immich.app/administration/oauth)
+## Tracking upstream
 
-The active roadmap is API parity and behavior hardening against upstream Immich, using v2.7.5 as the stable target and v3.0.0-rc.0 as forward-looking input.
+| Stream | Latest | Notes |
+|--------|--------|-------|
+| Stable | v2.7.5 | The behaviour we aim for in the short term. |
+| Preview | v3.0.0-rc.0 | Reviewed for upcoming shape; nothing users rely on yet. |
 
-### Latest Immich Changes To Track
+Sources: [Immich releases](https://github.com/immich-app/immich/releases), the [OpenAPI spec](https://github.com/immich-app/immich/blob/main/open-api/immich-openapi-specs.json), and the [OAuth docs](https://docs.immich.app/administration/oauth).
 
-- [ ] v2.7.x shared link and auth fixes: review shared-link asset removal permissions and version-check rate limiting/deduplication.
-- [ ] v2.7.x media fixes: verify original filename hiding when metadata is disabled and people search behavior for short queries.
-- [ ] v3 RC new capabilities: workflows/plugins parity, HLS real-time transcoding, integrity report jobs, recently added assets, OAuth backchannel logout, full-path search, album map markers, and user upload heatmap.
-- [ ] v3 RC database/runtime changes: assess pgvecto.rs removal implications and duration-in-milliseconds response changes.
+```mermaid
+flowchart LR
+    UP[Upstream Immich<br/>releases] -.-> SPEC[OpenAPI spec]
+    UP -.-> NOTES[Release notes]
+    SPEC --> DIFF[Endpoint diff<br/>vs our gateway]
+    NOTES --> DIFF
+    DIFF --> BACKLOG[This backlog]
+    BACKLOG --> IMPL[Implementation]
+    IMPL -.->|api behaviour| UP
+```
 
-## Active Backlog
+## Active backlog
 
-- [x] Implement rate limiting for login attempts.
-- [x] Implement profile image upload and management.
-- [x] Implement user license management.
-- [ ] Add streaming support for large gRPC operations.
-- [ ] Implement configurable worker pools for background jobs.
-- [ ] Add advanced retry logic for background jobs.
+### v2.7.x parity
+
+- [x] Rate limiting for login attempts.
+- [x] Profile image upload and management.
+- [x] User license management.
 - [ ] Review shared-link asset removal permissions.
-- [ ] Add version-check rate limiting and deduplication.
+- [ ] Implement real version-check RPC (currently a stub in `internal/server/maintenance.go` that just echoes the current version).
 - [ ] Verify original filename hiding when metadata is disabled.
-- [ ] Verify people search behavior for short queries.
-- [ ] Implement workflows/plugins parity.
-- [ ] Implement HLS real-time transcoding.
-- [ ] Implement integrity report jobs.
-- [ ] Finish recently added assets endpoint behavior.
-- [ ] Implement OAuth backchannel logout.
-- [ ] Implement full-path search.
-- [ ] Implement album map markers.
-- [ ] Implement user upload heatmap.
-- [ ] Assess pgvecto.rs removal implications.
-- [ ] Assess duration-in-milliseconds response changes.
-
-## Future Enhancements
-
-### Performance & Reliability
-- [ ] Load testing.
-- [ ] Storage performance tests.
-- [ ] Database performance tests.
-- [ ] Memory usage optimization.
-- [ ] Configurable worker pools for background jobs.
+- [ ] Verify people search behaviour for short queries.
+- [ ] Streaming support for large gRPC operations.
+- [x] Configurable worker pools for background jobs (`JOBS_WORKERS`, default 4).
 - [ ] Advanced retry logic for background jobs.
 
-### Machine Learning Integration (optional)
-- [ ] Face recognition.
+### v3 RC parity
+
+- [ ] Workflows / plugins parity.
+- [ ] HLS real-time transcoding.
+- [ ] Integrity-report jobs.
+- [ ] "Recently added assets" endpoint behaviour.
+- [ ] OAuth backchannel logout.
+- [ ] Full-path search.
+- [ ] Album map markers.
+- [ ] User upload heatmap.
+- [ ] Assess `pgvecto.rs` removal — vector search is currently on `vector` / `vchord`; check upstream's chosen replacement.
+- [ ] Assess duration-in-milliseconds response changes.
+
+## Future enhancements
+
+### Performance & reliability
+
+- [ ] Load testing in CI.
+- [ ] Storage performance tests.
+- [ ] Database performance tests.
+- [ ] Memory usage optimisation.
+- [ ] Configurable worker pools.
+- [ ] Advanced retry / dead-letter handling for background jobs.
+
+### ML integration (optional, off by default)
+
+- [ ] Face recognition (when the external ML service is reachable).
 - [ ] Object detection.
-- [ ] CLIP search.
+- [ ] CLIP-based smart search.
 - [ ] ML-based duplicate detection.
 
-### Video Processing
-- [ ] Video transcoding (handler ready, needs ffmpeg integration).
+### Video processing
+
+- [ ] Video transcoding (job type `video_transcode` is registered, but the handler in `internal/jobs/handlers.go` is a placeholder — needs ffmpeg integration).
 - [ ] Video thumbnail generation.
-- [ ] Video metadata extraction.
+- [ ] Video metadata extraction (ffprobe is wired in `internal/assets/metadata.go`).
 
-### Monitoring & Operations
-- [ ] Grafana dashboards.
-- [ ] Alerting rules.
-- [ ] Kubernetes deployment with Helm charts.
+### Operations
 
-## Technical Decisions Made
+- [ ] Grafana dashboards (against `/metrics` + OTel).
+- [ ] Alerting rules (Prometheus / Alertmanager).
+- [ ] Helm chart for Kubernetes.
 
-- **Storage**: Rclone-based abstraction for maximum flexibility.
-- **Database**: SQLC for type-safe SQL queries.
-- **Observability**: OpenTelemetry with autoexport for vendor-neutral monitoring.
-- **Configuration**: YAML + environment variables for 12-factor app compliance.
-- **Build System**: Nix for reproducible builds.
-- **Architecture**: Clean architecture with clear separation of concerns.
-- **API**: gRPC with grpc-gateway for REST compatibility.
-- **Testing**: Integration tests with Docker-based PostgreSQL.
+## Non-goals
+
+- Re-skinning or forking the web/mobile clients. We target upstream Immich clients as-is.
+- Replacing Immich's existing TypeScript backend. This project is an alternative for environments where a Go binary is preferable.
+
+## Contributing to the roadmap
+
+Open an issue with the `roadmap` label to propose items. For upstream parity items, link the upstream PR / release that introduced the change so reviewers can compare behaviour.

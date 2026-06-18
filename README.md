@@ -1,212 +1,213 @@
 # immich-go-backend
 
-A Go-based alternative backend for [Immich](https://github.com/immich-app/immich), designed with an S3-first architecture and cloud-native patterns.
+A Go reimplementation of the [Immich](https://github.com/immich-app/immich) backend API, designed for cloud-native deployments with first-class S3, embedded PostgreSQL for single-binary demos, and a clean gRPC + REST architecture.
 
-> [!WARNING]
-> **THIS CODE IS AI-GENERATED AND NOT SUITABLE FOR PRODUCTION USE**
->
-> This project was developed primarily using AI assistants (Claude Opus 4.5, Claude Sonnet 4) and automated coding tools. While functional, it has **not been thoroughly tested**, **security audited**, or **validated for production workloads**.
->
-> **USE AT YOUR OWN RISK.** The authors take no responsibility for data loss, security vulnerabilities, or any other issues that may arise from using this software.
->
-> If you choose to use this project:
-> - Do NOT use it with important data without backups
-> - Do NOT expose it to the public internet without proper security review
-> - Expect bugs, incomplete features, and breaking changes
+> [!IMPORTANT]
+> **Status: functional, actively developed, not a security audit.** This project targets API parity with the official Immich backend so the official web UI and mobile apps work against it. It is suitable for self-hosting and demo deployments, but it has not undergone an independent security review — review the configuration, secrets handling, and exposure model before relying on it for sensitive data.
 
 ---
 
-## Project Goals
+## Why
 
-- **API Compatibility**: Achieve full parity with upstream Immich (~230 endpoints)
-- **Mobile App Support**: iOS/Android Immich apps should work seamlessly
-- **S3-First Architecture**: Native object storage with pre-signed URLs
-- **Performance**: Leverage Go's concurrency for better scalability
+The official Immich backend is a battle-tested NestJS stack. This project explores an alternative with:
 
-## Current Status
+- **Single binary.** The Go binary can boot an embedded PostgreSQL and serve the official Immich web bundle, so a demo deployment is one container.
+- **S3-first storage.** Pre-signed uploads/downloads for native object storage, plus local and Rclone backends.
+- **gRPC-first.** Strictly-typed gRPC services with grpc-gateway providing the REST surface that the Immich clients expect.
+- **Type-safe SQL.** SQLC generates Go from `sqlc/queries.sql` — no ORM, no string-interpolated SQL.
+- **Operational niceties.** OpenTelemetry tracing/metrics, asynq job queue, graceful shutdown, structured logging.
 
-| Metric | Value |
-|--------|-------|
-| **API Coverage** | ~60% (estimated) |
-| **Total Services** | 28 |
-| **SQL Queries** | 200+ |
-| **Build Status** | Compiles |
+## Architecture at a glance
 
-### Implemented Services
+```mermaid
+flowchart LR
+    subgraph Clients
+        Web[Immich Web<br/>SvelteKit]
+        iOS[Immich iOS]
+        Android[Immich Android]
+        CLI[immich CLI / API users]
+    end
 
-| Service | Status | Description |
-|---------|--------|-------------|
-| AuthService | Working | JWT auth, login, logout, PIN codes, session lock/unlock |
-| UsersService | Working | Profile, preferences, onboarding, license |
-| AssetService | Working | CRUD, thumbnails, video playback, bulk operations |
-| AlbumService | Working | CRUD, sharing, role-based access |
-| SyncService | Working | Real-time events, delta/full sync |
-| SessionsService | Working | Database-backed session management |
-| TimelineService | Working | Chronological asset browsing |
-| MemoryService | Working | Memories with asset associations |
-| SearchService | Working | Metadata and smart search |
-| PeopleService | Working | Face recognition, person management |
-| TagsService | Working | Asset tagging |
-| SharedLinksService | Working | Shareable links with passwords |
-| TrashService | Working | Soft delete with recovery |
-| MapService | Working | Geolocation browsing |
-| DuplicatesService | Working | Duplicate detection |
-| DownloadService | Working | Asset downloads, archives |
-| AdminService | Working | User management, notifications |
-| MaintenanceService | Working | Maintenance mode control |
-| QueueService | Working | Job queue management |
-| PluginService | Working | Plugin system (extensibility) |
-| WorkflowService | Working | Automation workflows |
-| LibrariesService | Working | External library management |
-| StacksService | Working | Asset stacking |
-| FacesService | Working | Face management |
-| NotificationsService | Working | User notifications |
-| PartnersService | Working | Partner sharing |
-| ActivityService | Working | Activity feed |
-| SystemMetadataService | Working | System configuration |
+    subgraph Binary [immich-go-backend binary]
+        REST[REST gateway<br/>:3001 from config.yaml]
+        GRPC[gRPC server<br/>:3002 from config.yaml]
+        subgraph Services [34 gRPC services]
+            Auth[Auth]
+            Assets[Assets]
+            Albums[Albums]
+            Sync[Sync]
+            Others[Search · People · Memories<br/>Timeline · Tags · Jobs · ...]
+        end
+        Storage[Storage abstraction]
+        Queue[asynq job queue]
+        WS[WebSocket hub]
+    end
 
-### Known Limitations
+    PG[(PostgreSQL 16)]
+    PGembed[(Embedded PG<br/>demo only)]
+    S3[(S3 / Rclone / Local)]
+    Redis[(Redis 7)]
+    WebUI[Static web bundle]
 
-- **Token refresh** endpoint not implemented
-- **OCR data** endpoint not implemented
-- **OAuth mobile redirect** not implemented
-- **Email verification/password reset** flows not implemented
-- **HLS/adaptive streaming** not implemented
-- Some edge cases may not be handled properly
-- Error messages may leak internal details
-- No comprehensive test coverage
-
-## Technology Stack
-
-- **Language**: Go 1.24+
-- **Database**: PostgreSQL with [SQLC](https://sqlc.dev/) for type-safe queries
-- **API**: gRPC with [grpc-gateway](https://github.com/grpc-ecosystem/grpc-gateway) for REST
-- **Storage**: Local, S3, or Rclone backends
-- **Observability**: OpenTelemetry (tracing, metrics)
-- **Authentication**: JWT with bcrypt password hashing
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                    HTTP/REST Clients                     │
-│                  (Immich Mobile/Web)                     │
-└─────────────────────────┬───────────────────────────────┘
-                          │
-                          ▼
-┌─────────────────────────────────────────────────────────┐
-│                   grpc-gateway                           │
-│              (REST ↔ gRPC translation)                   │
-└─────────────────────────┬───────────────────────────────┘
-                          │
-                          ▼
-┌─────────────────────────────────────────────────────────┐
-│                    gRPC Services                         │
-│  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐       │
-│  │  Auth   │ │  Users  │ │ Assets  │ │ Albums  │  ...  │
-│  └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘       │
-└───────┼──────────┼──────────┼──────────┼───────────────┘
-        │          │          │          │
-        ▼          ▼          ▼          ▼
-┌─────────────────────────────────────────────────────────┐
-│                   Service Layer                          │
-│            (Business logic, validation)                  │
-└─────────────────────────┬───────────────────────────────┘
-                          │
-        ┌─────────────────┼─────────────────┐
-        ▼                 ▼                 ▼
-┌───────────────┐ ┌───────────────┐ ┌───────────────┐
-│   PostgreSQL  │ │    Storage    │ │   Job Queue   │
-│    (SQLC)     │ │ (S3/Local)    │ │   (Redis)     │
-└───────────────┘ └───────────────┘ └───────────────┘
+    Web -- HTTPS --> REST
+    iOS --> REST
+    Android --> REST
+    CLI --> REST
+    Web -.live events.-> WS
+    REST --> GRPC
+    GRPC --> Services
+    Services --> Storage
+    Services --> Queue
+    Services --> PG
+    PGembed -. replace .-> PG
+    Storage --> S3
+    Queue --> Redis
+    REST -. fallback .-> WebUI
 ```
 
-## Getting Started
+A REST request hits `grpc-gateway` on `:3001` (the value in `config.yaml` — the Go default is `8080`), is translated to a gRPC call against the matching service, the service runs the business logic against PostgreSQL via SQLC queries, and reads/writes bytes through the storage backend. Long-running work (thumbnail generation, metadata extraction, ML indexing) is enqueued onto Redis via asynq.
 
-### Prerequisites
+For the full architecture — service dependency graph, storage backends, auth context, embedded PG boot sequence, and job flow — see [ARCHITECTURE.md](ARCHITECTURE.md).
 
-- [Nix](https://nixos.org/) package manager (recommended)
-- PostgreSQL 15+
-- Redis (optional, for job queue)
+## Quickstart
 
-Enable Nix flakes:
+### One command with Docker Compose
+
 ```bash
-echo "experimental-features = nix-command flakes" >> ~/.config/nix/nix.conf
-```
-
-### Setup
-
-1. **Clone and enter dev environment**:
-```bash
-git clone https://github.com/denysvitali/immich-go-backend.git
-cd immich-go-backend
-nix develop
-```
-
-2. **Configure**:
-```bash
-cp config.yaml config.yaml.local
-# Edit config.yaml.local with your settings
-```
-
-3. **Generate code and build**:
-```bash
-make setup
-make build
-```
-
-4. **Run**:
-```bash
+docker compose up -d
+./bin/immich-go-backend migrate
 ./bin/immich-go-backend serve
-# or
-go run main.go serve
 ```
 
-### Development Commands
+The default `docker-compose.yml` starts PostgreSQL 16 (with `uuid-ossp`, `vector`, and `earthdistance` enabled at the image level — `vchord`, `cube`, `pg_trgm`, and `unaccent` are created by the schema migrations) and Redis 7. The server listens on `:3001` (REST) and `:3002` (gRPC) per `config.yaml` — the Go default in `internal/config/config.go` is `8080`/`9090` and `config.yaml` overrides it.
+
+Open `http://localhost:3001/api/server/ping` to confirm the server is up, then `POST /api/auth/admin-sign-up` to create the first admin.
+
+### One binary, one Fly machine
+
+The fastest way to a public preview. See [DEPLOYMENT.md → Fly.io single-machine demo](DEPLOYMENT.md#flyio-single-machine-demo).
 
 ```bash
-make build          # Build binary
-make test           # Run tests
-make proto-gen      # Generate protobuf code
-make sqlc-gen       # Generate SQL code
-make lint           # Run linters
-make ci-check       # Run all CI checks
+fly apps create immich-go-demo
+fly volumes create immich_data --size 10 --region iad
+fly secrets set AUTH_JWT_SECRET="$(openssl rand -hex 32)"
+fly deploy
+# → https://immich-go-demo.fly.dev
 ```
+
+The image bundles the official Immich web build and starts an embedded PostgreSQL inside the binary, so the only persistent state is a single Fly volume.
+
+### Local development
+
+```bash
+nix develop           # pinned toolchain (Go, buf, sqlc, golangci-lint)
+make setup            # generate protos + tidy modules
+make build            # build ./bin/immich-go-backend
+make test             # unit + integration tests (needs Docker)
+make lint             # golangci-lint
+```
+
+All targets are described in the [Makefile](Makefile). Generated proto code under `internal/proto/gen/` is committed, so a fresh checkout builds without running `buf generate`.
+
+## Project layout
+
+```
+cmd/                          CLI entry (Cobra): serve / migrate / version
+internal/
+  server/                     Wires all services, gRPC server, REST gateway
+  <service>/                  One package per gRPC service (assets, albums, ...)
+  proto/                      .proto sources + generated Go (gen/ is committed)
+  db/                         Database connection, embed.FS migrations
+  db/sqlc/                    SQLC-generated Go (do not edit)
+  db/testdb/                  testcontainers helpers for integration tests
+  storage/                    local / s3 / rclone backends behind one interface
+  jobs/                       asynq service + handlers
+  embedded/                   embedded PostgreSQL for demo mode
+  webui/                      Static-file fallback for the bundled web UI
+  websocket/                  Live event hub
+  telemetry/                  OpenTelemetry traces + metrics
+  auth/                       JWT, sessions, rate limiter, middleware
+  config/                     YAML + env-var configuration
+sqlc/
+  schema.sql                  Database schema (43 tables)
+  queries.sql                 240 SQLC query definitions
+deploy/                       Dockerfile + fly.toml + scripts
+e2e/                          Frontend Playwright tests (upload, view, ...)
+```
+
+## Services
+
+The server registers **34 gRPC services** (~222 RPCs) against `internal/proto/`:
+
+| Group | Services (gRPC `Service` names) |
+|-------|----------------------------------|
+| Identity & access | `AuthService`, `OAuthService`, `UsersService`, `ApiKeyService`, `SessionsService`, `SharedLinksService`, `PartnersService` |
+| Library & assets | `AssetService`, `AlbumService`, `LibrariesService`, `DownloadService`, `StacksService`, `TagsService`, `TrashService` |
+| Discovery | `SearchService`, `TimelineService`, `MemoryService`, `MapService`, `PeopleService`, `FacesService`, `DuplicatesService`, `ViewService`, `ActivityService` |
+| System | `ServerService`, `JobService`, `QueueService`, `MaintenanceService`, `SystemConfigService`, `SystemMetadataService`, `SyncService`, `NotificationsService`, `PluginService`, `WorkflowService`, `AdminService` |
+
+Each service has the same shape: `*sqlc.Queries` + `*config.Config` + the dependencies it actually needs (storage, sync, queue). See [ARCHITECTURE.md → Service layer](ARCHITECTURE.md#service-layer) for the dependency graph.
 
 ## Configuration
 
-Configuration is loaded from `config.yaml` with environment variable overrides using the pattern `IMMICH_SECTION_KEY`.
+`config.yaml` is the template. Most fields are overridden by unprefixed environment variables — the pattern is `<SECTION>_<KEY>` in upper snake case, mirroring the YAML path (e.g. `server.address` → `SERVER_ADDRESS`, `database.url` → `DATABASE_URL`, `auth.jwt_secret` → `AUTH_JWT_SECRET`). The exceptions use an `IMMICH_` prefix: `IMMICH_WEBUI_DIR`, `IMMICH_DATABASE_AUTO_MIGRATE`, and `IMMICH_EMBEDDED_DB`. The authoritative list lives in the struct tags of `internal/config/config.go`.
 
-Key configuration sections:
-- `server`: HTTP/gRPC ports
-- `database`: PostgreSQL connection
-- `storage`: Storage backend (local/s3/rclone)
-- `auth`: JWT secrets and settings
-- `jobs`: Background job processing
+Most useful sections:
 
-## Development History
+| Section | Purpose |
+|---------|---------|
+| `server` | HTTP/gRPC bind addresses, timeouts, CORS, metrics path |
+| `database` | DSN, pool sizing, auto-migrate flag |
+| `storage` | Backend (`local` / `s3` / `rclone`); pre-signed URLs (S3 only), upload limits |
+| `auth` | JWT secret/expiry, registration toggle, password policy, login rate-limit |
+| `jobs` | asynq Redis URL, worker count |
+| `telemetry` | OpenTelemetry tracing/metrics toggles, sampling rate |
+| `features` | Boolean flags (`FEATURE_MACHINE_LEARNING_ENABLED`, `FEATURE_FACE_RECOGNITION_ENABLED`, `FEATURE_CLIP_SEARCH_ENABLED`, `FEATURE_VIDEO_TRANSCODING_ENABLED`, `FEATURE_THUMBNAIL_GENERATION_ENABLED`, `FEATURE_EXIF_EXTRACTION_ENABLED`, `FEATURE_DUPLICATE_DETECTION_ENABLED`, `FEATURE_BACKUP_SYNC_ENABLED`, `FEATURE_SHARING_ENABLED`, …) |
 
-This project was developed using AI assistance:
-- **Claude Opus 4.5** - Architecture, complex implementations
-- **Claude Sonnet 4** - Service implementations, bug fixes
-- **[OpenHands](https://github.com/All-Hands-AI/OpenHands/)** - Automated development
+For the full env-var reference and the precedence rules, see [DEPLOYMENT.md → Configuration](DEPLOYMENT.md#configuration).
 
-The AI-assisted development approach allowed rapid prototyping but means the codebase lacks the rigor of traditional software development.
+## Development
+
+- `make proto-gen` — regenerate `internal/proto/gen/` from `internal/proto/*.proto`
+- `make sqlc-gen` — regenerate `internal/db/sqlc/` from `sqlc/queries.sql`
+- `make build` / `make test` / `make lint` / `make ci-check`
+- Run a single test: `go test -v -run TestName ./internal/auth/...`
+
+The linter is `golangci-lint` with errcheck, ineffassign, staticcheck, unused, gosec, govet, gofmt, gofumpt, goimports, misspell, dogsled, nakedret, gocritic, gosimple, unconvert, and copyloopvar. Generated files are excluded.
+
+CI (`.github/workflows/go.yaml`) runs on Go 1.24 + buf 1.49.0 with two parallel jobs: `build` (unit tests under `-short`, lint, vet) and `integration-tests` (`go test -tags=integration -race` over `./internal/...`). Per-package shard files live under `.github/test-shards/` and are not yet consumed by the workflow.
+
+## Testing
+
+Two layers:
+
+1. **Unit tests** run anywhere with `go test ./...`.
+2. **Integration tests** spin up a real PostgreSQL via testcontainers. They require the `integration` build tag:
+
+   ```bash
+   go test -tags=integration ./internal/db/...
+   go test -tags=integration ./internal/auth/...
+   ```
+
+   The shared helper is `internal/db/testdb.SetupTestDB()`. See [TESTING.md](TESTING.md).
+
+## Deployment
+
+The Dockerfile produces a static binary; the demo image bundles the embedded PostgreSQL and the official Immich web build. Deployment guides:
+
+- [Fly.io single-machine demo](DEPLOYMENT.md#flyio-single-machine-demo) — fastest path to a public preview
+- [Systemd](DEPLOYMENT.md#systemd) — bare-metal / VM
+- [Docker Compose](DEPLOYMENT.md#docker-compose) — local or homelab
+- [Reverse proxy (Nginx)](DEPLOYMENT.md#reverse-proxy) — TLS, WebSocket upgrade
+
+## Roadmap
+
+The project tracks upstream Immich (`v2.7.5` stable, `v3.0.0-rc.0` preview) for parity. See [ROADMAP.md](ROADMAP.md) for the current backlog and what's tracking upstream changes.
 
 ## Contributing
 
-Contributions are welcome, especially:
-- Security reviews and fixes
-- Test coverage improvements
-- Bug reports with reproduction steps
-- Documentation improvements
-
-Please open an issue before starting major work.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) for code conventions, the "adding a new service" walkthrough, and how we use conventional commits.
 
 ## License
 
-AGPL-3.0 - Same as the original Immich project. See [LICENSE](./LICENSE).
-
-## Disclaimer
-
-This project is not affiliated with or endorsed by the Immich project. It is an independent reimplementation of the Immich backend API.
+[AGPL-3.0](./LICENSE), matching upstream Immich. This project is an independent reimplementation and is not affiliated with or endorsed by the Immich project.
