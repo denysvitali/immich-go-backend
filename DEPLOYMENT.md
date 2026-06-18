@@ -139,10 +139,12 @@ fly deploy
 
 The first deploy takes a few minutes:
 
-1. Dockerfile stage 0 pulls `ghcr.io/immich-app/immich-server:${IMMICH_VERSION}` and copies `/build/www` → `/app/web`.
+1. `Dockerfile.fly` stage 0 pulls `ghcr.io/immich-app/immich-server:${IMMICH_VERSION}` and copies `/build/www` → `/app/web`.
 2. Stage 1 builds a static Go binary on Go 1.24-alpine.
-3. Stage 2 assembles the runtime image (alpine 3.20 + ca-certificates + tini + non-root user).
+3. Stage 2 assembles the Fly runtime image (alpine 3.20 + ca-certificates + tini + curl + non-root user).
 4. On first `serve`, the binary downloads the ~30 MB embedded-postgres binary, initialises a cluster under `/data/pg`, runs migrations, then starts listening.
+
+> **Which Dockerfile?** `Dockerfile.fly` is for the Fly demo (embedded Postgres, baked-in web bundle, tini). The base `Dockerfile` is leaner and targets external-DB deployments (Docker Compose, Kubernetes, plain Docker) — it doesn't bake in the web bundle and runs the binary directly without tini. Pick via `fly.toml` `[build].dockerfile` or `docker build -f Dockerfile.fly .`.
 
 ### Health checks and URLs
 

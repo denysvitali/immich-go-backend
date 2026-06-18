@@ -1,27 +1,25 @@
-# Multi-stage Dockerfile for immich-go-backend
-# - web:      the official immich-server image provides the baked web bundle
-# - builder:  golang:1.24-alpine + buf CLI (GitHub release) to (re)generate protos
-# - runtime:  alpine (shell + CA certs + a non-root user) — needed because
-#              the demo mode downloads a Postgres binary at startup via
-#              github.com/fergusstrange/embedded-postgres
+# Base Dockerfile for immich-go-backend.
 #
-# The protos under internal/proto/gen/ are committed, so buf generate is a
-# no-op when those files exist. We keep the buf install as a safety net so
-# the image still builds from a clean checkout without the generated files.
-
-# ---------- Stage 0: web bundle ----------
-# The official Immich server image bundles the SvelteKit web build at
-# /build/www (see immich-app/immich v2.4.0 server/Dockerfile). We pull the
-# matching tag so the frontend API surface stays in sync with the backend's
-# gRPC services. Override with `--build-arg IMMICH_VERSION=v2.x.y`.
-ARG IMMICH_VERSION=v2.4.0
-FROM ghcr.io/immich-app/immich-server:${IMMICH_VERSION} AS web
+# Target environment: any container runtime that talks to an external
+# PostgreSQL and Redis (Docker Compose, Kubernetes, plain Docker, etc.).
+# This image is published to ghcr.io as the project's "base" image.
+#
+# For the single-machine Fly.io demo (embedded Postgres + baked-in web
+# bundle + tini for SIGTERM forwarding), use Dockerfile.fly instead.
+#
+# Notes:
+#   * Runtime is alpine (not scratch) so the Go binary can exec helper
+#     processes when needed; switch to distroless/static if you want a
+#     ~10 MB image and don't run embedded-postgres.
+#   * Web frontend is NOT baked in — deploy immich-web separately or
+#     mount your own bundle at /app/web and set IMMICH_WEBUI_DIR.
+#   * Database / Redis are NOT bundled — point DATABASE_URL and the
+#     Redis env vars at external services.
 
 # ---------- Stage 1: build ----------
 FROM golang:1.24-alpine AS builder
 
-# Install build deps in one layer. git is needed by `go mod` for some modules;
-# ca-certificates is needed for `go install` to talk to proxy.golang.org / github.com.
+# Build deps: git for `go mod`, curl + ca-certificates to fetch buf.
 RUN apk add --no-cache git ca-certificates curl
 
 # Pin buf to a known-good version. Bump deliberately.
@@ -37,10 +35,8 @@ RUN arch="$(apk --print-arch)" && \
     chmod +x /usr/local/bin/buf && \
     buf --version
 
-# The Go protoc plugins buf invokes during `buf generate` (when the
-# committed internal/proto/gen/ is missing or stale). Pinned to the
-# same versions the CI workflow uses — bump deliberately with
-# .github/workflows/go.yaml.
+# Go protoc plugins buf invokes when committed gen/ is missing or stale.
+# Pinned to the same versions used in .github/workflows/go.yaml.
 RUN GOBIN=/usr/local/bin go install \
       google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.6 && \
     GOBIN=/usr/local/bin go install \
@@ -73,20 +69,15 @@ RUN if [ -d "internal/proto/gen" ] && \
       ./cmd
 
 # ---------- Stage 2: minimal runtime ----------
-# Alpine (not scratch) so the embedded-postgres library can exec the
-# downloaded Postgres binary, which expects a libc + reasonable /tmp.
 FROM alpine:3.20
 
-# ca-certificates for outbound HTTPS (downloads the embedded Postgres
-# binary and any future asset). tini reaps zombies and forwards signals,
-# which matters because we `exec` into the backend binary.
-RUN apk add --no-cache ca-certificates tini curl \
+# ca-certificates for outbound HTTPS. Non-root user keeps the runtime
+# unprivileged by default — override the UID/GID at build time if your
+# orchestrator requires different ones.
+RUN apk add --no-cache ca-certificates \
  && adduser -D -s /bin/sh -u 1001 appuser \
- && mkdir -p /data /app/web \
- && chown -R appuser:appuser /data /app
-
-# Web bundle copied from the official Immich server image.
-COPY --from=web --chown=appuser:appuser /build/www /app/web
+ && mkdir -p /app /data \
+ && chown -R appuser:appuser /app /data
 
 # Static binary.
 COPY --from=builder --chown=appuser:appuser /out/immich-go-backend /app/immich-go-backend
@@ -94,11 +85,10 @@ COPY --from=builder --chown=appuser:appuser /out/immich-go-backend /app/immich-g
 USER appuser
 WORKDIR /app
 
-# Expose the REST + gRPC ports. Fly uses 3001 as the public-facing port
-# (configured in fly.toml `internal_port = 3001`); 3002 is internal-only.
+# REST + gRPC ports. Configure via SERVER_ADDRESS / SERVER_GRPC_ADDRESS.
 EXPOSE 3001 3002
 
-# Tini forwards SIGTERM/SIGINT to the child process so graceful shutdown
-# can stop the embedded Postgres cleanly.
-ENTRYPOINT ["/sbin/tini", "--", "/app/immich-go-backend"]
+# Default to running migrations + serving. Orchestrators (Compose,
+# Kubernetes) should signal SIGTERM for graceful shutdown.
+ENTRYPOINT ["/app/immich-go-backend"]
 CMD ["serve"]

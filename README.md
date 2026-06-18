@@ -193,7 +193,12 @@ Two layers:
 
 ## Deployment
 
-The Dockerfile produces a static binary; the demo image bundles the embedded PostgreSQL and the official Immich web build. Deployment guides:
+Two Dockerfiles cover the deployment matrix:
+
+- `Dockerfile` — base image (external Postgres/Redis, no web bundle). Used for Docker Compose, Kubernetes, plain Docker, and the `ghcr.io/<repo>` release images.
+- `Dockerfile.fly` — Fly.io demo image (embedded Postgres, web bundle baked in at `/app/web`, tini for SIGTERM forwarding). Selected via `fly.toml`.
+
+The base image produces a static binary; the Fly image adds the embedded PostgreSQL runtime and the official Immich web build on top. Deployment guides:
 
 - [Fly.io single-machine demo](DEPLOYMENT.md#flyio-single-machine-demo) — fastest path to a public preview
 - [Systemd](DEPLOYMENT.md#systemd) — bare-metal / VM

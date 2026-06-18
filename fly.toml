@@ -23,7 +23,9 @@ kill_signal = "SIGTERM"
 kill_timeout = "30s"
 
 [build]
-  dockerfile = "Dockerfile"
+  # Fly-specific image: embedded Postgres + baked-in web bundle + tini.
+  # For external-DB deployments, use the base `Dockerfile` instead.
+  dockerfile = "Dockerfile.fly"
   # Pin the frontend version baked into the image. Override with
   # `fly deploy --build-arg IMMICH_VERSION=v2.x.y`.
   [build.args]
