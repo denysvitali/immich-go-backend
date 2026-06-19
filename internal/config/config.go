@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -406,6 +407,13 @@ func setDefaults(config *Config) {
 func loadFromFile(config *Config, configPath string) error {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
+		// A missing config file is not fatal: env-driven deployments
+		// (e.g. the Fly demo) supply everything via defaults + env vars
+		// and ship no config.yaml in the image. Only a present-but-broken
+		// file is an error.
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
 		return err
 	}
 

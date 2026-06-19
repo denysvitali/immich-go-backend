@@ -32,9 +32,10 @@ kill_timeout = "30s"
     IMMICH_VERSION = "v2.4.0"
 
 # ---- Env (non-secret) ----
-# Only IMMICH_WEBUI_DIR is honoured via env by the current config.go;
-# the rest are read from /app/config.yaml produced at deploy time (see
-# the "config.yaml" volume mount below) or baked into the image.
+# The backend ships NO config.yaml in the image; a missing config file is
+# tolerated and configuration is supplied entirely by these env vars (plus
+# the AUTH_JWT_SECRET secret set via `fly secrets set`). config.go's
+# loadFromEnv maps each of the keys below.
 [env]
   IMMICH_WEBUI_DIR = "/app/web"
   IMMICH_EMBEDDED_DB = "true"

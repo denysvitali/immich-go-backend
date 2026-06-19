@@ -86,8 +86,9 @@ FROM alpine:3.20
 # ca-certificates for outbound HTTPS (downloads the embedded Postgres
 # binary and any future asset). tini reaps zombies and forwards signals,
 # which matters because we `exec` into the backend binary. curl is used
-# for the embedded-postgres downloader.
-RUN apk add --no-cache ca-certificates tini curl \
+# for the embedded-postgres downloader. su-exec drops privileges from the
+# root entrypoint shim to appuser after the volume is chowned.
+RUN apk add --no-cache ca-certificates tini curl su-exec \
  && adduser -D -s /bin/sh -u 1001 appuser \
  && mkdir -p /data /app/web \
  && chown -R appuser:appuser /data /app
@@ -98,14 +99,25 @@ COPY --from=web --chown=appuser:appuser /build/www /app/web
 # Static binary.
 COPY --from=builder --chown=appuser:appuser /out/immich-go-backend /app/immich-go-backend
 
-USER appuser
+# Root-run entrypoint shim: chowns the freshly-mounted Fly volume at /data
+# (root:root on first boot) and drops to appuser via su-exec. Owned by root
+# and NOT writable by appuser so it can't be tampered with at runtime.
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod 0755 /entrypoint.sh
+
+# NOTE: the container intentionally starts as root (no `USER appuser`) so
+# the entrypoint can chown the runtime-mounted volume. It immediately drops
+# to appuser (uid 1001) before exec'ing the backend — embedded Postgres'
+# initdb refuses to run as root.
 WORKDIR /app
 
 # Expose the REST + gRPC ports. Fly uses 3001 as the public-facing port
 # (configured in fly.toml `internal_port = 3001`); 3002 is internal-only.
 EXPOSE 3001 3002
 
-# Tini forwards SIGTERM/SIGINT to the child process so graceful shutdown
-# can stop the embedded Postgres cleanly.
-ENTRYPOINT ["/sbin/tini", "--", "/app/immich-go-backend"]
+# Tini (PID 1, as root) forwards SIGTERM/SIGINT; the shim chowns /data then
+# `exec su-exec appuser` so the backend — and its embedded Postgres child —
+# run unprivileged. fly.toml `[processes] app = "serve"` is appended as the
+# argument, so the final command is `/app/immich-go-backend serve`.
+ENTRYPOINT ["/sbin/tini", "--", "/entrypoint.sh"]
 CMD ["serve"]
