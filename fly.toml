@@ -62,8 +62,13 @@ kill_timeout = "30s"
 # Demo workloads don't need horizontal scale. A single shared machine
 # keeps the embedded Postgres cluster coherent. Bump cpu_count / memory
 # if you plan to upload a large library.
+#
+# The process command is APPENDED to the image ENTRYPOINT
+# (`/sbin/tini -- /app/immich-go-backend`), so it must be only the
+# subcommand/args — NOT the binary path again, or the binary receives
+# its own path as the first positional and cobra rejects it.
 [processes]
-  app = "/app/immich-go-backend serve"
+  app = "serve"
 
 [[vm]]
   size = "shared-cpu-2x"
