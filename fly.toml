@@ -125,7 +125,7 @@ kill_timeout = "30s"
   internal_port = 3002
   auto_start_machines = false
   auto_stop_machines = "off"
-  min_machines_running = 1
+  min_machines_running = 0
 
   [[services.ports]]
     port = 3002

@@ -87,6 +87,20 @@ jobs:
           cache-to: type=gha,mode=max
           provenance: false
 
+      # Verify Dockerfile.fly builds too. We don't push it (the Fly builder
+      # does the real release build from fly.toml); we just need a fast
+      # CI signal when a repo change breaks the Fly image so we don't
+      # discover it by staring at "0 releases" after `fly deploy`.
+      - name: Build Dockerfile.fly (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.fly
+          platforms: linux/amd64
+          push: false
+          cache-from: type=gha
+          provenance: false
+
       - name: Generate artifact attestation
         if: github.event_name != 'pull_request' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         uses: actions/attest-build-provenance@v1
