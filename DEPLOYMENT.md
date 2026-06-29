@@ -151,7 +151,7 @@ The first deploy takes a few minutes:
 - Health: `GET /api/server/ping` (configured in `fly.toml` with a 120 s grace period).
 - REST API: `https://<app>.fly.dev/api/...`
 - Web UI: `https://<app>.fly.dev/`
-- gRPC: `3002` is exposed only on the Fly private network; access it from another Fly app in the same org via 6PN.
+- gRPC: `fly-local-6pn:3002` is bound only on the Fly private 6PN interface. There is intentionally no `[[services]]` mapping for port `3002`, so Fly Proxy does not expose it publicly.
 
 ### Environment variables in fly.toml
 
@@ -166,7 +166,7 @@ The `[env]` block sets non-secret defaults:
 | `STORAGE_LOCAL_ROOT` | `/data/uploads` | Upload root on local backend |
 | `UPLOAD_TEMP_DIR` | `/data/tmp` | Scratch for in-flight uploads |
 | `SERVER_ADDRESS` | `0.0.0.0:3001` | REST / WebSocket bind |
-| `SERVER_GRPC_ADDRESS` | `0.0.0.0:3002` | gRPC bind |
+| `SERVER_GRPC_ADDRESS` | `fly-local-6pn:3002` | Private 6PN-only gRPC bind |
 
 Override with `fly env set KEY=VALUE` or directly in `fly.toml`.
 
@@ -182,7 +182,7 @@ The Dockerfile defaults to `v2.4.0`. Pick a release whose proto schema this back
 
 - **Single machine.** Don't scale horizontally — the embedded Postgres is local to the machine and asynq assumes a single Redis (or no jobs at all). For production point `DATABASE_URL` at a managed Postgres.
 - **No ML service.** Face recognition / smart search fall back to their non-ML paths (the official Immich stack ships a separate ML service; this demo doesn't).
-- **gRPC is internal-only.** Expose `:3002` via 6PN if you want a mobile app on the same Fly org to connect via gRPC.
+- **gRPC is internal-only.** Connect to `:3002` from another app in the same Fly org over 6PN. Keep port `3002` out of `[[services]]` unless you deliberately want Fly Proxy to expose it.
 
 ### Troubleshooting
 

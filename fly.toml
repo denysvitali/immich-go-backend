@@ -47,9 +47,10 @@ kill_timeout = "30s"
   STORAGE_BACKEND = "local"
   STORAGE_LOCAL_ROOT = "/data/uploads"
   UPLOAD_TEMP_DIR = "/data/tmp"
-  # Listen on all interfaces inside the machine.
+  # Listen for HTTP via Fly Proxy, and for gRPC only on Fly's private
+  # 6PN interface. Do not add a public service mapping for 3002.
   SERVER_ADDRESS = "0.0.0.0:3001"
-  SERVER_GRPC_ADDRESS = "0.0.0.0:3002"
+  SERVER_GRPC_ADDRESS = "fly-local-6pn:3002"
 
 # ---- Persistent volume ----
 # One named volume mounted at /data covers both the embedded Postgres
@@ -117,15 +118,6 @@ kill_timeout = "30s"
     timeout = "5s"
     grace_period = "120s"
 
-# ---- Internal-only gRPC port ----
-# Exposed on 3002 to other apps in the same Fly organisation via
-# 6PN / private network. Not mapped to a public port.
-[[services]]
-  protocol = "tcp"
-  internal_port = 3002
-  auto_start_machines = false
-  auto_stop_machines = "off"
-  min_machines_running = 0
-
-  [[services.ports]]
-    port = 3002
+# gRPC is intentionally not declared as a Fly service. Binding the process
+# to fly-local-6pn:3002 makes it reachable over the private 6PN network, while
+# omitting a [[services]] block keeps Fly Proxy from exposing the port publicly.
