@@ -129,7 +129,7 @@ type DatabaseConfig struct {
 	LogQueries bool `yaml:"log_queries" env:"DATABASE_LOG_QUERIES" default:"false"`
 
 	// Enable migrations
-	AutoMigrate bool `yaml:"auto_migrate" env:"DATABASE_AUTO_MIGRATE" default:"true"`
+	AutoMigrate bool `yaml:"auto_migrate" env:"IMMICH_DATABASE_AUTO_MIGRATE" default:"true"`
 }
 
 // AuthConfig represents authentication configuration

@@ -77,7 +77,7 @@ curl -X POST http://localhost:3001/api/auth/admin-sign-up \
 | Variable | Default | Notes |
 |----------|---------|-------|
 | `DATABASE_URL` | `postgres://immich:immich@localhost:5432/immich?sslmode=disable` | Full DSN |
-| `DATABASE_AUTO_MIGRATE` | `true` | Run migrations during `serve`. Env name is `IMMICH_DATABASE_AUTO_MIGRATE`. Set to `false` for managed-DB prod |
+| `IMMICH_DATABASE_AUTO_MIGRATE` | `true` | Run migrations during `serve`. Set to `false` for managed-DB prod |
 | `AUTH_JWT_SECRET` | _required_ | **Required.** Set a 32+ byte secret in any non-demo deployment |
 | `SERVER_ADDRESS` | `0.0.0.0:3001` (Go default `0.0.0.0:8080`) | REST / WebSocket listener |
 | `SERVER_GRPC_ADDRESS` | `0.0.0.0:3002` (Go default `0.0.0.0:9090`) | gRPC listener (internal / private) |
@@ -151,7 +151,7 @@ The first deploy takes a few minutes:
 - Health: `GET /api/server/ping` (configured in `fly.toml` with a 120 s grace period).
 - REST API: `https://<app>.fly.dev/api/...`
 - Web UI: `https://<app>.fly.dev/`
-- gRPC: `fly-local-6pn:3002` is bound only on the Fly private 6PN interface. There is intentionally no `[[services]]` mapping for port `3002`, so Fly Proxy does not expose it publicly.
+- gRPC: the backend binds `fly-local-6pn:3002` only on the Fly private 6PN interface. Clients in the same Fly org should connect to `<app>.internal:3002`. There is intentionally no `[[services]]` mapping for port `3002`, so Fly Proxy does not expose it publicly.
 
 ### Environment variables in fly.toml
 
@@ -182,7 +182,7 @@ The Dockerfile defaults to `v2.4.0`. Pick a release whose proto schema this back
 
 - **Single machine.** Don't scale horizontally — the embedded Postgres is local to the machine and asynq assumes a single Redis (or no jobs at all). For production point `DATABASE_URL` at a managed Postgres.
 - **No ML service.** Face recognition / smart search fall back to their non-ML paths (the official Immich stack ships a separate ML service; this demo doesn't).
-- **gRPC is internal-only.** Connect to `:3002` from another app in the same Fly org over 6PN. Keep port `3002` out of `[[services]]` unless you deliberately want Fly Proxy to expose it.
+- **gRPC is internal-only.** Connect to `<app>.internal:3002` from another app in the same Fly org over 6PN. Keep port `3002` out of `[[services]]` unless you deliberately want Fly Proxy to expose it.
 
 ### Troubleshooting
 
@@ -300,59 +300,6 @@ services:
       POSTGRES_PASSWORD: immich
       POSTGRES_DB: immich
       POSTGRES_EXTENSIONS: "uuid-ossp,vector,earthdistance"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U immich"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  redis:
-    image: redis:7-alpine
-    command: redis-server --appendonly yes
-    volumes:
-      - redisdata:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-volumes:
-  pgdata:
-  redisdata:
-  uploads:
-```
-
-```yaml
-services:
-  backend:
-    image: ghcr.io/your-org/immich-go-backend:latest
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    environment:
-      DATABASE_URL: postgres://immich:immich@postgres:5432/immich?sslmode=disable
-      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET}
-      IMMICH_WEBUI_DIR: /app/web
-      STORAGE_LOCAL_ROOT: /data/uploads
-    volumes:
-      - uploads:/data
-    ports:
-      - "3001:3001"
-      - "3002:3002"
-    restart: unless-stopped
-
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: immich
-      POSTGRES_PASSWORD: immich
-      POSTGRES_DB: immich
-      POSTGRES_EXTENSIONS: "uuid-ossp,vector,vchord,cube,earthdistance,pg_trgm,unaccent"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
