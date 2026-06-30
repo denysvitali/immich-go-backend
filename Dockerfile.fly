@@ -140,8 +140,16 @@ COPY --from=pgbin /usr/lib/postgresql/${PG_VERSION}/lib      /usr/lib/postgres/l
 # at /usr/share/postgresql/17 on the vchord-suite image — NOT under
 # /usr/lib/postgresql/17/share. initdb hard-fails with
 #   "file .../postgres.bki" does not exist
-# if the share/ tree isn't present at the path initdb looks up.
-COPY --from=pgbin /usr/share/postgresql/${PG_VERSION}/       /usr/share/postgresql/${PG_VERSION}/
+#   "file .../postgresql.conf.sample" does not exist
+# if the share/ tree isn't fully present at the path initdb looks up. Copy
+# the full /usr/share/postgresql/ tree (no trailing slash on source so the
+# 17/ subdir is preserved) so the .bki, .sample, and extension SQL files
+# all land at the right paths.
+COPY --from=pgbin /usr/share/postgresql/  /usr/share/postgresql/
+# Timezone data: the vchord-suite image has it under /usr/share/zoneinfo,
+# postgres reads from there. /usr/share/zoneinfo/UTC etc. are required for
+# timestamp conversions; without them pg starts but mis-handles timestamps.
+COPY --from=pgbin /usr/share/zoneinfo  /usr/share/zoneinfo
 # Register /usr/lib/postgres/lib with the dynamic linker so the bundled
 # postgres binaries (initdb, postgres, ...) can resolve their transitive
 # dependencies — most importantly libpq.so.5, libssl, libldap, libxml2.
