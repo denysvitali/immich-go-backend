@@ -105,7 +105,7 @@ func (h *Hub) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	openPacket := engine.EncodePacket(engine.PacketMessage, handshakeBytes)
+	openPacket := engine.EncodePacket(engine.PacketOpen, handshakeBytes)
 	if err := c.WriteMessage(websocket.TextMessage, openPacket); err != nil {
 		logrus.WithError(err).Error("Failed to write handshake response to WebSocket")
 		return
@@ -284,7 +284,7 @@ func (c *Client) handleSocketIOConnect(packet *socketio.SocketIOPacket) {
 	}
 
 	// Wrap in Engine.IO message packet
-	messagePacket := engine.EncodePacket(engine.PacketOpen, responseBytes)
+	messagePacket := engine.EncodePacket(engine.PacketMessage, responseBytes)
 
 	select {
 	case c.send <- messagePacket:
