@@ -31,4 +31,4 @@ if [ "$(stat -c %u /data)" != "1001" ]; then
 	chown -R appuser:appuser /data
 fi
 
-exec su-exec appuser /app/immich-go-backend "$@"
+exec gosu appuser /app/immich-go-backend "$@"

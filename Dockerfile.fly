@@ -36,10 +36,10 @@ FROM ghcr.io/immich-app/immich-server:${IMMICH_VERSION} AS web
 # pgvector, vchord, cube, earthdistance, pg_trgm, and unaccent already
 # installed in the default location. We copy its postgres binaries to a
 # fixed image path so embedded-postgres uses them instead of downloading
-# the vanilla binary. Pinning VCHORD_TAG keeps the image reproducible;
-# bump deliberately when we want newer Immich compat.
-ARG VCHORD_TAG=pg17-latest
-FROM docker.io/tensorchord/vchord-suite:${VCHORD_TAG} AS pgbin
+# the vanilla binary. Pin the tag explicitly; do not use an ARG default
+# here — `FROM image:${ARG}` doesn't reliably substitute defaults across
+# BuildKit versions.
+FROM docker.io/tensorchord/vchord-suite:pg17-latest AS pgbin
 
 # ---------- Stage 1: build ----------
 FROM golang:1.24-alpine AS builder
@@ -104,12 +104,13 @@ FROM debian:bookworm-slim
 
 # ca-certificates for outbound HTTPS. tini reaps zombies and forwards
 # signals, which matters because we `exec` into the backend binary. curl is
-# kept for diagnostics. su-exec drops privileges from the root entrypoint
-# shim to appuser after the volume is chowned. libgcc/libstdc++ backstop
-# any transitive glibc symbol the postgres binary drags in.
+# kept for diagnostics. gosu drops privileges from the root entrypoint
+# shim to appuser after the volume is chowned (gosu is the Debian
+# equivalent of Alpine's su-exec — su-exec isn't in apt). libgcc/libstdc++
+# backstop any transitive glibc symbol the postgres binary drags in.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      ca-certificates tini curl su-exec libgcc-s1 libstdc++6 \
+      ca-certificates tini curl gosu libgcc-s1 libstdc++6 \
  && rm -rf /var/lib/apt/lists/* \
  && useradd --system --uid 1001 --shell /bin/sh --create-home appuser \
  && mkdir -p /data /app/web \
@@ -120,18 +121,18 @@ RUN apt-get update \
 # expects a flat layout with `bin/` directly under its BinariesPath. We
 # stage it under /usr/lib/postgres so the layout matches: the lib checks
 # for `<BinariesPath>/bin/pg_ctl` and skips its Maven download when it
-# finds one. The bundles directory holds the extension .so files; copying
-# them in keeps the same install layout so pg_config / extension lookups
-# resolve correctly.
+# finds one. Extensions ship as .so files in the same /lib directory.
 ARG PG_VERSION=17
 COPY --from=pgbin /usr/lib/postgresql/${PG_VERSION}/bin      /usr/lib/postgres/bin
 COPY --from=pgbin /usr/lib/postgresql/${PG_VERSION}/lib      /usr/lib/postgres/lib
-COPY --from=pgbin /usr/lib/postgresql/${PG_VERSION}/share    /usr/lib/postgres/share
-COPY --from=pgbin /usr/lib/postgresql/${PG_VERSION}/include  /usr/lib/postgres/include
-# Extensions ship in the postgres docker image under a different layout;
-# copy them by glob so we catch vector.so, vchord.so, cube, etc.
-COPY --from=pgbin /usr/share/postgresql/${PG_VERSION}/extension/ /usr/lib/postgres/share/extension/
-COPY --from=pgbin /usr/lib/postgresql/${PG_VERSION}/lib/*.so  /usr/lib/postgres/lib/
+# Register /usr/lib/postgres/lib with the dynamic linker so the bundled
+# postgres binaries (initdb, postgres, ...) can resolve their transitive
+# dependencies — most importantly libpq.so.5, libssl, libldap, libxml2.
+# Without this, initdb errors out with
+#   error while loading shared libraries: libpq.so.5
+# and the embedded-postgres child exits 1, restart-looping the machine.
+RUN echo "/usr/lib/postgres/lib" > /etc/ld.so.conf.d/postgres.conf \
+ && ldconfig
 
 # Web bundle copied from the official Immich server image.
 COPY --from=web --chown=appuser:appuser /build/www /app/web
@@ -140,7 +141,7 @@ COPY --from=web --chown=appuser:appuser /build/www /app/web
 COPY --from=builder --chown=appuser:appuser /out/immich-go-backend /app/immich-go-backend
 
 # Root-run entrypoint shim: chowns the freshly-mounted Fly volume at /data
-# (root:root on first boot) and drops to appuser via su-exec. Owned by root
+# (root:root on first boot) and drops to appuser via gosu. Owned by root
 # and NOT writable by appuser so it can't be tampered with at runtime.
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod 0755 /entrypoint.sh
@@ -156,9 +157,10 @@ WORKDIR /app
 EXPOSE 3001 3002
 
 # Tini (PID 1, as root) forwards SIGTERM/SIGINT; the shim chowns /data then
-# `exec su-exec appuser` so the backend — and its embedded Postgres child —
+# `exec gosu appuser` so the backend — and its embedded Postgres child —
 # run unprivileged. fly.toml `[processes] app = "serve"` is appended as the
 # argument, so the final command is `/app/immich-go-backend serve`. Path is
-# /usr/bin/tini on Debian (was /sbin/tini on Alpine).
+# /usr/bin/tini on Debian (was /sbin/tini on Alpine); gosu replaces
+# Alpine's su-exec.
 ENTRYPOINT ["/usr/bin/tini", "--", "/entrypoint.sh"]
 CMD ["serve"]
