@@ -145,10 +145,10 @@ func Start(cfg Config) (*Runtime, error) {
 				// migration; default 64 MB OOMs the migration on
 				// free-tier). effective_cache_size is informational
 				// for the planner (not allocated).
-				"shared_buffers":       "64mb",
-				"maintenance_work_mem": "32mb",
-				"effective_cache_size": "192mb",
-				"work_mem":             "4mb",
+				"shared_buffers":       "64MB",
+				"maintenance_work_mem": "32MB",
+				"effective_cache_size": "192MB",
+				"work_mem":             "4MB",
 				"max_connections":      "20",
 			}),
 	)
