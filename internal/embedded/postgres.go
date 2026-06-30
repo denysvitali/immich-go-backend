@@ -131,6 +131,25 @@ func Start(cfg Config) (*Runtime, error) {
 				"shared_preload_libraries": "vchord",
 				"log_min_messages":         "warning",
 				"log_statement":            "none",
+				// Postgres' defaults assume an order of magnitude
+				// more RAM than the Fly free tier (shared-cpu-1x /
+				// 256 MB) provides. shared_buffers defaults to 1/4
+				// of total RAM but STORES as much as 128 MB on first
+				// start (postgresql.conf's `min(128MB, 1/4 RAM)`);
+				// on a 256 MB VM that's half the box, leaving no
+				// headroom for the Go backend, the immich backend's
+				// gRPC/REST handlers, or page-cache. Cap at 64 MB
+				// so the Go process can actually run alongside it.
+				// maintenance_work_mem bumps index/extension builds
+				// (vchord creates two vchordrq indexes during
+				// migration; default 64 MB OOMs the migration on
+				// free-tier). effective_cache_size is informational
+				// for the planner (not allocated).
+				"shared_buffers":        "64mb",
+				"maintenance_work_mem":  "32mb",
+				"effective_cache_size":  "192mb",
+				"work_mem":              "4mb",
+				"max_connections":       "20",
 			}),
 	)
 

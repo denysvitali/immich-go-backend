@@ -71,11 +71,16 @@ kill_timeout = "30s"
 [processes]
   app = "serve"
 
+# Free-tier size: shared-cpu-1x with 256 MB RAM. On legacy Hobby plans
+# this maps to the no-charge allocation; on new paid plans it's ~$1.94/mo
+# before any free trial credit. Tight for the embedded Postgres' default
+# 128 MB shared_buffers — see StartParameters in internal/embedded which
+# sets shared_buffers to 64 MB to keep within budget.
 [[vm]]
-  size = "shared-cpu-2x"
-  memory = "1gb"
+  size = "shared-cpu-1x"
+  memory = "256mb"
   cpu_kind = "shared"
-  cpus = 2
+  cpus = 1
 
 # ---- Service: HTTP/REST ----
 # Public traffic is HTTPS on 443 and HTTP on 80 — Fly terminates TLS and
