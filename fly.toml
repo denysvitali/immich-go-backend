@@ -83,6 +83,7 @@ kill_timeout = "30s"
 [[services]]
   protocol = "tcp"
   internal_port = 3001
+  processes = ["app"]
   auto_start_machines = true
   auto_stop_machines = "off"
   min_machines_running = 1
@@ -108,14 +109,14 @@ kill_timeout = "30s"
   [[services.http_checks]]
     interval = "15s"
     timeout = "5s"
-    grace_period = "120s"
+    grace_period = "60s"
     method = "get"
     path = "/api/server/ping"
 
   [[services.tcp_checks]]
     interval = "15s"
     timeout = "5s"
-    grace_period = "120s"
+    grace_period = "60s"
 
 # gRPC is intentionally not declared as a Fly service. Binding the process
 # to fly-local-6pn:3002 makes it reachable over the private 6PN network, while
