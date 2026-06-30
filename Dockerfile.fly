@@ -108,14 +108,20 @@ FROM debian:bookworm-slim
 # shim to appuser after the volume is chowned (gosu is the Debian
 # equivalent of Alpine's su-exec — su-exec isn't in apt). libgcc/libstdc++
 # backstop any transitive glibc symbol the postgres binary drags in.
-# libpq5 is pulled from apt as a defensive fallback: the vchord-suite
-# image's /usr/lib/postgresql/17/lib doesn't always ship libpq.so.5 in a
-# path initdb can resolve, and initdb hard-fails with exit 127 if it
-# can't find it. The system package is ABI-compatible with the bundled
-# postgres binary.
+#
+# The postgres binary baked into the image (from tensorchord/vchord-suite)
+# was built on Debian trixie and links against a known set of shared
+# libraries that the slimmer bookworm runtime base doesn't ship. Install
+# them all at once to avoid whack-a-mole missing-libs errors. Tested
+# against initdb's actual ldd: libpq, libicu, libssl, libldap, libxml2,
+# libxslt, libsasl, libgssapi, libpam, libsystemd. libnss, libldap, and
+# libgssapi pull in nss/nsswitch config that the bookworm base also needs.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      ca-certificates tini curl gosu libgcc-s1 libstdc++6 libpq5 \
+      ca-certificates tini curl gosu \
+      libgcc-s1 libstdc++6 libpq5 \
+      libicu72 libssl3 libldap-2.5-0 libxml2 libxslt1.1 \
+      libsasl2-2 libgssapi-krb5-2 libpam0g libsystemd0 libnss3 \
  && rm -rf /var/lib/apt/lists/* \
  && useradd --system --uid 1001 --shell /bin/sh --create-home appuser \
  && mkdir -p /data /app/web \
