@@ -45,6 +45,17 @@ func Handler(dir string, next http.Handler) http.Handler {
 			return
 		}
 
+		// API routes must always pass through to the API mux. SPA
+		// fallback to index.html otherwise turns /api/server/ping,
+		// /api/server/config, ... into HTML responses, which causes
+		// the SvelteKit client to spin its loading flower forever
+		// waiting for JSON that never comes. Same for websocket
+		// upgrade probes under /api/socket.io/.
+		if isAPIPath(r.URL.Path) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		// Path traversal guard — must run on the raw URL path because
 		// path.Clean resolves `..` segments away, hiding the attempt.
 		if strings.Contains(r.URL.Path, "..") || strings.HasPrefix(r.URL.Path, "/.") {
@@ -90,4 +101,20 @@ func Handler(dir string, next http.Handler) http.Handler {
 func hasExt(p string) bool {
 	ext := filepath.Ext(p)
 	return ext != "" && ext != "."
+}
+
+// isAPIPath reports whether a URL path is owned by the backend REST /
+// websocket API and must not be intercepted by the SPA fallback.
+// /api/* (grpc-gateway) and the websocket upgrade paths under
+// /api/socket.io/* would otherwise have index.html served in their
+// place, breaking the frontend.
+func isAPIPath(p string) bool {
+	// Trim trailing slashes so /api and /api/ are treated identically;
+	// http.FileServer treats them as the same path too.
+	p = strings.TrimRight(p, "/")
+	if p == "" {
+		// "GET /" — that's the SPA index, not the API.
+		return false
+	}
+	return strings.HasPrefix(p, "/api/")
 }
