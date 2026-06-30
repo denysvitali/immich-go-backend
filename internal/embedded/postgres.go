@@ -139,7 +139,13 @@ func fillDefaults(c Config) Config {
 		c.DataPath = envOr("IMMICH_EMBEDDED_PG_DATA", "/data/pg")
 	}
 	if c.BinariesPath == "" {
-		c.BinariesPath = envOr("IMMICH_EMBEDDED_PG_BIN", "/data/pg-bin")
+		// Bundled binary baked into the image by Dockerfile.fly (see
+		// stage 0b/2: copied from tensorchord/vchord-suite). The
+		// fergusstrange library checks for <BinariesPath>/bin/pg_ctl
+		// and skips its Maven download when present. Defaults to the
+		// image path; the env override is kept for anyone running a
+		// vanilla binary off a volume.
+		c.BinariesPath = envOr("IMMICH_EMBEDDED_PG_BIN", "/usr/lib/postgres")
 	}
 	if c.Port == 0 {
 		c.Port = 5433

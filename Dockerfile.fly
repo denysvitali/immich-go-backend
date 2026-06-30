@@ -15,13 +15,31 @@
 # use the base Dockerfile instead — it's leaner and doesn't bake in the
 # web bundle.
 
-# ---------- Stage 0: web bundle ----------
+# ---------- Stage 0a: web bundle ----------
 # The official Immich server image bundles the SvelteKit web build at
 # /build/www (see immich-app/immich v2.4.0 server/Dockerfile). We pull the
 # matching tag so the frontend API surface stays in sync with the backend's
 # gRPC services. Override with `--build-arg IMMICH_VERSION=v2.x.y`.
 ARG IMMICH_VERSION=v2.4.0
 FROM ghcr.io/immich-app/immich-server:${IMMICH_VERSION} AS web
+
+# ---------- Stage 0b: bundled Postgres ----------
+# fergusstrange/embedded-postgres (the library we use for the single-machine
+# demo) downloads a vanilla PostgreSQL binary from Maven on first start.
+# That vanilla binary ships no pgvector / vchord / cube / earthdistance /
+# pg_trgm extensions — and our 001_initial_schema.sql opens with
+# `CREATE EXTENSION IF NOT EXISTS vector / vchord / cube / earthdistance /
+# pg_trgm`. Without these, the migration aborts mid-flight on the very first
+# statement and the embedded child exits 1, restart-looping the machine.
+#
+# tensorchord/vchord-suite is the official Immich Postgres image: pg17 with
+# pgvector, vchord, cube, earthdistance, pg_trgm, and unaccent already
+# installed in the default location. We copy its postgres binaries to a
+# fixed image path so embedded-postgres uses them instead of downloading
+# the vanilla binary. Pinning VCHORD_TAG keeps the image reproducible;
+# bump deliberately when we want newer Immich compat.
+ARG VCHORD_TAG=pg17-latest
+FROM docker.io/tensorchord/vchord-suite:${VCHORD_TAG} AS pgbin
 
 # ---------- Stage 1: build ----------
 FROM golang:1.24-alpine AS builder
@@ -79,19 +97,41 @@ RUN if [ -d "internal/proto/gen" ] && \
       ./cmd
 
 # ---------- Stage 2: Fly runtime ----------
-# Alpine (not scratch) so the embedded-postgres library can exec the
-# downloaded Postgres binary, which expects a libc + reasonable /tmp.
-FROM alpine:3.20
+# Debian (not Alpine) so we can run the Postgres binaries we just copied
+# from the vchord-suite image — those are glibc-linked. Alpine's musl would
+# refuse to load them. /data is the default Fly volume mount point.
+FROM debian:bookworm-slim
 
-# ca-certificates for outbound HTTPS (downloads the embedded Postgres
-# binary and any future asset). tini reaps zombies and forwards signals,
-# which matters because we `exec` into the backend binary. curl is used
-# for the embedded-postgres downloader. su-exec drops privileges from the
-# root entrypoint shim to appuser after the volume is chowned.
-RUN apk add --no-cache ca-certificates tini curl su-exec \
- && adduser -D -s /bin/sh -u 1001 appuser \
+# ca-certificates for outbound HTTPS. tini reaps zombies and forwards
+# signals, which matters because we `exec` into the backend binary. curl is
+# kept for diagnostics. su-exec drops privileges from the root entrypoint
+# shim to appuser after the volume is chowned. libgcc/libstdc++ backstop
+# any transitive glibc symbol the postgres binary drags in.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      ca-certificates tini curl su-exec libgcc-s1 libstdc++6 \
+ && rm -rf /var/lib/apt/lists/* \
+ && useradd --system --uid 1001 --shell /bin/sh --create-home appuser \
  && mkdir -p /data /app/web \
  && chown -R appuser:appuser /data /app
+
+# Postgres binaries from the vchord-suite image. vchord-suite is a stock
+# pg17 install at /usr/lib/postgresql/17; the embedded-postgres library
+# expects a flat layout with `bin/` directly under its BinariesPath. We
+# stage it under /usr/lib/postgres so the layout matches: the lib checks
+# for `<BinariesPath>/bin/pg_ctl` and skips its Maven download when it
+# finds one. The bundles directory holds the extension .so files; copying
+# them in keeps the same install layout so pg_config / extension lookups
+# resolve correctly.
+ARG PG_VERSION=17
+COPY --from=pgbin /usr/lib/postgresql/${PG_VERSION}/bin      /usr/lib/postgres/bin
+COPY --from=pgbin /usr/lib/postgresql/${PG_VERSION}/lib      /usr/lib/postgres/lib
+COPY --from=pgbin /usr/lib/postgresql/${PG_VERSION}/share    /usr/lib/postgres/share
+COPY --from=pgbin /usr/lib/postgresql/${PG_VERSION}/include  /usr/lib/postgres/include
+# Extensions ship in the postgres docker image under a different layout;
+# copy them by glob so we catch vector.so, vchord.so, cube, etc.
+COPY --from=pgbin /usr/share/postgresql/${PG_VERSION}/extension/ /usr/lib/postgres/share/extension/
+COPY --from=pgbin /usr/lib/postgresql/${PG_VERSION}/lib/*.so  /usr/lib/postgres/lib/
 
 # Web bundle copied from the official Immich server image.
 COPY --from=web --chown=appuser:appuser /build/www /app/web
@@ -118,6 +158,7 @@ EXPOSE 3001 3002
 # Tini (PID 1, as root) forwards SIGTERM/SIGINT; the shim chowns /data then
 # `exec su-exec appuser` so the backend — and its embedded Postgres child —
 # run unprivileged. fly.toml `[processes] app = "serve"` is appended as the
-# argument, so the final command is `/app/immich-go-backend serve`.
-ENTRYPOINT ["/sbin/tini", "--", "/entrypoint.sh"]
+# argument, so the final command is `/app/immich-go-backend serve`. Path is
+# /usr/bin/tini on Debian (was /sbin/tini on Alpine).
+ENTRYPOINT ["/usr/bin/tini", "--", "/entrypoint.sh"]
 CMD ["serve"]
