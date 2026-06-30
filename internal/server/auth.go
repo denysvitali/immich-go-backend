@@ -92,6 +92,24 @@ func (s *Server) AdminSignUp(ctx context.Context, req *immichv1.AdminSignUpReque
 	// Register the first setup user as admin.
 	response, err := s.authService.AdminSignUp(ctx, registerRequest)
 	if err != nil {
+		// Surface validation failures as proper gRPC codes instead of
+		// collapsing every error into INTERNAL — the Immich web client
+		// shows the gRPC message to the user, so "admin registration
+		// failed" with no detail looks identical to a real server bug.
+		// ErrInvalidPassword / ErrUserExists / ErrRegistrationDisabled
+		// are caller-side problems (4xx); the rest are 5xx.
+		if authErr, ok := err.(*auth.AuthError); ok {
+			switch authErr.Type {
+			case auth.ErrInvalidPassword:
+				// Underlying validatePassword message is safe to surface
+				// ("password must be at least N characters long", ...).
+				return nil, status.Error(codes.InvalidArgument, authErr.Err.Error())
+			case auth.ErrUserExists:
+				return nil, status.Error(codes.AlreadyExists, "user with this email already exists")
+			case auth.ErrRegistrationDisabled:
+				return nil, status.Error(codes.FailedPrecondition, "user registration is disabled")
+			}
+		}
 		return nil, SanitizedInternal(ctx, "admin registration failed", err)
 	}
 
