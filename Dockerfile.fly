@@ -108,9 +108,14 @@ FROM debian:bookworm-slim
 # shim to appuser after the volume is chowned (gosu is the Debian
 # equivalent of Alpine's su-exec — su-exec isn't in apt). libgcc/libstdc++
 # backstop any transitive glibc symbol the postgres binary drags in.
+# libpq5 is pulled from apt as a defensive fallback: the vchord-suite
+# image's /usr/lib/postgresql/17/lib doesn't always ship libpq.so.5 in a
+# path initdb can resolve, and initdb hard-fails with exit 127 if it
+# can't find it. The system package is ABI-compatible with the bundled
+# postgres binary.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      ca-certificates tini curl gosu libgcc-s1 libstdc++6 \
+      ca-certificates tini curl gosu libgcc-s1 libstdc++6 libpq5 \
  && rm -rf /var/lib/apt/lists/* \
  && useradd --system --uid 1001 --shell /bin/sh --create-home appuser \
  && mkdir -p /data /app/web \
