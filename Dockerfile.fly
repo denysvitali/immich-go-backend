@@ -124,8 +124,8 @@ RUN apt-get update \
       libsasl2-2 libgssapi-krb5-2 libpam0g libsystemd0 libnss3 \
  && rm -rf /var/lib/apt/lists/* \
  && useradd --system --uid 1001 --shell /bin/sh --create-home appuser \
- && mkdir -p /data /app/web \
- && chown -R appuser:appuser /data /app
+ && mkdir -p /data /app/web /var/run/postgresql \
+ && chown -R appuser:appuser /data /app /var/run/postgresql
 
 # Postgres binaries from the vchord-suite image. vchord-suite is a stock
 # pg17 install at /usr/lib/postgresql/17; the embedded-postgres library
