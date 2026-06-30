@@ -106,6 +106,15 @@ func Start(cfg Config) (*Runtime, error) {
 		return nil, fmt.Errorf("resolve binaries path: %w", err)
 	}
 
+	// Silence Postgres' own statement/message logging. The migration
+	// log (001_initial_schema.sql) is a pg_dump-style dump with hundreds
+	// of CREATE TABLE / ALTER TABLE / CREATE INDEX statements; with
+	// stock Postgres defaults the server-side log is quiet, but a noisy
+	// `log_min_messages` setting or pgx tracelog would drown out the
+	// real ERROR line in Fly's 100-line log buffer. Default-log is fine,
+	// but we set log_min_messages=warning explicitly so the only stderr
+	// lines reaching Fly logs are warnings and errors — including the
+	// migration's actual failure reason.
 	ep := embeddedpostgres.NewDatabase(
 		embeddedpostgres.DefaultConfig().
 			Port(cfg.Port).
@@ -114,7 +123,11 @@ func Start(cfg Config) (*Runtime, error) {
 			Username(cfg.User).
 			Password(cfg.Password).
 			Database(cfg.Database).
-			StartTimeout(cfg.StartTimeout),
+			StartTimeout(cfg.StartTimeout).
+			StartParameters(map[string]string{
+				"log_min_messages": "warning",
+				"log_statement":    "none",
+			}),
 	)
 
 	logrus.WithFields(logrus.Fields{

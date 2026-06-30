@@ -17,7 +17,7 @@
 #   /data/profile  — user avatars
 #   /data/video    — encoded/transcoded video
 
-app = "immich-go-demo"
+app = "immich-go-backend"
 primary_region = "iad"
 kill_signal = "SIGTERM"
 kill_timeout = "30s"
