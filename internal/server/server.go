@@ -643,6 +643,14 @@ func (s *Server) authContextMiddleware(handlerFunc runtime.HandlerFunc) runtime.
 		}
 
 		ctx := context.WithValue(r.Context(), auth.ClaimsContextKey, claims)
+
+		// auth.RequireUser/RequireAdmin (used by admin.* and systemmetadata.*
+		// services) read UserContextKey, not ClaimsContextKey. Without this
+		// lookup those endpoints reject every caller, admins included.
+		if userInfo, err := s.authService.LoadUserInfo(ctx, claims); err == nil {
+			ctx = auth.WithUser(ctx, *userInfo)
+		}
+
 		handlerFunc(w, r.WithContext(ctx), pathParams)
 	}
 }

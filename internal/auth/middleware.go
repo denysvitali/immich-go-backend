@@ -59,6 +59,35 @@ func pgTypeString(s string) pgtype.Text {
 	}
 }
 
+// LoadUserInfo looks up the user identified by claims and builds the
+// UserInfo consumed by RequireUser/RequireAdmin. Shared by the Gin
+// AuthMiddleware and the grpc-gateway authContextMiddleware so both entry
+// points populate the same std-context UserContextKey.
+func (s *Service) LoadUserInfo(ctx context.Context, claims *Claims) (*UserInfo, error) {
+	userID, err := stringToUUID(claims.UserID)
+	if err != nil {
+		return nil, NewInvalidTokenError("invalid user ID", err)
+	}
+
+	user, err := s.queries.GetUserByID(ctx, userID)
+	if err != nil {
+		return nil, NewUserNotFoundError()
+	}
+
+	if user.DeletedAt.Valid {
+		return nil, NewAuthError(ErrUserDeleted, "user account has been deleted", nil)
+	}
+
+	return &UserInfo{
+		ID:        uuidToString(user.ID),
+		Email:     user.Email,
+		Name:      user.Name,
+		IsAdmin:   user.IsAdmin,
+		CreatedAt: timestamptzToTime(user.CreatedAt),
+		UpdatedAt: timestamptzToTime(user.UpdatedAt),
+	}, nil
+}
+
 // AuthMiddleware creates a middleware for JWT authentication
 func (s *Service) AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
