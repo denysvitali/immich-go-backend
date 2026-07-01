@@ -155,6 +155,7 @@ message ServerConfigResponse {
   bool public_users = 8;
   int32 trash_days = 9;
   int32 user_delete_delay = 10;
+  bool maintenance_mode = 11;
 }
 
 // Server features response

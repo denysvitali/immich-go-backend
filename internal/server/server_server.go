@@ -48,6 +48,7 @@ func (s *Server) GetServerConfig(ctx context.Context, empty *emptypb.Empty) (*im
 		PublicUsers:      true,
 		MapDarkStyleUrl:  "https://tiles.immich.cloud/v1/style/dark.json",
 		MapLightStyleUrl: "https://tiles.immich.cloud/v1/style/light.json",
+		MaintenanceMode:  false,
 	}, nil
 }
 
