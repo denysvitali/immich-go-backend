@@ -65,6 +65,17 @@ test('upstream frontend can reach backend through its proxy', async ({ page, req
   expect(featuresBody.passwordLogin).toBe(true);
 });
 
+test('root layout mounts and the loading spinner goes away', async ({ page }) => {
+  await page.goto('/');
+  // The Immich app.html markup renders a spinning logo in #stencil while
+  // the SvelteKit root layout loads; the root layout's onMount removes it
+  // once app data (server config, etc.) resolves and the real UI mounts.
+  // A backend response the client can't parse into a sane config (e.g. a
+  // missing boolean field read as undefined) can send the root layout into
+  // a redirect loop that never resolves, leaving this spinner up forever.
+  await expect(page.locator('#stencil')).toBeHidden({ timeout: 15_000 });
+});
+
 test('admin can sign up, log in, read profile, and manage license through frontend origin', async ({ request }) => {
   const user = await signUp(request, 'license');
 
