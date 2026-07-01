@@ -120,6 +120,15 @@ func Start(cfg Config) (*Runtime, error) {
 	// WARNING only so the migration's failure reason surfaces.
 	ep := embeddedpostgres.NewDatabase(
 		embeddedpostgres.DefaultConfig().
+			// DefaultConfig() assumes Postgres 16, but the binaries baked
+			// into the image (Dockerfile.fly, from tensorchord/vchord-suite)
+			// are Postgres 17. Without this, dataDirIsValid() compares the
+			// on-disk cluster's PG_VERSION ("17") against the expected
+			// "16.9.0", the prefix check always fails, and every restart
+			// wipes and reinitializes the entire cluster — silently
+			// destroying all users/photos on every deploy or machine
+			// restart.
+			Version(embeddedpostgres.V17).
 			Port(cfg.Port).
 			DataPath(absData).
 			BinariesPath(absBin).
