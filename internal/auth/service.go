@@ -207,16 +207,34 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest) (*AuthRespo
 
 // AdminSignUp creates the initial administrator account during setup.
 func (s *Service) AdminSignUp(ctx context.Context, req RegisterRequest) (*AuthResponse, error) {
+	userCount, err := s.countUsers(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.register(ctx, req, userCount == 0)
+}
+
+// IsInitialized reports whether at least one user account exists, i.e.
+// whether the initial admin-sign-up step has been completed.
+func (s *Service) IsInitialized(ctx context.Context) (bool, error) {
+	userCount, err := s.countUsers(ctx)
+	if err != nil {
+		return false, err
+	}
+	return userCount > 0, nil
+}
+
+func (s *Service) countUsers(ctx context.Context) (int64, error) {
 	userCount, err := s.queries.CountUsers(ctx, pgtype.Bool{Valid: false})
 	if err != nil {
-		return nil, &AuthError{
+		return 0, &AuthError{
 			Type:    ErrUserCreation,
 			Message: "Failed to count existing users",
 			Err:     err,
 		}
 	}
-
-	return s.register(ctx, req, userCount == 0)
+	return userCount, nil
 }
 
 func (s *Service) register(ctx context.Context, req RegisterRequest, isAdmin bool) (*AuthResponse, error) {

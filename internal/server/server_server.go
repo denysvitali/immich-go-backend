@@ -37,12 +37,24 @@ func (s *Server) GetAboutInfo(ctx context.Context, empty *emptypb.Empty) (*immic
 }
 
 func (s *Server) GetServerConfig(ctx context.Context, empty *emptypb.Empty) (*immichv1.ServerConfigResponse, error) {
+	// The frontend only offers the "create admin account" registration
+	// screen when isInitialized is false; a hardcoded true here means a
+	// freshly-provisioned (zero-user) instance has no way to bootstrap an
+	// admin account from the UI.
+	isInitialized, err := s.authService.IsInitialized(ctx)
+	if err != nil {
+		return nil, SanitizedInternal(ctx, "failed to check initialization state", err)
+	}
+
 	return &immichv1.ServerConfigResponse{
 		LoginPageMessage: "Welcome to Immich",
 		TrashDays:        30,
 		UserDeleteDelay:  7,
 		OauthButtonText:  "Login with OAuth",
-		IsInitialized:    true,
+		IsInitialized:    isInitialized,
+		// IsOnboarded here tracks the post-signup admin setup wizard, a
+		// separate concept from IsInitialized — see
+		// SystemMetadataService.GetAdminOnboarding for the real flag.
 		IsOnboarded:      true,
 		ExternalDomain:   "",
 		PublicUsers:      true,
