@@ -56,6 +56,14 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-proto-
 
+    - name: Install protoc plugins
+      if: steps.proto-cache.outputs.cache-hit != 'true'
+      run: |
+        go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.6
+        go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.3.0
+        go install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-grpc-gateway@v2.26.3
+        echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
     - name: Generate Protocol Buffers
       if: steps.proto-cache.outputs.cache-hit != 'true'
       run: |
@@ -119,6 +127,14 @@ jobs:
         key: ${{ runner.os }}-proto-${{ hashFiles('internal/proto/**/*.proto', 'buf.gen.yaml', 'buf.work.yaml', 'internal/proto/buf.yaml') }}
         restore-keys: |
           ${{ runner.os }}-proto-
+
+    - name: Install protoc plugins
+      if: steps.proto-cache.outputs.cache-hit != 'true'
+      run: |
+        go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.6
+        go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.3.0
+        go install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-grpc-gateway@v2.26.3
+        echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
     - name: Generate Protocol Buffers
       if: steps.proto-cache.outputs.cache-hit != 'true'
@@ -240,6 +256,14 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-proto-
 
+    - name: Install protoc plugins
+      if: steps.proto-cache.outputs.cache-hit != 'true'
+      run: |
+        go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.6
+        go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.3.0
+        go install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-grpc-gateway@v2.26.3
+        echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
     - name: Generate Protocol Buffers
       if: steps.proto-cache.outputs.cache-hit != 'true'
       run: |
@@ -318,6 +342,14 @@ jobs:
         key: ${{ runner.os }}-proto-${{ hashFiles('internal/proto/**/*.proto', 'buf.gen.yaml', 'buf.work.yaml', 'internal/proto/buf.yaml') }}
         restore-keys: |
           ${{ runner.os }}-proto-
+
+    - name: Install protoc plugins
+      if: steps.proto-cache.outputs.cache-hit != 'true'
+      run: |
+        go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.6
+        go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.3.0
+        go install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-grpc-gateway@v2.26.3
+        echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
     - name: Generate Protocol Buffers
       if: steps.proto-cache.outputs.cache-hit != 'true'
