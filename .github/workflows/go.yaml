@@ -538,7 +538,9 @@ jobs:
         name: frontend-e2e-videos
         path: e2e/test-results/**/*.webm
         if-no-files-found: warn
-        archive: false
+        # archive:false only supports a single uploaded file; more than one
+        # `page`-based test now records a video, so this must archive them.
+        archive: true
 
     - name: Stop E2E services
       if: always()
