@@ -428,9 +428,10 @@ func (s *Server) convertUserToAdminProto(user *users.UserInfo) *immichv1.UserAdm
 	}
 
 	status := immichv1.UserStatus_USER_STATUS_ACTIVE
-	if user.Status == "removing" {
+	switch user.Status {
+	case "removing":
 		status = immichv1.UserStatus_USER_STATUS_REMOVING
-	} else if user.Status == "deleted" {
+	case "deleted":
 		status = immichv1.UserStatus_USER_STATUS_DELETED
 	}
 

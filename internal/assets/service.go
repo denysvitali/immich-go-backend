@@ -37,6 +37,13 @@ type Service struct {
 	storageSize     metric.Int64UpDownCounter
 }
 
+type thumbnailSizeMode bool
+
+const (
+	withoutThumbnailSize thumbnailSizeMode = false
+	withThumbnailSize    thumbnailSizeMode = true
+)
+
 // SyncService interface for broadcasting events
 type SyncService interface {
 	BroadcastAssetEvent(ownerID string, assetID string, action string)
@@ -225,8 +232,8 @@ func (s *Service) CompleteUpload(ctx context.Context, assetID uuid.UUID, reader 
 		return fmt.Errorf("failed to update asset status: %w", err)
 	}
 
-	// Start background processing
-	go s.processAsset(context.Background(), assetID)
+	processCtx := context.WithoutCancel(ctx)
+	go s.processAsset(processCtx, assetID)
 
 	s.uploadCounter.Add(ctx, 1,
 		metric.WithAttributes(
@@ -235,7 +242,6 @@ func (s *Service) CompleteUpload(ctx context.Context, assetID uuid.UUID, reader 
 		))
 
 	// Storage size metric is recorded in processAsset after file metadata is retrieved
-
 	return nil
 }
 
@@ -507,30 +513,7 @@ func (s *Service) GetAsset(ctx context.Context, assetID uuid.UUID, userID uuid.U
 		// Continue without thumbnails
 	}
 
-	// Convert asset files to thumbnails with dimensions from thumbnail config
-	var thumbnails []AssetThumbnail
-	for _, file := range assetFiles {
-		// Only include thumbnail files
-		if file.Type == string(ThumbnailTypePreview) || file.Type == string(ThumbnailTypeWebp) || file.Type == string(ThumbnailTypeThumb) {
-			thumbType := ThumbnailType(file.Type)
-			width, height := s.thumbnailGen.GetThumbnailDimensions(thumbType)
-
-			// Get file size from storage metadata
-			var size int64
-			if metadata, err := s.storage.GetAssetMetadata(ctx, file.Path); err == nil {
-				size = metadata.Size
-			}
-
-			thumbnails = append(thumbnails, AssetThumbnail{
-				AssetID: uuid.MustParse(uuidToString(file.AssetId)),
-				Type:    file.Type,
-				Path:    file.Path,
-				Width:   width,
-				Height:  height,
-				Size:    size,
-			})
-		}
-	}
+	thumbnails := s.assetFilesToThumbnails(ctx, assetFiles, withThumbnailSize)
 
 	return s.convertToAssetInfo(asset, thumbnails), nil
 }
@@ -757,26 +740,7 @@ func (s *Service) SearchAssets(ctx context.Context, req SearchRequest) (*SearchR
 			// Continue without thumbnails
 		}
 
-		// Convert asset files to thumbnails with dimensions from thumbnail config
-		var thumbnails []AssetThumbnail
-		for _, file := range assetFiles {
-			// Only include thumbnail files
-			if file.Type == string(ThumbnailTypePreview) || file.Type == string(ThumbnailTypeWebp) || file.Type == string(ThumbnailTypeThumb) {
-				thumbType := ThumbnailType(file.Type)
-				width, height := s.thumbnailGen.GetThumbnailDimensions(thumbType)
-
-				// Get file size from storage metadata (skip for search to avoid N+1 queries)
-				// Size will be fetched when getting individual asset details
-				thumbnails = append(thumbnails, AssetThumbnail{
-					AssetID: uuid.MustParse(uuidToString(file.AssetId)),
-					Type:    file.Type,
-					Path:    file.Path,
-					Width:   width,
-					Height:  height,
-					Size:    0, // Size fetched on individual asset retrieval
-				})
-			}
-		}
+		thumbnails := s.assetFilesToThumbnails(ctx, assetFiles, withoutThumbnailSize)
 
 		assetInfos[i] = *s.convertToAssetInfo(asset, thumbnails)
 	}
@@ -836,8 +800,9 @@ func (s *Service) DeleteAsset(ctx context.Context, assetID uuid.UUID, userID uui
 	// Schedule background cleanup if this is a hard delete
 	// For now, just do immediate cleanup
 	// In production, you'd want to use a job queue for this
+	cleanupCtx := context.WithoutCancel(ctx)
 	go func() {
-		if err := s.cleanupAssetFiles(context.Background(), assetUUID, asset.OriginalPath); err != nil {
+		if err := s.cleanupAssetFiles(cleanupCtx, assetUUID, asset.OriginalPath); err != nil {
 			// Log error but don't fail the deletion
 			s.logger.Error("Failed to cleanup asset files",
 				zap.Error(err),
@@ -1103,6 +1068,47 @@ func (s *Service) convertToAssetInfo(asset sqlc.Asset, thumbnails []AssetThumbna
 	}
 
 	return info
+}
+
+func (s *Service) assetFilesToThumbnails(ctx context.Context, files []sqlc.AssetFile, sizeMode thumbnailSizeMode) []AssetThumbnail {
+	thumbnails := make([]AssetThumbnail, 0, len(files))
+	for _, file := range files {
+		thumbType, ok := thumbnailTypeFromAssetFile(file)
+		if !ok {
+			continue
+		}
+
+		width, height := s.thumbnailGen.GetThumbnailDimensions(thumbType)
+		thumbnails = append(thumbnails, AssetThumbnail{
+			AssetID: uuid.MustParse(uuidToString(file.AssetId)),
+			Type:    file.Type,
+			Path:    file.Path,
+			Width:   width,
+			Height:  height,
+			Size:    s.thumbnailSize(ctx, file.Path, sizeMode),
+		})
+	}
+	return thumbnails
+}
+
+func thumbnailTypeFromAssetFile(file sqlc.AssetFile) (ThumbnailType, bool) {
+	switch ThumbnailType(file.Type) {
+	case ThumbnailTypePreview, ThumbnailTypeWebp, ThumbnailTypeThumb:
+		return ThumbnailType(file.Type), true
+	default:
+		return "", false
+	}
+}
+
+func (s *Service) thumbnailSize(ctx context.Context, path string, sizeMode thumbnailSizeMode) int64 {
+	if sizeMode != withThumbnailSize || s.storage == nil {
+		return 0
+	}
+	metadata, err := s.storage.GetAssetMetadata(ctx, path)
+	if err != nil {
+		return 0
+	}
+	return metadata.Size
 }
 
 // Helper functions for type conversions (reuse from auth package)

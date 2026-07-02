@@ -2,6 +2,7 @@ package assets
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"path/filepath"
 	"strings"
@@ -9,8 +10,10 @@ import (
 	"time"
 
 	"github.com/denysvitali/immich-go-backend/internal/config"
+	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/denysvitali/immich-go-backend/internal/storage"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -276,6 +279,80 @@ func TestDownloadRequest(t *testing.T) {
 	})
 }
 
+func TestAssetFilesToThumbnails(t *testing.T) {
+	ctx := context.Background()
+	assetID := uuid.New()
+	files := []sqlc.AssetFile{
+		{
+			AssetId: pgUUID(assetID),
+			Type:    string(ThumbnailTypePreview),
+			Path:    "asset/thumbnails/preview.jpg",
+		},
+		{
+			AssetId: pgUUID(assetID),
+			Type:    string(ThumbnailTypeWebp),
+			Path:    "asset/thumbnails/webp.jpg",
+		},
+		{
+			AssetId: pgUUID(assetID),
+			Type:    "original",
+			Path:    "asset/original.jpg",
+		},
+	}
+
+	service := &Service{
+		thumbnailGen: NewThumbnailGenerator(),
+	}
+
+	thumbnails := service.assetFilesToThumbnails(ctx, files, withoutThumbnailSize)
+
+	assert.Len(t, thumbnails, 2)
+	assert.Equal(t, assetID, thumbnails[0].AssetID)
+	assert.Equal(t, string(ThumbnailTypePreview), thumbnails[0].Type)
+	assert.Equal(t, "asset/thumbnails/preview.jpg", thumbnails[0].Path)
+	assert.Equal(t, int32(1440), thumbnails[0].Width)
+	assert.Equal(t, int32(1440), thumbnails[0].Height)
+	assert.Zero(t, thumbnails[0].Size)
+	assert.Equal(t, string(ThumbnailTypeWebp), thumbnails[1].Type)
+	assert.Equal(t, int32(250), thumbnails[1].Width)
+	assert.Equal(t, int32(250), thumbnails[1].Height)
+}
+
+func TestAssetFilesToThumbnailsWithSize(t *testing.T) {
+	ctx := context.Background()
+	storageService, err := storage.NewService(storage.StorageConfig{
+		Backend: "local",
+		Local: storage.LocalConfig{
+			RootPath: t.TempDir(),
+		},
+		Upload: storage.UploadConfig{
+			MaxFileSize: 1024,
+		},
+	})
+	assert.NoError(t, err)
+
+	const thumbPath = "asset/thumbnails/thumb.jpg"
+	thumbData := []byte("thumbnail data")
+	err = storageService.UploadBytes(ctx, thumbPath, thumbData, "image/jpeg")
+	assert.NoError(t, err)
+
+	service := &Service{
+		storage:      storageService,
+		thumbnailGen: NewThumbnailGenerator(),
+	}
+
+	thumbnails := service.assetFilesToThumbnails(ctx, []sqlc.AssetFile{
+		{
+			AssetId: pgUUID(uuid.New()),
+			Type:    string(ThumbnailTypeThumb),
+			Path:    thumbPath,
+		},
+	}, withThumbnailSize)
+
+	assert.Len(t, thumbnails, 1)
+	assert.Equal(t, int64(len(thumbData)), thumbnails[0].Size)
+}
+
 func TestAssetMetadata(t *testing.T) {
 	now := time.Now()
 	dateTaken := time.Now().Add(-24 * time.Hour)
@@ -360,6 +437,10 @@ func TestStreamUpload(t *testing.T) {
 	assert.Equal(t, len(content), n)
 	assert.Equal(t, content, buf)
 	assert.Equal(t, int64(len(content)), stream.Size)
+}
+
+func pgUUID(id uuid.UUID) pgtype.UUID {
+	return pgtype.UUID{Bytes: id, Valid: true}
 }
 
 // Helper function to determine asset type from filename
