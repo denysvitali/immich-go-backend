@@ -36,6 +36,7 @@ async function signUpAdmin(request: APIRequestContext): Promise<TestUser> {
   expect(signupBody.accessToken).toBeTruthy();
   expect(signupBody.userEmail).toBe(email);
   expect(signupBody.userId).toBeTruthy();
+  expect(signupBody.isAdmin).toBe(true);
 
   return { email, password, userId: signupBody.userId };
 }
@@ -49,6 +50,7 @@ test('admin can upload an image, create an album, and retrieve the image', async
 
   const loginBody = await login.json();
   expect(loginBody.accessToken).toBeTruthy();
+  expect(loginBody.isAdmin).toBe(true);
 
   const headers = {
     Authorization: `Bearer ${loginBody.accessToken}`,

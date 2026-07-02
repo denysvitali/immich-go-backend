@@ -76,7 +76,7 @@ test('root layout mounts and the loading spinner goes away', async ({ page }) =>
   await expect(page.locator('#stencil')).toBeHidden({ timeout: 15_000 });
 });
 
-test('admin can sign up, log in, read profile, and manage license through frontend origin', async ({ request }) => {
+test('user can sign up, log in, read profile, and manage license through frontend origin', async ({ request }) => {
   const user = await signUp(request, 'license');
 
   const login = await request.post('/api/auth/login', {
@@ -94,7 +94,7 @@ test('admin can sign up, log in, read profile, and manage license through fronte
   expect(me.ok()).toBeTruthy();
   const meBody = await me.json();
   expect(meBody.email).toBe(user.email);
-  expect(meBody.isAdmin).toBe(true);
+  expect(meBody.isAdmin).toBe(loginBody.isAdmin);
 
   const license = await request.put('/api/users/me/license', {
     headers,

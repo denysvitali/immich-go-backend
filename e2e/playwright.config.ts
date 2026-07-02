@@ -9,6 +9,7 @@ export default defineConfig({
   },
   forbidOnly: !!process.env.CI,
   retries: 0,
+  workers: 1,
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',
   use: {
     baseURL: process.env.IMMICH_WEB_URL ?? 'http://127.0.0.1:3000',
