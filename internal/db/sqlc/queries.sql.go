@@ -269,8 +269,8 @@ WHERE "ownerId" = $1
 AND "deletedAt" IS NULL
 AND ($2::text IS NULL OR type = $2)
 AND ($3::boolean IS NULL OR "isFavorite" = $3)
-AND ($4::boolean IS NULL OR visibility = CASE WHEN $4::boolean THEN 'archive' ELSE 'timeline' END)
-AND ($5::boolean IS NULL OR status = CASE WHEN $5::boolean THEN 'trashed' ELSE 'active' END)
+AND ($4::boolean IS NULL OR visibility = CASE WHEN $4::boolean THEN 'archive'::asset_visibility_enum ELSE 'timeline'::asset_visibility_enum END)
+AND ($5::boolean IS NULL OR status = CASE WHEN $5::boolean THEN 'trashed'::assets_status_enum ELSE 'active'::assets_status_enum END)
 `
 
 type CountAssetsParams struct {
@@ -299,7 +299,7 @@ SELECT COUNT(*) FROM assets
 WHERE "ownerId" = $1
 AND "deletedAt" IS NULL
 AND "originalPath" LIKE $2 || '%'
-AND ($3::boolean IS NULL OR visibility = CASE WHEN $3::boolean THEN 'archive' ELSE 'timeline' END)
+AND ($3::boolean IS NULL OR visibility = CASE WHEN $3::boolean THEN 'archive'::asset_visibility_enum ELSE 'timeline'::asset_visibility_enum END)
 AND ($4::boolean IS NULL OR "isFavorite" = $4)
 `
 
@@ -2846,8 +2846,8 @@ WHERE "ownerId" = $1
 AND "deletedAt" IS NULL
 AND ($4::text IS NULL OR type = $4)
 AND ($5::boolean IS NULL OR "isFavorite" = $5)
-AND ($6::boolean IS NULL OR visibility = CASE WHEN $6::boolean THEN 'archive' ELSE 'timeline' END)
-AND ($7::boolean IS NULL OR status = CASE WHEN $7::boolean THEN 'trashed' ELSE 'active' END)
+AND ($6::boolean IS NULL OR visibility = CASE WHEN $6::boolean THEN 'archive'::asset_visibility_enum ELSE 'timeline'::asset_visibility_enum END)
+AND ($7::boolean IS NULL OR status = CASE WHEN $7::boolean THEN 'trashed'::assets_status_enum ELSE 'active'::assets_status_enum END)
 ORDER BY "localDateTime" DESC
 LIMIT $2 OFFSET $3
 `
@@ -3339,7 +3339,7 @@ SELECT id, "deviceAssetId", "ownerId", "deviceId", type, "originalPath", "fileCr
 WHERE "ownerId" = $1
 AND "deletedAt" IS NULL
 AND "originalPath" LIKE $2 || '%'
-AND ($5::boolean IS NULL OR visibility = CASE WHEN $5::boolean THEN 'archive' ELSE 'timeline' END)
+AND ($5::boolean IS NULL OR visibility = CASE WHEN $5::boolean THEN 'archive'::asset_visibility_enum ELSE 'timeline'::asset_visibility_enum END)
 AND ($6::boolean IS NULL OR "isFavorite" = $6)
 ORDER BY "localDateTime" DESC
 LIMIT $3 OFFSET $4

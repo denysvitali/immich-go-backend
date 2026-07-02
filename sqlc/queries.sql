@@ -103,8 +103,8 @@ WHERE "ownerId" = $1
 AND "deletedAt" IS NULL
 AND (sqlc.narg('type')::text IS NULL OR type = sqlc.narg('type'))
 AND (sqlc.narg('is_favorite')::boolean IS NULL OR "isFavorite" = sqlc.narg('is_favorite'))
-AND (sqlc.narg('is_archived')::boolean IS NULL OR visibility = CASE WHEN sqlc.narg('is_archived')::boolean THEN 'archive' ELSE 'timeline' END)
-AND (sqlc.narg('is_trashed')::boolean IS NULL OR status = CASE WHEN sqlc.narg('is_trashed')::boolean THEN 'trashed' ELSE 'active' END)
+AND (sqlc.narg('is_archived')::boolean IS NULL OR visibility = CASE WHEN sqlc.narg('is_archived')::boolean THEN 'archive'::asset_visibility_enum ELSE 'timeline'::asset_visibility_enum END)
+AND (sqlc.narg('is_trashed')::boolean IS NULL OR status = CASE WHEN sqlc.narg('is_trashed')::boolean THEN 'trashed'::assets_status_enum ELSE 'active'::assets_status_enum END)
 ORDER BY "localDateTime" DESC
 LIMIT $2 OFFSET $3;
 
@@ -114,8 +114,8 @@ WHERE "ownerId" = $1
 AND "deletedAt" IS NULL
 AND (sqlc.narg('type')::text IS NULL OR type = sqlc.narg('type'))
 AND (sqlc.narg('is_favorite')::boolean IS NULL OR "isFavorite" = sqlc.narg('is_favorite'))
-AND (sqlc.narg('is_archived')::boolean IS NULL OR visibility = CASE WHEN sqlc.narg('is_archived')::boolean THEN 'archive' ELSE 'timeline' END)
-AND (sqlc.narg('is_trashed')::boolean IS NULL OR status = CASE WHEN sqlc.narg('is_trashed')::boolean THEN 'trashed' ELSE 'active' END);
+AND (sqlc.narg('is_archived')::boolean IS NULL OR visibility = CASE WHEN sqlc.narg('is_archived')::boolean THEN 'archive'::asset_visibility_enum ELSE 'timeline'::asset_visibility_enum END)
+AND (sqlc.narg('is_trashed')::boolean IS NULL OR status = CASE WHEN sqlc.narg('is_trashed')::boolean THEN 'trashed'::assets_status_enum ELSE 'active'::assets_status_enum END);
 
 -- name: CreateAsset :one
 INSERT INTO assets (
@@ -1507,7 +1507,7 @@ SELECT * FROM assets
 WHERE "ownerId" = $1
 AND "deletedAt" IS NULL
 AND "originalPath" LIKE $2 || '%'
-AND (sqlc.narg('is_archived')::boolean IS NULL OR visibility = CASE WHEN sqlc.narg('is_archived')::boolean THEN 'archive' ELSE 'timeline' END)
+AND (sqlc.narg('is_archived')::boolean IS NULL OR visibility = CASE WHEN sqlc.narg('is_archived')::boolean THEN 'archive'::asset_visibility_enum ELSE 'timeline'::asset_visibility_enum END)
 AND (sqlc.narg('is_favorite')::boolean IS NULL OR "isFavorite" = sqlc.narg('is_favorite'))
 ORDER BY "localDateTime" DESC
 LIMIT $3 OFFSET $4;
@@ -1517,7 +1517,7 @@ SELECT COUNT(*) FROM assets
 WHERE "ownerId" = $1
 AND "deletedAt" IS NULL
 AND "originalPath" LIKE $2 || '%'
-AND (sqlc.narg('is_archived')::boolean IS NULL OR visibility = CASE WHEN sqlc.narg('is_archived')::boolean THEN 'archive' ELSE 'timeline' END)
+AND (sqlc.narg('is_archived')::boolean IS NULL OR visibility = CASE WHEN sqlc.narg('is_archived')::boolean THEN 'archive'::asset_visibility_enum ELSE 'timeline'::asset_visibility_enum END)
 AND (sqlc.narg('is_favorite')::boolean IS NULL OR "isFavorite" = sqlc.narg('is_favorite'));
 
 -- name: GetUniqueOriginalPathPrefixes :many
