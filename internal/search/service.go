@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/denysvitali/immich-go-backend/internal/db/pgutil"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -26,7 +27,7 @@ func NewService(db *sqlc.Queries) *Service {
 func (s *Service) SearchMetadata(ctx context.Context, userID uuid.UUID, req MetadataSearchRequest) (*SearchResult, error) {
 	// Build query parameters
 	params := sqlc.SearchAssetsParams{
-		OwnerId: UUIDToPgtype(userID),
+		OwnerId: pgutil.UUIDToPgtype(userID),
 		Column2: pgtype.Text{String: req.Query, Valid: true},
 		Limit:   int32(req.Size),
 		Offset:  int32(req.Page * req.Size),
@@ -55,12 +56,12 @@ func (s *Service) SearchMetadata(ctx context.Context, userID uuid.UUID, req Meta
 	items := make([]*SearchResultItem, len(assets))
 	for i, asset := range assets {
 		items[i] = &SearchResultItem{
-			ID:           PgtypeToUUID(asset.ID).String(),
+			ID:           pgutil.PgtypeToUUID(asset.ID).String(),
 			Type:         asset.Type,
 			OriginalPath: asset.OriginalPath,
 			OriginalName: asset.OriginalFileName,
-			CreatedAt:    PgtypeToTime(asset.CreatedAt),
-			UpdatedAt:    PgtypeToTime(asset.UpdatedAt),
+			CreatedAt:    pgutil.TimestamptzToTime(asset.CreatedAt),
+			UpdatedAt:    pgutil.TimestamptzToTime(asset.UpdatedAt),
 			IsFavorite:   asset.IsFavorite,
 			IsArchived:   false, // Not in current schema
 			Duration:     &asset.Duration.String,
@@ -80,7 +81,7 @@ func (s *Service) SearchMetadata(ctx context.Context, userID uuid.UUID, req Meta
 func (s *Service) SearchPeople(ctx context.Context, userID uuid.UUID, req PeopleSearchRequest) (*PeopleSearchResult, error) {
 	// Search for people
 	people, err := s.db.SearchPeople(ctx, sqlc.SearchPeopleParams{
-		OwnerId: UUIDToPgtype(userID),
+		OwnerId: pgutil.UUIDToPgtype(userID),
 		Column2: pgtype.Text{String: req.Query, Valid: true},
 		Limit:   int32(req.Size),
 		Offset:  int32(req.Page * req.Size),
@@ -93,7 +94,7 @@ func (s *Service) SearchPeople(ctx context.Context, userID uuid.UUID, req People
 	items := make([]*PersonResult, len(people))
 	for i, person := range people {
 		items[i] = &PersonResult{
-			ID:         PgtypeToUUID(person.ID).String(),
+			ID:         pgutil.PgtypeToUUID(person.ID).String(),
 			Name:       person.Name,
 			AssetCount: 0,  // Not returned by basic query
 			Thumbnail:  "", // Not returned by basic query
@@ -110,7 +111,7 @@ func (s *Service) SearchPeople(ctx context.Context, userID uuid.UUID, req People
 func (s *Service) SearchPlaces(ctx context.Context, userID uuid.UUID, req PlacesSearchRequest) (*PlacesSearchResult, error) {
 	// Search for places
 	places, err := s.db.SearchPlaces(ctx, sqlc.SearchPlacesParams{
-		OwnerId: UUIDToPgtype(userID),
+		OwnerId: pgutil.UUIDToPgtype(userID),
 		Column2: pgtype.Text{String: req.Query, Valid: true},
 		Limit:   int32(req.Size),
 		Offset:  int32(req.Page * req.Size),
@@ -149,7 +150,7 @@ func (s *Service) SearchPlaces(ctx context.Context, userID uuid.UUID, req Places
 // SearchCities searches for cities
 func (s *Service) SearchCities(ctx context.Context, userID uuid.UUID, req CitiesSearchRequest) ([]*CityResult, error) {
 	cities, err := s.db.GetDistinctCities(ctx, sqlc.GetDistinctCitiesParams{
-		OwnerId: UUIDToPgtype(userID),
+		OwnerId: pgutil.UUIDToPgtype(userID),
 		Limit:   int32(req.Size),
 	})
 	if err != nil {
@@ -186,7 +187,7 @@ func (s *Service) GetSearchSuggestions(ctx context.Context, userID uuid.UUID, re
 	// Get people suggestions
 	if req.IncludePeople {
 		people, err := s.db.GetTopPeople(ctx, sqlc.GetTopPeopleParams{
-			OwnerId: UUIDToPgtype(userID),
+			OwnerId: pgutil.UUIDToPgtype(userID),
 			Limit:   10,
 		})
 		if err == nil {
@@ -211,7 +212,7 @@ func (s *Service) GetSearchSuggestions(ctx context.Context, userID uuid.UUID, re
 	// Get camera make/model suggestions
 	if req.IncludeCameras {
 		cameras, err := s.db.GetDistinctCameras(ctx, sqlc.GetDistinctCamerasParams{
-			OwnerId: UUIDToPgtype(userID),
+			OwnerId: pgutil.UUIDToPgtype(userID),
 			Limit:   10,
 		})
 		if err == nil {
@@ -243,7 +244,7 @@ func (s *Service) SearchExplore(ctx context.Context, userID uuid.UUID) (*Explore
 		Categories: []ExploreCategory{},
 	}
 
-	ownerUUID := UUIDToPgtype(userID)
+	ownerUUID := pgutil.UUIDToPgtype(userID)
 
 	// Recent uploads
 	recentAssets, err := s.db.GetRecentAssets(ctx, sqlc.GetRecentAssetsParams{
@@ -254,7 +255,7 @@ func (s *Service) SearchExplore(ctx context.Context, userID uuid.UUID) (*Explore
 		result.Categories = append(result.Categories, ExploreCategory{
 			Name:      "Recently Added",
 			AssetIDs:  assetsToIDs(recentAssets),
-			Thumbnail: PgtypeToUUID(recentAssets[0].ID).String(),
+			Thumbnail: pgutil.PgtypeToUUID(recentAssets[0].ID).String(),
 		})
 	}
 
@@ -268,7 +269,7 @@ func (s *Service) SearchExplore(ctx context.Context, userID uuid.UUID) (*Explore
 		result.Categories = append(result.Categories, ExploreCategory{
 			Name:      "Favorites",
 			AssetIDs:  assetsToIDs(favoriteAssets),
-			Thumbnail: PgtypeToUUID(favoriteAssets[0].ID).String(),
+			Thumbnail: pgutil.PgtypeToUUID(favoriteAssets[0].ID).String(),
 		})
 	}
 
@@ -282,7 +283,7 @@ func (s *Service) SearchExplore(ctx context.Context, userID uuid.UUID) (*Explore
 		result.Categories = append(result.Categories, ExploreCategory{
 			Name:      "Archive",
 			AssetIDs:  assetsToIDs(archivedAssets),
-			Thumbnail: PgtypeToUUID(archivedAssets[0].ID).String(),
+			Thumbnail: pgutil.PgtypeToUUID(archivedAssets[0].ID).String(),
 		})
 	}
 
@@ -328,7 +329,7 @@ func (s *Service) SearchExplore(ctx context.Context, userID uuid.UUID) (*Explore
 func assetsToIDs(assets []sqlc.Asset) []string {
 	ids := make([]string, len(assets))
 	for i, asset := range assets {
-		ids[i] = PgtypeToUUID(asset.ID).String()
+		ids[i] = pgutil.PgtypeToUUID(asset.ID).String()
 	}
 	return ids
 }

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/denysvitali/immich-go-backend/internal/config"
+	"github.com/denysvitali/immich-go-backend/internal/db/pgutil"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/denysvitali/immich-go-backend/internal/storage"
 	"github.com/denysvitali/immich-go-backend/internal/telemetry"
@@ -1113,11 +1114,12 @@ func (s *Service) thumbnailSize(ctx context.Context, path string, sizeMode thumb
 
 // Helper functions for type conversions (reuse from auth package)
 func stringToUUID(s string) (pgtype.UUID, error) {
-	id, err := uuid.Parse(s)
-	if err != nil {
-		return pgtype.UUID{}, err
-	}
-	return pgtype.UUID{Bytes: id, Valid: true}, nil
+	return pgutil.StringToUUID(s)
+}
+
+func stringToUUIDUnsafe(s string) pgtype.UUID {
+	id, _ := uuid.Parse(s)
+	return pgtype.UUID{Bytes: id, Valid: true}
 }
 
 // getMimeTypeFromAssetType derives MIME type from asset type
@@ -1133,27 +1135,13 @@ func (s *Service) getMimeTypeFromAssetType(assetType string) string {
 }
 
 func uuidToString(u pgtype.UUID) string {
-	if !u.Valid {
-		return ""
-	}
-	return uuid.UUID(u.Bytes).String()
+	return pgutil.UUIDToString(u)
 }
 
 func timestamptzToTime(t pgtype.Timestamptz) time.Time {
-	if !t.Valid {
-		return time.Time{}
-	}
-	return t.Time
+	return pgutil.TimestamptzToTime(t)
 }
 
 func timeToTimestamptz(t time.Time) (pgtype.Timestamptz, error) {
-	return pgtype.Timestamptz{
-		Time:  t,
-		Valid: true,
-	}, nil
-}
-
-func stringToUUIDUnsafe(s string) pgtype.UUID {
-	id, _ := uuid.Parse(s)
-	return pgtype.UUID{Bytes: id, Valid: true}
+	return pgutil.TimeToTimestamptz(t), nil
 }

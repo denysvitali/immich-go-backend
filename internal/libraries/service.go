@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/denysvitali/immich-go-backend/internal/config"
+	"github.com/denysvitali/immich-go-backend/internal/db/pgutil"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/denysvitali/immich-go-backend/internal/storage"
 	"github.com/google/uuid"
@@ -74,7 +75,7 @@ func (s *Service) CreateLibrary(ctx context.Context, userID uuid.UUID, req Creat
 
 	// Create library in database
 	library, err := s.db.CreateLibrary(ctx, sqlc.CreateLibraryParams{
-		OwnerId:           UUIDToPgtype(userID),
+		OwnerId:           pgutil.UUIDToPgtype(userID),
 		Name:              req.Name,
 		ImportPaths:       req.ImportPaths,
 		ExclusionPatterns: req.ExclusionPatterns,
@@ -84,18 +85,18 @@ func (s *Service) CreateLibrary(ctx context.Context, userID uuid.UUID, req Creat
 	}
 
 	return &Library{
-		ID:                PgtypeToUUID(library.ID),
-		OwnerID:           PgtypeToUUID(library.OwnerId),
+		ID:                pgutil.PgtypeToUUID(library.ID),
+		OwnerID:           pgutil.PgtypeToUUID(library.OwnerId),
 		Name:              library.Name,
 		Type:              req.Type,
 		ImportPaths:       library.ImportPaths,
 		ExclusionPatterns: library.ExclusionPatterns,
 		IsWatched:         req.IsWatched,
 		IsVisible:         req.IsVisible,
-		CreatedAt:         PgtypeToTime(library.CreatedAt),
-		UpdatedAt:         PgtypeToTime(library.UpdatedAt),
+		CreatedAt:         pgutil.TimestamptzToTime(library.CreatedAt),
+		UpdatedAt:         pgutil.TimestamptzToTime(library.UpdatedAt),
 		RefreshedAt: func() *time.Time {
-			t := PgtypeToTime(library.RefreshedAt)
+			t := pgutil.TimestamptzToTime(library.RefreshedAt)
 			if t.IsZero() {
 				return nil
 			}
@@ -107,14 +108,14 @@ func (s *Service) CreateLibrary(ctx context.Context, userID uuid.UUID, req Creat
 
 // GetLibrary retrieves a library by ID
 func (s *Service) GetLibrary(ctx context.Context, userID, libraryID uuid.UUID) (*Library, error) {
-	library, err := s.db.GetLibrary(ctx, UUIDToPgtype(libraryID))
+	library, err := s.db.GetLibrary(ctx, pgutil.UUIDToPgtype(libraryID))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get library: %w", err)
 	}
 
 	// Get asset count
 	var count int64
-	if countResult, err := s.db.CountLibraryAssets(ctx, UUIDToPgtype(libraryID)); err == nil {
+	if countResult, err := s.db.CountLibraryAssets(ctx, pgutil.UUIDToPgtype(libraryID)); err == nil {
 		count = countResult
 	} else {
 		logrus.WithError(err).Warn("Failed to get library asset count")
@@ -122,18 +123,18 @@ func (s *Service) GetLibrary(ctx context.Context, userID, libraryID uuid.UUID) (
 	}
 
 	return &Library{
-		ID:                PgtypeToUUID(library.ID),
-		OwnerID:           PgtypeToUUID(library.OwnerId),
+		ID:                pgutil.PgtypeToUUID(library.ID),
+		OwnerID:           pgutil.PgtypeToUUID(library.OwnerId),
 		Name:              library.Name,
 		Type:              LibraryTypeExternal,
 		ImportPaths:       library.ImportPaths,
 		ExclusionPatterns: library.ExclusionPatterns,
 		IsWatched:         false,
 		IsVisible:         true,
-		CreatedAt:         PgtypeToTime(library.CreatedAt),
-		UpdatedAt:         PgtypeToTime(library.UpdatedAt),
+		CreatedAt:         pgutil.TimestamptzToTime(library.CreatedAt),
+		UpdatedAt:         pgutil.TimestamptzToTime(library.UpdatedAt),
 		RefreshedAt: func() *time.Time {
-			t := PgtypeToTime(library.RefreshedAt)
+			t := pgutil.TimestamptzToTime(library.RefreshedAt)
 			if t.IsZero() {
 				return nil
 			}
@@ -145,7 +146,7 @@ func (s *Service) GetLibrary(ctx context.Context, userID, libraryID uuid.UUID) (
 
 // GetLibraries retrieves all libraries for a user
 func (s *Service) GetLibraries(ctx context.Context, userID uuid.UUID) ([]*Library, error) {
-	dbLibraries, err := s.db.GetLibraries(ctx, UUIDToPgtype(userID))
+	dbLibraries, err := s.db.GetLibraries(ctx, pgutil.UUIDToPgtype(userID))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get libraries: %w", err)
 	}
@@ -160,18 +161,18 @@ func (s *Service) GetLibraries(ctx context.Context, userID uuid.UUID) ([]*Librar
 		}
 
 		libraries[i] = &Library{
-			ID:                PgtypeToUUID(dbLib.ID),
-			OwnerID:           PgtypeToUUID(dbLib.OwnerId),
+			ID:                pgutil.PgtypeToUUID(dbLib.ID),
+			OwnerID:           pgutil.PgtypeToUUID(dbLib.OwnerId),
 			Name:              dbLib.Name,
 			Type:              LibraryTypeExternal, // Default type
 			ImportPaths:       dbLib.ImportPaths,
 			ExclusionPatterns: dbLib.ExclusionPatterns,
 			IsWatched:         false, // Default value
 			IsVisible:         true,  // Default value
-			CreatedAt:         PgtypeToTime(dbLib.CreatedAt),
-			UpdatedAt:         PgtypeToTime(dbLib.UpdatedAt),
+			CreatedAt:         pgutil.TimestamptzToTime(dbLib.CreatedAt),
+			UpdatedAt:         pgutil.TimestamptzToTime(dbLib.UpdatedAt),
 			RefreshedAt: func() *time.Time {
-				t := PgtypeToTime(dbLib.RefreshedAt)
+				t := pgutil.TimestamptzToTime(dbLib.RefreshedAt)
 				if t.IsZero() {
 					return nil
 				}
@@ -187,7 +188,7 @@ func (s *Service) GetLibraries(ctx context.Context, userID uuid.UUID) ([]*Librar
 // UpdateLibrary updates a library
 func (s *Service) UpdateLibrary(ctx context.Context, userID, libraryID uuid.UUID, req *UpdateLibraryRequest) (*Library, error) {
 	// Get existing library
-	library, err := s.db.GetLibrary(ctx, UUIDToPgtype(libraryID))
+	library, err := s.db.GetLibrary(ctx, pgutil.UUIDToPgtype(libraryID))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get library: %w", err)
 	}
@@ -208,7 +209,7 @@ func (s *Service) UpdateLibrary(ctx context.Context, userID, libraryID uuid.UUID
 
 	// Update in database
 	updatedLibrary, err := s.db.UpdateLibrary(ctx, sqlc.UpdateLibraryParams{
-		ID:                UUIDToPgtype(libraryID),
+		ID:                pgutil.UUIDToPgtype(libraryID),
 		Name:              pgtype.Text{String: name, Valid: true},
 		ImportPaths:       importPaths,
 		ExclusionPatterns: exclusionPatterns,
@@ -219,7 +220,7 @@ func (s *Service) UpdateLibrary(ctx context.Context, userID, libraryID uuid.UUID
 
 	// Get asset count
 	var count int64
-	if countResult, err := s.db.CountLibraryAssets(ctx, UUIDToPgtype(libraryID)); err == nil {
+	if countResult, err := s.db.CountLibraryAssets(ctx, pgutil.UUIDToPgtype(libraryID)); err == nil {
 		count = countResult
 	} else {
 		logrus.WithError(err).Warn("Failed to get library asset count")
@@ -227,18 +228,18 @@ func (s *Service) UpdateLibrary(ctx context.Context, userID, libraryID uuid.UUID
 	}
 
 	return &Library{
-		ID:                PgtypeToUUID(updatedLibrary.ID),
-		OwnerID:           PgtypeToUUID(updatedLibrary.OwnerId),
+		ID:                pgutil.PgtypeToUUID(updatedLibrary.ID),
+		OwnerID:           pgutil.PgtypeToUUID(updatedLibrary.OwnerId),
 		Name:              updatedLibrary.Name,
 		Type:              LibraryTypeExternal, // Default type
 		ImportPaths:       updatedLibrary.ImportPaths,
 		ExclusionPatterns: updatedLibrary.ExclusionPatterns,
 		IsWatched:         false, // Default value
 		IsVisible:         true,  // Default value
-		CreatedAt:         PgtypeToTime(updatedLibrary.CreatedAt),
-		UpdatedAt:         PgtypeToTime(updatedLibrary.UpdatedAt),
+		CreatedAt:         pgutil.TimestamptzToTime(updatedLibrary.CreatedAt),
+		UpdatedAt:         pgutil.TimestamptzToTime(updatedLibrary.UpdatedAt),
 		RefreshedAt: func() *time.Time {
-			t := PgtypeToTime(updatedLibrary.RefreshedAt)
+			t := pgutil.TimestamptzToTime(updatedLibrary.RefreshedAt)
 			if t.IsZero() {
 				return nil
 			}
@@ -257,7 +258,7 @@ func (s *Service) DeleteLibrary(ctx context.Context, userID, libraryID uuid.UUID
 	}
 
 	// Delete library and associated assets
-	if err := s.db.DeleteLibrary(ctx, UUIDToPgtype(libraryID)); err != nil {
+	if err := s.db.DeleteLibrary(ctx, pgutil.UUIDToPgtype(libraryID)); err != nil {
 		return fmt.Errorf("failed to delete library: %w", err)
 	}
 
@@ -292,7 +293,7 @@ func (s *Service) ScanLibrary(ctx context.Context, userID, libraryID uuid.UUID, 
 		}
 
 		// Update refresh timestamp
-		if err := s.db.UpdateLibraryRefreshedAt(ctx, UUIDToPgtype(libraryID)); err != nil {
+		if err := s.db.UpdateLibraryRefreshedAt(ctx, pgutil.UUIDToPgtype(libraryID)); err != nil {
 			logrus.WithError(err).Error("Failed to update library refresh timestamp")
 		}
 	}()
@@ -305,7 +306,7 @@ func (s *Service) ScanLibrary(ctx context.Context, userID, libraryID uuid.UUID, 
 // GetLibraryStatistics retrieves statistics for a library
 func (s *Service) GetLibraryStatistics(ctx context.Context, userID, libraryID uuid.UUID) (*LibraryStatistics, error) {
 	// Get total asset count from database
-	totalCount, err := s.db.CountLibraryAssets(ctx, UUIDToPgtype(libraryID))
+	totalCount, err := s.db.CountLibraryAssets(ctx, pgutil.UUIDToPgtype(libraryID))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get library statistics: %w", err)
 	}
@@ -524,13 +525,13 @@ func (ls *LibraryScanner) importAsset(ctx context.Context, filePath string) erro
 
 	// Get file timestamps
 	modTime := fileInfo.ModTime()
-	modTimePg := TimeToPgtype(modTime)
+	modTimePg := pgtype.Timestamptz{Time: modTime, Valid: !modTime.IsZero()}
 
 	// Create asset record in database
 	_, err = ls.db.CreateLibraryAsset(ctx, sqlc.CreateLibraryAssetParams{
 		DeviceAssetId:    filepath.Base(filePath),
-		OwnerId:          UUIDToPgtype(ls.library.OwnerID),
-		LibraryId:        UUIDToPgtype(ls.library.ID),
+		OwnerId:          pgutil.UUIDToPgtype(ls.library.OwnerID),
+		LibraryId:        pgutil.UUIDToPgtype(ls.library.ID),
 		DeviceId:         "library-scanner",
 		Type:             assetType,
 		OriginalPath:     filePath,

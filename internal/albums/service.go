@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/denysvitali/immich-go-backend/internal/db/pgutil"
+	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
+	"github.com/denysvitali/immich-go-backend/internal/telemetry"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
-
-	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
-	"github.com/denysvitali/immich-go-backend/internal/telemetry"
 )
 
 var tracer = telemetry.GetTracer("albums")
@@ -519,23 +519,13 @@ func (s *Service) convertToAlbumInfo(album sqlc.Album, assets []sqlc.Asset, shar
 
 // Helper functions for type conversion (same as in assets service)
 func stringToUUID(s string) (pgtype.UUID, error) {
-	u, err := uuid.Parse(s)
-	if err != nil {
-		return pgtype.UUID{}, err
-	}
-	return pgtype.UUID{Bytes: u, Valid: true}, nil
+	return pgutil.StringToUUID(s)
 }
 
 func uuidToString(u pgtype.UUID) string {
-	if !u.Valid {
-		return ""
-	}
-	return uuid.UUID(u.Bytes).String()
+	return pgutil.UUIDToString(u)
 }
 
 func timestamptzToTime(ts pgtype.Timestamptz) time.Time {
-	if !ts.Valid {
-		return time.Time{}
-	}
-	return ts.Time
+	return pgutil.TimestamptzToTime(ts)
 }

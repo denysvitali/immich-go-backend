@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/denysvitali/immich-go-backend/internal/auth"
+	"github.com/denysvitali/immich-go-backend/internal/db/pgutil"
+	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/sirupsen/logrus"
-
-	"github.com/denysvitali/immich-go-backend/internal/auth"
-	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 )
 
 type Service struct {
@@ -306,15 +306,9 @@ func (s *Service) CleanupExpiredSessions(ctx context.Context) error {
 // Helper functions
 
 func uuidToString(id pgtype.UUID) string {
-	if !id.Valid {
-		return ""
-	}
-	return uuid.UUID(id.Bytes).String()
+	return pgutil.UUIDToString(id)
 }
 
 func timestamptzToTime(ts pgtype.Timestamptz) time.Time {
-	if !ts.Valid {
-		return time.Time{}
-	}
-	return ts.Time
+	return pgutil.TimestamptzToTime(ts)
 }

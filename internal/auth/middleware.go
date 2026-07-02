@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/denysvitali/immich-go-backend/internal/db/pgutil"
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"go.opentelemetry.io/otel/attribute"
 )
@@ -24,39 +24,23 @@ const (
 
 // Helper functions for type conversion
 func stringToUUID(s string) (pgtype.UUID, error) {
-	id, err := uuid.Parse(s)
-	if err != nil {
-		return pgtype.UUID{}, err
-	}
-	return pgtype.UUID{Bytes: id, Valid: true}, nil
+	return pgutil.StringToUUID(s)
 }
 
 func uuidToString(u pgtype.UUID) string {
-	if !u.Valid {
-		return ""
-	}
-	return uuid.UUID(u.Bytes).String()
+	return pgutil.UUIDToString(u)
 }
 
 func timestamptzToTime(t pgtype.Timestamptz) time.Time {
-	if !t.Valid {
-		return time.Time{}
-	}
-	return t.Time
+	return pgutil.TimestamptzToTime(t)
 }
 
 func timeToTimestamptz(t time.Time) (pgtype.Timestamptz, error) {
-	return pgtype.Timestamptz{
-		Time:  t,
-		Valid: true,
-	}, nil
+	return pgutil.TimeToTimestamptz(t), nil
 }
 
 func pgTypeString(s string) pgtype.Text {
-	return pgtype.Text{
-		String: s,
-		Valid:  true,
-	}
+	return pgutil.Text(s)
 }
 
 // LoadUserInfo looks up the user identified by claims and builds the
