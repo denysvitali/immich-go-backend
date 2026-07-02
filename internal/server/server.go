@@ -601,7 +601,7 @@ func (s *Server) handleWs(mux *runtime.ServeMux) http.Handler {
 
 func gatewayIncomingContext(r *http.Request) context.Context {
 	md := metadata.MD{}
-	if authorization := r.Header.Get("Authorization"); authorization != "" {
+	if authorization := requestAuthorization(r); authorization != "" {
 		md.Set("authorization", authorization)
 	}
 	return metadata.NewIncomingContext(r.Context(), md)
@@ -630,7 +630,10 @@ func loggingMiddleware(handlerFunc runtime.HandlerFunc) runtime.HandlerFunc {
 
 func (s *Server) authContextMiddleware(handlerFunc runtime.HandlerFunc) runtime.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request, pathParams map[string]string) {
-		authHeader := r.Header.Get("Authorization")
+		authHeader := requestAuthorization(r)
+		if authHeader != "" && r.Header.Get("Authorization") == "" {
+			r = requestWithAuthorization(r, authHeader)
+		}
 		if !strings.HasPrefix(authHeader, "Bearer ") {
 			handlerFunc(w, r, pathParams)
 			return
@@ -653,6 +656,27 @@ func (s *Server) authContextMiddleware(handlerFunc runtime.HandlerFunc) runtime.
 
 		handlerFunc(w, r.WithContext(ctx), pathParams)
 	}
+}
+
+const immichAccessTokenCookie = "immich_access_token"
+
+func requestAuthorization(r *http.Request) string {
+	if authorization := r.Header.Get("Authorization"); authorization != "" {
+		return authorization
+	}
+
+	cookie, err := r.Cookie(immichAccessTokenCookie)
+	if err != nil || cookie.Value == "" {
+		return ""
+	}
+
+	return "Bearer " + cookie.Value
+}
+
+func requestWithAuthorization(r *http.Request, authorization string) *http.Request {
+	clone := r.Clone(r.Context())
+	clone.Header.Set("Authorization", authorization)
+	return clone
 }
 
 func (s *Server) Stop() {
