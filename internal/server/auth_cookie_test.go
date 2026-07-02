@@ -15,7 +15,7 @@ import (
 
 func TestRequestAuthorizationUsesImmichAccessTokenCookie(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/users/me", nil)
-	req.AddCookie(&http.Cookie{Name: immichAccessTokenCookie, Value: "cookie-token"})
+	req.AddCookie(testAccessTokenCookie("cookie-token"))
 
 	assert.Equal(t, "Bearer cookie-token", requestAuthorization(req))
 }
@@ -23,14 +23,14 @@ func TestRequestAuthorizationUsesImmichAccessTokenCookie(t *testing.T) {
 func TestRequestAuthorizationPrefersExplicitAuthorizationHeader(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/users/me", nil)
 	req.Header.Set("Authorization", "Bearer header-token")
-	req.AddCookie(&http.Cookie{Name: immichAccessTokenCookie, Value: "cookie-token"})
+	req.AddCookie(testAccessTokenCookie("cookie-token"))
 
 	assert.Equal(t, "Bearer header-token", requestAuthorization(req))
 }
 
 func TestGatewayIncomingContextUsesImmichAccessTokenCookie(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/users/me", nil)
-	req.AddCookie(&http.Cookie{Name: immichAccessTokenCookie, Value: "cookie-token"})
+	req.AddCookie(testAccessTokenCookie("cookie-token"))
 
 	md, ok := metadata.FromIncomingContext(gatewayIncomingContext(req))
 	require.True(t, ok)
@@ -45,7 +45,7 @@ func TestAuthContextMiddlewareForwardsCookieAsAuthorizationHeader(t *testing.T) 
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/users/me", nil)
-	req.AddCookie(&http.Cookie{Name: immichAccessTokenCookie, Value: "invalid-token"})
+	req.AddCookie(testAccessTokenCookie("invalid-token"))
 	rec := httptest.NewRecorder()
 
 	handler := srv.authContextMiddleware(runtime.HandlerFunc(
@@ -55,4 +55,14 @@ func TestAuthContextMiddlewareForwardsCookieAsAuthorizationHeader(t *testing.T) 
 	))
 
 	handler(rec, req, nil)
+}
+
+func testAccessTokenCookie(value string) *http.Cookie {
+	return &http.Cookie{
+		Name:     immichAccessTokenCookie,
+		Value:    value,
+		Secure:   true,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	}
 }
