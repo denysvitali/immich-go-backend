@@ -369,6 +369,11 @@ jobs:
           -p 5432:5432 \
           docker.io/tensorchord/vchord-suite:pg17-latest
         docker run -d --name e2e-redis -p 6379:6379 redis:7-alpine
+        docker run -d --name e2e-minio \
+          -e MINIO_ROOT_USER=minioadmin \
+          -e MINIO_ROOT_PASSWORD=minioadmin \
+          -p 9000:9000 \
+          quay.io/minio/minio:latest server /data --address ":9000"
 
         for i in {1..60}; do
           if docker exec e2e-postgres pg_isready -U immich -d immich >/dev/null 2>&1; then
@@ -409,12 +414,29 @@ jobs:
 
         for i in {1..30}; do
           if docker exec e2e-redis redis-cli ping >/dev/null 2>&1; then
-            exit 0
+            break
+          fi
+          if [ "$i" = 30 ]; then
+            echo "::error::Redis did not become ready"
+            exit 1
           fi
           sleep 1
         done
-        echo "::error::Redis did not become ready"
-        exit 1
+
+        for i in {1..60}; do
+          if curl -fsS http://127.0.0.1:9000/minio/health/ready >/dev/null; then
+            break
+          fi
+          if [ "$i" = 60 ]; then
+            echo "::error::MinIO did not become ready"
+            docker logs e2e-minio
+            exit 1
+          fi
+          sleep 1
+        done
+
+        docker run --rm --network host --entrypoint /bin/sh quay.io/minio/mc:latest -c \
+          'mc alias set e2e http://127.0.0.1:9000 minioadmin minioadmin && mc mb --ignore-existing e2e/immich-e2e'
 
     - name: Configure backend
       run: |
@@ -447,11 +469,18 @@ jobs:
           login_rate_window: "1m"
 
         storage:
-          backend: "local"
-          local:
-            root_path: "./e2e-uploads"
-            file_mode: "0644"
-            dir_mode: "0755"
+          backend: "s3"
+          s3:
+            enabled: true
+            direct_upload: false
+            endpoint: "http://127.0.0.1:9000"
+            region: "us-east-1"
+            bucket: "immich-e2e"
+            access_key_id: "minioadmin"
+            secret_access_key: "minioadmin"
+            use_ssl: false
+            force_path_style: true
+            path_prefix: "e2e"
           upload:
             max_file_size: 104857600
             allowed_extensions: [".jpg", ".jpeg", ".png", ".webp", ".mp4"]
@@ -547,4 +576,4 @@ jobs:
       run: |
         if [ -f backend-e2e.pid ]; then kill "$(cat backend-e2e.pid)" || true; fi
         if [ -f immich-web-e2e.pid ]; then kill "$(cat immich-web-e2e.pid)" || true; fi
-        docker rm -f e2e-postgres e2e-redis || true
+        docker rm -f e2e-postgres e2e-redis e2e-minio || true
