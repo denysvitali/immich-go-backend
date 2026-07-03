@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/denysvitali/immich-go-backend/internal/auth"
+	"github.com/denysvitali/immich-go-backend/internal/db/pgutil"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 	"github.com/google/uuid"
@@ -436,7 +437,7 @@ func (s *Server) GetUserSessionsAdmin(ctx context.Context, request *immichv1.Get
 	var protoSessions []*immichv1.SessionResponseDto
 	for _, session := range sessions {
 		protoSession := &immichv1.SessionResponseDto{
-			Id:        uuidToString(session.ID),
+			Id:        pgutil.UUIDToString(session.ID),
 			CreatedAt: timestamppb.New(session.CreatedAt.Time),
 			UpdatedAt: timestamppb.New(session.UpdatedAt.Time),
 			Current:   false, // Admin viewing, so not their session
@@ -490,12 +491,4 @@ func (s *Server) UnlinkAllOAuthAccounts(ctx context.Context, _ *emptypb.Empty) (
 	}
 
 	return &emptypb.Empty{}, nil
-}
-
-// Helper function to convert UUID to string
-func uuidToString(u pgtype.UUID) string {
-	if !u.Valid {
-		return ""
-	}
-	return uuid.UUID(u.Bytes).String()
 }

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/denysvitali/immich-go-backend/internal/config"
+	"github.com/denysvitali/immich-go-backend/internal/db/pgutil"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/denysvitali/immich-go-backend/internal/telemetry"
 	"github.com/google/uuid"
@@ -317,8 +318,8 @@ type BoundingBox struct {
 // Helper function to convert database face to response format
 func (s *Service) convertToFaceResponse(face sqlc.AssetFace) *FaceResponse {
 	resp := &FaceResponse{
-		ID:      uuidToString(face.ID),
-		AssetID: uuidToString(face.AssetId),
+		ID:      pgutil.UUIDToString(face.ID),
+		AssetID: pgutil.UUIDToString(face.AssetId),
 		BoundingBox: BoundingBox{
 			X1: face.BoundingBoxX1,
 			Y1: face.BoundingBoxY1,
@@ -329,7 +330,7 @@ func (s *Service) convertToFaceResponse(face sqlc.AssetFace) *FaceResponse {
 
 	// Add person ID if present
 	if face.PersonId.Valid {
-		resp.PersonID = uuidToString(face.PersonId)
+		resp.PersonID = pgutil.UUIDToString(face.PersonId)
 	}
 
 	// Add image dimensions
@@ -343,11 +344,4 @@ func (s *Service) convertToFaceResponse(face sqlc.AssetFace) *FaceResponse {
 	}
 
 	return resp
-}
-
-func uuidToString(id pgtype.UUID) string {
-	if !id.Valid {
-		return ""
-	}
-	return uuid.UUID(id.Bytes).String()
 }
