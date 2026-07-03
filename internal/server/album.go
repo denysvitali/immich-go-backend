@@ -10,16 +10,15 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/denysvitali/immich-go-backend/internal/auth"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 )
 
 func (s *Server) GetAllAlbums(ctx context.Context, request *immichv1.GetAllAlbumsRequest) (*immichv1.GetAllAlbumsResponse, error) {
 	// Get user ID from context/auth
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	claims, err := s.claimsFromContext(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	uid, err := uuid.Parse(claims.UserID)
@@ -43,9 +42,9 @@ func (s *Server) GetAllAlbums(ctx context.Context, request *immichv1.GetAllAlbum
 
 func (s *Server) CreateAlbum(ctx context.Context, request *immichv1.CreateAlbumRequest) (*immichv1.Album, error) {
 	// Get user ID from context/auth
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	claims, err := s.claimsFromContext(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	uid, err := uuid.Parse(claims.UserID)
@@ -291,9 +290,9 @@ func (s *Server) UpdateAlbumUser(ctx context.Context, request *immichv1.UpdateAl
 
 func (s *Server) GetAlbumStatistics(ctx context.Context, request *immichv1.GetAlbumStatisticsRequest) (*immichv1.AlbumStatisticsResponse, error) {
 	// Get user ID from context/auth
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	claims, err := s.claimsFromContext(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	uid, err := uuid.Parse(claims.UserID)

@@ -56,9 +56,9 @@ func (s *Server) GetMyUser(ctx context.Context, empty *emptypb.Empty) (*immichv1
 
 func (s *Server) UpdateMyUser(ctx context.Context, request *immichv1.UserUpdateMeRequest) (*immichv1.UserAdminResponse, error) {
 	// Get user ID from context/auth
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	claims, err := s.claimsFromContext(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	userID, err := uuid.Parse(claims.UserID)
@@ -162,12 +162,7 @@ func (s *Server) DeleteUserLicense(ctx context.Context, empty *emptypb.Empty) (*
 }
 
 func (s *Server) claimsFromContext(ctx context.Context) (*auth.Claims, error) {
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if ok && claims != nil {
-		return claims, nil
-	}
-
-	return s.getUserFromContext(ctx)
+	return auth.ClaimsFromContext(ctx, s.authService.ValidateToken)
 }
 
 func (s *Server) userUUIDFromContext(ctx context.Context) (pgtype.UUID, error) {
@@ -510,9 +505,9 @@ func (s *Server) convertUserToProto(user *users.UserInfo) *immichv1.UserResponse
 // ListUsers returns all users (for authenticated users)
 func (s *Server) ListUsers(ctx context.Context, _ *emptypb.Empty) (*immichv1.ListUsersResponse, error) {
 	// Ensure user is authenticated
-	_, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	_, err := s.claimsFromContext(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	// Get all users from service
@@ -535,9 +530,9 @@ func (s *Server) ListUsers(ctx context.Context, _ *emptypb.Empty) (*immichv1.Lis
 // GetOnboarding returns the user's onboarding status
 func (s *Server) GetOnboarding(ctx context.Context, _ *emptypb.Empty) (*immichv1.OnboardingResponse, error) {
 	// Get user ID from context
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	claims, err := s.claimsFromContext(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	userID, err := uuid.Parse(claims.UserID)
@@ -558,9 +553,9 @@ func (s *Server) GetOnboarding(ctx context.Context, _ *emptypb.Empty) (*immichv1
 // UpdateOnboarding updates the user's onboarding status
 func (s *Server) UpdateOnboarding(ctx context.Context, req *immichv1.OnboardingUpdateRequest) (*immichv1.OnboardingResponse, error) {
 	// Get user ID from context
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	claims, err := s.claimsFromContext(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	userID, err := uuid.Parse(claims.UserID)

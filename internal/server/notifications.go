@@ -7,15 +7,14 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	"github.com/denysvitali/immich-go-backend/internal/auth"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 )
 
 func (s *Server) GetNotifications(ctx context.Context, req *immichv1.GetNotificationsRequest) (*immichv1.GetNotificationsResponse, error) {
 	// Get user from context
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	claims, err := s.claimsFromContext(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	// Get notifications from notifications service
@@ -36,9 +35,9 @@ func (s *Server) GetNotifications(ctx context.Context, req *immichv1.GetNotifica
 
 func (s *Server) GetNotification(ctx context.Context, req *immichv1.GetNotificationRequest) (*immichv1.NotificationDto, error) {
 	// Get user from context
-	_, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	_, err := s.claimsFromContext(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	// Would fetch specific notification from database
@@ -48,9 +47,9 @@ func (s *Server) GetNotification(ctx context.Context, req *immichv1.GetNotificat
 
 func (s *Server) UpdateNotification(ctx context.Context, req *immichv1.UpdateNotificationRequest) (*immichv1.NotificationDto, error) {
 	// Get user from context
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	claims, err := s.claimsFromContext(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	// Mark notification as read
@@ -68,14 +67,13 @@ func (s *Server) UpdateNotification(ctx context.Context, req *immichv1.UpdateNot
 
 func (s *Server) DeleteNotification(ctx context.Context, req *immichv1.DeleteNotificationRequest) (*emptypb.Empty, error) {
 	// Get user from context
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	claims, err := s.claimsFromContext(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	// Delete notification
-	err := s.notificationsService.DeleteNotification(ctx, claims.UserID, req.Id)
-	if err != nil {
+	if err := s.notificationsService.DeleteNotification(ctx, claims.UserID, req.Id); err != nil {
 		return nil, SanitizedInternal(ctx, "failed to delete notification", err)
 	}
 
@@ -85,9 +83,9 @@ func (s *Server) DeleteNotification(ctx context.Context, req *immichv1.DeleteNot
 // UpdateNotifications updates multiple notifications at once
 func (s *Server) UpdateNotifications(ctx context.Context, req *immichv1.UpdateNotificationsRequest) (*emptypb.Empty, error) {
 	// Get user from context
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	claims, err := s.claimsFromContext(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	// If marking all as read
@@ -104,9 +102,9 @@ func (s *Server) UpdateNotifications(ctx context.Context, req *immichv1.UpdateNo
 // DeleteNotifications deletes multiple notifications
 func (s *Server) DeleteNotifications(ctx context.Context, req *immichv1.DeleteNotificationsRequest) (*emptypb.Empty, error) {
 	// Get user from context
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	claims, err := s.claimsFromContext(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	// Delete all notifications for user

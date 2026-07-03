@@ -18,7 +18,6 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/denysvitali/immich-go-backend/internal/assets"
-	"github.com/denysvitali/immich-go-backend/internal/auth"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/denysvitali/immich-go-backend/internal/jobs"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
@@ -26,9 +25,9 @@ import (
 
 func (s *Server) GetAssets(ctx context.Context, request *immichv1.GetAssetsRequest) (*immichv1.GetAssetsResponse, error) {
 	// Get user ID from context/auth
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	claims, err := s.claimsFromContext(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	uid, err := uuid.Parse(claims.UserID)
@@ -122,9 +121,9 @@ func (s *Server) GetAsset(ctx context.Context, request *immichv1.GetAssetRequest
 
 func (s *Server) UploadAsset(ctx context.Context, request *immichv1.UploadAssetRequest) (*immichv1.Asset, error) {
 	// Get user ID from context/auth
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	claims, err := s.claimsFromContext(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	uid, err := uuid.Parse(claims.UserID)
@@ -331,9 +330,9 @@ func (s *Server) DeleteAssets(ctx context.Context, request *immichv1.DeleteAsset
 
 func (s *Server) CheckExistingAssets(ctx context.Context, request *immichv1.CheckExistingAssetsRequest) (*immichv1.CheckExistingAssetsResponse, error) {
 	// Get user ID from context/auth
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	claims, err := s.claimsFromContext(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	uid, err := uuid.Parse(claims.UserID)
@@ -379,9 +378,9 @@ func (s *Server) CheckBulkUpload(ctx context.Context, request *immichv1.CheckBul
 
 func (s *Server) GetAssetStatistics(ctx context.Context, request *immichv1.GetAssetStatisticsRequest) (*immichv1.AssetStatisticsResponse, error) {
 	// Get user ID from context/auth
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	claims, err := s.claimsFromContext(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	uid, err := uuid.Parse(claims.UserID)
@@ -404,9 +403,9 @@ func (s *Server) GetAssetStatistics(ctx context.Context, request *immichv1.GetAs
 
 func (s *Server) GetAllUserAssetsByDeviceId(ctx context.Context, request *immichv1.GetAllUserAssetsByDeviceIdRequest) (*immichv1.GetAllUserAssetsByDeviceIdResponse, error) {
 	// Get user ID from context/auth
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	claims, err := s.claimsFromContext(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	uid, err := uuid.Parse(claims.UserID)
@@ -436,9 +435,9 @@ func (s *Server) GetAllUserAssetsByDeviceId(ctx context.Context, request *immich
 
 func (s *Server) GetRandom(ctx context.Context, request *immichv1.GetRandomRequest) (*immichv1.GetRandomResponse, error) {
 	// Get user ID from context/auth
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	claims, err := s.claimsFromContext(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	uid, err := uuid.Parse(claims.UserID)
@@ -472,9 +471,9 @@ func (s *Server) GetRandom(ctx context.Context, request *immichv1.GetRandomReque
 
 func (s *Server) GetRecentlyAddedAssets(ctx context.Context, request *immichv1.GetRecentlyAddedAssetsRequest) (*immichv1.GetRecentlyAddedAssetsResponse, error) {
 	// Get user ID from context/auth
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	claims, err := s.claimsFromContext(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	uid, err := uuid.Parse(claims.UserID)
@@ -580,9 +579,9 @@ func (s *Server) DownloadAsset(ctx context.Context, request *immichv1.DownloadAs
 }
 
 func (s *Server) ReplaceAsset(ctx context.Context, request *immichv1.ReplaceAssetRequest) (*immichv1.Asset, error) {
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	claims, err := s.claimsFromContext(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	// Parse asset ID

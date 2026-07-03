@@ -2,44 +2,23 @@ package server
 
 import (
 	"context"
-	"strings"
 
 	"github.com/denysvitali/immich-go-backend/internal/auth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
-// getUserIDFromContext extracts the user ID from the gRPC context
+// getUserIDFromContext extracts the user ID from the gRPC context by first
+// checking for claims set by middleware, then falling back to validating the
+// Bearer token from metadata.
 func (s *Server) getUserIDFromContext(ctx context.Context) (uuid.UUID, error) {
-	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return uuid.UUID{}, status.Error(codes.Unauthenticated, "missing metadata")
-	}
-
-	// Try to get user ID from authorization header
-	authHeaders := md.Get("authorization")
-	if len(authHeaders) == 0 {
-		return uuid.UUID{}, status.Error(codes.Unauthenticated, "missing authorization header")
-	}
-
-	// Extract token from "Bearer <token>" format
-	authHeader := authHeaders[0]
-	if !strings.HasPrefix(authHeader, "Bearer ") {
-		return uuid.UUID{}, status.Error(codes.Unauthenticated, "invalid authorization header format")
-	}
-
-	token := strings.TrimPrefix(authHeader, "Bearer ")
-
-	// Validate token and get user info
-	userInfo, err := s.authService.ValidateToken(token)
+	claims, err := auth.ClaimsFromContext(ctx, s.authService.ValidateToken)
 	if err != nil {
-		return uuid.UUID{}, status.Error(codes.Unauthenticated, "invalid token")
+		return uuid.UUID{}, err
 	}
 
-	// Parse user ID string to UUID
-	userID, err := uuid.Parse(userInfo.ID)
+	userID, err := uuid.Parse(claims.UserID)
 	if err != nil {
 		return uuid.UUID{}, status.Error(codes.Internal, "invalid user ID format")
 	}
@@ -47,31 +26,20 @@ func (s *Server) getUserIDFromContext(ctx context.Context) (uuid.UUID, error) {
 	return userID, nil
 }
 
-// getSessionIDFromContext extracts the session ID from the gRPC context
+// getSessionIDFromContext extracts the session ID from the gRPC context.
+// It first checks the x-session-id header, then falls back to looking up the
+// session by the Bearer token.
 func (s *Server) getSessionIDFromContext(ctx context.Context) (string, error) {
-	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return "", status.Error(codes.Unauthenticated, "missing metadata")
-	}
-
-	// Try to get session ID from x-session-id header
-	sessionHeaders := md.Get("x-session-id")
-	if len(sessionHeaders) > 0 {
-		return sessionHeaders[0], nil
+	// Try to get session ID from x-session-id header first
+	if sessionID, err := auth.SessionIDFromGRPCMetadata(ctx); err == nil && sessionID != "" {
+		return sessionID, nil
 	}
 
 	// Otherwise, extract from bearer token if it's a session token
-	authHeaders := md.Get("authorization")
-	if len(authHeaders) == 0 {
-		return "", status.Error(codes.Unauthenticated, "missing authorization header")
+	token, err := auth.BearerTokenFromGRPCMetadata(ctx)
+	if err != nil {
+		return "", err
 	}
-
-	authHeader := authHeaders[0]
-	if !strings.HasPrefix(authHeader, "Bearer ") {
-		return "", status.Error(codes.Unauthenticated, "invalid authorization header format")
-	}
-
-	token := strings.TrimPrefix(authHeader, "Bearer ")
 
 	// Try to get session from the token (for session-based auth)
 	session, err := s.sessionsService.GetSessionByToken(ctx, token)
@@ -82,32 +50,8 @@ func (s *Server) getSessionIDFromContext(ctx context.Context) (string, error) {
 	return "", nil
 }
 
-// getUserFromContext extracts the user claims from the gRPC context
+// getUserFromContext extracts the user claims from the gRPC context.
+// It is a thin wrapper around auth.ClaimsFromContext.
 func (s *Server) getUserFromContext(ctx context.Context) (*auth.Claims, error) {
-	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "missing metadata")
-	}
-
-	// Try to get user ID from authorization header
-	authHeaders := md.Get("authorization")
-	if len(authHeaders) == 0 {
-		return nil, status.Error(codes.Unauthenticated, "missing authorization header")
-	}
-
-	// Extract token from "Bearer <token>" format
-	authHeader := authHeaders[0]
-	if !strings.HasPrefix(authHeader, "Bearer ") {
-		return nil, status.Error(codes.Unauthenticated, "invalid authorization header format")
-	}
-
-	token := strings.TrimPrefix(authHeader, "Bearer ")
-
-	// Validate token and get claims
-	claims, err := s.authService.ValidateToken(token)
-	if err != nil {
-		return nil, status.Error(codes.Unauthenticated, "invalid token")
-	}
-
-	return claims, nil
+	return auth.ClaimsFromContext(ctx, s.authService.ValidateToken)
 }

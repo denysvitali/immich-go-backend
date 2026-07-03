@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/denysvitali/immich-go-backend/internal/apikeys"
-	"github.com/denysvitali/immich-go-backend/internal/auth"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -114,8 +113,8 @@ func (s *Server) DeleteApiKey(ctx context.Context, req *immichv1.DeleteApiKeyReq
 // UpdateApiKey updates an API key's name
 func (s *Server) UpdateApiKey(ctx context.Context, req *immichv1.UpdateApiKeyRequest) (*immichv1.ApiKeyResponseDto, error) {
 	// Get user ID from context
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
+	claims, err := s.claimsFromContext(ctx)
+	if err != nil {
 		return nil, status.Error(codes.Unauthenticated, "unauthorized")
 	}
 	userID, err := uuid.Parse(claims.UserID)
@@ -158,8 +157,8 @@ func (s *Server) UpdateApiKey(ctx context.Context, req *immichv1.UpdateApiKeyReq
 // GetApiKey retrieves a specific API key by ID
 func (s *Server) GetApiKey(ctx context.Context, req *immichv1.GetApiKeyRequest) (*immichv1.ApiKeyResponseDto, error) {
 	// Get user ID from context
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
+	claims, err := s.claimsFromContext(ctx)
+	if err != nil {
 		return nil, status.Error(codes.Unauthenticated, "unauthorized")
 	}
 	userID, err := uuid.Parse(claims.UserID)
