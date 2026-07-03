@@ -409,16 +409,8 @@ func TestIntegration_HandleThumbnailGeneration_NonImageAsset(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	payload := JobPayload{
-		ID:        "test-skip-job-" + assetID.String(),
-		UserID:    userID.String(),
-		Data:      map[string]interface{}{"asset_id": assetID.String()},
-		CreatedAt: time.Now(),
-	}
-	payloadBytes, err := json.Marshal(payload)
-	require.NoError(t, err)
-
-	task := asynq.NewTask(string(JobTypeThumbnailGeneration), payloadBytes)
+	payload := ThumbnailGenerationPayload{AssetID: assetID.String()}
+	task := newTestTask(t, JobTypeThumbnailGeneration, payload)
 
 	handlers := NewHandlers(tdb.Queries, nil, nil, storageService)
 	err = handlers.HandleThumbnailGeneration(ctx, task)
