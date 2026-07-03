@@ -522,33 +522,9 @@ func (s *Server) DownloadAsset(ctx context.Context, request *immichv1.DownloadAs
 		return nil, SanitizedInternal(ctx, "failed to read asset data", err)
 	}
 
-	// Determine content type based on file extension
-	contentType := "application/octet-stream"
-	ext := strings.ToLower(filepath.Ext(asset.OriginalFileName))
-	switch ext {
-	case ".jpg", ".jpeg":
-		contentType = "image/jpeg"
-	case ".png":
-		contentType = "image/png"
-	case ".gif":
-		contentType = "image/gif"
-	case ".webp":
-		contentType = "image/webp"
-	case ".mp4":
-		contentType = "video/mp4"
-	case ".webm":
-		contentType = "video/webm"
-	case ".mov":
-		contentType = "video/quicktime"
-	case ".avi":
-		contentType = "video/x-msvideo"
-	case ".pdf":
-		contentType = "application/pdf"
-	}
-
 	return &immichv1.DownloadAssetResponse{
 		Data:        data,
-		ContentType: contentType,
+		ContentType: assetDownloadContentType(asset.OriginalFileName),
 		Filename:    asset.OriginalFileName,
 	}, nil
 }
@@ -680,14 +656,16 @@ func (s *Server) GetAssetThumbnail(ctx context.Context, request *immichv1.GetAss
 
 // getThumbnailContentType returns the MIME type for a thumbnail type
 func (s *Server) getThumbnailContentType(thumbnailType assets.ThumbnailType) string {
-	switch thumbnailType {
-	case assets.ThumbnailTypeWebp:
-		return "image/webp"
-	case assets.ThumbnailTypePreview, assets.ThumbnailTypeThumb:
-		return "image/jpeg"
-	default:
-		return "image/jpeg"
+	if contentType, ok := thumbnailContentTypes[thumbnailType]; ok {
+		return contentType
 	}
+	return "image/jpeg"
+}
+
+var thumbnailContentTypes = map[assets.ThumbnailType]string{
+	assets.ThumbnailTypePreview: "image/jpeg",
+	assets.ThumbnailTypeWebp:    "image/webp",
+	assets.ThumbnailTypeThumb:   "image/jpeg",
 }
 
 func (s *Server) PlayAssetVideo(ctx context.Context, request *immichv1.PlayAssetVideoRequest) (*immichv1.PlayAssetVideoResponse, error) {
@@ -737,27 +715,45 @@ func (s *Server) PlayAssetVideo(ctx context.Context, request *immichv1.PlayAsset
 
 // getVideoContentType determines the video MIME type from filename
 func (s *Server) getVideoContentType(filename string) string {
-	ext := filepath.Ext(strings.ToLower(filename))
-	switch ext {
-	case ".mp4":
-		return "video/mp4"
-	case ".webm":
-		return "video/webm"
-	case ".avi":
-		return "video/x-msvideo"
-	case ".mov":
-		return "video/quicktime"
-	case ".mkv":
-		return "video/x-matroska"
-	case ".flv":
-		return "video/x-flv"
-	case ".wmv":
-		return "video/x-ms-wmv"
-	case ".m4v":
-		return "video/x-m4v"
-	default:
-		return "video/mp4" // Default to mp4
+	if contentType, ok := videoContentTypes[fileExtension(filename)]; ok {
+		return contentType
 	}
+	return "video/mp4"
+}
+
+var videoContentTypes = map[string]string{
+	".mp4":  "video/mp4",
+	".webm": "video/webm",
+	".avi":  "video/x-msvideo",
+	".mov":  "video/quicktime",
+	".mkv":  "video/x-matroska",
+	".flv":  "video/x-flv",
+	".wmv":  "video/x-ms-wmv",
+	".m4v":  "video/x-m4v",
+}
+
+func assetDownloadContentType(filename string) string {
+	if contentType, ok := assetDownloadContentTypes[fileExtension(filename)]; ok {
+		return contentType
+	}
+	return "application/octet-stream"
+}
+
+var assetDownloadContentTypes = map[string]string{
+	".jpg":  "image/jpeg",
+	".jpeg": "image/jpeg",
+	".png":  "image/png",
+	".gif":  "image/gif",
+	".webp": "image/webp",
+	".mp4":  "video/mp4",
+	".webm": "video/webm",
+	".mov":  "video/quicktime",
+	".avi":  "video/x-msvideo",
+	".pdf":  "application/pdf",
+}
+
+func fileExtension(filename string) string {
+	return strings.ToLower(filepath.Ext(filename))
 }
 
 // Helper function to convert database asset to proto
