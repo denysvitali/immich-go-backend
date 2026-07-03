@@ -169,35 +169,31 @@ func pluginToProto(p *plugin.PluginInfo) *immichv1.PluginInfo {
 }
 
 func pluginTypeToProto(t plugin.PluginType) immichv1.PluginType {
-	switch t {
-	case plugin.PluginTypeStorage:
-		return immichv1.PluginType_PLUGIN_TYPE_STORAGE
-	case plugin.PluginTypeProcessor:
-		return immichv1.PluginType_PLUGIN_TYPE_PROCESSOR
-	case plugin.PluginTypeML:
-		return immichv1.PluginType_PLUGIN_TYPE_ML
-	case plugin.PluginTypeNotification:
-		return immichv1.PluginType_PLUGIN_TYPE_NOTIFICATION
-	case plugin.PluginTypeAuth:
-		return immichv1.PluginType_PLUGIN_TYPE_AUTH
-	case plugin.PluginTypeIntegration:
-		return immichv1.PluginType_PLUGIN_TYPE_INTEGRATION
-	default:
-		return immichv1.PluginType_PLUGIN_TYPE_UNSPECIFIED
+	if protoType, ok := pluginTypeProtoValues[t]; ok {
+		return protoType
 	}
+	return immichv1.PluginType_PLUGIN_TYPE_UNSPECIFIED
+}
+
+var pluginTypeProtoValues = map[plugin.PluginType]immichv1.PluginType{
+	plugin.PluginTypeStorage:      immichv1.PluginType_PLUGIN_TYPE_STORAGE,
+	plugin.PluginTypeProcessor:    immichv1.PluginType_PLUGIN_TYPE_PROCESSOR,
+	plugin.PluginTypeML:           immichv1.PluginType_PLUGIN_TYPE_ML,
+	plugin.PluginTypeNotification: immichv1.PluginType_PLUGIN_TYPE_NOTIFICATION,
+	plugin.PluginTypeAuth:         immichv1.PluginType_PLUGIN_TYPE_AUTH,
+	plugin.PluginTypeIntegration:  immichv1.PluginType_PLUGIN_TYPE_INTEGRATION,
 }
 
 func pluginStatusToProto(s plugin.PluginStatus) immichv1.PluginStatus {
-	switch s {
-	case plugin.PluginStatusActive:
-		return immichv1.PluginStatus_PLUGIN_STATUS_ACTIVE
-	case plugin.PluginStatusDisabled:
-		return immichv1.PluginStatus_PLUGIN_STATUS_DISABLED
-	case plugin.PluginStatusError:
-		return immichv1.PluginStatus_PLUGIN_STATUS_ERROR
-	case plugin.PluginStatusUpdating:
-		return immichv1.PluginStatus_PLUGIN_STATUS_UPDATING
-	default:
-		return immichv1.PluginStatus_PLUGIN_STATUS_UNSPECIFIED
+	if protoStatus, ok := pluginStatusProtoValues[s]; ok {
+		return protoStatus
 	}
+	return immichv1.PluginStatus_PLUGIN_STATUS_UNSPECIFIED
+}
+
+var pluginStatusProtoValues = map[plugin.PluginStatus]immichv1.PluginStatus{
+	plugin.PluginStatusActive:   immichv1.PluginStatus_PLUGIN_STATUS_ACTIVE,
+	plugin.PluginStatusDisabled: immichv1.PluginStatus_PLUGIN_STATUS_DISABLED,
+	plugin.PluginStatusError:    immichv1.PluginStatus_PLUGIN_STATUS_ERROR,
+	plugin.PluginStatusUpdating: immichv1.PluginStatus_PLUGIN_STATUS_UPDATING,
 }
