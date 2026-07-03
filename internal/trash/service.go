@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/denysvitali/immich-go-backend/internal/db/pgutil"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -29,11 +30,10 @@ type TrashedAsset struct {
 
 // GetTrashedAssets retrieves all trashed assets for a user
 func (s *Service) GetTrashedAssets(ctx context.Context, userID string) ([]*TrashedAsset, error) {
-	uid, err := uuid.Parse(userID)
+	userUUID, err := pgutil.StringToUUID(userID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid user ID: %w", err)
 	}
-	userUUID := pgtype.UUID{Bytes: uid, Valid: true}
 
 	assets, err := s.db.GetTrashedAssetsByUser(ctx, userUUID)
 	if err != nil {
@@ -43,7 +43,7 @@ func (s *Service) GetTrashedAssets(ctx context.Context, userID string) ([]*Trash
 	result := make([]*TrashedAsset, len(assets))
 	for i, asset := range assets {
 		result[i] = &TrashedAsset{
-			ID:           uuid.UUID(asset.ID.Bytes).String(),
+			ID:           pgutil.UUIDToString(asset.ID),
 			DeviceID:     asset.DeviceId,
 			OriginalPath: asset.OriginalPath,
 			Type:         asset.Type,
@@ -65,7 +65,7 @@ func (s *Service) TrashAsset(ctx context.Context, userID, assetID string) error 
 		return fmt.Errorf("invalid asset ID: %w", err)
 	}
 
-	assetUUID := pgtype.UUID{Bytes: aid, Valid: true}
+	assetUUID := pgutil.UUIDToPgtype(aid)
 
 	// Verify ownership first
 	asset, err := s.db.GetAsset(ctx, assetUUID)
@@ -73,7 +73,7 @@ func (s *Service) TrashAsset(ctx context.Context, userID, assetID string) error 
 		return fmt.Errorf("asset not found: %w", err)
 	}
 
-	if asset.OwnerId.Bytes != uid {
+	if pgutil.PgtypeToUUID(asset.OwnerId) != uid {
 		return fmt.Errorf("access denied: asset does not belong to user")
 	}
 
@@ -88,11 +88,10 @@ func (s *Service) TrashAsset(ctx context.Context, userID, assetID string) error 
 
 // TrashAssets moves multiple assets to trash
 func (s *Service) TrashAssets(ctx context.Context, userID string, assetIDs []string) (int, error) {
-	uid, err := uuid.Parse(userID)
+	userUUID, err := pgutil.StringToUUID(userID)
 	if err != nil {
 		return 0, fmt.Errorf("invalid user ID: %w", err)
 	}
-	userUUID := pgtype.UUID{Bytes: uid, Valid: true}
 
 	var assetUUIDs []pgtype.UUID
 	for _, assetIDStr := range assetIDs {
@@ -100,7 +99,7 @@ func (s *Service) TrashAssets(ctx context.Context, userID string, assetIDs []str
 		if err != nil {
 			continue // Skip invalid IDs
 		}
-		assetUUIDs = append(assetUUIDs, pgtype.UUID{Bytes: assetID, Valid: true})
+		assetUUIDs = append(assetUUIDs, pgutil.UUIDToPgtype(assetID))
 	}
 
 	if len(assetUUIDs) == 0 {
@@ -131,7 +130,7 @@ func (s *Service) RestoreAsset(ctx context.Context, userID, assetID string) erro
 		return fmt.Errorf("invalid asset ID: %w", err)
 	}
 
-	assetUUID := pgtype.UUID{Bytes: aid, Valid: true}
+	assetUUID := pgutil.UUIDToPgtype(aid)
 
 	// Verify ownership first
 	asset, err := s.db.GetAsset(ctx, assetUUID)
@@ -139,7 +138,7 @@ func (s *Service) RestoreAsset(ctx context.Context, userID, assetID string) erro
 		return fmt.Errorf("asset not found: %w", err)
 	}
 
-	if asset.OwnerId.Bytes != uid {
+	if pgutil.PgtypeToUUID(asset.OwnerId) != uid {
 		return fmt.Errorf("access denied: asset does not belong to user")
 	}
 
@@ -154,11 +153,10 @@ func (s *Service) RestoreAsset(ctx context.Context, userID, assetID string) erro
 
 // RestoreAssets restores multiple assets from trash
 func (s *Service) RestoreAssets(ctx context.Context, userID string, assetIDs []string) (int, error) {
-	uid, err := uuid.Parse(userID)
+	userUUID, err := pgutil.StringToUUID(userID)
 	if err != nil {
 		return 0, fmt.Errorf("invalid user ID: %w", err)
 	}
-	userUUID := pgtype.UUID{Bytes: uid, Valid: true}
 
 	var assetUUIDs []pgtype.UUID
 	for _, assetIDStr := range assetIDs {
@@ -166,7 +164,7 @@ func (s *Service) RestoreAssets(ctx context.Context, userID string, assetIDs []s
 		if err != nil {
 			continue // Skip invalid IDs
 		}
-		assetUUIDs = append(assetUUIDs, pgtype.UUID{Bytes: assetID, Valid: true})
+		assetUUIDs = append(assetUUIDs, pgutil.UUIDToPgtype(assetID))
 	}
 
 	if len(assetUUIDs) == 0 {
@@ -187,11 +185,10 @@ func (s *Service) RestoreAssets(ctx context.Context, userID string, assetIDs []s
 
 // RestoreAllAssets restores all trashed assets for a user
 func (s *Service) RestoreAllAssets(ctx context.Context, userID string) (int, error) {
-	uid, err := uuid.Parse(userID)
+	userUUID, err := pgutil.StringToUUID(userID)
 	if err != nil {
 		return 0, fmt.Errorf("invalid user ID: %w", err)
 	}
-	userUUID := pgtype.UUID{Bytes: uid, Valid: true}
 
 	// Get all trashed assets
 	assets, err := s.db.GetTrashedAssetsByUser(ctx, userUUID)
@@ -213,11 +210,10 @@ func (s *Service) RestoreAllAssets(ctx context.Context, userID string) (int, err
 
 // EmptyTrash permanently deletes all trashed assets for a user
 func (s *Service) EmptyTrash(ctx context.Context, userID string) (int, error) {
-	uid, err := uuid.Parse(userID)
+	userUUID, err := pgutil.StringToUUID(userID)
 	if err != nil {
 		return 0, fmt.Errorf("invalid user ID: %w", err)
 	}
-	userUUID := pgtype.UUID{Bytes: uid, Valid: true}
 
 	// Get all trashed assets
 	assets, err := s.db.GetTrashedAssetsByUser(ctx, userUUID)
@@ -249,7 +245,7 @@ func (s *Service) PermanentlyDeleteAsset(ctx context.Context, userID, assetID st
 		return fmt.Errorf("invalid asset ID: %w", err)
 	}
 
-	assetUUID := pgtype.UUID{Bytes: aid, Valid: true}
+	assetUUID := pgutil.UUIDToPgtype(aid)
 
 	// Verify ownership first
 	asset, err := s.db.GetAsset(ctx, assetUUID)
@@ -257,7 +253,7 @@ func (s *Service) PermanentlyDeleteAsset(ctx context.Context, userID, assetID st
 		return fmt.Errorf("asset not found: %w", err)
 	}
 
-	if asset.OwnerId.Bytes != uid {
+	if pgutil.PgtypeToUUID(asset.OwnerId) != uid {
 		return fmt.Errorf("access denied: asset does not belong to user")
 	}
 
