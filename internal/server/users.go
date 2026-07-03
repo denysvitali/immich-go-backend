@@ -399,45 +399,16 @@ func (s *Server) GetProfileImage(ctx context.Context, request *immichv1.GetProfi
 	}, nil
 }
 
-// This function is duplicate - removed
-
 // Helper functions to convert user service types to proto
 func (s *Server) convertUserToAdminProto(user *users.UserInfo) *immichv1.UserAdminResponse {
-	avatarColor := immichv1.UserAvatarColor_USER_AVATAR_COLOR_BLUE
-	if user.AvatarColor != nil {
-		// Map avatar color string to enum
-		switch *user.AvatarColor {
-		case "red":
-			avatarColor = immichv1.UserAvatarColor_USER_AVATAR_COLOR_RED
-		case "green":
-			avatarColor = immichv1.UserAvatarColor_USER_AVATAR_COLOR_GREEN
-		case "yellow":
-			avatarColor = immichv1.UserAvatarColor_USER_AVATAR_COLOR_YELLOW
-		case "orange":
-			avatarColor = immichv1.UserAvatarColor_USER_AVATAR_COLOR_ORANGE
-		case "purple":
-			avatarColor = immichv1.UserAvatarColor_USER_AVATAR_COLOR_PURPLE
-		case "pink":
-			avatarColor = immichv1.UserAvatarColor_USER_AVATAR_COLOR_PINK
-		}
-	}
-
-	status := immichv1.UserStatus_USER_STATUS_ACTIVE
-	switch user.Status {
-	case "removing":
-		status = immichv1.UserStatus_USER_STATUS_REMOVING
-	case "deleted":
-		status = immichv1.UserStatus_USER_STATUS_DELETED
-	}
-
 	response := &immichv1.UserAdminResponse{
 		Id:                   user.ID.String(),
 		Email:                user.Email,
 		Name:                 user.Name,
 		IsAdmin:              user.IsAdmin,
-		AvatarColor:          avatarColor,
+		AvatarColor:          userAvatarColorToProto(user.AvatarColor),
 		ShouldChangePassword: user.ShouldChangePassword,
-		Status:               status,
+		Status:               userStatusToProto(user.Status),
 		CreatedAt:            timestamppb.New(user.CreatedAt),
 		UpdatedAt:            timestamppb.New(user.UpdatedAt),
 		OauthId:              user.OAuthID,
@@ -465,30 +436,11 @@ func (s *Server) convertUserToAdminProto(user *users.UserInfo) *immichv1.UserAdm
 }
 
 func (s *Server) convertUserToProto(user *users.UserInfo) *immichv1.UserResponse {
-	avatarColor := immichv1.UserAvatarColor_USER_AVATAR_COLOR_BLUE
-	if user.AvatarColor != nil {
-		// Map avatar color string to enum
-		switch *user.AvatarColor {
-		case "red":
-			avatarColor = immichv1.UserAvatarColor_USER_AVATAR_COLOR_RED
-		case "green":
-			avatarColor = immichv1.UserAvatarColor_USER_AVATAR_COLOR_GREEN
-		case "yellow":
-			avatarColor = immichv1.UserAvatarColor_USER_AVATAR_COLOR_YELLOW
-		case "orange":
-			avatarColor = immichv1.UserAvatarColor_USER_AVATAR_COLOR_ORANGE
-		case "purple":
-			avatarColor = immichv1.UserAvatarColor_USER_AVATAR_COLOR_PURPLE
-		case "pink":
-			avatarColor = immichv1.UserAvatarColor_USER_AVATAR_COLOR_PINK
-		}
-	}
-
 	response := &immichv1.UserResponse{
 		Id:          user.ID.String(),
 		Email:       user.Email,
 		Name:        user.Name,
-		AvatarColor: avatarColor,
+		AvatarColor: userAvatarColorToProto(user.AvatarColor),
 	}
 
 	if user.ProfileImagePath != nil {
@@ -500,6 +452,37 @@ func (s *Server) convertUserToProto(user *users.UserInfo) *immichv1.UserResponse
 	}
 
 	return response
+}
+
+var userAvatarColorValues = map[string]immichv1.UserAvatarColor{
+	"red":    immichv1.UserAvatarColor_USER_AVATAR_COLOR_RED,
+	"green":  immichv1.UserAvatarColor_USER_AVATAR_COLOR_GREEN,
+	"yellow": immichv1.UserAvatarColor_USER_AVATAR_COLOR_YELLOW,
+	"orange": immichv1.UserAvatarColor_USER_AVATAR_COLOR_ORANGE,
+	"purple": immichv1.UserAvatarColor_USER_AVATAR_COLOR_PURPLE,
+	"pink":   immichv1.UserAvatarColor_USER_AVATAR_COLOR_PINK,
+}
+
+func userAvatarColorToProto(color *string) immichv1.UserAvatarColor {
+	if color == nil {
+		return immichv1.UserAvatarColor_USER_AVATAR_COLOR_BLUE
+	}
+	if protoColor, ok := userAvatarColorValues[*color]; ok {
+		return protoColor
+	}
+	return immichv1.UserAvatarColor_USER_AVATAR_COLOR_BLUE
+}
+
+var userStatusValues = map[string]immichv1.UserStatus{
+	"removing": immichv1.UserStatus_USER_STATUS_REMOVING,
+	"deleted":  immichv1.UserStatus_USER_STATUS_DELETED,
+}
+
+func userStatusToProto(status string) immichv1.UserStatus {
+	if protoStatus, ok := userStatusValues[status]; ok {
+		return protoStatus
+	}
+	return immichv1.UserStatus_USER_STATUS_ACTIVE
 }
 
 // ListUsers returns all users (for authenticated users)
