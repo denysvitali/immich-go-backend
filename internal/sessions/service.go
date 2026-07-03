@@ -10,7 +10,6 @@ import (
 	"github.com/denysvitali/immich-go-backend/internal/db/pgutil"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/sirupsen/logrus"
 )
 
@@ -43,11 +42,10 @@ type Session struct {
 // CreateSession creates a new session for a user
 func (s *Service) CreateSession(ctx context.Context, userID string, deviceType, deviceOS string) (*Session, error) {
 	// Parse user ID
-	uid, err := uuid.Parse(userID)
+	userUUID, err := pgutil.StringToUUID(userID)
 	if err != nil {
 		return nil, err
 	}
-	userUUID := pgtype.UUID{Bytes: uid, Valid: true}
 
 	// Get user from database to fetch email
 	user, err := s.queries.GetUser(ctx, userUUID)
@@ -69,23 +67,14 @@ func (s *Service) CreateSession(ctx context.Context, userID string, deviceType, 
 		UserId:     userUUID,
 		DeviceType: deviceType,
 		DeviceOS:   deviceOS,
-		ExpiresAt:  pgtype.Timestamptz{Time: expiresAt, Valid: true},
+		ExpiresAt:  pgutil.TimeToTimestamptz(expiresAt),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create session: %w", err)
 	}
 
 	// Convert to service model
-	session := &Session{
-		ID:         uuidToString(dbSession.ID),
-		UserID:     uuidToString(dbSession.UserId),
-		DeviceType: dbSession.DeviceType,
-		DeviceOS:   dbSession.DeviceOS,
-		Token:      token,
-		CreatedAt:  timestamptzToTime(dbSession.CreatedAt),
-		UpdatedAt:  timestamptzToTime(dbSession.UpdatedAt),
-		ExpiresAt:  timestamptzToTime(dbSession.ExpiresAt),
-	}
+	session := sessionFromDB(dbSession)
 
 	s.logger.WithFields(logrus.Fields{
 		"session_id": session.ID,
@@ -98,11 +87,10 @@ func (s *Service) CreateSession(ctx context.Context, userID string, deviceType, 
 
 // GetSessionsByUserID returns all sessions for a user
 func (s *Service) GetSessionsByUserID(ctx context.Context, userID string) ([]*Session, error) {
-	uid, err := uuid.Parse(userID)
+	userUUID, err := pgutil.StringToUUID(userID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid user ID: %w", err)
 	}
-	userUUID := pgtype.UUID{Bytes: uid, Valid: true}
 
 	dbSessions, err := s.queries.GetUserSessions(ctx, userUUID)
 	if err != nil {
@@ -111,16 +99,7 @@ func (s *Service) GetSessionsByUserID(ctx context.Context, userID string) ([]*Se
 
 	sessions := make([]*Session, len(dbSessions))
 	for i, dbSession := range dbSessions {
-		sessions[i] = &Session{
-			ID:         uuidToString(dbSession.ID),
-			UserID:     uuidToString(dbSession.UserId),
-			DeviceType: dbSession.DeviceType,
-			DeviceOS:   dbSession.DeviceOS,
-			Token:      dbSession.Token,
-			CreatedAt:  timestamptzToTime(dbSession.CreatedAt),
-			UpdatedAt:  timestamptzToTime(dbSession.UpdatedAt),
-			ExpiresAt:  timestamptzToTime(dbSession.ExpiresAt),
-		}
+		sessions[i] = sessionFromDB(dbSession)
 	}
 
 	return sessions, nil
@@ -128,11 +107,10 @@ func (s *Service) GetSessionsByUserID(ctx context.Context, userID string) ([]*Se
 
 // GetSessionByID returns a session by its ID
 func (s *Service) GetSessionByID(ctx context.Context, sessionID string) (*Session, error) {
-	sid, err := uuid.Parse(sessionID)
+	sessUUID, err := pgutil.StringToUUID(sessionID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid session ID: %w", err)
 	}
-	sessUUID := pgtype.UUID{Bytes: sid, Valid: true}
 
 	dbSession, err := s.queries.GetSession(ctx, sessUUID)
 	if err != nil {
@@ -147,16 +125,7 @@ func (s *Service) GetSessionByID(ctx context.Context, sessionID string) (*Sessio
 		return nil, auth.NewAuthError(auth.ErrTokenExpired, "Session has expired", nil)
 	}
 
-	return &Session{
-		ID:         uuidToString(dbSession.ID),
-		UserID:     uuidToString(dbSession.UserId),
-		DeviceType: dbSession.DeviceType,
-		DeviceOS:   dbSession.DeviceOS,
-		Token:      dbSession.Token,
-		CreatedAt:  timestamptzToTime(dbSession.CreatedAt),
-		UpdatedAt:  timestamptzToTime(dbSession.UpdatedAt),
-		ExpiresAt:  timestamptzToTime(dbSession.ExpiresAt),
-	}, nil
+	return sessionFromDB(dbSession), nil
 }
 
 // GetSessionByToken returns a session by its token
@@ -178,25 +147,15 @@ func (s *Service) GetSessionByToken(ctx context.Context, token string) (*Session
 		return nil, auth.NewAuthError(auth.ErrTokenExpired, "Session has expired", nil)
 	}
 
-	return &Session{
-		ID:         uuidToString(dbSession.ID),
-		UserID:     uuidToString(dbSession.UserId),
-		DeviceType: dbSession.DeviceType,
-		DeviceOS:   dbSession.DeviceOS,
-		Token:      dbSession.Token,
-		CreatedAt:  timestamptzToTime(dbSession.CreatedAt),
-		UpdatedAt:  timestamptzToTime(dbSession.UpdatedAt),
-		ExpiresAt:  timestamptzToTime(dbSession.ExpiresAt),
-	}, nil
+	return sessionFromDB(dbSession), nil
 }
 
 // DeleteSession deletes a session by its ID
 func (s *Service) DeleteSession(ctx context.Context, sessionID string) error {
-	sid, err := uuid.Parse(sessionID)
+	sessUUID, err := pgutil.StringToUUID(sessionID)
 	if err != nil {
 		return fmt.Errorf("invalid session ID: %w", err)
 	}
-	sessUUID := pgtype.UUID{Bytes: sid, Valid: true}
 
 	err = s.queries.DeleteSession(ctx, sessUUID)
 	if err != nil {
@@ -209,11 +168,10 @@ func (s *Service) DeleteSession(ctx context.Context, sessionID string) error {
 
 // DeleteAllSessionsByUserID deletes all sessions for a user
 func (s *Service) DeleteAllSessionsByUserID(ctx context.Context, userID string) error {
-	uid, err := uuid.Parse(userID)
+	userUUID, err := pgutil.StringToUUID(userID)
 	if err != nil {
 		return fmt.Errorf("invalid user ID: %w", err)
 	}
-	userUUID := pgtype.UUID{Bytes: uid, Valid: true}
 
 	err = s.queries.DeleteUserSessions(ctx, userUUID)
 	if err != nil {
@@ -252,11 +210,10 @@ func (s *Service) ValidateSession(ctx context.Context, sessionID string) (*Sessi
 
 // RefreshSession updates the session's last activity time
 func (s *Service) RefreshSession(ctx context.Context, sessionID string) error {
-	sid, err := uuid.Parse(sessionID)
+	sessUUID, err := pgutil.StringToUUID(sessionID)
 	if err != nil {
 		return fmt.Errorf("invalid session ID: %w", err)
 	}
-	sessUUID := pgtype.UUID{Bytes: sid, Valid: true}
 
 	err = s.queries.UpdateSessionActivity(ctx, sessUUID)
 	if err != nil {
@@ -303,12 +260,15 @@ func (s *Service) CleanupExpiredSessions(ctx context.Context) error {
 	return nil
 }
 
-// Helper functions
-
-func uuidToString(id pgtype.UUID) string {
-	return pgutil.UUIDToString(id)
-}
-
-func timestamptzToTime(ts pgtype.Timestamptz) time.Time {
-	return pgutil.TimestamptzToTime(ts)
+func sessionFromDB(dbSession sqlc.Session) *Session {
+	return &Session{
+		ID:         pgutil.UUIDToString(dbSession.ID),
+		UserID:     pgutil.UUIDToString(dbSession.UserId),
+		DeviceType: dbSession.DeviceType,
+		DeviceOS:   dbSession.DeviceOS,
+		Token:      dbSession.Token,
+		CreatedAt:  pgutil.TimestamptzToTime(dbSession.CreatedAt),
+		UpdatedAt:  pgutil.TimestamptzToTime(dbSession.UpdatedAt),
+		ExpiresAt:  pgutil.TimestamptzToTime(dbSession.ExpiresAt),
+	}
 }
