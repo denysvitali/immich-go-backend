@@ -1,52 +1,6 @@
-import { expect, test, type APIRequestContext, type APIResponse } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 
-const password = 'E2ePassword123!';
-let userCounter = 0;
-
-type TestUser = {
-  email: string;
-  password: string;
-  userId: string;
-  headers: Record<string, string>;
-};
-
-const png1x1 = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
-  'base64',
-);
-
-function uniqueEmail(prefix: string) {
-  userCounter += 1;
-  return `${prefix}-${Date.now()}-${userCounter}@example.com`;
-}
-
-async function expectOk(response: APIResponse) {
-  if (!response.ok()) {
-    throw new Error(`${response.url()} returned ${response.status()}: ${await response.text()}`);
-  }
-}
-
-async function signUp(request: APIRequestContext, prefix = 'e2e'): Promise<TestUser> {
-  const email = uniqueEmail(prefix);
-  const name = 'E2E User';
-  const signup = await request.post('/api/auth/admin-sign-up', {
-    data: { email, password, name },
-  });
-  await expectOk(signup);
-  const signupBody = await signup.json();
-  expect(signupBody.accessToken).toBeTruthy();
-  expect(signupBody.userEmail).toBe(email);
-  expect(signupBody.userId).toBeTruthy();
-
-  return {
-    email,
-    password,
-    userId: signupBody.userId,
-    headers: {
-      Authorization: `Bearer ${signupBody.accessToken}`,
-    },
-  };
-}
+import { expectOk, login, png1x1, signUpAdmin, uniqueEmail } from './helpers';
 
 test('upstream frontend can reach backend through its proxy', async ({ page, request }) => {
   const response = await page.goto('/');
@@ -77,18 +31,9 @@ test('root layout mounts and the loading spinner goes away', async ({ page }) =>
 });
 
 test('user can sign up, log in, read profile, and manage license through frontend origin', async ({ request }) => {
-  const user = await signUp(request, 'license');
+  const user = await signUpAdmin(request, 'license');
 
-  const login = await request.post('/api/auth/login', {
-    data: { email: user.email, password: user.password },
-  });
-  await expectOk(login);
-  const loginBody = await login.json();
-  expect(loginBody.accessToken).toBeTruthy();
-
-  const headers = {
-    Authorization: `Bearer ${loginBody.accessToken}`,
-  };
+  const { body: loginBody, headers } = await login(request, user);
 
   const me = await request.get('/api/users/me', { headers });
   expect(me.ok()).toBeTruthy();
@@ -125,7 +70,7 @@ test('user can sign up, log in, read profile, and manage license through fronten
 });
 
 test('user can create, read, and delete a profile image through frontend origin', async ({ request }) => {
-  const user = await signUp(request, 'profile-image');
+  const user = await signUpAdmin(request, 'profile-image');
 
   const created = await request.post('/api/users/profile-image', {
     headers: user.headers,

@@ -1,93 +1,9 @@
-import { expect, test, type APIRequestContext, type APIResponse, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 
-const password = 'E2ePassword123!';
-let userCounter = 0;
-
-const png1x1 = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
-  'base64',
-);
-
-type TestUser = {
-  email: string;
-  password: string;
-  userId: string;
-  accessToken: string;
-  headers: Record<string, string>;
-};
-
-function uniqueId(prefix: string) {
-  userCounter += 1;
-  return `${prefix}-${Date.now()}-${userCounter}`;
-}
-
-async function expectOk(response: APIResponse) {
-  if (!response.ok()) {
-    throw new Error(`${response.url()} returned ${response.status()}: ${await response.text()}`);
-  }
-}
-
-async function signUpAdmin(request: APIRequestContext, prefix: string): Promise<TestUser> {
-  const email = `${uniqueId(prefix)}@example.com`;
-  const signup = await request.post('/api/auth/admin-sign-up', {
-    data: { email, password, name: 'E2E UI User' },
-  });
-  await expectOk(signup);
-  const signupBody = await signup.json();
-
-  const login = await request.post('/api/auth/login', {
-    data: { email, password },
-  });
-  await expectOk(login);
-  const loginBody = await login.json();
-
-  return {
-    email,
-    password,
-    userId: signupBody.userId,
-    accessToken: loginBody.accessToken,
-    headers: { Authorization: `Bearer ${loginBody.accessToken}` },
-  };
-}
-
-// The backend sets auth cookies with the Secure attribute; over plain http the
-// APIRequestContext does not persist them into the browser context, so we plant
-// the same cookies explicitly to authenticate page navigations.
-async function authenticatePage(page: Page, user: TestUser) {
-  const url = new URL(process.env.IMMICH_WEB_URL ?? 'http://127.0.0.1:3000');
-  const cookie = { domain: url.hostname, path: '/' } as const;
-  await page.context().addCookies([
-    { ...cookie, name: 'immich_access_token', value: user.accessToken },
-    { ...cookie, name: 'immich_auth_type', value: 'password' },
-    { ...cookie, name: 'immich_is_authenticated', value: 'true' },
-  ]);
-}
-
-async function uploadAsset(request: APIRequestContext, user: TestUser, fileCreatedAt = '2026-06-01T12:00:00Z') {
-  const mediaId = uniqueId('ui-asset');
-  const filename = `${mediaId}.png`;
-  const uploaded = await request.post('/api/assets', {
-    headers: user.headers,
-    data: {
-      assetData: {
-        deviceAssetId: mediaId,
-        deviceId: 'playwright-ui-e2e',
-        type: 'ASSET_TYPE_IMAGE',
-        originalPath: `fallback/${filename}`,
-        originalFileName: filename,
-        fileCreatedAt,
-        fileModifiedAt: fileCreatedAt,
-      },
-      checksum: `checksum-${mediaId}`,
-      fileContent: png1x1.toString('base64'),
-    },
-  });
-  await expectOk(uploaded);
-  return uploaded.json();
-}
+import { authenticatePage, expectOk, signUpAdmin, uniqueId, uploadAsset } from './helpers';
 
 test('user can log in through the login form and reach the timeline', async ({ page, request }) => {
-  const user = await signUpAdmin(request, 'ui-login');
+  const user = await signUpAdmin(request, 'ui-login', 'E2E UI User');
 
   await page.goto('/auth/login');
   await page.locator('#email').fill(user.email);
@@ -99,7 +15,7 @@ test('user can log in through the login form and reach the timeline', async ({ p
 });
 
 test('uploaded asset appears on the timeline', async ({ page, request }) => {
-  const user = await signUpAdmin(request, 'ui-timeline');
+  const user = await signUpAdmin(request, 'ui-timeline', 'E2E UI User');
   const asset = await uploadAsset(request, user);
 
   await authenticatePage(page, user);
@@ -108,7 +24,7 @@ test('uploaded asset appears on the timeline', async ({ page, request }) => {
 });
 
 test('album created via API shows up on the albums page', async ({ page, request }) => {
-  const user = await signUpAdmin(request, 'ui-albums');
+  const user = await signUpAdmin(request, 'ui-albums', 'E2E UI User');
   const asset = await uploadAsset(request, user);
 
   const albumName = `UI Album ${uniqueId('album')}`;
@@ -128,7 +44,7 @@ test('album created via API shows up on the albums page', async ({ page, request
 });
 
 test('favorited asset appears on the favorites page', async ({ page, request }) => {
-  const user = await signUpAdmin(request, 'ui-favorites');
+  const user = await signUpAdmin(request, 'ui-favorites', 'E2E UI User');
   const asset = await uploadAsset(request, user);
 
   const favorite = await request.put(`/api/assets/${asset.id}`, {
@@ -143,7 +59,7 @@ test('favorited asset appears on the favorites page', async ({ page, request }) 
 });
 
 test('trashed asset appears on the trash page', async ({ page, request }) => {
-  const user = await signUpAdmin(request, 'ui-trash');
+  const user = await signUpAdmin(request, 'ui-trash', 'E2E UI User');
   const asset = await uploadAsset(request, user);
 
   const deleted = await request.delete('/api/assets', {
@@ -158,7 +74,7 @@ test('trashed asset appears on the trash page', async ({ page, request }) => {
 });
 
 test('authenticated navigation pages render without redirecting to login', async ({ page, request }) => {
-  const user = await signUpAdmin(request, 'ui-nav');
+  const user = await signUpAdmin(request, 'ui-nav', 'E2E UI User');
   await uploadAsset(request, user);
   await authenticatePage(page, user);
 

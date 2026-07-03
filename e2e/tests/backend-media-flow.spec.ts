@@ -1,60 +1,13 @@
-import { expect, test, type APIRequestContext, type APIResponse } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 
-const password = 'E2ePassword123!';
-let userCounter = 0;
-
-const png1x1 = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
-  'base64',
-);
-
-type TestUser = {
-  email: string;
-  password: string;
-  userId: string;
-};
-
-function uniqueId(prefix: string) {
-  userCounter += 1;
-  return `${prefix}-${Date.now()}-${userCounter}`;
-}
-
-async function expectOk(response: APIResponse) {
-  if (!response.ok()) {
-    throw new Error(`${response.url()} returned ${response.status()}: ${await response.text()}`);
-  }
-}
-
-async function signUpAdmin(request: APIRequestContext): Promise<TestUser> {
-  const email = `${uniqueId('media-flow')}@example.com`;
-  const signup = await request.post('/api/auth/admin-sign-up', {
-    data: { email, password, name: 'E2E Media Admin' },
-  });
-  await expectOk(signup);
-
-  const signupBody = await signup.json();
-  expect(signupBody.accessToken).toBeTruthy();
-  expect(signupBody.userEmail).toBe(email);
-  expect(signupBody.userId).toBeTruthy();
-  expect(signupBody.isAdmin).toBe(true);
-
-  return { email, password, userId: signupBody.userId };
-}
+import { expectOk, login, png1x1, signUpAdmin, uniqueId } from './helpers';
 
 test('admin can upload an image, create an album, and retrieve the image', async ({ request }) => {
-  const admin = await signUpAdmin(request);
-  const login = await request.post('/api/auth/login', {
-    data: { email: admin.email, password: admin.password },
-  });
-  await expectOk(login);
-
-  const loginBody = await login.json();
+  const admin = await signUpAdmin(request, 'media-flow', 'E2E Media Admin');
+  const { body: loginBody, headers } = await login(request, admin);
   expect(loginBody.accessToken).toBeTruthy();
   expect(loginBody.isAdmin).toBe(true);
 
-  const headers = {
-    Authorization: `Bearer ${loginBody.accessToken}`,
-  };
   const mediaId = uniqueId('dummy-picture');
   const filename = `${mediaId}.png`;
 
