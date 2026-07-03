@@ -313,148 +313,106 @@ func protoActionToInternal(a *immichv1.WorkflowAction) workflow.Action {
 }
 
 func workflowStatusToProto(s workflow.WorkflowStatus) immichv1.WorkflowStatus {
-	switch s {
-	case workflow.WorkflowStatusActive:
-		return immichv1.WorkflowStatus_WORKFLOW_STATUS_ACTIVE
-	case workflow.WorkflowStatusDisabled:
-		return immichv1.WorkflowStatus_WORKFLOW_STATUS_DISABLED
-	case workflow.WorkflowStatusError:
-		return immichv1.WorkflowStatus_WORKFLOW_STATUS_ERROR
-	default:
-		return immichv1.WorkflowStatus_WORKFLOW_STATUS_UNSPECIFIED
-	}
+	return lookupWorkflowMapping(workflowStatusProtoValues, s, immichv1.WorkflowStatus_WORKFLOW_STATUS_UNSPECIFIED)
+}
+
+var workflowStatusProtoValues = map[workflow.WorkflowStatus]immichv1.WorkflowStatus{
+	workflow.WorkflowStatusActive:   immichv1.WorkflowStatus_WORKFLOW_STATUS_ACTIVE,
+	workflow.WorkflowStatusDisabled: immichv1.WorkflowStatus_WORKFLOW_STATUS_DISABLED,
+	workflow.WorkflowStatusError:    immichv1.WorkflowStatus_WORKFLOW_STATUS_ERROR,
 }
 
 func triggerTypeToProto(t workflow.TriggerType) immichv1.WorkflowTriggerType {
-	switch t {
-	case workflow.TriggerTypeAssetUploaded:
-		return immichv1.WorkflowTriggerType_WORKFLOW_TRIGGER_TYPE_ASSET_UPLOADED
-	case workflow.TriggerTypeAssetDeleted:
-		return immichv1.WorkflowTriggerType_WORKFLOW_TRIGGER_TYPE_ASSET_DELETED
-	case workflow.TriggerTypeAlbumCreated:
-		return immichv1.WorkflowTriggerType_WORKFLOW_TRIGGER_TYPE_ALBUM_CREATED
-	case workflow.TriggerTypeAlbumUpdated:
-		return immichv1.WorkflowTriggerType_WORKFLOW_TRIGGER_TYPE_ALBUM_UPDATED
-	case workflow.TriggerTypeUserCreated:
-		return immichv1.WorkflowTriggerType_WORKFLOW_TRIGGER_TYPE_USER_CREATED
-	case workflow.TriggerTypeScheduled:
-		return immichv1.WorkflowTriggerType_WORKFLOW_TRIGGER_TYPE_SCHEDULED
-	case workflow.TriggerTypeManual:
-		return immichv1.WorkflowTriggerType_WORKFLOW_TRIGGER_TYPE_MANUAL
-	case workflow.TriggerTypeFaceDetected:
-		return immichv1.WorkflowTriggerType_WORKFLOW_TRIGGER_TYPE_FACE_DETECTED
-	case workflow.TriggerTypeDuplicateFound:
-		return immichv1.WorkflowTriggerType_WORKFLOW_TRIGGER_TYPE_DUPLICATE_FOUND
-	default:
-		return immichv1.WorkflowTriggerType_WORKFLOW_TRIGGER_TYPE_UNSPECIFIED
-	}
+	return lookupWorkflowMapping(triggerTypeProtoValues, t, immichv1.WorkflowTriggerType_WORKFLOW_TRIGGER_TYPE_UNSPECIFIED)
+}
+
+var triggerTypeProtoValues = map[workflow.TriggerType]immichv1.WorkflowTriggerType{
+	workflow.TriggerTypeAssetUploaded:  immichv1.WorkflowTriggerType_WORKFLOW_TRIGGER_TYPE_ASSET_UPLOADED,
+	workflow.TriggerTypeAssetDeleted:   immichv1.WorkflowTriggerType_WORKFLOW_TRIGGER_TYPE_ASSET_DELETED,
+	workflow.TriggerTypeAlbumCreated:   immichv1.WorkflowTriggerType_WORKFLOW_TRIGGER_TYPE_ALBUM_CREATED,
+	workflow.TriggerTypeAlbumUpdated:   immichv1.WorkflowTriggerType_WORKFLOW_TRIGGER_TYPE_ALBUM_UPDATED,
+	workflow.TriggerTypeUserCreated:    immichv1.WorkflowTriggerType_WORKFLOW_TRIGGER_TYPE_USER_CREATED,
+	workflow.TriggerTypeScheduled:      immichv1.WorkflowTriggerType_WORKFLOW_TRIGGER_TYPE_SCHEDULED,
+	workflow.TriggerTypeManual:         immichv1.WorkflowTriggerType_WORKFLOW_TRIGGER_TYPE_MANUAL,
+	workflow.TriggerTypeFaceDetected:   immichv1.WorkflowTriggerType_WORKFLOW_TRIGGER_TYPE_FACE_DETECTED,
+	workflow.TriggerTypeDuplicateFound: immichv1.WorkflowTriggerType_WORKFLOW_TRIGGER_TYPE_DUPLICATE_FOUND,
 }
 
 func protoTriggerTypeToInternal(t immichv1.WorkflowTriggerType) workflow.TriggerType {
-	switch t {
-	case immichv1.WorkflowTriggerType_WORKFLOW_TRIGGER_TYPE_ASSET_UPLOADED:
-		return workflow.TriggerTypeAssetUploaded
-	case immichv1.WorkflowTriggerType_WORKFLOW_TRIGGER_TYPE_ASSET_DELETED:
-		return workflow.TriggerTypeAssetDeleted
-	case immichv1.WorkflowTriggerType_WORKFLOW_TRIGGER_TYPE_ALBUM_CREATED:
-		return workflow.TriggerTypeAlbumCreated
-	case immichv1.WorkflowTriggerType_WORKFLOW_TRIGGER_TYPE_ALBUM_UPDATED:
-		return workflow.TriggerTypeAlbumUpdated
-	case immichv1.WorkflowTriggerType_WORKFLOW_TRIGGER_TYPE_USER_CREATED:
-		return workflow.TriggerTypeUserCreated
-	case immichv1.WorkflowTriggerType_WORKFLOW_TRIGGER_TYPE_SCHEDULED:
-		return workflow.TriggerTypeScheduled
-	case immichv1.WorkflowTriggerType_WORKFLOW_TRIGGER_TYPE_MANUAL:
-		return workflow.TriggerTypeManual
-	case immichv1.WorkflowTriggerType_WORKFLOW_TRIGGER_TYPE_FACE_DETECTED:
-		return workflow.TriggerTypeFaceDetected
-	case immichv1.WorkflowTriggerType_WORKFLOW_TRIGGER_TYPE_DUPLICATE_FOUND:
-		return workflow.TriggerTypeDuplicateFound
-	default:
-		return workflow.TriggerTypeManual
-	}
+	return lookupWorkflowMapping(protoTriggerTypeValues, t, workflow.TriggerTypeManual)
+}
+
+var protoTriggerTypeValues = map[immichv1.WorkflowTriggerType]workflow.TriggerType{
+	immichv1.WorkflowTriggerType_WORKFLOW_TRIGGER_TYPE_ASSET_UPLOADED:  workflow.TriggerTypeAssetUploaded,
+	immichv1.WorkflowTriggerType_WORKFLOW_TRIGGER_TYPE_ASSET_DELETED:   workflow.TriggerTypeAssetDeleted,
+	immichv1.WorkflowTriggerType_WORKFLOW_TRIGGER_TYPE_ALBUM_CREATED:   workflow.TriggerTypeAlbumCreated,
+	immichv1.WorkflowTriggerType_WORKFLOW_TRIGGER_TYPE_ALBUM_UPDATED:   workflow.TriggerTypeAlbumUpdated,
+	immichv1.WorkflowTriggerType_WORKFLOW_TRIGGER_TYPE_USER_CREATED:    workflow.TriggerTypeUserCreated,
+	immichv1.WorkflowTriggerType_WORKFLOW_TRIGGER_TYPE_SCHEDULED:       workflow.TriggerTypeScheduled,
+	immichv1.WorkflowTriggerType_WORKFLOW_TRIGGER_TYPE_MANUAL:          workflow.TriggerTypeManual,
+	immichv1.WorkflowTriggerType_WORKFLOW_TRIGGER_TYPE_FACE_DETECTED:   workflow.TriggerTypeFaceDetected,
+	immichv1.WorkflowTriggerType_WORKFLOW_TRIGGER_TYPE_DUPLICATE_FOUND: workflow.TriggerTypeDuplicateFound,
 }
 
 func actionTypeToProto(t workflow.ActionType) immichv1.WorkflowActionType {
-	switch t {
-	case workflow.ActionTypeAddTag:
-		return immichv1.WorkflowActionType_WORKFLOW_ACTION_TYPE_ADD_TAG
-	case workflow.ActionTypeRemoveTag:
-		return immichv1.WorkflowActionType_WORKFLOW_ACTION_TYPE_REMOVE_TAG
-	case workflow.ActionTypeMoveToAlbum:
-		return immichv1.WorkflowActionType_WORKFLOW_ACTION_TYPE_MOVE_TO_ALBUM
-	case workflow.ActionTypeSetVisibility:
-		return immichv1.WorkflowActionType_WORKFLOW_ACTION_TYPE_SET_VISIBILITY
-	case workflow.ActionTypeSendNotification:
-		return immichv1.WorkflowActionType_WORKFLOW_ACTION_TYPE_SEND_NOTIFICATION
-	case workflow.ActionTypeWebhook:
-		return immichv1.WorkflowActionType_WORKFLOW_ACTION_TYPE_WEBHOOK
-	case workflow.ActionTypeRunPlugin:
-		return immichv1.WorkflowActionType_WORKFLOW_ACTION_TYPE_RUN_PLUGIN
-	case workflow.ActionTypeSetMetadata:
-		return immichv1.WorkflowActionType_WORKFLOW_ACTION_TYPE_SET_METADATA
-	case workflow.ActionTypeGenerateThumbnail:
-		return immichv1.WorkflowActionType_WORKFLOW_ACTION_TYPE_GENERATE_THUMBNAIL
-	default:
-		return immichv1.WorkflowActionType_WORKFLOW_ACTION_TYPE_UNSPECIFIED
-	}
+	return lookupWorkflowMapping(actionTypeProtoValues, t, immichv1.WorkflowActionType_WORKFLOW_ACTION_TYPE_UNSPECIFIED)
+}
+
+var actionTypeProtoValues = map[workflow.ActionType]immichv1.WorkflowActionType{
+	workflow.ActionTypeAddTag:            immichv1.WorkflowActionType_WORKFLOW_ACTION_TYPE_ADD_TAG,
+	workflow.ActionTypeRemoveTag:         immichv1.WorkflowActionType_WORKFLOW_ACTION_TYPE_REMOVE_TAG,
+	workflow.ActionTypeMoveToAlbum:       immichv1.WorkflowActionType_WORKFLOW_ACTION_TYPE_MOVE_TO_ALBUM,
+	workflow.ActionTypeSetVisibility:     immichv1.WorkflowActionType_WORKFLOW_ACTION_TYPE_SET_VISIBILITY,
+	workflow.ActionTypeSendNotification:  immichv1.WorkflowActionType_WORKFLOW_ACTION_TYPE_SEND_NOTIFICATION,
+	workflow.ActionTypeWebhook:           immichv1.WorkflowActionType_WORKFLOW_ACTION_TYPE_WEBHOOK,
+	workflow.ActionTypeRunPlugin:         immichv1.WorkflowActionType_WORKFLOW_ACTION_TYPE_RUN_PLUGIN,
+	workflow.ActionTypeSetMetadata:       immichv1.WorkflowActionType_WORKFLOW_ACTION_TYPE_SET_METADATA,
+	workflow.ActionTypeGenerateThumbnail: immichv1.WorkflowActionType_WORKFLOW_ACTION_TYPE_GENERATE_THUMBNAIL,
 }
 
 func protoActionTypeToInternal(t immichv1.WorkflowActionType) workflow.ActionType {
-	switch t {
-	case immichv1.WorkflowActionType_WORKFLOW_ACTION_TYPE_ADD_TAG:
-		return workflow.ActionTypeAddTag
-	case immichv1.WorkflowActionType_WORKFLOW_ACTION_TYPE_REMOVE_TAG:
-		return workflow.ActionTypeRemoveTag
-	case immichv1.WorkflowActionType_WORKFLOW_ACTION_TYPE_MOVE_TO_ALBUM:
-		return workflow.ActionTypeMoveToAlbum
-	case immichv1.WorkflowActionType_WORKFLOW_ACTION_TYPE_SET_VISIBILITY:
-		return workflow.ActionTypeSetVisibility
-	case immichv1.WorkflowActionType_WORKFLOW_ACTION_TYPE_SEND_NOTIFICATION:
-		return workflow.ActionTypeSendNotification
-	case immichv1.WorkflowActionType_WORKFLOW_ACTION_TYPE_WEBHOOK:
-		return workflow.ActionTypeWebhook
-	case immichv1.WorkflowActionType_WORKFLOW_ACTION_TYPE_RUN_PLUGIN:
-		return workflow.ActionTypeRunPlugin
-	case immichv1.WorkflowActionType_WORKFLOW_ACTION_TYPE_SET_METADATA:
-		return workflow.ActionTypeSetMetadata
-	case immichv1.WorkflowActionType_WORKFLOW_ACTION_TYPE_GENERATE_THUMBNAIL:
-		return workflow.ActionTypeGenerateThumbnail
-	default:
-		return workflow.ActionTypeWebhook
-	}
+	return lookupWorkflowMapping(protoActionTypeValues, t, workflow.ActionTypeWebhook)
+}
+
+var protoActionTypeValues = map[immichv1.WorkflowActionType]workflow.ActionType{
+	immichv1.WorkflowActionType_WORKFLOW_ACTION_TYPE_ADD_TAG:            workflow.ActionTypeAddTag,
+	immichv1.WorkflowActionType_WORKFLOW_ACTION_TYPE_REMOVE_TAG:         workflow.ActionTypeRemoveTag,
+	immichv1.WorkflowActionType_WORKFLOW_ACTION_TYPE_MOVE_TO_ALBUM:      workflow.ActionTypeMoveToAlbum,
+	immichv1.WorkflowActionType_WORKFLOW_ACTION_TYPE_SET_VISIBILITY:     workflow.ActionTypeSetVisibility,
+	immichv1.WorkflowActionType_WORKFLOW_ACTION_TYPE_SEND_NOTIFICATION:  workflow.ActionTypeSendNotification,
+	immichv1.WorkflowActionType_WORKFLOW_ACTION_TYPE_WEBHOOK:            workflow.ActionTypeWebhook,
+	immichv1.WorkflowActionType_WORKFLOW_ACTION_TYPE_RUN_PLUGIN:         workflow.ActionTypeRunPlugin,
+	immichv1.WorkflowActionType_WORKFLOW_ACTION_TYPE_SET_METADATA:       workflow.ActionTypeSetMetadata,
+	immichv1.WorkflowActionType_WORKFLOW_ACTION_TYPE_GENERATE_THUMBNAIL: workflow.ActionTypeGenerateThumbnail,
 }
 
 func executionStatusToProto(s workflow.ExecutionStatus) immichv1.WorkflowExecutionStatus {
-	switch s {
-	case workflow.ExecutionStatusPending:
-		return immichv1.WorkflowExecutionStatus_WORKFLOW_EXECUTION_STATUS_PENDING
-	case workflow.ExecutionStatusRunning:
-		return immichv1.WorkflowExecutionStatus_WORKFLOW_EXECUTION_STATUS_RUNNING
-	case workflow.ExecutionStatusCompleted:
-		return immichv1.WorkflowExecutionStatus_WORKFLOW_EXECUTION_STATUS_COMPLETED
-	case workflow.ExecutionStatusFailed:
-		return immichv1.WorkflowExecutionStatus_WORKFLOW_EXECUTION_STATUS_FAILED
-	case workflow.ExecutionStatusCancelled:
-		return immichv1.WorkflowExecutionStatus_WORKFLOW_EXECUTION_STATUS_CANCELLED
-	default:
-		return immichv1.WorkflowExecutionStatus_WORKFLOW_EXECUTION_STATUS_UNSPECIFIED
-	}
+	return lookupWorkflowMapping(executionStatusProtoValues, s, immichv1.WorkflowExecutionStatus_WORKFLOW_EXECUTION_STATUS_UNSPECIFIED)
+}
+
+var executionStatusProtoValues = map[workflow.ExecutionStatus]immichv1.WorkflowExecutionStatus{
+	workflow.ExecutionStatusPending:   immichv1.WorkflowExecutionStatus_WORKFLOW_EXECUTION_STATUS_PENDING,
+	workflow.ExecutionStatusRunning:   immichv1.WorkflowExecutionStatus_WORKFLOW_EXECUTION_STATUS_RUNNING,
+	workflow.ExecutionStatusCompleted: immichv1.WorkflowExecutionStatus_WORKFLOW_EXECUTION_STATUS_COMPLETED,
+	workflow.ExecutionStatusFailed:    immichv1.WorkflowExecutionStatus_WORKFLOW_EXECUTION_STATUS_FAILED,
+	workflow.ExecutionStatusCancelled: immichv1.WorkflowExecutionStatus_WORKFLOW_EXECUTION_STATUS_CANCELLED,
 }
 
 func protoExecutionStatusToInternal(s immichv1.WorkflowExecutionStatus) workflow.ExecutionStatus {
-	switch s {
-	case immichv1.WorkflowExecutionStatus_WORKFLOW_EXECUTION_STATUS_PENDING:
-		return workflow.ExecutionStatusPending
-	case immichv1.WorkflowExecutionStatus_WORKFLOW_EXECUTION_STATUS_RUNNING:
-		return workflow.ExecutionStatusRunning
-	case immichv1.WorkflowExecutionStatus_WORKFLOW_EXECUTION_STATUS_COMPLETED:
-		return workflow.ExecutionStatusCompleted
-	case immichv1.WorkflowExecutionStatus_WORKFLOW_EXECUTION_STATUS_FAILED:
-		return workflow.ExecutionStatusFailed
-	case immichv1.WorkflowExecutionStatus_WORKFLOW_EXECUTION_STATUS_CANCELLED:
-		return workflow.ExecutionStatusCancelled
-	default:
-		return workflow.ExecutionStatusPending
+	return lookupWorkflowMapping(protoExecutionStatusValues, s, workflow.ExecutionStatusPending)
+}
+
+var protoExecutionStatusValues = map[immichv1.WorkflowExecutionStatus]workflow.ExecutionStatus{
+	immichv1.WorkflowExecutionStatus_WORKFLOW_EXECUTION_STATUS_PENDING:   workflow.ExecutionStatusPending,
+	immichv1.WorkflowExecutionStatus_WORKFLOW_EXECUTION_STATUS_RUNNING:   workflow.ExecutionStatusRunning,
+	immichv1.WorkflowExecutionStatus_WORKFLOW_EXECUTION_STATUS_COMPLETED: workflow.ExecutionStatusCompleted,
+	immichv1.WorkflowExecutionStatus_WORKFLOW_EXECUTION_STATUS_FAILED:    workflow.ExecutionStatusFailed,
+	immichv1.WorkflowExecutionStatus_WORKFLOW_EXECUTION_STATUS_CANCELLED: workflow.ExecutionStatusCancelled,
+}
+
+func lookupWorkflowMapping[K comparable, V any](values map[K]V, key K, fallback V) V {
+	if value, ok := values[key]; ok {
+		return value
 	}
+	return fallback
 }
