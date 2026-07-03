@@ -12,6 +12,7 @@ import (
 
 	"github.com/denysvitali/immich-go-backend/internal/auth"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
+	"github.com/denysvitali/immich-go-backend/internal/grpcutil"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 )
 
@@ -67,7 +68,7 @@ func (s *Server) SearchMetadata(ctx context.Context, req *immichv1.SearchMetadat
 
 	result, err := s.service.SearchMetadata(ctx, userID, searchReq)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, grpcutil.SanitizedInternal(ctx, "search failed", err)
 	}
 
 	// Convert real search results to proto
@@ -135,7 +136,7 @@ func (s *Server) SearchSmart(ctx context.Context, req *immichv1.SearchSmartReque
 
 	result, err := s.service.SearchSmart(ctx, userID, searchReq)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, grpcutil.SanitizedInternal(ctx, "smart search failed", err)
 	}
 
 	// Convert real search results to proto
@@ -199,7 +200,7 @@ func (s *Server) SearchPerson(ctx context.Context, req *immichv1.SearchPersonReq
 
 	result, err := s.service.SearchPeople(ctx, userID, searchReq)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, grpcutil.SanitizedInternal(ctx, "person search failed", err)
 	}
 
 	// Convert results to proto
@@ -233,7 +234,7 @@ func (s *Server) SearchPlaces(ctx context.Context, req *immichv1.SearchPlacesReq
 
 	result, err := s.service.SearchPlaces(ctx, userID, searchReq)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, grpcutil.SanitizedInternal(ctx, "place search failed", err)
 	}
 
 	// Convert results to proto
@@ -267,7 +268,7 @@ func (s *Server) SearchCities(ctx context.Context, req *immichv1.SearchCitiesReq
 
 	cities, err := s.service.SearchCities(ctx, userID, searchReq)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, grpcutil.SanitizedInternal(ctx, "city search failed", err)
 	}
 
 	// Convert results to proto
@@ -296,7 +297,7 @@ func (s *Server) GetSearchSuggestions(ctx context.Context, req *immichv1.GetSear
 
 	result, err := s.service.GetSearchSuggestions(ctx, userID, suggestReq)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, grpcutil.SanitizedInternal(ctx, "search suggestions failed", err)
 	}
 
 	// Combine all suggestions into a single list
@@ -319,7 +320,7 @@ func (s *Server) SearchExplore(ctx context.Context, req *emptypb.Empty) (*immich
 
 	result, err := s.service.SearchExplore(ctx, userID)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, grpcutil.SanitizedInternal(ctx, "explore search failed", err)
 	}
 
 	// Convert results to proto

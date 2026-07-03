@@ -7,6 +7,7 @@ import (
 	"github.com/denysvitali/immich-go-backend/internal/auth"
 	"github.com/denysvitali/immich-go-backend/internal/db/pgutil"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
+	"github.com/denysvitali/immich-go-backend/internal/grpcutil"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -47,7 +48,7 @@ func (s *Server) SendNotification(ctx context.Context, request *immichv1.SendNot
 	// Call service
 	err = s.service.SendNotification(ctx, req)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to send notification: %v", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to send notification", err)
 	}
 
 	return &emptypb.Empty{}, nil
@@ -64,7 +65,7 @@ func (s *Server) RenderNotificationTemplate(ctx context.Context, request *immich
 	// Call service
 	response, err := s.service.RenderNotificationTemplate(ctx, request.GetName(), request.GetData())
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to render template: %v", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to render template", err)
 	}
 
 	return &immichv1.TemplateResponseDto{
@@ -84,7 +85,7 @@ func (s *Server) TestEmailNotification(ctx context.Context, request *immichv1.Te
 	// Call service
 	response, err := s.service.TestEmailNotification(ctx, request.GetRecipient())
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to test email notification: %v", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to test email notification", err)
 	}
 
 	return &immichv1.TestEmailResponseDto{
@@ -118,7 +119,7 @@ func (s *Server) SearchUsersAdmin(ctx context.Context, request *immichv1.SearchU
 	// Call service
 	response, err := s.service.SearchUsersAdmin(ctx, req)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to search users: %v", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to search users", err)
 	}
 
 	// Convert response
@@ -173,7 +174,7 @@ func (s *Server) CreateUserAdmin(ctx context.Context, request *immichv1.CreateUs
 	// Call service
 	response, err := s.service.CreateUserAdmin(ctx, req)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to create user: %v", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to create user", err)
 	}
 
 	return s.convertToProtoUser(response), nil
@@ -190,7 +191,7 @@ func (s *Server) GetUserAdmin(ctx context.Context, request *immichv1.GetUserAdmi
 	// Call service
 	response, err := s.service.GetUserAdmin(ctx, request.GetId())
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get user: %v", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to get user", err)
 	}
 
 	return s.convertToProtoUser(response), nil
@@ -242,7 +243,7 @@ func (s *Server) UpdateUserAdmin(ctx context.Context, request *immichv1.UpdateUs
 	// Call service
 	response, err := s.service.UpdateUserAdmin(ctx, request.GetId(), req)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to update user: %v", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to update user", err)
 	}
 
 	return s.convertToProtoUser(response), nil
@@ -264,7 +265,7 @@ func (s *Server) DeleteUserAdmin(ctx context.Context, request *immichv1.DeleteUs
 	// Call service
 	response, err := s.service.DeleteUserAdmin(ctx, request.GetId(), force)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to delete user: %v", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to delete user", err)
 	}
 
 	return s.convertToProtoUser(response), nil
@@ -281,7 +282,7 @@ func (s *Server) RestoreUserAdmin(ctx context.Context, request *immichv1.Restore
 	// Call service
 	response, err := s.service.RestoreUserAdmin(ctx, request.GetId())
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to restore user: %v", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to restore user", err)
 	}
 
 	return s.convertToProtoUser(response), nil
@@ -298,7 +299,7 @@ func (s *Server) GetUserStatisticsAdmin(ctx context.Context, request *immichv1.G
 	// Call service
 	response, err := s.service.GetUserStatisticsAdmin(ctx, request.GetId())
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get user statistics: %v", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to get user statistics", err)
 	}
 
 	return &immichv1.UserStatisticsResponseDto{
@@ -333,7 +334,7 @@ func (s *Server) GetUserPreferencesAdmin(ctx context.Context, request *immichv1.
 	// Parse JSON preferences data
 	var prefs immichv1.UserPreferencesResponseDto
 	if err := json.Unmarshal(prefsData, &prefs); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to parse preferences: %v", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to parse preferences", err)
 	}
 
 	return &prefs, nil
@@ -357,7 +358,7 @@ func (s *Server) UpdateUserPreferencesAdmin(ctx context.Context, request *immich
 	// Serialize preferences to JSON
 	prefsData, err := json.Marshal(request.GetPreferences())
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to serialize preferences: %v", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to serialize preferences", err)
 	}
 
 	// Update preferences in database
@@ -366,13 +367,13 @@ func (s *Server) UpdateUserPreferencesAdmin(ctx context.Context, request *immich
 		Value:  prefsData,
 	})
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to update preferences: %v", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to update preferences", err)
 	}
 
 	// Parse updated preferences
 	var updatedPrefs immichv1.UserPreferencesResponseDto
 	if err := json.Unmarshal(updatedData, &updatedPrefs); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to parse updated preferences: %v", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to parse updated preferences", err)
 	}
 
 	return &updatedPrefs, nil
@@ -430,7 +431,7 @@ func (s *Server) GetUserSessionsAdmin(ctx context.Context, request *immichv1.Get
 	// Get sessions from database
 	sessions, err := s.service.db.GetUserSessions(ctx, userUUID)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get user sessions: %v", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to get user sessions", err)
 	}
 
 	// Convert to proto
@@ -470,7 +471,7 @@ func (s *Server) DeleteUserSessionAdmin(ctx context.Context, request *immichv1.D
 	// Delete session
 	err = s.service.db.DeleteSession(ctx, sessionUUID)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to delete session: %v", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to delete session", err)
 	}
 
 	return &emptypb.Empty{}, nil
@@ -487,7 +488,7 @@ func (s *Server) UnlinkAllOAuthAccounts(ctx context.Context, _ *emptypb.Empty) (
 	// Clear all OAuth IDs from users
 	err = s.service.db.ClearAllOAuthIds(ctx)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to unlink OAuth accounts: %v", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to unlink OAuth accounts", err)
 	}
 
 	return &emptypb.Empty{}, nil

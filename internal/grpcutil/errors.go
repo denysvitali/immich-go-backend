@@ -1,7 +1,14 @@
-package server
+package grpcutil
 
 import (
-	"github.com/denysvitali/immich-go-backend/internal/grpcutil"
+	"context"
+
+	"github.com/sirupsen/logrus"
+	"go.opentelemetry.io/otel/attribute"
+	otelcodes "go.opentelemetry.io/otel/codes"
+	oteltrace "go.opentelemetry.io/otel/trace"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // SanitizedInternal builds a gRPC status error with codes.Internal and a
@@ -19,10 +26,31 @@ import (
 // If ctx has no active span (e.g. unit-test contexts that pass
 // context.Background()), the helper still returns the sanitized status error
 // and emits the log line.
-var SanitizedInternal = grpcutil.SanitizedInternal
+func SanitizedInternal(ctx context.Context, publicMsg string, err error) error {
+	if err == nil {
+		err = status.Error(codes.Internal, publicMsg)
+	}
+	span := oteltrace.SpanFromContext(ctx)
+	if span.IsRecording() {
+		span.SetStatus(otelcodes.Error, publicMsg)
+		span.RecordError(err, oteltrace.WithAttributes(
+			attribute.String("public_message", publicMsg),
+		))
+	}
+	logrus.WithError(err).
+		WithField("public_message", publicMsg).
+		Error("internal server error")
+	return status.Error(codes.Internal, publicMsg)
+}
 
 // PublicError returns a gRPC status error for an already-sanitized path where
 // the caller has logged the underlying failure itself. It marks the active
 // span as errored (when recording) but never leaks err into the public
 // message and does not log.
-var PublicError = grpcutil.PublicError
+func PublicError(ctx context.Context, code codes.Code, publicMsg string) error {
+	span := oteltrace.SpanFromContext(ctx)
+	if span.IsRecording() && code != codes.OK {
+		span.SetStatus(otelcodes.Error, publicMsg)
+	}
+	return status.Error(code, publicMsg)
+}

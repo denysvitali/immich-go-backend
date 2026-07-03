@@ -5,6 +5,7 @@ import (
 
 	"github.com/denysvitali/immich-go-backend/internal/auth"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
+	"github.com/denysvitali/immich-go-backend/internal/grpcutil"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -58,7 +59,7 @@ func (s *Server) GetActivities(ctx context.Context, request *immichv1.GetActivit
 		Offset:  offset,
 	})
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get activities: %v", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to get activities", err)
 	}
 
 	// Convert to proto response
@@ -154,7 +155,7 @@ func (s *Server) CreateActivity(ctx context.Context, request *immichv1.CreateAct
 		IsLiked: isLiked,
 	})
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to create activity: %v", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to create activity", err)
 	}
 
 	// Get user info for response
@@ -212,7 +213,7 @@ func (s *Server) GetActivityStatistics(ctx context.Context, request *immichv1.Ge
 		Offset:  0,
 	})
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get activity statistics: %v", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to get activity statistics", err)
 	}
 
 	// Count comments (activities that are not likes)
@@ -259,7 +260,7 @@ func (s *Server) DeleteActivity(ctx context.Context, request *immichv1.DeleteAct
 	// Delete the activity
 	err = s.queries.DeleteActivity(ctx, activityUUID)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to delete activity: %v", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to delete activity", err)
 	}
 
 	return &emptypb.Empty{}, nil

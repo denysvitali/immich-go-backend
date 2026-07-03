@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/denysvitali/immich-go-backend/internal/auth"
+	"github.com/denysvitali/immich-go-backend/internal/grpcutil"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -33,7 +34,7 @@ func (s *Server) GetAssetDuplicates(ctx context.Context, request *immichv1.GetAs
 	// Call service
 	response, err := s.service.GetAssetDuplicates(ctx, claims.UserID)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get asset duplicates: %v", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to get asset duplicates", err)
 	}
 
 	// Convert response
