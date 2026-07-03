@@ -60,6 +60,14 @@ func newLocalStorageService(t *testing.T, rootDir string) *storage.Service {
 	return svc
 }
 
+// newTestTask marshals a typed payload into an asynq.Task for testing.
+func newTestTask(t *testing.T, jobType JobType, payload any) *asynq.Task {
+	t.Helper()
+	payloadBytes, err := json.Marshal(payload)
+	require.NoError(t, err, "failed to marshal test payload")
+	return asynq.NewTask(string(jobType), payloadBytes)
+}
+
 func TestIntegration_HandleThumbnailGeneration(t *testing.T) {
 	testdb.SkipIfNoDocker(t)
 
@@ -134,18 +142,8 @@ func TestIntegration_HandleThumbnailGeneration(t *testing.T) {
 	// ------------------------------------------------------------------
 	// 5. Build the asynq.Task the handler expects.
 	// ------------------------------------------------------------------
-	payload := JobPayload{
-		ID:     "test-thumb-job-" + assetID.String(),
-		UserID: userID.String(),
-		Data: map[string]interface{}{
-			"asset_id": assetID.String(),
-		},
-		CreatedAt: time.Now(),
-	}
-	payloadBytes, err := json.Marshal(payload)
-	require.NoError(t, err)
-
-	task := asynq.NewTask(string(JobTypeThumbnailGeneration), payloadBytes)
+	payload := ThumbnailGenerationPayload{AssetID: assetID.String()}
+	task := newTestTask(t, JobTypeThumbnailGeneration, payload)
 
 	// ------------------------------------------------------------------
 	// 6. Create the Handlers instance and invoke the handler directly.
@@ -269,17 +267,8 @@ func TestIntegration_HandleMetadataExtraction_PlainJPEG(t *testing.T) {
 
 	// 7. Build and dispatch the asynq task.
 	assetIDStr := uuid.UUID(pgAssetID.Bytes).String()
-	payload := JobPayload{
-		ID:     "test-meta-extraction-job",
-		UserID: userID.String(),
-		Data: map[string]interface{}{
-			"asset_id": assetIDStr,
-		},
-		CreatedAt: time.Now(),
-	}
-	payloadBytes, err := json.Marshal(payload)
-	require.NoError(t, err)
-	task := asynq.NewTask(string(JobTypeMetadataExtraction), payloadBytes)
+	payload := MetadataExtractionPayload{AssetID: assetIDStr}
+	task := newTestTask(t, JobTypeMetadataExtraction, payload)
 
 	err = handlers.HandleMetadataExtraction(ctx, task)
 	require.NoError(t, err, "HandleMetadataExtraction returned an unexpected error")
@@ -309,17 +298,9 @@ func TestIntegration_HandleMetadataExtraction_InvalidAssetID(t *testing.T) {
 	storageSvc := newLocalStorageService(t, tmpDir)
 	handlers := NewHandlers(tdb.Queries, nil, nil, storageSvc)
 
-	payload := JobPayload{
-		ID:     "bad-uuid-job",
-		UserID: uuid.New().String(),
-		Data: map[string]interface{}{
-			"asset_id": "not-a-valid-uuid",
-		},
-		CreatedAt: time.Now(),
-	}
-	payloadBytes, err := json.Marshal(payload)
-	require.NoError(t, err)
-	task := asynq.NewTask(string(JobTypeMetadataExtraction), payloadBytes)
+	// Test with an invalid asset ID in the typed payload.
+	payload := MetadataExtractionPayload{AssetID: "not-a-valid-uuid"}
+	task := newTestTask(t, JobTypeMetadataExtraction, payload)
 
 	err = handlers.HandleMetadataExtraction(ctx, task)
 	require.Error(t, err, "expected an error for an invalid asset UUID")
@@ -342,19 +323,13 @@ func TestIntegration_HandleMetadataExtraction_MissingAssetID(t *testing.T) {
 	storageSvc := newLocalStorageService(t, tmpDir)
 	handlers := NewHandlers(tdb.Queries, nil, nil, storageSvc)
 
-	payload := JobPayload{
-		ID:        "missing-asset-job",
-		UserID:    uuid.New().String(),
-		Data:      map[string]interface{}{}, // no "asset_id" key
-		CreatedAt: time.Now(),
-	}
-	payloadBytes, err := json.Marshal(payload)
-	require.NoError(t, err)
-	task := asynq.NewTask(string(JobTypeMetadataExtraction), payloadBytes)
+	// Test with an empty asset ID (zero value of the typed payload).
+	payload := MetadataExtractionPayload{AssetID: ""}
+	task := newTestTask(t, JobTypeMetadataExtraction, payload)
 
 	err = handlers.HandleMetadataExtraction(ctx, task)
 	require.Error(t, err, "expected an error when asset_id is missing from payload")
-	assert.Contains(t, err.Error(), "invalid asset_id", "error message should mention invalid asset_id")
+	assert.Contains(t, err.Error(), "invalid asset UUID", "error message should mention invalid asset UUID")
 }
 
 // TestIntegration_HandleMetadataExtraction_AssetNotInDB verifies that the
@@ -374,17 +349,8 @@ func TestIntegration_HandleMetadataExtraction_AssetNotInDB(t *testing.T) {
 	handlers := NewHandlers(tdb.Queries, nil, nil, storageSvc)
 
 	nonExistentAssetID := uuid.New()
-	payload := JobPayload{
-		ID:     "nonexistent-asset-job",
-		UserID: uuid.New().String(),
-		Data: map[string]interface{}{
-			"asset_id": nonExistentAssetID.String(),
-		},
-		CreatedAt: time.Now(),
-	}
-	payloadBytes, err := json.Marshal(payload)
-	require.NoError(t, err)
-	task := asynq.NewTask(string(JobTypeMetadataExtraction), payloadBytes)
+	payload := MetadataExtractionPayload{AssetID: nonExistentAssetID.String()}
+	task := newTestTask(t, JobTypeMetadataExtraction, payload)
 
 	err = handlers.HandleMetadataExtraction(ctx, task)
 	require.Error(t, err, "expected an error when the asset does not exist in the DB")

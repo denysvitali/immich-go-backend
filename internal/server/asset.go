@@ -208,22 +208,12 @@ func (s *Server) UploadAsset(ctx context.Context, request *immichv1.UploadAssetR
 	assetIDStr := assetUUID.String()
 
 	if s.jobService != nil {
-		thumbPayload := &jobs.JobPayload{
-			ID:        fmt.Sprintf("thumb-%s", assetIDStr),
-			UserID:    claims.UserID,
-			Data:      map[string]interface{}{"asset_id": assetIDStr},
-			CreatedAt: time.Now(),
-		}
+		thumbPayload := &jobs.ThumbnailGenerationPayload{AssetID: assetIDStr}
 		if enqErr := s.jobService.EnqueueJob(ctx, jobs.JobTypeThumbnailGeneration, thumbPayload); enqErr != nil {
 			logrus.WithError(enqErr).Warn("UploadAsset: failed to enqueue thumbnail generation job")
 		}
 
-		metaPayload := &jobs.JobPayload{
-			ID:        fmt.Sprintf("meta-%s", assetIDStr),
-			UserID:    claims.UserID,
-			Data:      map[string]interface{}{"asset_id": assetIDStr},
-			CreatedAt: time.Now(),
-		}
+		metaPayload := &jobs.MetadataExtractionPayload{AssetID: assetIDStr}
 		if enqErr := s.jobService.EnqueueJob(ctx, jobs.JobTypeMetadataExtraction, metaPayload); enqErr != nil {
 			logrus.WithError(enqErr).Warn("UploadAsset: failed to enqueue metadata extraction job")
 		}

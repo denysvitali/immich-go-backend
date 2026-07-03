@@ -52,19 +52,18 @@ type ThumbnailGenerationPayload struct {
 
 // HandleThumbnailGeneration processes thumbnail generation jobs
 func (h *Handlers) HandleThumbnailGeneration(ctx context.Context, task *asynq.Task) error {
-	payload, err := unmarshalJobPayload(task)
-	if err != nil {
+	var payload ThumbnailGenerationPayload
+	if err := unmarshalTypedPayload(task, &payload); err != nil {
 		return err
 	}
 
-	assetID, err := extractAssetID(payload)
+	assetID, err := uuid.Parse(payload.AssetID)
 	if err != nil {
-		return err
+		return fmt.Errorf("invalid asset UUID: %w", err)
 	}
 
 	h.logger.WithFields(logrus.Fields{
 		"asset_id": assetID,
-		"job_id":   payload.ID,
 	}).Info("Generating thumbnails")
 
 	// Get asset from database
@@ -148,21 +147,20 @@ type MetadataExtractionPayload struct {
 
 // HandleMetadataExtraction processes metadata extraction jobs
 func (h *Handlers) HandleMetadataExtraction(ctx context.Context, task *asynq.Task) error {
-	payload, err := unmarshalJobPayload(task)
-	if err != nil {
+	var payload MetadataExtractionPayload
+	if err := unmarshalTypedPayload(task, &payload); err != nil {
 		return err
 	}
 
-	assetID, err := extractAssetID(payload)
+	assetID, err := uuid.Parse(payload.AssetID)
 	if err != nil {
-		return err
+		return fmt.Errorf("invalid asset UUID: %w", err)
 	}
 
 	pgAssetID := pgtype.UUID{Bytes: assetID, Valid: true}
 
 	log := h.logger.WithFields(logrus.Fields{
 		"asset_id": assetID,
-		"job_id":   payload.ID,
 	})
 	log.Info("Extracting metadata")
 
@@ -294,45 +292,36 @@ func (h *Handlers) HandleMetadataExtraction(ctx context.Context, task *asynq.Tas
 // LibraryScanPayload contains data for library scanning
 type LibraryScanPayload struct {
 	LibraryID    string `json:"library_id"`
+	UserID       string `json:"user_id"`
 	FullScan     bool   `json:"full_scan"`
 	ForceRefresh bool   `json:"force_refresh"`
 }
 
 // HandleLibraryScan processes library scanning jobs
 func (h *Handlers) HandleLibraryScan(ctx context.Context, task *asynq.Task) error {
-	payload, err := unmarshalJobPayload(task)
-	if err != nil {
+	var payload LibraryScanPayload
+	if err := unmarshalTypedPayload(task, &payload); err != nil {
 		return err
 	}
 
-	libraryIDStr, ok := payload.Data["library_id"].(string)
-	if !ok {
-		return fmt.Errorf("invalid library_id in payload")
-	}
-
-	libraryID, err := uuid.Parse(libraryIDStr)
+	libraryID, err := uuid.Parse(payload.LibraryID)
 	if err != nil {
 		return fmt.Errorf("invalid library UUID: %w", err)
 	}
-
-	fullScan, _ := payload.Data["full_scan"].(bool)
-	forceRefresh, _ := payload.Data["force_refresh"].(bool)
-
-	h.logger.WithFields(logrus.Fields{
-		"library_id":    libraryID,
-		"full_scan":     fullScan,
-		"force_refresh": forceRefresh,
-		"job_id":        payload.ID,
-	}).Info("Scanning library")
-
-	// Get userID from payload
 	userID, err := uuid.Parse(payload.UserID)
 	if err != nil {
 		return fmt.Errorf("invalid user UUID in payload: %w", err)
 	}
 
+	h.logger.WithFields(logrus.Fields{
+		"library_id":    libraryID,
+		"user_id":       userID,
+		"full_scan":     payload.FullScan,
+		"force_refresh": payload.ForceRefresh,
+	}).Info("Scanning library")
+
 	// Perform library scan
-	_, err = h.libraryService.ScanLibrary(ctx, libraryID, userID, fullScan, forceRefresh)
+	_, err = h.libraryService.ScanLibrary(ctx, libraryID, userID, payload.FullScan, payload.ForceRefresh)
 	if err != nil {
 		return fmt.Errorf("library scan failed: %w", err)
 	}
@@ -349,24 +338,20 @@ type VideoTranscodePayload struct {
 
 // HandleVideoTranscode processes video transcoding jobs
 func (h *Handlers) HandleVideoTranscode(ctx context.Context, task *asynq.Task) error {
-	payload, err := unmarshalJobPayload(task)
-	if err != nil {
+	var payload VideoTranscodePayload
+	if err := unmarshalTypedPayload(task, &payload); err != nil {
 		return err
 	}
 
-	assetID, err := extractAssetID(payload)
+	assetID, err := uuid.Parse(payload.AssetID)
 	if err != nil {
-		return err
+		return fmt.Errorf("invalid asset UUID: %w", err)
 	}
-
-	quality, _ := payload.Data["quality"].(string)
-	format, _ := payload.Data["format"].(string)
 
 	h.logger.WithFields(logrus.Fields{
 		"asset_id": assetID,
-		"quality":  quality,
-		"format":   format,
-		"job_id":   payload.ID,
+		"quality":  payload.Quality,
+		"format":   payload.Format,
 	}).Info("Transcoding video")
 
 	// Video transcoding logic would go here
@@ -382,19 +367,18 @@ type FaceDetectionPayload struct {
 
 // HandleFaceDetection processes face detection jobs
 func (h *Handlers) HandleFaceDetection(ctx context.Context, task *asynq.Task) error {
-	payload, err := unmarshalJobPayload(task)
-	if err != nil {
+	var payload FaceDetectionPayload
+	if err := unmarshalTypedPayload(task, &payload); err != nil {
 		return err
 	}
 
-	assetID, err := extractAssetID(payload)
+	assetID, err := uuid.Parse(payload.AssetID)
 	if err != nil {
-		return err
+		return fmt.Errorf("invalid asset UUID: %w", err)
 	}
 
 	h.logger.WithFields(logrus.Fields{
 		"asset_id": assetID,
-		"job_id":   payload.ID,
 	}).Info("Detecting faces")
 
 	// Face detection logic would go here
@@ -410,19 +394,18 @@ type SmartSearchIndexPayload struct {
 
 // HandleSmartSearchIndex processes smart search indexing jobs
 func (h *Handlers) HandleSmartSearchIndex(ctx context.Context, task *asynq.Task) error {
-	payload, err := unmarshalJobPayload(task)
-	if err != nil {
+	var payload SmartSearchIndexPayload
+	if err := unmarshalTypedPayload(task, &payload); err != nil {
 		return err
 	}
 
-	assetID, err := extractAssetID(payload)
+	assetID, err := uuid.Parse(payload.AssetID)
 	if err != nil {
-		return err
+		return fmt.Errorf("invalid asset UUID: %w", err)
 	}
 
 	h.logger.WithFields(logrus.Fields{
 		"asset_id": assetID,
-		"job_id":   payload.ID,
 	}).Info("Indexing for smart search")
 
 	// Smart search indexing logic would go here
@@ -438,20 +421,60 @@ type DuplicateDetectionPayload struct {
 
 // HandleDuplicateDetection processes duplicate detection jobs
 func (h *Handlers) HandleDuplicateDetection(ctx context.Context, task *asynq.Task) error {
-	payload, err := unmarshalJobPayload(task)
-	if err != nil {
+	var payload DuplicateDetectionPayload
+	if err := unmarshalTypedPayload(task, &payload); err != nil {
 		return err
 	}
 
+	userID, err := uuid.Parse(payload.UserID)
+	if err != nil {
+		return fmt.Errorf("invalid user UUID: %w", err)
+	}
+
 	h.logger.WithFields(logrus.Fields{
-		"user_id": payload.UserID,
-		"job_id":  payload.ID,
+		"user_id": userID,
 	}).Info("Detecting duplicates")
 
 	// Duplicate detection logic would go here
 	// This would use perceptual hashing or similar techniques
 
 	return nil
+}
+
+func assetIDFromTask(task *asynq.Task, assetID string) (uuid.UUID, error) {
+	if assetID != "" {
+		return parseAssetID(assetID)
+	}
+
+	payload, err := unmarshalJobPayload(task)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	return extractAssetID(payload)
+}
+
+func unmarshalJobPayload(task *asynq.Task) (JobPayload, error) {
+	var payload JobPayload
+	if err := unmarshalTypedPayload(task, &payload); err != nil {
+		return JobPayload{}, err
+	}
+	return payload, nil
+}
+
+func extractAssetID(payload JobPayload) (uuid.UUID, error) {
+	assetIDStr, ok := payload.Data["asset_id"].(string)
+	if !ok {
+		return uuid.Nil, fmt.Errorf("invalid asset_id in payload")
+	}
+	return parseAssetID(assetIDStr)
+}
+
+func parseAssetID(assetID string) (uuid.UUID, error) {
+	parsed, err := uuid.Parse(assetID)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("invalid asset UUID: %w", err)
+	}
+	return parsed, nil
 }
 
 // StorageMigrationPayload contains data for storage migration
@@ -463,20 +486,15 @@ type StorageMigrationPayload struct {
 
 // HandleStorageMigration processes storage migration jobs
 func (h *Handlers) HandleStorageMigration(ctx context.Context, task *asynq.Task) error {
-	payload, err := unmarshalJobPayload(task)
-	if err != nil {
+	var payload StorageMigrationPayload
+	if err := unmarshalTypedPayload(task, &payload); err != nil {
 		return err
 	}
 
-	assetIDStr, _ := payload.Data["asset_id"].(string)
-	fromStorage, _ := payload.Data["from_storage"].(string)
-	toStorage, _ := payload.Data["to_storage"].(string)
-
 	h.logger.WithFields(logrus.Fields{
-		"asset_id":     assetIDStr,
-		"from_storage": fromStorage,
-		"to_storage":   toStorage,
-		"job_id":       payload.ID,
+		"asset_id":     payload.AssetID,
+		"from_storage": payload.FromStorage,
+		"to_storage":   payload.ToStorage,
 	}).Info("Migrating storage")
 
 	// Storage migration logic would go here

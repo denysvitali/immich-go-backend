@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 	"github.com/sirupsen/logrus"
 )
@@ -37,6 +36,11 @@ const (
 	JobTypeStorageMigration JobType = "storage_migration"
 	JobTypeCleanup          JobType = "cleanup"
 	JobTypeBackup           JobType = "backup"
+)
+
+const (
+	defaultMaxRetry = 3
+	defaultTimeout  = 30 * time.Minute
 )
 
 // JobPriority represents the priority level of a job
@@ -106,7 +110,9 @@ func NewService(cfg *Config) (*Service, error) {
 	}, nil
 }
 
-// JobPayload represents the data for a job
+// JobPayload represents the data for a job.
+//
+// Deprecated: use typed payload structs (e.g. ThumbnailGenerationPayload) instead.
 type JobPayload struct {
 	ID        string                 `json:"id"`
 	UserID    string                 `json:"user_id"`
@@ -114,8 +120,9 @@ type JobPayload struct {
 	CreatedAt time.Time              `json:"created_at"`
 }
 
-// EnqueueJob adds a new job to the queue
-func (s *Service) EnqueueJob(ctx context.Context, jobType JobType, payload *JobPayload, opts ...asynq.Option) error {
+// EnqueueJob adds a new job to the queue. payload may be any JSON-marshalable
+// value; a typed struct is preferred over the legacy JobPayload.
+func (s *Service) EnqueueJob(ctx context.Context, jobType JobType, payload any, opts ...asynq.Option) error {
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("failed to marshal payload: %w", err)
@@ -137,23 +144,23 @@ func (s *Service) EnqueueJob(ctx context.Context, jobType JobType, payload *JobP
 	return nil
 }
 
-// EnqueueJobWithPriority adds a job with specific priority
-func (s *Service) EnqueueJobWithPriority(ctx context.Context, jobType JobType, payload *JobPayload, priority JobPriority) error {
+// EnqueueJobWithPriority adds a job with specific priority.
+func (s *Service) EnqueueJobWithPriority(ctx context.Context, jobType JobType, payload any, priority JobPriority) error {
 	queue := s.getQueueByPriority(priority)
 	opts := []asynq.Option{
 		asynq.Queue(queue),
-		asynq.MaxRetry(3),
-		asynq.Timeout(30 * time.Minute),
+		asynq.MaxRetry(defaultMaxRetry),
+		asynq.Timeout(defaultTimeout),
 	}
 
 	return s.EnqueueJob(ctx, jobType, payload, opts...)
 }
 
-// ScheduleJob schedules a job to run at a specific time
-func (s *Service) ScheduleJob(ctx context.Context, jobType JobType, payload *JobPayload, processAt time.Time) error {
+// ScheduleJob schedules a job to run at a specific time.
+func (s *Service) ScheduleJob(ctx context.Context, jobType JobType, payload any, processAt time.Time) error {
 	opts := []asynq.Option{
 		asynq.ProcessAt(processAt),
-		asynq.MaxRetry(3),
+		asynq.MaxRetry(defaultMaxRetry),
 	}
 
 	return s.EnqueueJob(ctx, jobType, payload, opts...)
@@ -309,29 +316,18 @@ func (s *Service) getQueueByPriority(priority JobPriority) string {
 	}
 }
 
-// unmarshalJobPayload unmarshals an asynq.Task into a JobPayload.
-func unmarshalJobPayload(task *asynq.Task) (JobPayload, error) {
-	var payload JobPayload
-	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
-		return JobPayload{}, fmt.Errorf("failed to unmarshal payload: %w", err)
+// unmarshalTypedPayload unmarshals an asynq.Task payload into the provided
+// typed value.
+func unmarshalTypedPayload(task *asynq.Task, v any) error {
+	if err := json.Unmarshal(task.Payload(), v); err != nil {
+		return fmt.Errorf("failed to unmarshal payload: %w", err)
 	}
-	return payload, nil
+	return nil
 }
 
-// extractAssetID extracts and parses the asset_id from a JobPayload.
-func extractAssetID(payload JobPayload) (uuid.UUID, error) {
-	assetIDStr, ok := payload.Data["asset_id"].(string)
-	if !ok {
-		return uuid.Nil, fmt.Errorf("invalid asset_id in payload")
-	}
-	assetID, err := uuid.Parse(assetIDStr)
-	if err != nil {
-		return uuid.Nil, fmt.Errorf("invalid asset UUID: %w", err)
-	}
-	return assetID, nil
-}
-
-// JobRequest represents a request to create a job
+// JobRequest represents a request to create a job.
+//
+// Deprecated: use typed payload structs instead.
 type JobRequest struct {
 	Type     JobType                `json:"type"`
 	Priority JobPriority            `json:"priority"`
@@ -339,7 +335,9 @@ type JobRequest struct {
 	Delay    *time.Duration         `json:"delay,omitempty"`
 }
 
-// CreateJob creates and enqueues a new job
+// CreateJob creates and enqueues a new job.
+//
+// Deprecated: use EnqueueJob with a typed payload instead.
 func (s *Service) CreateJob(ctx context.Context, userID string, req *JobRequest) (string, error) {
 	payload := &JobPayload{
 		ID:        fmt.Sprintf("%s-%d", req.Type, time.Now().UnixNano()),
