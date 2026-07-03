@@ -160,75 +160,59 @@ func queueToProto(q queue.QueueInfo) *immichv1.QueueInfo {
 	}
 }
 
+var queueNameProtoValues = map[queue.QueueName]immichv1.QueueName{
+	queue.QueueThumbnailGeneration: immichv1.QueueName_QUEUE_NAME_THUMBNAIL_GENERATION,
+	queue.QueueMetadataExtraction:  immichv1.QueueName_QUEUE_NAME_METADATA_EXTRACTION,
+	queue.QueueVideoConversion:     immichv1.QueueName_QUEUE_NAME_VIDEO_CONVERSION,
+	queue.QueueFaceDetection:       immichv1.QueueName_QUEUE_NAME_FACE_DETECTION,
+	queue.QueueFacialRecognition:   immichv1.QueueName_QUEUE_NAME_FACIAL_RECOGNITION,
+	queue.QueueSmartSearch:         immichv1.QueueName_QUEUE_NAME_SMART_SEARCH,
+	queue.QueueDuplicateDetection:  immichv1.QueueName_QUEUE_NAME_DUPLICATE_DETECTION,
+	queue.QueueBackgroundTask:      immichv1.QueueName_QUEUE_NAME_BACKGROUND_TASK,
+	queue.QueueStorageMigration:    immichv1.QueueName_QUEUE_NAME_STORAGE_MIGRATION,
+	queue.QueueSearch:              immichv1.QueueName_QUEUE_NAME_SEARCH,
+	queue.QueueSidecar:             immichv1.QueueName_QUEUE_NAME_SIDECAR,
+	queue.QueueLibrary:             immichv1.QueueName_QUEUE_NAME_LIBRARY,
+	queue.QueueNotification:        immichv1.QueueName_QUEUE_NAME_NOTIFICATION,
+}
+
 func queueNameToProto(name queue.QueueName) immichv1.QueueName {
-	switch name {
-	case queue.QueueThumbnailGeneration:
-		return immichv1.QueueName_QUEUE_NAME_THUMBNAIL_GENERATION
-	case queue.QueueMetadataExtraction:
-		return immichv1.QueueName_QUEUE_NAME_METADATA_EXTRACTION
-	case queue.QueueVideoConversion:
-		return immichv1.QueueName_QUEUE_NAME_VIDEO_CONVERSION
-	case queue.QueueFaceDetection:
-		return immichv1.QueueName_QUEUE_NAME_FACE_DETECTION
-	case queue.QueueFacialRecognition:
-		return immichv1.QueueName_QUEUE_NAME_FACIAL_RECOGNITION
-	case queue.QueueSmartSearch:
-		return immichv1.QueueName_QUEUE_NAME_SMART_SEARCH
-	case queue.QueueDuplicateDetection:
-		return immichv1.QueueName_QUEUE_NAME_DUPLICATE_DETECTION
-	case queue.QueueBackgroundTask:
-		return immichv1.QueueName_QUEUE_NAME_BACKGROUND_TASK
-	case queue.QueueStorageMigration:
-		return immichv1.QueueName_QUEUE_NAME_STORAGE_MIGRATION
-	case queue.QueueSearch:
-		return immichv1.QueueName_QUEUE_NAME_SEARCH
-	case queue.QueueSidecar:
-		return immichv1.QueueName_QUEUE_NAME_SIDECAR
-	case queue.QueueLibrary:
-		return immichv1.QueueName_QUEUE_NAME_LIBRARY
-	case queue.QueueNotification:
-		return immichv1.QueueName_QUEUE_NAME_NOTIFICATION
-	default:
-		return immichv1.QueueName_QUEUE_NAME_UNSPECIFIED
+	if protoName, ok := queueNameProtoValues[name]; ok {
+		return protoName
 	}
+	return immichv1.QueueName_QUEUE_NAME_UNSPECIFIED
+}
+
+var protoStatusValues = map[immichv1.QueueJobStatus]queue.JobStatus{
+	immichv1.QueueJobStatus_QUEUE_JOB_STATUS_ACTIVE:    queue.JobStatusActive,
+	immichv1.QueueJobStatus_QUEUE_JOB_STATUS_COMPLETED: queue.JobStatusCompleted,
+	immichv1.QueueJobStatus_QUEUE_JOB_STATUS_FAILED:    queue.JobStatusFailed,
+	immichv1.QueueJobStatus_QUEUE_JOB_STATUS_DELAYED:   queue.JobStatusDelayed,
+	immichv1.QueueJobStatus_QUEUE_JOB_STATUS_WAITING:   queue.JobStatusWaiting,
+	immichv1.QueueJobStatus_QUEUE_JOB_STATUS_PAUSED:    queue.JobStatusPaused,
 }
 
 func protoStatusToInternal(s immichv1.QueueJobStatus) queue.JobStatus {
-	switch s {
-	case immichv1.QueueJobStatus_QUEUE_JOB_STATUS_ACTIVE:
-		return queue.JobStatusActive
-	case immichv1.QueueJobStatus_QUEUE_JOB_STATUS_COMPLETED:
-		return queue.JobStatusCompleted
-	case immichv1.QueueJobStatus_QUEUE_JOB_STATUS_FAILED:
-		return queue.JobStatusFailed
-	case immichv1.QueueJobStatus_QUEUE_JOB_STATUS_DELAYED:
-		return queue.JobStatusDelayed
-	case immichv1.QueueJobStatus_QUEUE_JOB_STATUS_WAITING:
-		return queue.JobStatusWaiting
-	case immichv1.QueueJobStatus_QUEUE_JOB_STATUS_PAUSED:
-		return queue.JobStatusPaused
-	default:
-		return queue.JobStatusWaiting
+	if status, ok := protoStatusValues[s]; ok {
+		return status
 	}
+	return queue.JobStatusWaiting
+}
+
+var internalStatusProtoValues = map[queue.JobStatus]immichv1.QueueJobStatus{
+	queue.JobStatusActive:    immichv1.QueueJobStatus_QUEUE_JOB_STATUS_ACTIVE,
+	queue.JobStatusCompleted: immichv1.QueueJobStatus_QUEUE_JOB_STATUS_COMPLETED,
+	queue.JobStatusFailed:    immichv1.QueueJobStatus_QUEUE_JOB_STATUS_FAILED,
+	queue.JobStatusDelayed:   immichv1.QueueJobStatus_QUEUE_JOB_STATUS_DELAYED,
+	queue.JobStatusWaiting:   immichv1.QueueJobStatus_QUEUE_JOB_STATUS_WAITING,
+	queue.JobStatusPaused:    immichv1.QueueJobStatus_QUEUE_JOB_STATUS_PAUSED,
 }
 
 func internalStatusToProto(s queue.JobStatus) immichv1.QueueJobStatus {
-	switch s {
-	case queue.JobStatusActive:
-		return immichv1.QueueJobStatus_QUEUE_JOB_STATUS_ACTIVE
-	case queue.JobStatusCompleted:
-		return immichv1.QueueJobStatus_QUEUE_JOB_STATUS_COMPLETED
-	case queue.JobStatusFailed:
-		return immichv1.QueueJobStatus_QUEUE_JOB_STATUS_FAILED
-	case queue.JobStatusDelayed:
-		return immichv1.QueueJobStatus_QUEUE_JOB_STATUS_DELAYED
-	case queue.JobStatusWaiting:
-		return immichv1.QueueJobStatus_QUEUE_JOB_STATUS_WAITING
-	case queue.JobStatusPaused:
-		return immichv1.QueueJobStatus_QUEUE_JOB_STATUS_PAUSED
-	default:
-		return immichv1.QueueJobStatus_QUEUE_JOB_STATUS_UNSPECIFIED
+	if protoStatus, ok := internalStatusProtoValues[s]; ok {
+		return protoStatus
 	}
+	return immichv1.QueueJobStatus_QUEUE_JOB_STATUS_UNSPECIFIED
 }
 
 func jobToProto(job *queue.Job) *immichv1.QueueJob {
