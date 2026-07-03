@@ -1041,7 +1041,7 @@ SELECT
     e.city,
     e.country,
     e."projectionType",
-    encode(a.thumbhash, 'base64') as thumbhash
+    COALESCE(encode(a.thumbhash, 'base64'), '') as thumbhash
 FROM assets a
 LEFT JOIN exif e ON e."assetId" = a.id
 WHERE a."ownerId" = $1

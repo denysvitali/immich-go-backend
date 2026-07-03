@@ -26,3 +26,4 @@ test_*.sh
 *_REPORT.md
 TODO.md
 immich-upstream
+frontend-e2e-artifacts.zip

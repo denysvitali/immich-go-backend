@@ -185,8 +185,7 @@ func (s *Service) GetBucketAssets(ctx context.Context, opts ListOptions) ([]Buck
 			p := row.ProjectionType.String
 			assets[i].ProjectionType = &p
 		}
-		if row.Thumbhash != "" {
-			th := row.Thumbhash
+		if th, ok := row.Thumbhash.(string); ok && th != "" {
 			assets[i].Thumbhash = &th
 		}
 	}

@@ -132,7 +132,7 @@ func convertAssetTypeString(assetType string) immichv1.AssetType {
 // parseTimeBucket tries to parse a time-bucket identifier as a date. It is
 // permissive so that month/year values from the upstream SDK are accepted.
 func parseTimeBucket(value string) (time.Time, string, error) {
-	for _, layout := range []string{"2006-01-02", "2006-01-02T15:04:05Z07:00", "2006-01", "2006"} {
+	for _, layout := range []string{"2006-01-02", "2006-01-02T15:04:05Z07:00", "2006-01-02T15:04:05.000Z07:00", "2006-01", "2006"} {
 		if t, err := time.Parse(layout, value); err == nil {
 			return t, layout, nil
 		}
