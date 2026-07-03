@@ -2,7 +2,6 @@ package jobs
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"mime"
 	"path/filepath"
@@ -53,19 +52,14 @@ type ThumbnailGenerationPayload struct {
 
 // HandleThumbnailGeneration processes thumbnail generation jobs
 func (h *Handlers) HandleThumbnailGeneration(ctx context.Context, task *asynq.Task) error {
-	var payload JobPayload
-	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
-		return fmt.Errorf("failed to unmarshal payload: %w", err)
-	}
-
-	assetIDStr, ok := payload.Data["asset_id"].(string)
-	if !ok {
-		return fmt.Errorf("invalid asset_id in payload")
-	}
-
-	assetID, err := uuid.Parse(assetIDStr)
+	payload, err := unmarshalJobPayload(task)
 	if err != nil {
-		return fmt.Errorf("invalid asset UUID: %w", err)
+		return err
+	}
+
+	assetID, err := extractAssetID(payload)
+	if err != nil {
+		return err
 	}
 
 	h.logger.WithFields(logrus.Fields{
@@ -154,19 +148,14 @@ type MetadataExtractionPayload struct {
 
 // HandleMetadataExtraction processes metadata extraction jobs
 func (h *Handlers) HandleMetadataExtraction(ctx context.Context, task *asynq.Task) error {
-	var payload JobPayload
-	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
-		return fmt.Errorf("failed to unmarshal payload: %w", err)
-	}
-
-	assetIDStr, ok := payload.Data["asset_id"].(string)
-	if !ok {
-		return fmt.Errorf("invalid asset_id in payload")
-	}
-
-	assetID, err := uuid.Parse(assetIDStr)
+	payload, err := unmarshalJobPayload(task)
 	if err != nil {
-		return fmt.Errorf("invalid asset UUID: %w", err)
+		return err
+	}
+
+	assetID, err := extractAssetID(payload)
+	if err != nil {
+		return err
 	}
 
 	pgAssetID := pgtype.UUID{Bytes: assetID, Valid: true}
@@ -311,9 +300,9 @@ type LibraryScanPayload struct {
 
 // HandleLibraryScan processes library scanning jobs
 func (h *Handlers) HandleLibraryScan(ctx context.Context, task *asynq.Task) error {
-	var payload JobPayload
-	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
-		return fmt.Errorf("failed to unmarshal payload: %w", err)
+	payload, err := unmarshalJobPayload(task)
+	if err != nil {
+		return err
 	}
 
 	libraryIDStr, ok := payload.Data["library_id"].(string)
@@ -360,21 +349,21 @@ type VideoTranscodePayload struct {
 
 // HandleVideoTranscode processes video transcoding jobs
 func (h *Handlers) HandleVideoTranscode(ctx context.Context, task *asynq.Task) error {
-	var payload JobPayload
-	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
-		return fmt.Errorf("failed to unmarshal payload: %w", err)
+	payload, err := unmarshalJobPayload(task)
+	if err != nil {
+		return err
 	}
 
-	assetIDStr, ok := payload.Data["asset_id"].(string)
-	if !ok {
-		return fmt.Errorf("invalid asset_id in payload")
+	assetID, err := extractAssetID(payload)
+	if err != nil {
+		return err
 	}
 
 	quality, _ := payload.Data["quality"].(string)
 	format, _ := payload.Data["format"].(string)
 
 	h.logger.WithFields(logrus.Fields{
-		"asset_id": assetIDStr,
+		"asset_id": assetID,
 		"quality":  quality,
 		"format":   format,
 		"job_id":   payload.ID,
@@ -393,18 +382,18 @@ type FaceDetectionPayload struct {
 
 // HandleFaceDetection processes face detection jobs
 func (h *Handlers) HandleFaceDetection(ctx context.Context, task *asynq.Task) error {
-	var payload JobPayload
-	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
-		return fmt.Errorf("failed to unmarshal payload: %w", err)
+	payload, err := unmarshalJobPayload(task)
+	if err != nil {
+		return err
 	}
 
-	assetIDStr, ok := payload.Data["asset_id"].(string)
-	if !ok {
-		return fmt.Errorf("invalid asset_id in payload")
+	assetID, err := extractAssetID(payload)
+	if err != nil {
+		return err
 	}
 
 	h.logger.WithFields(logrus.Fields{
-		"asset_id": assetIDStr,
+		"asset_id": assetID,
 		"job_id":   payload.ID,
 	}).Info("Detecting faces")
 
@@ -421,18 +410,18 @@ type SmartSearchIndexPayload struct {
 
 // HandleSmartSearchIndex processes smart search indexing jobs
 func (h *Handlers) HandleSmartSearchIndex(ctx context.Context, task *asynq.Task) error {
-	var payload JobPayload
-	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
-		return fmt.Errorf("failed to unmarshal payload: %w", err)
+	payload, err := unmarshalJobPayload(task)
+	if err != nil {
+		return err
 	}
 
-	assetIDStr, ok := payload.Data["asset_id"].(string)
-	if !ok {
-		return fmt.Errorf("invalid asset_id in payload")
+	assetID, err := extractAssetID(payload)
+	if err != nil {
+		return err
 	}
 
 	h.logger.WithFields(logrus.Fields{
-		"asset_id": assetIDStr,
+		"asset_id": assetID,
 		"job_id":   payload.ID,
 	}).Info("Indexing for smart search")
 
@@ -449,9 +438,9 @@ type DuplicateDetectionPayload struct {
 
 // HandleDuplicateDetection processes duplicate detection jobs
 func (h *Handlers) HandleDuplicateDetection(ctx context.Context, task *asynq.Task) error {
-	var payload JobPayload
-	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
-		return fmt.Errorf("failed to unmarshal payload: %w", err)
+	payload, err := unmarshalJobPayload(task)
+	if err != nil {
+		return err
 	}
 
 	h.logger.WithFields(logrus.Fields{
@@ -474,9 +463,9 @@ type StorageMigrationPayload struct {
 
 // HandleStorageMigration processes storage migration jobs
 func (h *Handlers) HandleStorageMigration(ctx context.Context, task *asynq.Task) error {
-	var payload JobPayload
-	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
-		return fmt.Errorf("failed to unmarshal payload: %w", err)
+	payload, err := unmarshalJobPayload(task)
+	if err != nil {
+		return err
 	}
 
 	assetIDStr, _ := payload.Data["asset_id"].(string)

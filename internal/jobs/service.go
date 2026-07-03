@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 	"github.com/sirupsen/logrus"
 )
@@ -306,6 +307,28 @@ func (s *Service) getQueueByPriority(priority JobPriority) string {
 	default:
 		return "low"
 	}
+}
+
+// unmarshalJobPayload unmarshals an asynq.Task into a JobPayload.
+func unmarshalJobPayload(task *asynq.Task) (JobPayload, error) {
+	var payload JobPayload
+	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
+		return JobPayload{}, fmt.Errorf("failed to unmarshal payload: %w", err)
+	}
+	return payload, nil
+}
+
+// extractAssetID extracts and parses the asset_id from a JobPayload.
+func extractAssetID(payload JobPayload) (uuid.UUID, error) {
+	assetIDStr, ok := payload.Data["asset_id"].(string)
+	if !ok {
+		return uuid.Nil, fmt.Errorf("invalid asset_id in payload")
+	}
+	assetID, err := uuid.Parse(assetIDStr)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("invalid asset UUID: %w", err)
+	}
+	return assetID, nil
 }
 
 // JobRequest represents a request to create a job
