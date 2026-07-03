@@ -6,6 +6,7 @@ import "google/api/annotations.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
 import "common.proto";
+import "preferences.proto";
 
 option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
 
@@ -173,29 +174,6 @@ message UserStatisticsResponseDto {
 // Avatar response
 message AvatarResponse {
   UserAvatarColor color = 1;
-}
-
-// User download preferences response
-message UserDownloadPreferencesResponse {
-  bool include_embedded_videos = 1;
-}
-
-// Email notifications response
-message EmailNotificationsResponse {
-  bool album_invite = 1;
-  bool album_update = 2;
-  bool enabled = 3;
-}
-
-// Memories response
-message MemoriesResponse {
-  bool enabled = 1;
-}
-
-// Purchase response
-message PurchaseResponse {
-  bool hide_banner = 1;
-  bool show_support_badge = 2;
 }
 
 // Send notification request

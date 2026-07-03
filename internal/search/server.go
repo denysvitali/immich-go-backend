@@ -39,21 +39,21 @@ func (s *Server) SearchMetadata(ctx context.Context, req *immichv1.SearchMetadat
 	}
 
 	var isFavorite, isArchived *bool
-	if req.IsFavorite != nil {
-		f := util.OptionalBool(req.IsFavorite).Bool
+	if req.Filter.IsFavorite != nil {
+		f := util.OptionalBool(req.Filter.IsFavorite).Bool
 		isFavorite = &f
 	}
-	if req.IsArchived != nil {
-		a := util.OptionalBool(req.IsArchived).Bool
+	if req.Filter.IsArchived != nil {
+		a := util.OptionalBool(req.Filter.IsArchived).Bool
 		isArchived = &a
 	}
 
 	searchReq := MetadataSearchRequest{
-		City:       stringValue(req.City),
-		State:      stringValue(req.State),
-		Country:    stringValue(req.Country),
-		Make:       stringValue(req.Make),
-		Model:      stringValue(req.Model),
+		City:       stringValue(req.Filter.City),
+		State:      stringValue(req.Filter.State),
+		Country:    stringValue(req.Filter.Country),
+		Make:       stringValue(req.Filter.Make),
+		Model:      stringValue(req.Filter.Model),
 		IsFavorite: isFavorite,
 		IsArchived: isArchived,
 		Page:       0,  // default page
@@ -61,11 +61,11 @@ func (s *Server) SearchMetadata(ctx context.Context, req *immichv1.SearchMetadat
 	}
 
 	// Parse date filters
-	if req.TakenBefore != nil {
-		searchReq.TakenBefore = req.TakenBefore.AsTime()
+	if req.Filter.TakenBefore != nil {
+		searchReq.TakenBefore = req.Filter.TakenBefore.AsTime()
 	}
-	if req.TakenAfter != nil {
-		searchReq.TakenAfter = req.TakenAfter.AsTime()
+	if req.Filter.TakenAfter != nil {
+		searchReq.TakenAfter = req.Filter.TakenAfter.AsTime()
 	}
 
 	result, err := s.service.SearchMetadata(ctx, userID, searchReq)

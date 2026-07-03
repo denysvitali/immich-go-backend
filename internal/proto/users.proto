@@ -7,6 +7,7 @@ import "google/api/annotations.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
 import "admin.proto";
+import "preferences.proto";
 
 option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
 
@@ -210,7 +211,7 @@ message UserPreferencesUpdateRequest {
   optional TagsUpdate tags = 10;
 }
 
-// Preference sub-messages (these would need to be defined based on the actual structure)
+// Preference sub-messages (unique to users)
 message FoldersResponse {
   bool enabled = 1;
   int32 size_threshold = 2;

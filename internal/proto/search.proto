@@ -226,8 +226,8 @@ message SearchExploreResponse {
   repeated SearchExploreItemResponseDto items = 1;
 }
 
-// Search metadata request
-message SearchMetadataRequest {
+// Search filter (shared between metadata and smart search)
+message SearchFilter {
   optional string city = 1;
   optional string country = 2;
   optional string state = 3;
@@ -265,6 +265,11 @@ message SearchMetadataRequest {
   optional int32 page = 35;
 }
 
+// Search metadata request
+message SearchMetadataRequest {
+  SearchFilter filter = 1;
+}
+
 // Search person request
 message SearchPersonRequest {
   string name = 1;
@@ -298,41 +303,7 @@ message PlaceResponseDto {
 // Search smart request
 message SearchSmartRequest {
   string query = 1;
-  optional string city = 2;
-  optional string country = 3;
-  optional string state = 4;
-  optional string make = 5;
-  optional string model = 6;
-  optional string objects = 7;
-  optional string tags = 8;
-  optional bool is_archived = 9;
-  optional bool is_encoded = 10;
-  optional bool is_external = 11;
-  optional bool is_favorite = 12;
-  optional bool is_motion = 13;
-  optional bool is_offline = 14;
-  optional bool is_read_only = 15;
-  optional bool is_visible = 16;
-  optional string library_id = 17;
-  optional string lens_model = 18;
-  optional string original_file_name = 19;
-  optional string original_path = 20;
-  optional bool recently_added = 21;
-  optional int32 size = 22;
-  optional google.protobuf.Timestamp taken_after = 23;
-  optional google.protobuf.Timestamp taken_before = 24;
-  optional google.protobuf.Timestamp trashed_after = 25;
-  optional google.protobuf.Timestamp trashed_before = 26;
-  optional AssetType type = 27;
-  optional google.protobuf.Timestamp updated_after = 28;
-  optional google.protobuf.Timestamp updated_before = 29;
-  optional bool with_archived = 30;
-  optional bool with_deleted = 31;
-  optional bool with_exif = 32;
-  optional bool with_people = 33;
-  optional bool with_partners = 34;
-  optional bool with_stacked = 35;
-  optional int32 page = 36;
+  SearchFilter filter = 2;
 }
 
 // Search smart response (wrapper for array)
