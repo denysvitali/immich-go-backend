@@ -5,42 +5,70 @@ import (
 	"strings"
 )
 
+type storageBackendDefinition struct {
+	create   func(StorageConfig) (StorageBackend, error)
+	validate func(StorageConfig) error
+}
+
+func lookupStorageBackendDefinition(backend string) (storageBackendDefinition, bool) {
+	switch backend {
+	case "local", "filesystem", "fs":
+		return storageBackendDefinition{
+			create: func(config StorageConfig) (StorageBackend, error) {
+				return NewLocalBackend(config.Local)
+			},
+			validate: func(config StorageConfig) error {
+				return validateLocalConfig(config.Local)
+			},
+		}, true
+
+	case "s3", "aws":
+		return storageBackendDefinition{
+			create: func(config StorageConfig) (StorageBackend, error) {
+				return NewS3Backend(config.S3)
+			},
+			validate: func(config StorageConfig) error {
+				return validateS3Config(config.S3)
+			},
+		}, true
+
+	case "rclone":
+		return storageBackendDefinition{
+			create: func(config StorageConfig) (StorageBackend, error) {
+				return NewRcloneBackend(config.Rclone)
+			},
+			validate: func(config StorageConfig) error {
+				return validateRcloneConfig(config.Rclone)
+			},
+		}, true
+
+	default:
+		return storageBackendDefinition{}, false
+	}
+}
+
 // NewStorageBackend creates a new storage backend based on the configuration
 func NewStorageBackend(config StorageConfig) (StorageBackend, error) {
 	backend := strings.ToLower(config.Backend)
 
-	switch backend {
-	case "local", "filesystem", "fs":
-		return NewLocalBackend(config.Local)
-
-	case "s3", "aws":
-		return NewS3Backend(config.S3)
-
-	case "rclone":
-		return NewRcloneBackend(config.Rclone)
-
-	default:
+	definition, ok := lookupStorageBackendDefinition(backend)
+	if !ok {
 		return nil, wrapError("create storage backend", "", backend, fmt.Errorf("unsupported storage backend: %s", backend))
 	}
+
+	return definition.create(config)
 }
 
 // ValidateStorageConfig validates the storage configuration
 func ValidateStorageConfig(config StorageConfig) error {
 	backend := strings.ToLower(config.Backend)
 
-	switch backend {
-	case "local", "filesystem", "fs":
-		return validateLocalConfig(config.Local)
-
-	case "s3", "aws":
-		return validateS3Config(config.S3)
-
-	case "rclone":
-		return validateRcloneConfig(config.Rclone)
-
-	default:
+	definition, ok := lookupStorageBackendDefinition(backend)
+	if !ok {
 		return wrapError("validate storage config", "", backend, fmt.Errorf("unsupported storage backend: %s", backend))
 	}
+
+	return definition.validate(config)
 }
 
 // validateLocalConfig validates local storage configuration
