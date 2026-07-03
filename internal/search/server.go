@@ -10,6 +10,7 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	assetdomain "github.com/denysvitali/immich-go-backend/internal/assets"
 	"github.com/denysvitali/immich-go-backend/internal/auth"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/denysvitali/immich-go-backend/internal/grpcutil"
@@ -85,24 +86,11 @@ func (s *Server) SearchMetadata(ctx context.Context, req *immichv1.SearchMetadat
 			continue // Skip assets that can't be loaded
 		}
 
-		// Convert asset type
-		var assetType immichv1.AssetType
-		switch asset.Type {
-		case "IMAGE":
-			assetType = immichv1.AssetType_ASSET_TYPE_IMAGE
-		case "VIDEO":
-			assetType = immichv1.AssetType_ASSET_TYPE_VIDEO
-		case "AUDIO":
-			assetType = immichv1.AssetType_ASSET_TYPE_AUDIO
-		default:
-			assetType = immichv1.AssetType_ASSET_TYPE_OTHER
-		}
-
 		assets = append(assets, &immichv1.AssetResponseDto{
 			Id:               item.ID,
 			DeviceAssetId:    asset.DeviceAssetId,
 			DeviceId:         asset.DeviceId,
-			Type:             assetType,
+			Type:             assetdomain.AssetTypeFromString(asset.Type),
 			OriginalPath:     asset.OriginalPath,
 			OriginalFileName: asset.OriginalFileName,
 			IsFavorite:       asset.IsFavorite,
@@ -153,24 +141,11 @@ func (s *Server) SearchSmart(ctx context.Context, req *immichv1.SearchSmartReque
 			continue // Skip assets that can't be loaded
 		}
 
-		// Convert asset type
-		var assetType immichv1.AssetType
-		switch asset.Type {
-		case "IMAGE":
-			assetType = immichv1.AssetType_ASSET_TYPE_IMAGE
-		case "VIDEO":
-			assetType = immichv1.AssetType_ASSET_TYPE_VIDEO
-		case "AUDIO":
-			assetType = immichv1.AssetType_ASSET_TYPE_AUDIO
-		default:
-			assetType = immichv1.AssetType_ASSET_TYPE_OTHER
-		}
-
 		assets = append(assets, &immichv1.AssetResponseDto{
 			Id:               item.ID,
 			DeviceAssetId:    asset.DeviceAssetId,
 			DeviceId:         asset.DeviceId,
-			Type:             assetType,
+			Type:             assetdomain.AssetTypeFromString(asset.Type),
 			OriginalPath:     asset.OriginalPath,
 			OriginalFileName: asset.OriginalFileName,
 			IsFavorite:       asset.IsFavorite,
@@ -370,24 +345,11 @@ func (s *Server) Search(ctx context.Context, req *immichv1.SearchRequest) (*immi
 		if err == nil {
 			assets = make([]*immichv1.AssetResponseDto, 0, len(searchResults))
 			for _, asset := range searchResults {
-				// Convert asset type
-				var assetType immichv1.AssetType
-				switch asset.Type {
-				case "IMAGE":
-					assetType = immichv1.AssetType_ASSET_TYPE_IMAGE
-				case "VIDEO":
-					assetType = immichv1.AssetType_ASSET_TYPE_VIDEO
-				case "AUDIO":
-					assetType = immichv1.AssetType_ASSET_TYPE_AUDIO
-				default:
-					assetType = immichv1.AssetType_ASSET_TYPE_OTHER
-				}
-
 				assets = append(assets, &immichv1.AssetResponseDto{
 					Id:               uuid.UUID(asset.ID.Bytes).String(),
 					DeviceAssetId:    asset.DeviceAssetId,
 					DeviceId:         asset.DeviceId,
-					Type:             assetType,
+					Type:             assetdomain.AssetTypeFromString(asset.Type),
 					OriginalPath:     asset.OriginalPath,
 					OriginalFileName: asset.OriginalFileName,
 					IsFavorite:       asset.IsFavorite,

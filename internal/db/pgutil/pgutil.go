@@ -56,6 +56,12 @@ func PgtypeToUUID(p pgtype.UUID) uuid.UUID {
 	return p.Bytes
 }
 
+// ParseUserID parses a string into a pgtype.UUID.
+// It is a convenience wrapper around StringToUUID.
+func ParseUserID(s string) (pgtype.UUID, error) {
+	return StringToUUID(s)
+}
+
 // Text wraps a string in a pgtype.Text.
 func Text(s string) pgtype.Text {
 	return pgtype.Text{

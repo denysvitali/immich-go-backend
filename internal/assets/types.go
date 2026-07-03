@@ -3,6 +3,7 @@ package assets
 import (
 	"time"
 
+	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 	"github.com/google/uuid"
 )
 
@@ -15,6 +16,21 @@ const (
 	AssetTypeAudio AssetType = "AUDIO"
 	AssetTypeOther AssetType = "OTHER"
 )
+
+// AssetTypeFromString converts a string asset type to the protobuf enum.
+// Unrecognised values map to ASSET_TYPE_OTHER.
+func AssetTypeFromString(t string) immichv1.AssetType {
+	switch t {
+	case "IMAGE":
+		return immichv1.AssetType_ASSET_TYPE_IMAGE
+	case "VIDEO":
+		return immichv1.AssetType_ASSET_TYPE_VIDEO
+	case "AUDIO":
+		return immichv1.AssetType_ASSET_TYPE_AUDIO
+	default:
+		return immichv1.AssetType_ASSET_TYPE_OTHER
+	}
+}
 
 // ThumbnailType represents different thumbnail sizes
 type ThumbnailType string
