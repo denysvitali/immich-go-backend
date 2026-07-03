@@ -4,11 +4,9 @@ import (
 	"context"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/denysvitali/immich-go-backend/internal/db/pgutil"
 	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5/pgtype"
 	"go.opentelemetry.io/otel/attribute"
 )
 
@@ -22,33 +20,12 @@ const (
 	ClaimsContextKey ContextKey = "claims"
 )
 
-// Helper functions for type conversion
-func stringToUUID(s string) (pgtype.UUID, error) {
-	return pgutil.StringToUUID(s)
-}
-
-func uuidToString(u pgtype.UUID) string {
-	return pgutil.UUIDToString(u)
-}
-
-func timestamptzToTime(t pgtype.Timestamptz) time.Time {
-	return pgutil.TimestamptzToTime(t)
-}
-
-func timeToTimestamptz(t time.Time) (pgtype.Timestamptz, error) {
-	return pgutil.TimeToTimestamptz(t), nil
-}
-
-func pgTypeString(s string) pgtype.Text {
-	return pgutil.Text(s)
-}
-
 // LoadUserInfo looks up the user identified by claims and builds the
 // UserInfo consumed by RequireUser/RequireAdmin. Shared by the Gin
 // AuthMiddleware and the grpc-gateway authContextMiddleware so both entry
 // points populate the same std-context UserContextKey.
 func (s *Service) LoadUserInfo(ctx context.Context, claims *Claims) (*UserInfo, error) {
-	userID, err := stringToUUID(claims.UserID)
+	userID, err := pgutil.StringToUUID(claims.UserID)
 	if err != nil {
 		return nil, NewInvalidTokenError("invalid user ID", err)
 	}
@@ -63,12 +40,12 @@ func (s *Service) LoadUserInfo(ctx context.Context, claims *Claims) (*UserInfo, 
 	}
 
 	return &UserInfo{
-		ID:        uuidToString(user.ID),
+		ID:        pgutil.UUIDToString(user.ID),
 		Email:     user.Email,
 		Name:      user.Name,
 		IsAdmin:   user.IsAdmin,
-		CreatedAt: timestamptzToTime(user.CreatedAt),
-		UpdatedAt: timestamptzToTime(user.UpdatedAt),
+		CreatedAt: pgutil.TimestamptzToTime(user.CreatedAt),
+		UpdatedAt: pgutil.TimestamptzToTime(user.UpdatedAt),
 	}, nil
 }
 
@@ -118,7 +95,7 @@ func (s *Service) AuthMiddleware() gin.HandlerFunc {
 		}
 
 		// Get user from database
-		userID, err := stringToUUID(claims.UserID)
+		userID, err := pgutil.StringToUUID(claims.UserID)
 		if err != nil {
 			span.RecordError(err)
 			span.SetAttributes(attribute.String("auth.error", "invalid_user_id"))
@@ -155,12 +132,12 @@ func (s *Service) AuthMiddleware() gin.HandlerFunc {
 
 		// Add user and claims to context
 		userInfo := UserInfo{
-			ID:        uuidToString(user.ID),
+			ID:        pgutil.UUIDToString(user.ID),
 			Email:     user.Email,
 			Name:      user.Name,
 			IsAdmin:   user.IsAdmin,
-			CreatedAt: timestamptzToTime(user.CreatedAt),
-			UpdatedAt: timestamptzToTime(user.UpdatedAt),
+			CreatedAt: pgutil.TimestamptzToTime(user.CreatedAt),
+			UpdatedAt: pgutil.TimestamptzToTime(user.UpdatedAt),
 		}
 
 		c.Set(string(UserContextKey), userInfo)
@@ -168,7 +145,7 @@ func (s *Service) AuthMiddleware() gin.HandlerFunc {
 
 		// Add user info to span
 		span.SetAttributes(
-			attribute.String("auth.user_id", uuidToString(user.ID)),
+			attribute.String("auth.user_id", pgutil.UUIDToString(user.ID)),
 			attribute.String("auth.user_email", user.Email),
 			attribute.Bool("auth.is_admin", user.IsAdmin),
 		)
@@ -256,7 +233,7 @@ func (s *Service) OptionalAuthMiddleware() gin.HandlerFunc {
 		}
 
 		// Get user from database
-		userID, err := stringToUUID(claims.UserID)
+		userID, err := pgutil.StringToUUID(claims.UserID)
 		if err != nil {
 			span.SetAttributes(attribute.String("auth.status", "invalid_user_id"))
 			c.Next()
@@ -279,12 +256,12 @@ func (s *Service) OptionalAuthMiddleware() gin.HandlerFunc {
 
 		// Add user and claims to context
 		userInfo := UserInfo{
-			ID:        uuidToString(user.ID),
+			ID:        pgutil.UUIDToString(user.ID),
 			Email:     user.Email,
 			Name:      user.Name,
 			IsAdmin:   user.IsAdmin,
-			CreatedAt: timestamptzToTime(user.CreatedAt),
-			UpdatedAt: timestamptzToTime(user.UpdatedAt),
+			CreatedAt: pgutil.TimestamptzToTime(user.CreatedAt),
+			UpdatedAt: pgutil.TimestamptzToTime(user.UpdatedAt),
 		}
 
 		c.Set(string(UserContextKey), userInfo)
@@ -292,7 +269,7 @@ func (s *Service) OptionalAuthMiddleware() gin.HandlerFunc {
 
 		span.SetAttributes(
 			attribute.String("auth.status", "authenticated"),
-			attribute.String("auth.user_id", uuidToString(user.ID)),
+			attribute.String("auth.user_id", pgutil.UUIDToString(user.ID)),
 			attribute.Bool("auth.is_admin", user.IsAdmin),
 		)
 

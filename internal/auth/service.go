@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/denysvitali/immich-go-backend/internal/config"
+	"github.com/denysvitali/immich-go-backend/internal/db/pgutil"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -145,7 +146,7 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (*AuthResponse, e
 	s.resetLoginAttempts(loginKey)
 
 	// Generate tokens
-	accessToken, refreshToken, expiresAt, err := s.generateTokens(uuidToString(user.ID), user.Email, user.IsAdmin)
+	accessToken, refreshToken, expiresAt, err := s.generateTokens(pgutil.UUIDToString(user.ID), user.Email, user.IsAdmin)
 	if err != nil {
 		span.RecordError(err)
 		return nil, &AuthError{
@@ -156,7 +157,7 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (*AuthResponse, e
 	}
 
 	// Store refresh token
-	if err := s.storeRefreshToken(ctx, uuidToString(user.ID), refreshToken); err != nil {
+	if err := s.storeRefreshToken(ctx, pgutil.UUIDToString(user.ID), refreshToken); err != nil {
 		span.RecordError(err)
 		return nil, &AuthError{
 			Type:    ErrTokenStorage,
@@ -189,13 +190,13 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (*AuthResponse, e
 		RefreshToken: refreshToken,
 		ExpiresAt:    expiresAt,
 		User: UserInfo{
-			ID:          uuidToString(user.ID),
+			ID:          pgutil.UUIDToString(user.ID),
 			Email:       user.Email,
 			Name:        user.Name,
 			IsAdmin:     user.IsAdmin,
 			IsOnboarded: isOnboarded,
-			CreatedAt:   timestamptzToTime(user.CreatedAt),
-			UpdatedAt:   timestamptzToTime(user.UpdatedAt),
+			CreatedAt:   pgutil.TimestamptzToTime(user.CreatedAt),
+			UpdatedAt:   pgutil.TimestamptzToTime(user.UpdatedAt),
 		},
 	}, nil
 }
@@ -292,7 +293,7 @@ func (s *Service) register(ctx context.Context, req RegisterRequest, isAdmin boo
 	}
 
 	// Create user
-	userUUID, err := stringToUUID(userID)
+	userUUID, err := pgutil.StringToUUID(userID)
 	if err != nil {
 		span.RecordError(err)
 		return nil, &AuthError{
@@ -322,7 +323,7 @@ func (s *Service) register(ctx context.Context, req RegisterRequest, isAdmin boo
 	}
 
 	// Generate tokens
-	accessToken, refreshToken, expiresAt, err := s.generateTokens(uuidToString(user.ID), user.Email, user.IsAdmin)
+	accessToken, refreshToken, expiresAt, err := s.generateTokens(pgutil.UUIDToString(user.ID), user.Email, user.IsAdmin)
 	if err != nil {
 		span.RecordError(err)
 		return nil, &AuthError{
@@ -333,7 +334,7 @@ func (s *Service) register(ctx context.Context, req RegisterRequest, isAdmin boo
 	}
 
 	// Store refresh token
-	if err := s.storeRefreshToken(ctx, uuidToString(user.ID), refreshToken); err != nil {
+	if err := s.storeRefreshToken(ctx, pgutil.UUIDToString(user.ID), refreshToken); err != nil {
 		span.RecordError(err)
 		return nil, &AuthError{
 			Type:    ErrTokenStorage,
@@ -347,13 +348,13 @@ func (s *Service) register(ctx context.Context, req RegisterRequest, isAdmin boo
 		RefreshToken: refreshToken,
 		ExpiresAt:    expiresAt,
 		User: UserInfo{
-			ID:          uuidToString(user.ID),
+			ID:          pgutil.UUIDToString(user.ID),
 			Email:       user.Email,
 			Name:        user.Name,
 			IsAdmin:     user.IsAdmin,
 			IsOnboarded: user.IsOnboarded,
-			CreatedAt:   timestamptzToTime(user.CreatedAt),
-			UpdatedAt:   timestamptzToTime(user.UpdatedAt),
+			CreatedAt:   pgutil.TimestamptzToTime(user.CreatedAt),
+			UpdatedAt:   pgutil.TimestamptzToTime(user.UpdatedAt),
 		},
 	}, nil
 }
@@ -386,7 +387,7 @@ func (s *Service) RefreshToken(ctx context.Context, req RefreshRequest) (*AuthRe
 	}
 
 	// Check if token is expired
-	if timestamptzToTime(storedToken.ExpiresAt).Before(time.Now()) {
+	if pgutil.TimestamptzToTime(storedToken.ExpiresAt).Before(time.Now()) {
 		return nil, &AuthError{
 			Type:    ErrTokenExpired,
 			Message: "Refresh token has expired",
@@ -394,7 +395,7 @@ func (s *Service) RefreshToken(ctx context.Context, req RefreshRequest) (*AuthRe
 	}
 
 	// Get user
-	userUUID, err := stringToUUID(claims.UserID)
+	userUUID, err := pgutil.StringToUUID(claims.UserID)
 	if err != nil {
 		span.RecordError(err)
 		return nil, &AuthError{
@@ -423,7 +424,7 @@ func (s *Service) RefreshToken(ctx context.Context, req RefreshRequest) (*AuthRe
 	}
 
 	// Generate new tokens
-	accessToken, newRefreshToken, expiresAt, err := s.generateTokens(uuidToString(user.ID), user.Email, user.IsAdmin)
+	accessToken, newRefreshToken, expiresAt, err := s.generateTokens(pgutil.UUIDToString(user.ID), user.Email, user.IsAdmin)
 	if err != nil {
 		span.RecordError(err)
 		return nil, &AuthError{
@@ -438,7 +439,7 @@ func (s *Service) RefreshToken(ctx context.Context, req RefreshRequest) (*AuthRe
 		span.RecordError(err)
 	}
 
-	if err := s.storeRefreshToken(ctx, uuidToString(user.ID), newRefreshToken); err != nil {
+	if err := s.storeRefreshToken(ctx, pgutil.UUIDToString(user.ID), newRefreshToken); err != nil {
 		span.RecordError(err)
 		return nil, &AuthError{
 			Type:    ErrTokenStorage,
@@ -452,13 +453,13 @@ func (s *Service) RefreshToken(ctx context.Context, req RefreshRequest) (*AuthRe
 		RefreshToken: newRefreshToken,
 		ExpiresAt:    expiresAt,
 		User: UserInfo{
-			ID:          uuidToString(user.ID),
+			ID:          pgutil.UUIDToString(user.ID),
 			Email:       user.Email,
 			Name:        user.Name,
 			IsAdmin:     user.IsAdmin,
 			IsOnboarded: user.IsOnboarded,
-			CreatedAt:   timestamptzToTime(user.CreatedAt),
-			UpdatedAt:   timestamptzToTime(user.UpdatedAt),
+			CreatedAt:   pgutil.TimestamptzToTime(user.CreatedAt),
+			UpdatedAt:   pgutil.TimestamptzToTime(user.UpdatedAt),
 		},
 	}, nil
 }
@@ -492,7 +493,7 @@ func (s *Service) ChangePassword(ctx context.Context, userID string, req ChangeP
 	defer span.End()
 
 	// Get user
-	userUUID, err := stringToUUID(userID)
+	userUUID, err := pgutil.StringToUUID(userID)
 	if err != nil {
 		span.RecordError(err)
 		return &AuthError{
@@ -662,12 +663,7 @@ func (s *Service) validateToken(tokenString string) (*Claims, error) {
 
 // storeRefreshToken stores a refresh token in the database
 func (s *Service) storeRefreshToken(ctx context.Context, userID, token string) error {
-	userUUID, err := stringToUUID(userID)
-	if err != nil {
-		return err
-	}
-
-	expiresAt, err := timeToTimestamptz(time.Now().Add(s.config.JWTRefreshExpiry))
+	userUUID, err := pgutil.StringToUUID(userID)
 	if err != nil {
 		return err
 	}
@@ -675,7 +671,7 @@ func (s *Service) storeRefreshToken(ctx context.Context, userID, token string) e
 	params := sqlc.CreateRefreshTokenParams{
 		Token:     token,
 		UserId:    userUUID,
-		ExpiresAt: expiresAt,
+		ExpiresAt: pgutil.TimeToTimestamptz(time.Now().Add(s.config.JWTRefreshExpiry)),
 	}
 
 	return s.queries.CreateRefreshToken(ctx, params)
@@ -692,7 +688,7 @@ func (s *Service) HasPinCode(ctx context.Context, userID string) (bool, error) {
 		trace.WithAttributes(attribute.String("auth.user_id", userID)))
 	defer span.End()
 
-	userUUID, err := stringToUUID(userID)
+	userUUID, err := pgutil.StringToUUID(userID)
 	if err != nil {
 		span.RecordError(err)
 		return false, err
@@ -713,7 +709,7 @@ func (s *Service) SetupPinCode(ctx context.Context, userID, pinCode string) erro
 		trace.WithAttributes(attribute.String("auth.user_id", userID)))
 	defer span.End()
 
-	userUUID, err := stringToUUID(userID)
+	userUUID, err := pgutil.StringToUUID(userID)
 	if err != nil {
 		span.RecordError(err)
 		return &AuthError{
@@ -754,7 +750,7 @@ func (s *Service) SetupPinCode(ctx context.Context, userID, pinCode string) erro
 
 	// Store the PIN code
 	if err := s.queries.SetUserPinCode(ctx, sqlc.SetUserPinCodeParams{
-		PinCode: pgTypeString(string(hashedPinCode)),
+		PinCode: pgutil.Text(string(hashedPinCode)),
 		ID:      userUUID,
 	}); err != nil {
 		span.RecordError(err)
@@ -774,7 +770,7 @@ func (s *Service) ChangePinCode(ctx context.Context, userID, currentPinCode, new
 		trace.WithAttributes(attribute.String("auth.user_id", userID)))
 	defer span.End()
 
-	userUUID, err := stringToUUID(userID)
+	userUUID, err := pgutil.StringToUUID(userID)
 	if err != nil {
 		span.RecordError(err)
 		return &AuthError{
@@ -825,7 +821,7 @@ func (s *Service) ChangePinCode(ctx context.Context, userID, currentPinCode, new
 
 	// Store the new PIN code
 	if err := s.queries.SetUserPinCode(ctx, sqlc.SetUserPinCodeParams{
-		PinCode: pgTypeString(string(hashedPinCode)),
+		PinCode: pgutil.Text(string(hashedPinCode)),
 		ID:      userUUID,
 	}); err != nil {
 		span.RecordError(err)
@@ -845,7 +841,7 @@ func (s *Service) ResetPinCode(ctx context.Context, userID, password string) err
 		trace.WithAttributes(attribute.String("auth.user_id", userID)))
 	defer span.End()
 
-	userUUID, err := stringToUUID(userID)
+	userUUID, err := pgutil.StringToUUID(userID)
 	if err != nil {
 		span.RecordError(err)
 		return &AuthError{
@@ -897,7 +893,7 @@ func (s *Service) UnlockSession(ctx context.Context, userID, sessionID, pinCode 
 			attribute.String("auth.session_id", sessionID)))
 	defer span.End()
 
-	userUUID, err := stringToUUID(userID)
+	userUUID, err := pgutil.StringToUUID(userID)
 	if err != nil {
 		span.RecordError(err)
 		return &AuthError{
@@ -936,7 +932,7 @@ func (s *Service) UnlockSession(ctx context.Context, userID, sessionID, pinCode 
 	}
 
 	// Set session PIN elevation (expires in 1 hour)
-	sessionUUID, err := stringToUUID(sessionID)
+	sessionUUID, err := pgutil.StringToUUID(sessionID)
 	if err != nil {
 		span.RecordError(err)
 		return &AuthError{
@@ -946,14 +942,8 @@ func (s *Service) UnlockSession(ctx context.Context, userID, sessionID, pinCode 
 		}
 	}
 
-	pinExpiresAt, err := timeToTimestamptz(time.Now().Add(1 * time.Hour))
-	if err != nil {
-		span.RecordError(err)
-		return err
-	}
-
 	if err := s.queries.SetSessionPinElevation(ctx, sqlc.SetSessionPinElevationParams{
-		PinExpiresAt: pinExpiresAt,
+		PinExpiresAt: pgutil.TimeToTimestamptz(time.Now().Add(1 * time.Hour)),
 		ID:           sessionUUID,
 	}); err != nil {
 		span.RecordError(err)
@@ -973,7 +963,7 @@ func (s *Service) LockSession(ctx context.Context, sessionID string) error {
 		trace.WithAttributes(attribute.String("auth.session_id", sessionID)))
 	defer span.End()
 
-	sessionUUID, err := stringToUUID(sessionID)
+	sessionUUID, err := pgutil.StringToUUID(sessionID)
 	if err != nil {
 		span.RecordError(err)
 		return &AuthError{
@@ -1001,7 +991,7 @@ func (s *Service) IsSessionElevated(ctx context.Context, sessionID string) (bool
 		trace.WithAttributes(attribute.String("auth.session_id", sessionID)))
 	defer span.End()
 
-	sessionUUID, err := stringToUUID(sessionID)
+	sessionUUID, err := pgutil.StringToUUID(sessionID)
 	if err != nil {
 		span.RecordError(err)
 		return false, err
