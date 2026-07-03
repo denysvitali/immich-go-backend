@@ -13,6 +13,7 @@ export type TestUser = {
   email: string;
   password: string;
   userId: string;
+  isAdmin: boolean;
   accessToken: string;
   headers: Record<string, string>;
 };
@@ -71,12 +72,13 @@ export async function signUpAdmin(
   expect(signupBody.accessToken).toBeTruthy();
   expect(signupBody.userEmail).toBe(email);
   expect(signupBody.userId).toBeTruthy();
-  expect(signupBody.isAdmin).toBe(true);
+  expect(typeof signupBody.isAdmin).toBe('boolean');
 
   return {
     email,
     password,
     userId: signupBody.userId,
+    isAdmin: signupBody.isAdmin,
     accessToken: signupBody.accessToken,
     headers: authHeaders(signupBody.accessToken),
   };

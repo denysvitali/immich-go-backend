@@ -4,6 +4,8 @@ import { expectOk, login, png1x1, signUpAdmin, uniqueId } from './helpers';
 
 test('admin can upload an image, create an album, and retrieve the image', async ({ request }) => {
   const admin = await signUpAdmin(request, 'media-flow', 'E2E Media Admin');
+  expect(admin.isAdmin).toBe(true);
+
   const { body: loginBody, headers } = await login(request, admin);
   expect(loginBody.accessToken).toBeTruthy();
   expect(loginBody.isAdmin).toBe(true);
