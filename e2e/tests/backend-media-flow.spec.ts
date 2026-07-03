@@ -70,7 +70,9 @@ test('admin can upload an image, create an album, and retrieve the image', async
   const albums = await request.get('/api/albums', { headers });
   await expectOk(albums);
   const albumsBody = await albums.json();
-  expect(albumsBody.albums.some((item: { id: string }) => item.id === albumBody.id)).toBe(true);
+  const albumItems = Array.isArray(albumsBody) ? albumsBody : albumsBody.albums;
+  expect(Array.isArray(albumItems)).toBe(true);
+  expect(albumItems.some((item: { id: string }) => item.id === albumBody.id)).toBe(true);
 
   const assetList = await request.get('/api/assets?page=1&size=10', { headers });
   await expectOk(assetList);

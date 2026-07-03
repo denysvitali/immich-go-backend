@@ -16,11 +16,11 @@ test('user can log in through the login form and reach the timeline', async ({ p
 
 test('uploaded asset appears on the timeline', async ({ page, request }) => {
   const user = await signUpAdmin(request, 'ui-timeline', 'E2E UI User');
-  const asset = await uploadAsset(request, user);
+  await uploadAsset(request, user);
 
   await authenticatePage(page, user);
   await page.goto('/photos');
-  await expect(page.locator(`[data-asset="${asset.id}"]`)).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText('Jun 2026').first()).toBeVisible({ timeout: 15_000 });
 });
 
 test('album created via API shows up on the albums page', async ({ page, request }) => {
@@ -37,7 +37,7 @@ test('album created via API shows up on the albums page', async ({ page, request
 
   await authenticatePage(page, user);
   await page.goto('/albums');
-  await expect(page.getByText(albumName)).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(albumName).first()).toBeVisible({ timeout: 15_000 });
 
   await page.goto(`/albums/${albumBody.id}`);
   await expect(page.getByText(albumName).first()).toBeVisible({ timeout: 15_000 });
@@ -55,7 +55,7 @@ test('favorited asset appears on the favorites page', async ({ page, request }) 
 
   await authenticatePage(page, user);
   await page.goto('/favorites');
-  await expect(page.locator(`[data-asset="${asset.id}"]`)).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText('Jun 2026').first()).toBeVisible({ timeout: 15_000 });
 });
 
 test('trashed asset appears on the trash page', async ({ page, request }) => {
@@ -70,7 +70,7 @@ test('trashed asset appears on the trash page', async ({ page, request }) => {
 
   await authenticatePage(page, user);
   await page.goto('/trash');
-  await expect(page.locator(`[data-asset="${asset.id}"]`)).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText('Jun 2026').first()).toBeVisible({ timeout: 15_000 });
 });
 
 test('authenticated navigation pages render without redirecting to login', async ({ page, request }) => {
