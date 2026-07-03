@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -28,40 +27,24 @@ func NewLocalBackend(config LocalConfig) (*LocalBackend, error) {
 	// Parse file mode
 	fileMode, err := parseFileMode(config.FileMode, 0o644)
 	if err != nil {
-		return nil, &StorageError{
-			Op:      "create local backend",
-			Backend: "local",
-			Err:     fmt.Errorf("invalid file mode %s: %w", config.FileMode, err),
-		}
+		return nil, wrapError("create local backend", "", "local", fmt.Errorf("invalid file mode %s: %w", config.FileMode, err))
 	}
 
 	// Parse directory mode
 	dirMode, err := parseFileMode(config.DirMode, 0o755)
 	if err != nil {
-		return nil, &StorageError{
-			Op:      "create local backend",
-			Backend: "local",
-			Err:     fmt.Errorf("invalid directory mode %s: %w", config.DirMode, err),
-		}
+		return nil, wrapError("create local backend", "", "local", fmt.Errorf("invalid directory mode %s: %w", config.DirMode, err))
 	}
 
 	// Ensure root path is absolute
 	rootPath, err := filepath.Abs(config.RootPath)
 	if err != nil {
-		return nil, &StorageError{
-			Op:      "create local backend",
-			Backend: "local",
-			Err:     fmt.Errorf("failed to get absolute path: %w", err),
-		}
+		return nil, wrapError("create local backend", "", "local", fmt.Errorf("failed to get absolute path: %w", err))
 	}
 
 	// Create root directory if it doesn't exist
 	if err := os.MkdirAll(rootPath, dirMode); err != nil {
-		return nil, &StorageError{
-			Op:      "create local backend",
-			Backend: "local",
-			Err:     fmt.Errorf("failed to create root directory: %w", err),
-		}
+		return nil, wrapError("create local backend", "", "local", fmt.Errorf("failed to create root directory: %w", err))
 	}
 
 	return &LocalBackend{
@@ -88,11 +71,7 @@ func parseFileMode(modeStr string, defaultMode os.FileMode) (os.FileMode, error)
 
 // getFullPath returns the full filesystem path for a given storage path
 func (l *LocalBackend) getFullPath(path string) string {
-	// Clean the path and remove leading slash
-	path = filepath.Clean(strings.TrimPrefix(path, "/"))
-
-	// Join with root path
-	return filepath.Join(l.rootPath, path)
+	return normalizePathFS(path, l.rootPath)
 }
 
 // Upload uploads a file to the local filesystem
@@ -111,36 +90,21 @@ func (l *LocalBackend) Upload(ctx context.Context, path string, reader io.Reader
 	dir := filepath.Dir(fullPath)
 	if err := os.MkdirAll(dir, l.dirMode); err != nil {
 		span.RecordError(err)
-		return &StorageError{
-			Op:      "upload",
-			Path:    path,
-			Backend: "local",
-			Err:     fmt.Errorf("failed to create directory: %w", err),
-		}
+		return wrapError("upload", path, "local", fmt.Errorf("failed to create directory: %w", err))
 	}
 
 	// Create the file
 	file, err := os.OpenFile(fullPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, l.fileMode)
 	if err != nil {
 		span.RecordError(err)
-		return &StorageError{
-			Op:      "upload",
-			Path:    path,
-			Backend: "local",
-			Err:     fmt.Errorf("failed to create file: %w", err),
-		}
+		return wrapError("upload", path, "local", fmt.Errorf("failed to create file: %w", err))
 	}
 	defer file.Close()
 
 	// Copy data to file
 	if _, err := io.Copy(file, reader); err != nil {
 		span.RecordError(err)
-		return &StorageError{
-			Op:      "upload",
-			Path:    path,
-			Backend: "local",
-			Err:     fmt.Errorf("failed to write file: %w", err),
-		}
+		return wrapError("upload", path, "local", fmt.Errorf("failed to write file: %w", err))
 	}
 
 	return nil
@@ -162,23 +126,13 @@ func (l *LocalBackend) UploadBytes(ctx context.Context, path string, data []byte
 	dir := filepath.Dir(fullPath)
 	if err := os.MkdirAll(dir, l.dirMode); err != nil {
 		span.RecordError(err)
-		return &StorageError{
-			Op:      "upload bytes",
-			Path:    path,
-			Backend: "local",
-			Err:     fmt.Errorf("failed to create directory: %w", err),
-		}
+		return wrapError("upload bytes", path, "local", fmt.Errorf("failed to create directory: %w", err))
 	}
 
 	// Write the file
 	if err := os.WriteFile(fullPath, data, l.fileMode); err != nil {
 		span.RecordError(err)
-		return &StorageError{
-			Op:      "upload bytes",
-			Path:    path,
-			Backend: "local",
-			Err:     fmt.Errorf("failed to write file: %w", err),
-		}
+		return wrapError("upload bytes", path, "local", fmt.Errorf("failed to write file: %w", err))
 	}
 
 	return nil
@@ -196,19 +150,9 @@ func (l *LocalBackend) Download(ctx context.Context, path string) (io.ReadCloser
 	if err != nil {
 		span.RecordError(err)
 		if os.IsNotExist(err) {
-			return nil, &StorageError{
-				Op:      "download",
-				Path:    path,
-				Backend: "local",
-				Err:     fmt.Errorf("file not found"),
-			}
+			return nil, wrapError("download", path, "local", fmt.Errorf("file not found"))
 		}
-		return nil, &StorageError{
-			Op:      "download",
-			Path:    path,
-			Backend: "local",
-			Err:     fmt.Errorf("failed to open file: %w", err),
-		}
+		return nil, wrapError("download", path, "local", fmt.Errorf("failed to open file: %w", err))
 	}
 
 	return file, nil
@@ -225,19 +169,9 @@ func (l *LocalBackend) Delete(ctx context.Context, path string) error {
 	if err := os.Remove(fullPath); err != nil {
 		span.RecordError(err)
 		if os.IsNotExist(err) {
-			return &StorageError{
-				Op:      "delete",
-				Path:    path,
-				Backend: "local",
-				Err:     fmt.Errorf("file not found"),
-			}
+			return wrapError("delete", path, "local", fmt.Errorf("file not found"))
 		}
-		return &StorageError{
-			Op:      "delete",
-			Path:    path,
-			Backend: "local",
-			Err:     fmt.Errorf("failed to delete file: %w", err),
-		}
+		return wrapError("delete", path, "local", fmt.Errorf("failed to delete file: %w", err))
 	}
 
 	return nil
@@ -257,12 +191,7 @@ func (l *LocalBackend) Exists(ctx context.Context, path string) (bool, error) {
 			return false, nil
 		}
 		span.RecordError(err)
-		return false, &StorageError{
-			Op:      "exists",
-			Path:    path,
-			Backend: "local",
-			Err:     fmt.Errorf("failed to stat file: %w", err),
-		}
+		return false, wrapError("exists", path, "local", fmt.Errorf("failed to stat file: %w", err))
 	}
 
 	return true, nil
@@ -280,19 +209,9 @@ func (l *LocalBackend) GetSize(ctx context.Context, path string) (int64, error) 
 	if err != nil {
 		span.RecordError(err)
 		if os.IsNotExist(err) {
-			return 0, &StorageError{
-				Op:      "get size",
-				Path:    path,
-				Backend: "local",
-				Err:     fmt.Errorf("file not found"),
-			}
+			return 0, wrapError("get size", path, "local", fmt.Errorf("file not found"))
 		}
-		return 0, &StorageError{
-			Op:      "get size",
-			Path:    path,
-			Backend: "local",
-			Err:     fmt.Errorf("failed to stat file: %w", err),
-		}
+		return 0, wrapError("get size", path, "local", fmt.Errorf("failed to stat file: %w", err))
 	}
 
 	return info.Size(), nil
@@ -337,24 +256,14 @@ func (l *LocalBackend) Copy(ctx context.Context, srcPath, dstPath string) error 
 	dstDir := filepath.Dir(dstFullPath)
 	if err := os.MkdirAll(dstDir, l.dirMode); err != nil {
 		span.RecordError(err)
-		return &StorageError{
-			Op:      "copy",
-			Path:    srcPath,
-			Backend: "local",
-			Err:     fmt.Errorf("failed to create destination directory: %w", err),
-		}
+		return wrapError("copy", srcPath, "local", fmt.Errorf("failed to create destination directory: %w", err))
 	}
 
 	// Open source file
 	srcFile, err := os.Open(srcFullPath)
 	if err != nil {
 		span.RecordError(err)
-		return &StorageError{
-			Op:      "copy",
-			Path:    srcPath,
-			Backend: "local",
-			Err:     fmt.Errorf("failed to open source file: %w", err),
-		}
+		return wrapError("copy", srcPath, "local", fmt.Errorf("failed to open source file: %w", err))
 	}
 	defer srcFile.Close()
 
@@ -362,24 +271,14 @@ func (l *LocalBackend) Copy(ctx context.Context, srcPath, dstPath string) error 
 	dstFile, err := os.OpenFile(dstFullPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, l.fileMode)
 	if err != nil {
 		span.RecordError(err)
-		return &StorageError{
-			Op:      "copy",
-			Path:    srcPath,
-			Backend: "local",
-			Err:     fmt.Errorf("failed to create destination file: %w", err),
-		}
+		return wrapError("copy", srcPath, "local", fmt.Errorf("failed to create destination file: %w", err))
 	}
 	defer dstFile.Close()
 
 	// Copy data
 	if _, err := io.Copy(dstFile, srcFile); err != nil {
 		span.RecordError(err)
-		return &StorageError{
-			Op:      "copy",
-			Path:    srcPath,
-			Backend: "local",
-			Err:     fmt.Errorf("failed to copy file data: %w", err),
-		}
+		return wrapError("copy", srcPath, "local", fmt.Errorf("failed to copy file data: %w", err))
 	}
 
 	return nil
@@ -401,12 +300,7 @@ func (l *LocalBackend) Move(ctx context.Context, srcPath, dstPath string) error 
 	dstDir := filepath.Dir(dstFullPath)
 	if err := os.MkdirAll(dstDir, l.dirMode); err != nil {
 		span.RecordError(err)
-		return &StorageError{
-			Op:      "move",
-			Path:    srcPath,
-			Backend: "local",
-			Err:     fmt.Errorf("failed to create destination directory: %w", err),
-		}
+		return wrapError("move", srcPath, "local", fmt.Errorf("failed to create destination directory: %w", err))
 	}
 
 	// Try to rename first (fastest if on same filesystem)
@@ -471,23 +365,13 @@ func (l *LocalBackend) List(ctx context.Context, prefix string, recursive bool) 
 		})
 		if err != nil {
 			span.RecordError(err)
-			return nil, &StorageError{
-				Op:      "list",
-				Path:    prefix,
-				Backend: "local",
-				Err:     fmt.Errorf("failed to walk directory: %w", err),
-			}
+			return nil, wrapError("list", prefix, "local", fmt.Errorf("failed to walk directory: %w", err))
 		}
 	} else {
 		entries, err := os.ReadDir(fullPath)
 		if err != nil {
 			span.RecordError(err)
-			return nil, &StorageError{
-				Op:      "list",
-				Path:    prefix,
-				Backend: "local",
-				Err:     fmt.Errorf("failed to read directory: %w", err),
-			}
+			return nil, wrapError("list", prefix, "local", fmt.Errorf("failed to read directory: %w", err))
 		}
 
 		for _, entry := range entries {
@@ -531,19 +415,9 @@ func (l *LocalBackend) GetMetadata(ctx context.Context, path string) (*FileMetad
 	if err != nil {
 		span.RecordError(err)
 		if os.IsNotExist(err) {
-			return nil, &StorageError{
-				Op:      "get metadata",
-				Path:    path,
-				Backend: "local",
-				Err:     fmt.Errorf("file not found"),
-			}
+			return nil, wrapError("get metadata", path, "local", fmt.Errorf("file not found"))
 		}
-		return nil, &StorageError{
-			Op:      "get metadata",
-			Path:    path,
-			Backend: "local",
-			Err:     fmt.Errorf("failed to stat file: %w", err),
-		}
+		return nil, wrapError("get metadata", path, "local", fmt.Errorf("failed to stat file: %w", err))
 	}
 
 	return &FileMetadata{

@@ -38,11 +38,7 @@ func NewS3Backend(s3Config S3Config) (*S3Backend, error) {
 		)),
 	)
 	if err != nil {
-		return nil, &StorageError{
-			Op:      "create s3 backend",
-			Backend: "s3",
-			Err:     fmt.Errorf("failed to load AWS config: %w", err),
-		}
+		return nil, wrapError("create s3 backend", "", "s3", fmt.Errorf("failed to load AWS config: %w", err))
 	}
 
 	// Create S3 client with custom endpoint if specified
@@ -70,11 +66,7 @@ func NewS3Backend(s3Config S3Config) (*S3Backend, error) {
 	defer cancel()
 
 	if err := backend.testConnection(ctx); err != nil {
-		return nil, &StorageError{
-			Op:      "test s3 connection",
-			Backend: "s3",
-			Err:     err,
-		}
+		return nil, wrapError("test s3 connection", "", "s3", err)
 	}
 
 	return backend, nil
@@ -98,15 +90,7 @@ func (s *S3Backend) testConnection(ctx context.Context) error {
 
 // getObjectKey returns the full object key with path prefix
 func (s *S3Backend) getObjectKey(path string) string {
-	// Remove leading slash
-	path = strings.TrimPrefix(path, "/")
-
-	if s.config.PathPrefix != "" {
-		prefix := strings.TrimSuffix(s.config.PathPrefix, "/")
-		return prefix + "/" + path
-	}
-
-	return path
+	return normalizePath(path, s.config.PathPrefix)
 }
 
 // Upload uploads a file to S3
@@ -382,27 +366,7 @@ func (s *S3Backend) SupportsPresignedURLs() bool {
 // GetPublicURL returns a public URL for accessing the file (if bucket is public)
 func (s *S3Backend) GetPublicURL(ctx context.Context, path string) (string, error) {
 	key := s.getObjectKey(path)
-
-	// Construct public URL
-	var url string
-	if s.config.Endpoint != "" {
-		// Custom endpoint (e.g., MinIO)
-		scheme := "https"
-		if !s.config.UseSSL {
-			scheme = "http"
-		}
-
-		if s.config.ForcePathStyle {
-			url = fmt.Sprintf("%s://%s/%s/%s", scheme, s.config.Endpoint, s.config.Bucket, key)
-		} else {
-			url = fmt.Sprintf("%s://%s.%s/%s", scheme, s.config.Bucket, s.config.Endpoint, key)
-		}
-	} else {
-		// AWS S3
-		url = fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", s.config.Bucket, s.config.Region, key)
-	}
-
-	return url, nil
+	return buildS3PublicURL(s.config.Bucket, s.config.Region, s.config.Endpoint, key, s.config.ForcePathStyle, s.config.UseSSL), nil
 }
 
 // Copy copies a file within S3
