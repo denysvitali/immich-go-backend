@@ -37,6 +37,36 @@ func NewService(config StorageConfig) (*Service, error) {
 	}, nil
 }
 
+// validateUpload checks that filename and contentType are allowed by the
+// current upload configuration. It returns the detected extension and an error
+// if any rule is violated.
+func (s *Service) validateUpload(filename, contentType string) (ext string, err error) {
+	ext = strings.ToLower(filepath.Ext(filename))
+	if !s.isAllowedExtension(ext) {
+		return "", &StorageError{
+			Op:      "upload asset",
+			Path:    filename,
+			Backend: s.config.Backend,
+			Err:     fmt.Errorf("file extension %s is not allowed", ext),
+		}
+	}
+	if contentType == "" {
+		contentType = mime.TypeByExtension(ext)
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+	}
+	if !s.isAllowedMimeType(contentType) {
+		return "", &StorageError{
+			Op:      "upload asset",
+			Path:    filename,
+			Backend: s.config.Backend,
+			Err:     fmt.Errorf("MIME type %s is not allowed", contentType),
+		}
+	}
+	return ext, nil
+}
+
 // UploadAsset uploads an asset file with validation and path generation
 func (s *Service) UploadAsset(ctx context.Context, userID string, filename string, reader io.Reader, size int64) (*AssetUploadResult, error) {
 	ctx, span := tracer.Start(ctx, "storage.UploadAsset",
@@ -57,31 +87,16 @@ func (s *Service) UploadAsset(ctx context.Context, userID string, filename strin
 		}
 	}
 
-	// Validate file extension
-	ext := strings.ToLower(filepath.Ext(filename))
-	if !s.isAllowedExtension(ext) {
-		return nil, &StorageError{
-			Op:      "upload asset",
-			Path:    filename,
-			Backend: s.config.Backend,
-			Err:     fmt.Errorf("file extension %s is not allowed", ext),
-		}
+	// Validate extension and MIME type
+	ext, err := s.validateUpload(filename, "")
+	if err != nil {
+		return nil, err
 	}
 
 	// Detect content type
 	contentType := mime.TypeByExtension(ext)
 	if contentType == "" {
 		contentType = "application/octet-stream"
-	}
-
-	// Validate MIME type
-	if !s.isAllowedMimeType(contentType) {
-		return nil, &StorageError{
-			Op:      "upload asset",
-			Path:    filename,
-			Backend: s.config.Backend,
-			Err:     fmt.Errorf("MIME type %s is not allowed", contentType),
-		}
 	}
 
 	// Generate asset path
@@ -136,25 +151,9 @@ func (s *Service) GetAssetUploadURL(ctx context.Context, userID string, filename
 		}
 	}
 
-	// Validate file extension
-	ext := strings.ToLower(filepath.Ext(filename))
-	if !s.isAllowedExtension(ext) {
-		return nil, &StorageError{
-			Op:      "get asset upload URL",
-			Path:    filename,
-			Backend: s.config.Backend,
-			Err:     fmt.Errorf("file extension %s is not allowed", ext),
-		}
-	}
-
-	// Validate MIME type
-	if !s.isAllowedMimeType(contentType) {
-		return nil, &StorageError{
-			Op:      "get asset upload URL",
-			Path:    filename,
-			Backend: s.config.Backend,
-			Err:     fmt.Errorf("MIME type %s is not allowed", contentType),
-		}
+	// Validate extension and MIME type
+	if _, err := s.validateUpload(filename, contentType); err != nil {
+		return nil, err
 	}
 
 	// Generate asset path

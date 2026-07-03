@@ -26,11 +26,7 @@ type RcloneBackend struct {
 // NewRcloneBackend creates a new rclone storage backend
 func NewRcloneBackend(config RcloneConfig) (*RcloneBackend, error) {
 	if config.Remote == "" {
-		return nil, &StorageError{
-			Op:      "create rclone backend",
-			Backend: "rclone",
-			Err:     fmt.Errorf("remote name is required"),
-		}
+		return nil, wrapError("create rclone backend", "", "rclone", fmt.Errorf("remote name is required"))
 	}
 
 	// Construct full remote path
@@ -51,11 +47,7 @@ func NewRcloneBackend(config RcloneConfig) (*RcloneBackend, error) {
 	defer cancel()
 
 	if err := backend.testConnection(ctx); err != nil {
-		return nil, &StorageError{
-			Op:      "test rclone connection",
-			Backend: "rclone",
-			Err:     err,
-		}
+		return nil, wrapError("test rclone connection", "", "rclone", err)
 	}
 
 	return backend, nil
@@ -110,12 +102,7 @@ func (r *RcloneBackend) Upload(ctx context.Context, path string, reader io.Reade
 	tempFile, err := os.CreateTemp("", "rclone-upload-*")
 	if err != nil {
 		span.RecordError(err)
-		return &StorageError{
-			Op:      "upload",
-			Path:    path,
-			Backend: "rclone",
-			Err:     fmt.Errorf("failed to create temp file: %w", err),
-		}
+		return wrapError("upload", path, "rclone", fmt.Errorf("failed to create temp file: %w", err))
 	}
 	defer os.Remove(tempFile.Name())
 	defer tempFile.Close()
@@ -123,12 +110,7 @@ func (r *RcloneBackend) Upload(ctx context.Context, path string, reader io.Reade
 	// Copy data to temp file
 	if _, err := io.Copy(tempFile, reader); err != nil {
 		span.RecordError(err)
-		return &StorageError{
-			Op:      "upload",
-			Path:    path,
-			Backend: "rclone",
-			Err:     fmt.Errorf("failed to write to temp file: %w", err),
-		}
+		return wrapError("upload", path, "rclone", fmt.Errorf("failed to write to temp file: %w", err))
 	}
 
 	// Close temp file before rclone uses it
@@ -138,12 +120,7 @@ func (r *RcloneBackend) Upload(ctx context.Context, path string, reader io.Reade
 	cmd := r.buildCommand(ctx, "copyto", tempFile.Name(), remotePath)
 	if err := cmd.Run(); err != nil {
 		span.RecordError(err)
-		return &StorageError{
-			Op:      "upload",
-			Path:    path,
-			Backend: "rclone",
-			Err:     fmt.Errorf("rclone copyto failed: %w", err),
-		}
+		return wrapError("upload", path, "rclone", fmt.Errorf("rclone copyto failed: %w", err))
 	}
 
 	return nil
@@ -165,12 +142,7 @@ func (r *RcloneBackend) UploadBytes(ctx context.Context, path string, data []byt
 	tmpFile, err := os.CreateTemp("", "rclone-upload-*")
 	if err != nil {
 		span.RecordError(err)
-		return &StorageError{
-			Op:      "upload bytes",
-			Path:    path,
-			Backend: "rclone",
-			Err:     fmt.Errorf("failed to create temp file: %w", err),
-		}
+		return wrapError("upload bytes", path, "rclone", fmt.Errorf("failed to create temp file: %w", err))
 	}
 	defer os.Remove(tmpFile.Name())
 	defer tmpFile.Close()
@@ -178,12 +150,7 @@ func (r *RcloneBackend) UploadBytes(ctx context.Context, path string, data []byt
 	// Write data to temp file
 	if _, err := tmpFile.Write(data); err != nil {
 		span.RecordError(err)
-		return &StorageError{
-			Op:      "upload bytes",
-			Path:    path,
-			Backend: "rclone",
-			Err:     fmt.Errorf("failed to write to temp file: %w", err),
-		}
+		return wrapError("upload bytes", path, "rclone", fmt.Errorf("failed to write to temp file: %w", err))
 	}
 
 	// Close the file before rclone uses it
@@ -193,12 +160,7 @@ func (r *RcloneBackend) UploadBytes(ctx context.Context, path string, data []byt
 	cmd := r.buildCommand(ctx, "copyto", tmpFile.Name(), remotePath)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		span.RecordError(err)
-		return &StorageError{
-			Op:      "upload bytes",
-			Path:    path,
-			Backend: "rclone",
-			Err:     fmt.Errorf("rclone copyto failed: %s: %w", string(output), err),
-		}
+		return wrapError("upload bytes", path, "rclone", fmt.Errorf("rclone copyto failed: %s: %w", string(output), err))
 	}
 
 	return nil
@@ -218,22 +180,12 @@ func (r *RcloneBackend) Download(ctx context.Context, path string) (io.ReadClose
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		span.RecordError(err)
-		return nil, &StorageError{
-			Op:      "download",
-			Path:    path,
-			Backend: "rclone",
-			Err:     fmt.Errorf("failed to create stdout pipe: %w", err),
-		}
+		return nil, wrapError("download", path, "rclone", fmt.Errorf("failed to create stdout pipe: %w", err))
 	}
 
 	if err := cmd.Start(); err != nil {
 		span.RecordError(err)
-		return nil, &StorageError{
-			Op:      "download",
-			Path:    path,
-			Backend: "rclone",
-			Err:     fmt.Errorf("rclone cat failed to start: %w", err),
-		}
+		return nil, wrapError("download", path, "rclone", fmt.Errorf("rclone cat failed to start: %w", err))
 	}
 
 	// Return a ReadCloser that also waits for the command to finish
@@ -270,12 +222,7 @@ func (r *RcloneBackend) Delete(ctx context.Context, path string) error {
 	cmd := r.buildCommand(ctx, "deletefile", remotePath)
 	if err := cmd.Run(); err != nil {
 		span.RecordError(err)
-		return &StorageError{
-			Op:      "delete",
-			Path:    path,
-			Backend: "rclone",
-			Err:     fmt.Errorf("rclone deletefile failed: %w", err),
-		}
+		return wrapError("delete", path, "rclone", fmt.Errorf("rclone deletefile failed: %w", err))
 	}
 
 	return nil
@@ -352,12 +299,7 @@ func (r *RcloneBackend) Copy(ctx context.Context, srcPath, dstPath string) error
 	cmd := r.buildCommand(ctx, "copyto", srcRemotePath, dstRemotePath)
 	if err := cmd.Run(); err != nil {
 		span.RecordError(err)
-		return &StorageError{
-			Op:      "copy",
-			Path:    srcPath,
-			Backend: "rclone",
-			Err:     fmt.Errorf("rclone copyto failed: %w", err),
-		}
+		return wrapError("copy", srcPath, "rclone", fmt.Errorf("rclone copyto failed: %w", err))
 	}
 
 	return nil
@@ -378,12 +320,7 @@ func (r *RcloneBackend) Move(ctx context.Context, srcPath, dstPath string) error
 	cmd := r.buildCommand(ctx, "moveto", srcRemotePath, dstRemotePath)
 	if err := cmd.Run(); err != nil {
 		span.RecordError(err)
-		return &StorageError{
-			Op:      "move",
-			Path:    srcPath,
-			Backend: "rclone",
-			Err:     fmt.Errorf("rclone moveto failed: %w", err),
-		}
+		return wrapError("move", srcPath, "rclone", fmt.Errorf("rclone moveto failed: %w", err))
 	}
 
 	return nil
@@ -410,12 +347,7 @@ func (r *RcloneBackend) List(ctx context.Context, prefix string, recursive bool)
 	output, err := cmd.Output()
 	if err != nil {
 		span.RecordError(err)
-		return nil, &StorageError{
-			Op:      "list",
-			Path:    prefix,
-			Backend: "rclone",
-			Err:     fmt.Errorf("rclone lsjson failed: %w", err),
-		}
+		return nil, wrapError("list", prefix, "rclone", fmt.Errorf("rclone lsjson failed: %w", err))
 	}
 
 	var rcloneFiles []struct {
@@ -429,12 +361,7 @@ func (r *RcloneBackend) List(ctx context.Context, prefix string, recursive bool)
 
 	if err := json.Unmarshal(output, &rcloneFiles); err != nil {
 		span.RecordError(err)
-		return nil, &StorageError{
-			Op:      "list",
-			Path:    prefix,
-			Backend: "rclone",
-			Err:     fmt.Errorf("failed to parse rclone output: %w", err),
-		}
+		return nil, wrapError("list", prefix, "rclone", fmt.Errorf("failed to parse rclone output: %w", err))
 	}
 
 	files := make([]FileInfo, len(rcloneFiles))
@@ -463,12 +390,7 @@ func (r *RcloneBackend) GetMetadata(ctx context.Context, path string) (*FileMeta
 	output, err := cmd.Output()
 	if err != nil {
 		span.RecordError(err)
-		return nil, &StorageError{
-			Op:      "get metadata",
-			Path:    path,
-			Backend: "rclone",
-			Err:     fmt.Errorf("rclone lsjson failed: %w", err),
-		}
+		return nil, wrapError("get metadata", path, "rclone", fmt.Errorf("rclone lsjson failed: %w", err))
 	}
 
 	var rcloneFiles []struct {
@@ -481,21 +403,11 @@ func (r *RcloneBackend) GetMetadata(ctx context.Context, path string) (*FileMeta
 
 	if err := json.Unmarshal(output, &rcloneFiles); err != nil {
 		span.RecordError(err)
-		return nil, &StorageError{
-			Op:      "get metadata",
-			Path:    path,
-			Backend: "rclone",
-			Err:     fmt.Errorf("failed to parse rclone output: %w", err),
-		}
+		return nil, wrapError("get metadata", path, "rclone", fmt.Errorf("failed to parse rclone output: %w", err))
 	}
 
 	if len(rcloneFiles) == 0 {
-		return nil, &StorageError{
-			Op:      "get metadata",
-			Path:    path,
-			Backend: "rclone",
-			Err:     fmt.Errorf("file not found"),
-		}
+		return nil, wrapError("get metadata", path, "rclone", fmt.Errorf("file not found"))
 	}
 
 	f := rcloneFiles[0]
@@ -526,12 +438,9 @@ func (r *RcloneBackend) Close() error {
 
 // getRemotePath constructs the full remote path
 func (r *RcloneBackend) getRemotePath(path string) string {
-	// Remove leading slash if present
 	path = strings.TrimPrefix(path, "/")
-
 	if path == "" {
 		return r.remote
 	}
-
 	return r.remote + "/" + path
 }
