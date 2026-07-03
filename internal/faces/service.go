@@ -10,7 +10,6 @@ import (
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/denysvitali/immich-go-backend/internal/telemetry"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
@@ -91,7 +90,7 @@ func (s *Service) GetFaces(ctx context.Context, req GetFacesRequest) (*GetFacesR
 		if err != nil {
 			return nil, fmt.Errorf("invalid asset ID: %w", err)
 		}
-		faces, err = s.db.GetFacesByAsset(ctx, pgtype.UUID{Bytes: assetID, Valid: true})
+		faces, err = s.db.GetFacesByAsset(ctx, pgutil.UUIDToPgtype(assetID))
 		if err != nil {
 			return nil, fmt.Errorf("failed to get faces for asset: %w", err)
 		}
@@ -102,7 +101,7 @@ func (s *Service) GetFaces(ctx context.Context, req GetFacesRequest) (*GetFacesR
 		if err != nil {
 			return nil, fmt.Errorf("invalid person ID: %w", err)
 		}
-		faces, err = s.db.GetFacesByPerson(ctx, pgtype.UUID{Bytes: personID, Valid: true})
+		faces, err = s.db.GetFacesByPerson(ctx, pgutil.UUIDToPgtype(personID))
 		if err != nil {
 			return nil, fmt.Errorf("failed to get faces for person: %w", err)
 		}
@@ -144,13 +143,13 @@ func (s *Service) CreateFace(ctx context.Context, req CreateFaceRequest) (*FaceR
 	if err != nil {
 		return nil, fmt.Errorf("invalid asset ID: %w", err)
 	}
-	assetUUID := pgtype.UUID{Bytes: assetID, Valid: true}
+	assetUUID := pgutil.UUIDToPgtype(assetID)
 
 	personID, err := uuid.Parse(req.PersonID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid person ID: %w", err)
 	}
-	personUUID := pgtype.UUID{Bytes: personID, Valid: true}
+	personUUID := pgutil.UUIDToPgtype(personID)
 
 	// Get image dimensions from the bounding box (if not provided separately)
 	// For now, we'll use the bounding box max values as approximations
@@ -179,9 +178,9 @@ func (s *Service) CreateFace(ctx context.Context, req CreateFaceRequest) (*FaceR
 	imgWidth := fmt.Sprintf("%d", face.ImageWidth)
 	imgHeight := fmt.Sprintf("%d", face.ImageHeight)
 	return &FaceResponse{
-		ID:       uuid.UUID(face.ID.Bytes).String(),
-		AssetID:  uuid.UUID(face.AssetId.Bytes).String(),
-		PersonID: uuid.UUID(face.PersonId.Bytes).String(),
+		ID:       pgutil.UUIDToString(face.ID),
+		AssetID:  pgutil.UUIDToString(face.AssetId),
+		PersonID: pgutil.UUIDToString(face.PersonId),
 		BoundingBox: BoundingBox{
 			X1: face.BoundingBoxX1,
 			Y1: face.BoundingBoxY1,
@@ -212,7 +211,7 @@ func (s *Service) DeleteFace(ctx context.Context, faceID string) error {
 	if err != nil {
 		return fmt.Errorf("invalid face ID: %w", err)
 	}
-	faceUUID := pgtype.UUID{Bytes: fID, Valid: true}
+	faceUUID := pgutil.UUIDToPgtype(fID)
 
 	// Delete the face record
 	// Note: In production, you would want to verify ownership first
@@ -250,14 +249,14 @@ func (s *Service) ReassignFacesById(ctx context.Context, faceID, personID string
 	if err != nil {
 		return nil, fmt.Errorf("invalid face ID: %w", err)
 	}
-	faceUUID := pgtype.UUID{Bytes: fID, Valid: true}
+	faceUUID := pgutil.UUIDToPgtype(fID)
 
 	// Parse person ID
 	pID, err := uuid.Parse(personID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid person ID: %w", err)
 	}
-	personUUID := pgtype.UUID{Bytes: pID, Valid: true}
+	personUUID := pgutil.UUIDToPgtype(pID)
 
 	// Update the face to point to the new person
 	// Note: In production, you would want to verify ownership first
