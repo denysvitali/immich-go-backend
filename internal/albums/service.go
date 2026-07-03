@@ -3,7 +3,6 @@ package albums
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/denysvitali/immich-go-backend/internal/db/pgutil"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
@@ -39,7 +38,7 @@ func (s *Service) CreateAlbum(ctx context.Context, req *CreateAlbumRequest) (*Al
 	defer span.End()
 
 	// Convert owner ID to pgtype.UUID
-	ownerUUID, err := stringToUUID(req.OwnerID.String())
+	ownerUUID, err := pgutil.StringToUUID(req.OwnerID.String())
 	if err != nil {
 		span.RecordError(err)
 		return nil, fmt.Errorf("invalid owner ID: %w", err)
@@ -60,7 +59,7 @@ func (s *Service) CreateAlbum(ctx context.Context, req *CreateAlbumRequest) (*Al
 	albumInfo := s.convertToAlbumInfo(album, nil, nil)
 
 	span.SetAttributes(
-		attribute.String("album_id", uuidToString(album.ID)),
+		attribute.String("album_id", pgutil.UUIDToString(album.ID)),
 	)
 
 	return albumInfo, nil
@@ -77,7 +76,7 @@ func (s *Service) GetAlbum(ctx context.Context, albumID uuid.UUID, userID uuid.U
 	defer span.End()
 
 	// Convert album ID to pgtype.UUID
-	albumUUID, err := stringToUUID(albumID.String())
+	albumUUID, err := pgutil.StringToUUID(albumID.String())
 	if err != nil {
 		span.RecordError(err)
 		return nil, fmt.Errorf("invalid album ID: %w", err)
@@ -125,7 +124,7 @@ func (s *Service) GetUserAlbums(ctx context.Context, userID uuid.UUID) ([]*Album
 	defer span.End()
 
 	// Convert user ID to pgtype.UUID
-	userUUID, err := stringToUUID(userID.String())
+	userUUID, err := pgutil.StringToUUID(userID.String())
 	if err != nil {
 		span.RecordError(err)
 		return nil, fmt.Errorf("invalid user ID: %w", err)
@@ -163,7 +162,7 @@ func (s *Service) UpdateAlbum(ctx context.Context, albumID uuid.UUID, userID uui
 	defer span.End()
 
 	// Convert album ID to pgtype.UUID
-	albumUUID, err := stringToUUID(albumID.String())
+	albumUUID, err := pgutil.StringToUUID(albumID.String())
 	if err != nil {
 		span.RecordError(err)
 		return nil, fmt.Errorf("invalid album ID: %w", err)
@@ -177,7 +176,7 @@ func (s *Service) UpdateAlbum(ctx context.Context, albumID uuid.UUID, userID uui
 	}
 
 	// Check if user owns this album
-	if uuidToString(album.OwnerId) != userID.String() {
+	if pgutil.UUIDToString(album.OwnerId) != userID.String() {
 		return nil, fmt.Errorf("access denied: user does not own this album")
 	}
 
@@ -190,7 +189,7 @@ func (s *Service) UpdateAlbum(ctx context.Context, albumID uuid.UUID, userID uui
 
 	// Set thumbnail if provided
 	if req.ThumbnailAssetID != nil {
-		thumbnailUUID, err := stringToUUID(req.ThumbnailAssetID.String())
+		thumbnailUUID, err := pgutil.StringToUUID(req.ThumbnailAssetID.String())
 		if err != nil {
 			span.RecordError(err)
 			return nil, fmt.Errorf("invalid thumbnail asset ID: %w", err)
@@ -222,7 +221,7 @@ func (s *Service) DeleteAlbum(ctx context.Context, albumID uuid.UUID, userID uui
 	defer span.End()
 
 	// Convert album ID to pgtype.UUID
-	albumUUID, err := stringToUUID(albumID.String())
+	albumUUID, err := pgutil.StringToUUID(albumID.String())
 	if err != nil {
 		span.RecordError(err)
 		return fmt.Errorf("invalid album ID: %w", err)
@@ -236,7 +235,7 @@ func (s *Service) DeleteAlbum(ctx context.Context, albumID uuid.UUID, userID uui
 	}
 
 	// Check if user owns this album
-	if uuidToString(album.OwnerId) != userID.String() {
+	if pgutil.UUIDToString(album.OwnerId) != userID.String() {
 		return fmt.Errorf("access denied: user does not own this album")
 	}
 
@@ -262,13 +261,13 @@ func (s *Service) AddAssetToAlbum(ctx context.Context, albumID uuid.UUID, assetI
 	defer span.End()
 
 	// Convert IDs to pgtype.UUID
-	albumUUID, err := stringToUUID(albumID.String())
+	albumUUID, err := pgutil.StringToUUID(albumID.String())
 	if err != nil {
 		span.RecordError(err)
 		return fmt.Errorf("invalid album ID: %w", err)
 	}
 
-	assetUUID, err := stringToUUID(assetID.String())
+	assetUUID, err := pgutil.StringToUUID(assetID.String())
 	if err != nil {
 		span.RecordError(err)
 		return fmt.Errorf("invalid asset ID: %w", err)
@@ -311,13 +310,13 @@ func (s *Service) RemoveAssetFromAlbum(ctx context.Context, albumID uuid.UUID, a
 	defer span.End()
 
 	// Convert IDs to pgtype.UUID
-	albumUUID, err := stringToUUID(albumID.String())
+	albumUUID, err := pgutil.StringToUUID(albumID.String())
 	if err != nil {
 		span.RecordError(err)
 		return fmt.Errorf("invalid album ID: %w", err)
 	}
 
-	assetUUID, err := stringToUUID(assetID.String())
+	assetUUID, err := pgutil.StringToUUID(assetID.String())
 	if err != nil {
 		span.RecordError(err)
 		return fmt.Errorf("invalid asset ID: %w", err)
@@ -361,13 +360,13 @@ func (s *Service) ShareAlbum(ctx context.Context, albumID uuid.UUID, targetUserI
 	defer span.End()
 
 	// Convert IDs to pgtype.UUID
-	albumUUID, err := stringToUUID(albumID.String())
+	albumUUID, err := pgutil.StringToUUID(albumID.String())
 	if err != nil {
 		span.RecordError(err)
 		return fmt.Errorf("invalid album ID: %w", err)
 	}
 
-	targetUserUUID, err := stringToUUID(targetUserID.String())
+	targetUserUUID, err := pgutil.StringToUUID(targetUserID.String())
 	if err != nil {
 		span.RecordError(err)
 		return fmt.Errorf("invalid target user ID: %w", err)
@@ -381,7 +380,7 @@ func (s *Service) ShareAlbum(ctx context.Context, albumID uuid.UUID, targetUserI
 	}
 
 	// Check if user owns this album
-	if uuidToString(album.OwnerId) != ownerID.String() {
+	if pgutil.UUIDToString(album.OwnerId) != ownerID.String() {
 		return fmt.Errorf("access denied: user does not own this album")
 	}
 
@@ -411,13 +410,13 @@ func (s *Service) UnshareAlbum(ctx context.Context, albumID uuid.UUID, targetUse
 	defer span.End()
 
 	// Convert IDs to pgtype.UUID
-	albumUUID, err := stringToUUID(albumID.String())
+	albumUUID, err := pgutil.StringToUUID(albumID.String())
 	if err != nil {
 		span.RecordError(err)
 		return fmt.Errorf("invalid album ID: %w", err)
 	}
 
-	targetUserUUID, err := stringToUUID(targetUserID.String())
+	targetUserUUID, err := pgutil.StringToUUID(targetUserID.String())
 	if err != nil {
 		span.RecordError(err)
 		return fmt.Errorf("invalid target user ID: %w", err)
@@ -431,7 +430,7 @@ func (s *Service) UnshareAlbum(ctx context.Context, albumID uuid.UUID, targetUse
 	}
 
 	// Check if user owns this album
-	if uuidToString(album.OwnerId) != ownerID.String() {
+	if pgutil.UUIDToString(album.OwnerId) != ownerID.String() {
 		return fmt.Errorf("access denied: user does not own this album")
 	}
 
@@ -453,12 +452,12 @@ func (s *Service) UnshareAlbum(ctx context.Context, albumID uuid.UUID, targetUse
 // userHasAlbumAccess checks if a user has access to an album
 func (s *Service) userHasAlbumAccess(ctx context.Context, userID uuid.UUID, album sqlc.Album) bool {
 	// Owner always has access
-	if uuidToString(album.OwnerId) == userID.String() {
+	if pgutil.UUIDToString(album.OwnerId) == userID.String() {
 		return true
 	}
 
 	// Check if user is in the shared users list
-	albumUUID, err := stringToUUID(uuidToString(album.ID))
+	albumUUID, err := pgutil.StringToUUID(pgutil.UUIDToString(album.ID))
 	if err != nil {
 		return false
 	}
@@ -469,7 +468,7 @@ func (s *Service) userHasAlbumAccess(ctx context.Context, userID uuid.UUID, albu
 	}
 
 	for _, sharedUser := range sharedUsers {
-		if uuidToString(sharedUser.ID) == userID.String() {
+		if pgutil.UUIDToString(sharedUser.ID) == userID.String() {
 			return true
 		}
 	}
@@ -480,18 +479,18 @@ func (s *Service) userHasAlbumAccess(ctx context.Context, userID uuid.UUID, albu
 // convertToAlbumInfo converts a database album to AlbumInfo
 func (s *Service) convertToAlbumInfo(album sqlc.Album, assets []sqlc.Asset, sharedUsers []sqlc.GetAlbumSharedUsersRow) *AlbumInfo {
 	info := &AlbumInfo{
-		ID:          uuid.MustParse(uuidToString(album.ID)),
-		OwnerID:     uuid.MustParse(uuidToString(album.OwnerId)),
+		ID:          uuid.MustParse(pgutil.UUIDToString(album.ID)),
+		OwnerID:     uuid.MustParse(pgutil.UUIDToString(album.OwnerId)),
 		Name:        album.AlbumName,
 		Description: album.Description,
-		CreatedAt:   timestamptzToTime(album.CreatedAt),
-		UpdatedAt:   timestamptzToTime(album.UpdatedAt),
+		CreatedAt:   pgutil.TimestamptzToTime(album.CreatedAt),
+		UpdatedAt:   pgutil.TimestamptzToTime(album.UpdatedAt),
 		AssetCount:  len(assets),
 	}
 
 	// Set thumbnail if available
 	if album.AlbumThumbnailAssetId.Valid {
-		thumbnailID := uuid.MustParse(uuidToString(album.AlbumThumbnailAssetId))
+		thumbnailID := uuid.MustParse(pgutil.UUIDToString(album.AlbumThumbnailAssetId))
 		info.ThumbnailAssetID = &thumbnailID
 	}
 
@@ -499,7 +498,7 @@ func (s *Service) convertToAlbumInfo(album sqlc.Album, assets []sqlc.Asset, shar
 	if assets != nil {
 		info.Assets = make([]uuid.UUID, len(assets))
 		for i, asset := range assets {
-			info.Assets[i] = uuid.MustParse(uuidToString(asset.ID))
+			info.Assets[i] = uuid.MustParse(pgutil.UUIDToString(asset.ID))
 		}
 	}
 
@@ -508,24 +507,11 @@ func (s *Service) convertToAlbumInfo(album sqlc.Album, assets []sqlc.Asset, shar
 		info.SharedUsers = make([]SharedUser, len(sharedUsers))
 		for i, sharedUser := range sharedUsers {
 			info.SharedUsers[i] = SharedUser{
-				UserID: uuid.MustParse(uuidToString(sharedUser.ID)),
+				UserID: uuid.MustParse(pgutil.UUIDToString(sharedUser.ID)),
 				Role:   sharedUser.Role,
 			}
 		}
 	}
 
 	return info
-}
-
-// Helper functions for type conversion (same as in assets service)
-func stringToUUID(s string) (pgtype.UUID, error) {
-	return pgutil.StringToUUID(s)
-}
-
-func uuidToString(u pgtype.UUID) string {
-	return pgutil.UUIDToString(u)
-}
-
-func timestamptzToTime(ts pgtype.Timestamptz) time.Time {
-	return pgutil.TimestamptzToTime(ts)
 }
