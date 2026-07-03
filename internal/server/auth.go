@@ -23,10 +23,10 @@ func (s *Server) Login(ctx context.Context, req *immichv1.LoginRequest) (*immich
 
 	loginResponse, err := s.authService.Login(ctx, *loginRequest)
 	if err != nil {
-		if authErr, ok := err.(*auth.AuthError); ok && authErr.Type == auth.ErrRateLimited {
-			return nil, status.Error(codes.ResourceExhausted, "too many failed login attempts")
+		if grpcErr, ok := publicAuthError(ctx, err, codes.OK); ok {
+			return nil, grpcErr
 		}
-		return nil, status.Errorf(codes.Unauthenticated, "login failed: %v", err)
+		return nil, SanitizedInternal(ctx, "login failed", err)
 	}
 
 	// Set HTTP headers for web compatibility
@@ -92,23 +92,8 @@ func (s *Server) AdminSignUp(ctx context.Context, req *immichv1.AdminSignUpReque
 	// Register the first setup user as admin.
 	response, err := s.authService.AdminSignUp(ctx, registerRequest)
 	if err != nil {
-		// Surface validation failures as proper gRPC codes instead of
-		// collapsing every error into INTERNAL — the Immich web client
-		// shows the gRPC message to the user, so "admin registration
-		// failed" with no detail looks identical to a real server bug.
-		// ErrInvalidPassword / ErrUserExists / ErrRegistrationDisabled
-		// are caller-side problems (4xx); the rest are 5xx.
-		if authErr, ok := err.(*auth.AuthError); ok {
-			switch authErr.Type {
-			case auth.ErrInvalidPassword:
-				// Underlying validatePassword message is safe to surface
-				// ("password must be at least N characters long", ...).
-				return nil, status.Error(codes.InvalidArgument, authErr.Err.Error())
-			case auth.ErrUserExists:
-				return nil, status.Error(codes.AlreadyExists, "user with this email already exists")
-			case auth.ErrRegistrationDisabled:
-				return nil, status.Error(codes.FailedPrecondition, "user registration is disabled")
-			}
+		if grpcErr, ok := publicAuthError(ctx, err, codes.InvalidArgument); ok {
+			return nil, grpcErr
 		}
 		return nil, SanitizedInternal(ctx, "admin registration failed", err)
 	}
@@ -159,8 +144,8 @@ func (s *Server) ChangePassword(ctx context.Context, req *immichv1.ChangePasswor
 		NewPassword:     req.NewPassword,
 	})
 	if err != nil {
-		if authErr, ok := err.(*auth.AuthError); ok && authErr.Type == auth.ErrInvalidCredentials {
-			return nil, status.Errorf(codes.InvalidArgument, "current password is incorrect")
+		if grpcErr, ok := publicAuthError(ctx, err, codes.InvalidArgument); ok {
+			return nil, grpcErr
 		}
 		return nil, SanitizedInternal(ctx, "failed to change password", err)
 	}
@@ -215,6 +200,9 @@ func (s *Server) SetupPinCode(ctx context.Context, req *immichv1.PinCodeSetupReq
 
 	err = s.authService.SetupPinCode(ctx, userID.String(), req.PinCode)
 	if err != nil {
+		if grpcErr, ok := publicAuthError(ctx, err, codes.InvalidArgument); ok {
+			return nil, grpcErr
+		}
 		return nil, SanitizedInternal(ctx, "failed to setup PIN code", err)
 	}
 
@@ -230,8 +218,8 @@ func (s *Server) ChangePinCode(ctx context.Context, req *immichv1.PinCodeChangeR
 
 	err = s.authService.ChangePinCode(ctx, userID.String(), req.CurrentPinCode, req.NewPinCode)
 	if err != nil {
-		if authErr, ok := err.(*auth.AuthError); ok && authErr.Type == auth.ErrInvalidCredentials {
-			return nil, status.Errorf(codes.InvalidArgument, "current PIN code is incorrect")
+		if grpcErr, ok := publicAuthError(ctx, err, codes.InvalidArgument); ok {
+			return nil, grpcErr
 		}
 		return nil, SanitizedInternal(ctx, "failed to change PIN code", err)
 	}
@@ -248,8 +236,8 @@ func (s *Server) ResetPinCode(ctx context.Context, req *immichv1.PinCodeResetReq
 
 	err = s.authService.ResetPinCode(ctx, userID.String(), req.Password)
 	if err != nil {
-		if authErr, ok := err.(*auth.AuthError); ok && authErr.Type == auth.ErrInvalidCredentials {
-			return nil, status.Errorf(codes.InvalidArgument, "password is incorrect")
+		if grpcErr, ok := publicAuthError(ctx, err, codes.InvalidArgument); ok {
+			return nil, grpcErr
 		}
 		return nil, SanitizedInternal(ctx, "failed to reset PIN code", err)
 	}
@@ -271,13 +259,35 @@ func (s *Server) UnlockSession(ctx context.Context, req *immichv1.SessionUnlockR
 
 	err = s.authService.UnlockSession(ctx, userID.String(), sessionID, req.PinCode)
 	if err != nil {
-		if authErr, ok := err.(*auth.AuthError); ok && authErr.Type == auth.ErrInvalidCredentials {
-			return nil, status.Errorf(codes.InvalidArgument, "PIN code is incorrect")
+		if grpcErr, ok := publicAuthError(ctx, err, codes.InvalidArgument); ok {
+			return nil, grpcErr
 		}
 		return nil, SanitizedInternal(ctx, "failed to unlock session", err)
 	}
 
 	return &emptypb.Empty{}, nil
+}
+
+func publicAuthError(ctx context.Context, err error, invalidCredentialsCode codes.Code) (error, bool) {
+	authErr, ok := auth.AsAuthError(err)
+	if !ok {
+		return nil, false
+	}
+
+	code := auth.MapAuthErrorToGRPC(err)
+	if authErr.Type == auth.ErrInvalidCredentials && invalidCredentialsCode != codes.OK {
+		code = invalidCredentialsCode
+	}
+	if code == codes.Internal {
+		return nil, false
+	}
+
+	message := authErr.Message
+	if authErr.Type == auth.ErrInvalidPassword && authErr.Err != nil {
+		message = authErr.Err.Error()
+	}
+
+	return PublicError(ctx, code, message), true
 }
 
 // LockSession locks the session to revoke elevated access
@@ -294,6 +304,9 @@ func (s *Server) LockSession(ctx context.Context, req *emptypb.Empty) (*emptypb.
 
 	err = s.authService.LockSession(ctx, sessionID)
 	if err != nil {
+		if grpcErr, ok := publicAuthError(ctx, err, codes.InvalidArgument); ok {
+			return nil, grpcErr
+		}
 		return nil, SanitizedInternal(ctx, "failed to lock session", err)
 	}
 

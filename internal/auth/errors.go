@@ -1,6 +1,48 @@
 package auth
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+
+	"google.golang.org/grpc/codes"
+)
+
+// AsAuthError returns the AuthError inside err, including wrapped errors.
+func AsAuthError(err error) (*AuthError, bool) {
+	var authErr *AuthError
+	if errors.As(err, &authErr) {
+		return authErr, true
+	}
+	return nil, false
+}
+
+// MapAuthErrorToGRPC maps an *AuthError to a gRPC codes.Code.
+// Non-AuthError values and unrecognised types fall back to codes.Internal.
+func MapAuthErrorToGRPC(err error) codes.Code {
+	authErr, ok := AsAuthError(err)
+	if !ok {
+		return codes.Internal
+	}
+
+	switch authErr.Type {
+	case ErrInvalidCredentials, ErrInvalidToken, ErrTokenExpired, ErrUnauthorized:
+		return codes.Unauthenticated
+	case ErrInvalidPassword:
+		return codes.InvalidArgument
+	case ErrInsufficientPermissions:
+		return codes.PermissionDenied
+	case ErrRateLimited:
+		return codes.ResourceExhausted
+	case ErrUserNotFound, ErrUserDeleted:
+		return codes.NotFound
+	case ErrUserExists:
+		return codes.AlreadyExists
+	case ErrPinCodeExists, ErrNoPinCode, ErrRegistrationDisabled:
+		return codes.FailedPrecondition
+	default:
+		return codes.Internal
+	}
+}
 
 // AuthErrorType represents the type of authentication error
 type AuthErrorType string
@@ -64,13 +106,13 @@ func (e *AuthError) Unwrap() error {
 
 // IsAuthError checks if an error is an AuthError
 func IsAuthError(err error) bool {
-	_, ok := err.(*AuthError)
+	_, ok := AsAuthError(err)
 	return ok
 }
 
 // GetAuthErrorType returns the type of an AuthError
 func GetAuthErrorType(err error) AuthErrorType {
-	if authErr, ok := err.(*AuthError); ok {
+	if authErr, ok := AsAuthError(err); ok {
 		return authErr.Type
 	}
 	return ""
