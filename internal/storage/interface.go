@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"io"
 	"time"
 )
@@ -216,4 +217,10 @@ var (
 	ErrPermissionDenied    = &StorageError{Op: "permission denied"}
 	ErrQuotaExceeded       = &StorageError{Op: "quota exceeded"}
 	ErrBackendNotSupported = &StorageError{Op: "backend not supported"}
+)
+
+// Sentinel errors for unsupported operations
+var (
+	ErrPresignedURLsNotSupported = &StorageError{Op: "presigned URL", Err: errors.New("presigned URLs not supported by backend")}
+	ErrPublicURLNotSupported     = &StorageError{Op: "public URL", Err: errors.New("public URLs not supported by backend")}
 )

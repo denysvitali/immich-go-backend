@@ -190,7 +190,7 @@ func (r *RcloneBackend) UploadBytes(ctx context.Context, path string, data []byt
 	tmpFile.Close()
 
 	// Use rclone copyto to upload the file
-	cmd := exec.CommandContext(ctx, "rclone", "copyto", tmpFile.Name(), remotePath) //nolint:gosec // Path is sanitized by getRemotePath
+	cmd := r.buildCommand(ctx, "copyto", tmpFile.Name(), remotePath)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		span.RecordError(err)
 		return &StorageError{
@@ -317,23 +317,13 @@ func (r *RcloneBackend) GetSize(ctx context.Context, path string) (int64, error)
 // GetPresignedUploadURL is not supported by rclone
 func (r *RcloneBackend) GetPresignedUploadURL(ctx context.Context, path string, contentType string, expiry time.Duration) (*PresignedURL, error) {
 	_ = ctx // Mark as intentionally unused
-	return nil, &StorageError{
-		Op:      "get presigned upload URL",
-		Path:    path,
-		Backend: "rclone",
-		Err:     fmt.Errorf("presigned URLs not supported by rclone backend"),
-	}
+	return nil, fmt.Errorf("%w", &StorageError{Op: "get presigned upload URL", Path: path, Backend: "rclone", Err: ErrPresignedURLsNotSupported})
 }
 
 // GetPresignedDownloadURL is not supported by rclone
 func (r *RcloneBackend) GetPresignedDownloadURL(ctx context.Context, path string, expiry time.Duration) (*PresignedURL, error) {
 	_ = ctx // Mark as intentionally unused
-	return nil, &StorageError{
-		Op:      "get presigned download URL",
-		Path:    path,
-		Backend: "rclone",
-		Err:     fmt.Errorf("presigned URLs not supported by rclone backend"),
-	}
+	return nil, fmt.Errorf("%w", &StorageError{Op: "get presigned download URL", Path: path, Backend: "rclone", Err: ErrPresignedURLsNotSupported})
 }
 
 // SupportsPresignedURLs returns false for rclone
@@ -344,12 +334,7 @@ func (r *RcloneBackend) SupportsPresignedURLs() bool {
 // GetPublicURL is not supported by rclone
 func (r *RcloneBackend) GetPublicURL(ctx context.Context, path string) (string, error) {
 	_ = ctx // Mark as intentionally unused
-	return "", &StorageError{
-		Op:      "get public URL",
-		Path:    path,
-		Backend: "rclone",
-		Err:     fmt.Errorf("public URLs not supported by rclone backend"),
-	}
+	return "", fmt.Errorf("%w", &StorageError{Op: "get public URL", Path: path, Backend: "rclone", Err: ErrPublicURLNotSupported})
 }
 
 // Copy copies a file within the rclone remote
