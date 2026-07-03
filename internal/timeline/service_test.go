@@ -8,57 +8,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/denysvitali/immich-go-backend/internal/db/testdb"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// createTestUser creates a test user and returns the user ID
 func createTestUser(t *testing.T, tdb *testdb.TestDB, email string) uuid.UUID {
-	t.Helper()
-	ctx := context.Background()
-
-	userID := uuid.New()
-	userUUID := pgtype.UUID{Bytes: userID, Valid: true}
-
-	_, err := tdb.Queries.CreateUser(ctx, sqlc.CreateUserParams{
-		ID:          userUUID,
-		Email:       email,
-		Name:        "Test User",
-		Password:    "hashedpassword",
-		IsAdmin:     false,
-		IsOnboarded: false,
-	})
-	require.NoError(t, err)
-
-	return userID
+	return tdb.CreateTestUser(t, email)
 }
 
-// createTestAsset creates a test asset and returns the asset ID
 func createTestAsset(t *testing.T, tdb *testdb.TestDB, ownerID uuid.UUID, deviceAssetID string) uuid.UUID {
-	t.Helper()
-	ctx := context.Background()
-
-	ownerUUID := pgtype.UUID{Bytes: ownerID, Valid: true}
-
-	asset, err := tdb.Queries.CreateAsset(ctx, sqlc.CreateAssetParams{
-		DeviceAssetId:    deviceAssetID,
-		OwnerId:          ownerUUID,
-		DeviceId:         "test-device",
-		Type:             "IMAGE",
-		OriginalPath:     "/test/path/" + deviceAssetID + ".jpg",
-		OriginalFileName: deviceAssetID + ".jpg",
-		Checksum:         []byte("test-checksum-" + deviceAssetID),
-		IsFavorite:       false,
-		Visibility:       sqlc.AssetVisibilityEnumTimeline,
-		Status:           sqlc.AssetsStatusEnumActive,
-	})
-	require.NoError(t, err)
-
-	return asset.ID.Bytes
+	return tdb.CreateTestAsset(t, ownerID, deviceAssetID)
 }
 
 func TestIntegration_GetTimelineAssets(t *testing.T) {

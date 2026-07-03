@@ -17,49 +17,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// createTestUser creates a test user and returns the user ID
 func createTestUser(t *testing.T, tdb *testdb.TestDB, email string) uuid.UUID {
-	t.Helper()
-	ctx := context.Background()
-
-	userID := uuid.New()
-	userUUID := pgtype.UUID{Bytes: userID, Valid: true}
-
-	_, err := tdb.Queries.CreateUser(ctx, sqlc.CreateUserParams{
-		ID:          userUUID,
-		Email:       email,
-		Name:        "Test User",
-		Password:    "hashedpassword",
-		IsAdmin:     false,
-		IsOnboarded: false,
-	})
-	require.NoError(t, err)
-
-	return userID
+	return tdb.CreateTestUser(t, email)
 }
 
 // createTestAssetWithChecksum creates a test asset with a specific checksum
 func createTestAssetWithChecksum(t *testing.T, tdb *testdb.TestDB, ownerID uuid.UUID, deviceAssetID string, checksum []byte) uuid.UUID {
-	t.Helper()
-	ctx := context.Background()
-
-	ownerUUID := pgtype.UUID{Bytes: ownerID, Valid: true}
-
-	asset, err := tdb.Queries.CreateAsset(ctx, sqlc.CreateAssetParams{
-		DeviceAssetId:    deviceAssetID,
-		OwnerId:          ownerUUID,
-		DeviceId:         "test-device",
-		Type:             "IMAGE",
-		OriginalPath:     "/test/path/" + deviceAssetID + ".jpg",
-		OriginalFileName: deviceAssetID + ".jpg",
-		Checksum:         checksum,
-		IsFavorite:       false,
-		Visibility:       sqlc.AssetVisibilityEnumTimeline,
-		Status:           sqlc.AssetsStatusEnumActive,
-	})
-	require.NoError(t, err)
-
-	return asset.ID.Bytes
+	return tdb.CreateTestAssetWithChecksum(t, ownerID, deviceAssetID, checksum)
 }
 
 // createTestAssetWithExif creates a test asset with EXIF data including file size

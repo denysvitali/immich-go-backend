@@ -14,8 +14,11 @@ import (
 	"time"
 
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
+	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -330,4 +333,68 @@ func SkipIfNoDocker(t *testing.T) {
 	if _, err := exec.LookPath("docker"); err != nil {
 		t.Skip("Skipping integration test (docker not installed)")
 	}
+}
+
+// CreateTestUser creates a test user and returns the user ID.
+func (tdb *TestDB) CreateTestUser(t *testing.T, email string) uuid.UUID {
+	t.Helper()
+	ctx := context.Background()
+
+	userID := uuid.New()
+
+	_, err := tdb.Queries.CreateUser(ctx, sqlc.CreateUserParams{
+		ID:          pgtype.UUID{Bytes: userID, Valid: true},
+		Email:       email,
+		Name:        "Test User",
+		Password:    "hashedpassword",
+		IsAdmin:     false,
+		IsOnboarded: false,
+	})
+	require.NoError(t, err)
+
+	return userID
+}
+
+// CreateTestAsset creates a test asset and returns the asset ID.
+func (tdb *TestDB) CreateTestAsset(t *testing.T, ownerID uuid.UUID, deviceAssetID string) uuid.UUID {
+	t.Helper()
+	ctx := context.Background()
+
+	asset, err := tdb.Queries.CreateAsset(ctx, sqlc.CreateAssetParams{
+		DeviceAssetId:    deviceAssetID,
+		OwnerId:          pgtype.UUID{Bytes: ownerID, Valid: true},
+		DeviceId:         "test-device",
+		Type:             "IMAGE",
+		OriginalPath:     "/test/path/" + deviceAssetID + ".jpg",
+		OriginalFileName: deviceAssetID + ".jpg",
+		Checksum:         []byte("test-checksum-" + deviceAssetID),
+		IsFavorite:       false,
+		Visibility:       sqlc.AssetVisibilityEnumTimeline,
+		Status:           sqlc.AssetsStatusEnumActive,
+	})
+	require.NoError(t, err)
+
+	return asset.ID.Bytes
+}
+
+// CreateTestAssetWithChecksum creates a test asset with a specific checksum and returns the asset ID.
+func (tdb *TestDB) CreateTestAssetWithChecksum(t *testing.T, ownerID uuid.UUID, deviceAssetID string, checksum []byte) uuid.UUID {
+	t.Helper()
+	ctx := context.Background()
+
+	asset, err := tdb.Queries.CreateAsset(ctx, sqlc.CreateAssetParams{
+		DeviceAssetId:    deviceAssetID,
+		OwnerId:          pgtype.UUID{Bytes: ownerID, Valid: true},
+		DeviceId:         "test-device",
+		Type:             "IMAGE",
+		OriginalPath:     "/test/path/" + deviceAssetID + ".jpg",
+		OriginalFileName: deviceAssetID + ".jpg",
+		Checksum:         checksum,
+		IsFavorite:       false,
+		Visibility:       sqlc.AssetVisibilityEnumTimeline,
+		Status:           sqlc.AssetsStatusEnumActive,
+	})
+	require.NoError(t, err)
+
+	return asset.ID.Bytes
 }
