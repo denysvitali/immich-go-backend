@@ -119,12 +119,7 @@ func (s *S3Backend) Upload(ctx context.Context, path string, reader io.Reader, s
 	_, err := s.uploader.Upload(ctx, uploadInput)
 	if err != nil {
 		span.RecordError(err)
-		return &StorageError{
-			Op:      "upload",
-			Path:    path,
-			Backend: "s3",
-			Err:     fmt.Errorf("failed to upload to S3: %w", err),
-		}
+		return wrapError("upload", path, "s3", fmt.Errorf("failed to upload to S3: %w", err))
 	}
 
 	return nil
@@ -154,12 +149,7 @@ func (s *S3Backend) UploadBytes(ctx context.Context, path string, data []byte, c
 	_, err := s.client.PutObject(ctx, input)
 	if err != nil {
 		span.RecordError(err)
-		return &StorageError{
-			Op:      "upload bytes",
-			Path:    path,
-			Backend: "s3",
-			Err:     fmt.Errorf("failed to upload to S3: %w", err),
-		}
+		return wrapError("upload bytes", path, "s3", fmt.Errorf("failed to upload to S3: %w", err))
 	}
 
 	return nil
@@ -179,12 +169,7 @@ func (s *S3Backend) Download(ctx context.Context, path string) (io.ReadCloser, e
 	})
 	if err != nil {
 		span.RecordError(err)
-		return nil, &StorageError{
-			Op:      "download",
-			Path:    path,
-			Backend: "s3",
-			Err:     fmt.Errorf("failed to download from S3: %w", err),
-		}
+		return nil, wrapError("download", path, "s3", fmt.Errorf("failed to download from S3: %w", err))
 	}
 
 	return result.Body, nil
@@ -204,12 +189,7 @@ func (s *S3Backend) Delete(ctx context.Context, path string) error {
 	})
 	if err != nil {
 		span.RecordError(err)
-		return &StorageError{
-			Op:      "delete",
-			Path:    path,
-			Backend: "s3",
-			Err:     fmt.Errorf("failed to delete from S3: %w", err),
-		}
+		return wrapError("delete", path, "s3", fmt.Errorf("failed to delete from S3: %w", err))
 	}
 
 	return nil
@@ -235,12 +215,7 @@ func (s *S3Backend) Exists(ctx context.Context, path string) (bool, error) {
 		}
 
 		span.RecordError(err)
-		return false, &StorageError{
-			Op:      "exists",
-			Path:    path,
-			Backend: "s3",
-			Err:     fmt.Errorf("failed to check if object exists: %w", err),
-		}
+		return false, wrapError("exists", path, "s3", fmt.Errorf("failed to check if object exists: %w", err))
 	}
 
 	return true, nil
@@ -260,12 +235,7 @@ func (s *S3Backend) GetSize(ctx context.Context, path string) (int64, error) {
 	})
 	if err != nil {
 		span.RecordError(err)
-		return 0, &StorageError{
-			Op:      "get size",
-			Path:    path,
-			Backend: "s3",
-			Err:     fmt.Errorf("failed to get object metadata: %w", err),
-		}
+		return 0, wrapError("get size", path, "s3", fmt.Errorf("failed to get object metadata: %w", err))
 	}
 
 	return aws.ToInt64(result.ContentLength), nil
@@ -299,12 +269,7 @@ func (s *S3Backend) GetPresignedUploadURL(ctx context.Context, path string, cont
 	})
 	if err != nil {
 		span.RecordError(err)
-		return nil, &StorageError{
-			Op:      "get presigned upload URL",
-			Path:    path,
-			Backend: "s3",
-			Err:     fmt.Errorf("failed to generate presigned upload URL: %w", err),
-		}
+		return nil, wrapError("get presigned upload URL", path, "s3", fmt.Errorf("failed to generate presigned upload URL: %w", err))
 	}
 
 	headers := make(map[string]string)
@@ -343,12 +308,7 @@ func (s *S3Backend) GetPresignedDownloadURL(ctx context.Context, path string, ex
 	})
 	if err != nil {
 		span.RecordError(err)
-		return nil, &StorageError{
-			Op:      "get presigned download URL",
-			Path:    path,
-			Backend: "s3",
-			Err:     fmt.Errorf("failed to generate presigned download URL: %w", err),
-		}
+		return nil, wrapError("get presigned download URL", path, "s3", fmt.Errorf("failed to generate presigned download URL: %w", err))
 	}
 
 	return &PresignedURL{
@@ -390,12 +350,7 @@ func (s *S3Backend) Copy(ctx context.Context, srcPath, dstPath string) error {
 	})
 	if err != nil {
 		span.RecordError(err)
-		return &StorageError{
-			Op:      "copy",
-			Path:    srcPath,
-			Backend: "s3",
-			Err:     fmt.Errorf("failed to copy object in S3: %w", err),
-		}
+		return wrapError("copy", srcPath, "s3", fmt.Errorf("failed to copy object in S3: %w", err))
 	}
 
 	return nil
@@ -453,12 +408,7 @@ func (s *S3Backend) List(ctx context.Context, prefix string, recursive bool) ([]
 		page, err := paginator.NextPage(ctx)
 		if err != nil {
 			span.RecordError(err)
-			return nil, &StorageError{
-				Op:      "list",
-				Path:    prefix,
-				Backend: "s3",
-				Err:     fmt.Errorf("failed to list objects: %w", err),
-			}
+			return nil, wrapError("list", prefix, "s3", fmt.Errorf("failed to list objects: %w", err))
 		}
 
 		// Add objects
@@ -515,12 +465,7 @@ func (s *S3Backend) GetMetadata(ctx context.Context, path string) (*FileMetadata
 	})
 	if err != nil {
 		span.RecordError(err)
-		return nil, &StorageError{
-			Op:      "get metadata",
-			Path:    path,
-			Backend: "s3",
-			Err:     fmt.Errorf("failed to get object metadata: %w", err),
-		}
+		return nil, wrapError("get metadata", path, "s3", fmt.Errorf("failed to get object metadata: %w", err))
 	}
 
 	metadata := &FileMetadata{
