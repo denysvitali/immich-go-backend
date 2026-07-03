@@ -74,6 +74,13 @@ test('admin can upload an image, create an album, and retrieve the image', async
   expect(Array.isArray(albumItems)).toBe(true);
   expect(albumItems.some((item: { id: string }) => item.id === albumBody.id)).toBe(true);
 
+  const albumDetail = await request.get(`/api/albums/${albumBody.id}?withoutAssets=true`, { headers });
+  await expectOk(albumDetail);
+  const albumDetailBody = await albumDetail.json();
+  expect(albumDetailBody.id).toBe(albumBody.id);
+  expect(albumDetailBody.albumName).toBe(albumName);
+  expect(Array.isArray(albumDetailBody.albumUsers)).toBe(true);
+
   const assetList = await request.get('/api/assets?page=1&size=10', { headers });
   await expectOk(assetList);
   const assetListBody = await assetList.json();

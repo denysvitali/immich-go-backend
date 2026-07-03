@@ -9,6 +9,7 @@ import (
 
 	"github.com/denysvitali/immich-go-backend/internal/auth"
 	"github.com/denysvitali/immich-go-backend/internal/db/pgutil"
+	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/denysvitali/immich-go-backend/internal/timeline"
 )
 
@@ -31,7 +32,20 @@ func (s *Server) handleFrontendShape(w http.ResponseWriter, r *http.Request) (ha
 		return true
 	}
 
+	if albumID, ok := albumIDFromPath(r.URL.Path); ok {
+		s.handleAlbum(w, r, albumID)
+		return true
+	}
+
 	return false
+}
+
+func albumIDFromPath(path string) (string, bool) {
+	albumID, ok := strings.CutPrefix(path, "/api/albums/")
+	if !ok || albumID == "" || albumID == "statistics" || strings.Contains(albumID, "/") {
+		return "", false
+	}
+	return albumID, true
 }
 
 func (s *Server) requireAuth(w http.ResponseWriter, r *http.Request) (*auth.Claims, bool) {
@@ -198,6 +212,26 @@ func (s *Server) handleTimelineBucket(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+func (s *Server) handleAlbum(w http.ResponseWriter, r *http.Request, albumID string) {
+	if _, ok := s.requireAuth(w, r); !ok {
+		return
+	}
+
+	albumUUID, err := pgutil.StringToUUID(albumID)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid album id"})
+		return
+	}
+
+	album, err := s.db.GetAlbum(r.Context(), albumUUID)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": "album not found"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, frontendAlbumResponse(album))
+}
+
 func (s *Server) handleAlbums(w http.ResponseWriter, r *http.Request) {
 	claims, ok := s.requireAuth(w, r)
 	if !ok {
@@ -218,26 +252,35 @@ func (s *Server) handleAlbums(w http.ResponseWriter, r *http.Request) {
 
 	resp := make([]map[string]any, len(albums))
 	for i, album := range albums {
-		item := map[string]any{
-			"id":                    album.ID.String(),
-			"albumName":             album.AlbumName,
-			"description":           album.Description,
-			"ownerId":               album.OwnerId.String(),
-			"assetCount":            0,
-			"assets":                []any{},
-			"albumUsers":            []any{},
-			"shared":                false,
-			"hasSharedLink":         false,
-			"isActivityEnabled":     album.IsActivityEnabled,
-			"createdAt":             album.CreatedAt.Time.Format(time.RFC3339),
-			"updatedAt":             album.UpdatedAt.Time.Format(time.RFC3339),
-			"albumThumbnailAssetId": nil,
-		}
-		if album.AlbumThumbnailAssetId.Valid {
-			item["albumThumbnailAssetId"] = album.AlbumThumbnailAssetId.String()
-		}
-		resp[i] = item
+		resp[i] = frontendAlbumResponse(album)
 	}
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func frontendAlbumResponse(album sqlc.Album) map[string]any {
+	item := map[string]any{
+		"id":                    album.ID.String(),
+		"albumName":             album.AlbumName,
+		"description":           album.Description,
+		"ownerId":               album.OwnerId.String(),
+		"owner":                 nil,
+		"assetCount":            0,
+		"assets":                []any{},
+		"albumUsers":            []any{},
+		"sharedUsers":           []any{},
+		"shared":                false,
+		"hasSharedLink":         false,
+		"isActivityEnabled":     album.IsActivityEnabled,
+		"createdAt":             album.CreatedAt.Time.Format(time.RFC3339Nano),
+		"updatedAt":             album.UpdatedAt.Time.Format(time.RFC3339Nano),
+		"albumThumbnailAssetId": nil,
+		"order":                 album.Order,
+		"startDate":             nil,
+		"endDate":               nil,
+	}
+	if album.AlbumThumbnailAssetId.Valid {
+		item["albumThumbnailAssetId"] = album.AlbumThumbnailAssetId.String()
+	}
+	return item
 }
