@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"github.com/denysvitali/immich-go-backend/internal/config"
+	"github.com/denysvitali/immich-go-backend/internal/db/pgutil"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/denysvitali/immich-go-backend/internal/telemetry"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -65,40 +65,16 @@ func NewService(queries *sqlc.Queries, cfg *config.Config) (*Service, error) {
 	}, nil
 }
 
-// Helper functions for UUID conversion
-func uuidToPgtype(id uuid.UUID) pgtype.UUID {
-	return pgtype.UUID{Bytes: id, Valid: true}
-}
-
-func pgtypeToUUID(pg pgtype.UUID) uuid.UUID {
-	if !pg.Valid {
-		return uuid.Nil
-	}
-	return pg.Bytes
-}
-
-func stringToUUID(s string) (uuid.UUID, error) {
-	return uuid.Parse(s)
-}
-
-func stringsToUUIDs(strs []string) ([]uuid.UUID, error) {
-	uuids := make([]uuid.UUID, len(strs))
+func stringsToPgtypeUUIDs(strs []string) ([]pgtype.UUID, error) {
+	uuids := make([]pgtype.UUID, len(strs))
 	for i, s := range strs {
-		id, err := uuid.Parse(s)
+		id, err := pgutil.StringToUUID(s)
 		if err != nil {
 			return nil, fmt.Errorf("invalid UUID at index %d: %w", i, err)
 		}
 		uuids[i] = id
 	}
 	return uuids, nil
-}
-
-func uuidsToPgtype(ids []uuid.UUID) []pgtype.UUID {
-	pgUUIDs := make([]pgtype.UUID, len(ids))
-	for i, id := range ids {
-		pgUUIDs[i] = uuidToPgtype(id)
-	}
-	return pgUUIDs
 }
 
 // CreateStack creates a new asset stack
@@ -120,7 +96,7 @@ func (s *Service) CreateStack(ctx context.Context, req CreateStackRequest) (*Sta
 	}
 
 	// Parse asset IDs
-	assetUUIDs, err := stringsToUUIDs(req.AssetIDs)
+	assetUUIDs, err := stringsToPgtypeUUIDs(req.AssetIDs)
 	if err != nil {
 		return nil, fmt.Errorf("invalid asset IDs: %w", err)
 	}
@@ -129,14 +105,14 @@ func (s *Service) CreateStack(ctx context.Context, req CreateStackRequest) (*Sta
 	primaryAssetID := assetUUIDs[0]
 
 	// Get the owner from the primary asset
-	asset, err := s.db.GetAsset(ctx, uuidToPgtype(primaryAssetID))
+	asset, err := s.db.GetAsset(ctx, primaryAssetID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get primary asset: %w", err)
 	}
 
 	// Create the stack
 	stack, err := s.db.CreateStack(ctx, sqlc.CreateStackParams{
-		PrimaryAssetId: uuidToPgtype(primaryAssetID),
+		PrimaryAssetId: primaryAssetID,
 		OwnerId:        asset.OwnerId,
 	})
 	if err != nil {
@@ -146,7 +122,7 @@ func (s *Service) CreateStack(ctx context.Context, req CreateStackRequest) (*Sta
 	// Add all assets to the stack
 	err = s.db.AddAssetsToStack(ctx, sqlc.AddAssetsToStackParams{
 		StackId: stack.ID,
-		Column2: uuidsToPgtype(assetUUIDs),
+		Column2: assetUUIDs,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to add assets to stack: %w", err)
@@ -157,8 +133,8 @@ func (s *Service) CreateStack(ctx context.Context, req CreateStackRequest) (*Sta
 
 	// Return the stack response
 	return &StackResponse{
-		ID:             pgtypeToUUID(stack.ID).String(),
-		PrimaryAssetID: pgtypeToUUID(stack.PrimaryAssetId).String(),
+		ID:             pgutil.UUIDToString(stack.ID),
+		PrimaryAssetID: pgutil.UUIDToString(stack.PrimaryAssetId),
 		AssetIDs:       req.AssetIDs,
 		AssetCount:     int32(len(req.AssetIDs)),
 		CreatedAt:      time.Now(),
@@ -181,19 +157,19 @@ func (s *Service) GetStack(ctx context.Context, stackID string) (*StackResponse,
 	}()
 
 	// Parse stack ID
-	stackUUID, err := stringToUUID(stackID)
+	stackUUID, err := pgutil.StringToUUID(stackID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid stack ID: %w", err)
 	}
 
 	// Get stack with asset count
-	stack, err := s.db.GetStackWithAssets(ctx, uuidToPgtype(stackUUID))
+	stack, err := s.db.GetStackWithAssets(ctx, stackUUID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get stack: %w", err)
 	}
 
 	// Get assets in the stack
-	assets, err := s.db.GetStackAssets(ctx, uuidToPgtype(stackUUID))
+	assets, err := s.db.GetStackAssets(ctx, stackUUID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get stack assets: %w", err)
 	}
@@ -201,12 +177,12 @@ func (s *Service) GetStack(ctx context.Context, stackID string) (*StackResponse,
 	// Convert asset IDs to strings
 	assetIDs := make([]string, len(assets))
 	for i, asset := range assets {
-		assetIDs[i] = pgtypeToUUID(asset.ID).String()
+		assetIDs[i] = pgutil.UUIDToString(asset.ID)
 	}
 
 	return &StackResponse{
-		ID:             pgtypeToUUID(stack.ID).String(),
-		PrimaryAssetID: pgtypeToUUID(stack.PrimaryAssetId).String(),
+		ID:             pgutil.UUIDToString(stack.ID),
+		PrimaryAssetID: pgutil.UUIDToString(stack.PrimaryAssetId),
 		AssetIDs:       assetIDs,
 		AssetCount:     int32(stack.AssetCount),
 		CreatedAt:      time.Now(), // Stack table doesn't have timestamps
@@ -229,21 +205,21 @@ func (s *Service) UpdateStack(ctx context.Context, stackID string, req UpdateSta
 	}()
 
 	// Parse stack ID
-	stackUUID, err := stringToUUID(stackID)
+	stackUUID, err := pgutil.StringToUUID(stackID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid stack ID: %w", err)
 	}
 
 	// Update primary asset if specified
 	if req.PrimaryAssetID != nil {
-		primaryUUID, err := stringToUUID(*req.PrimaryAssetID)
+		primaryUUID, err := pgutil.StringToUUID(*req.PrimaryAssetID)
 		if err != nil {
 			return nil, fmt.Errorf("invalid primary asset ID: %w", err)
 		}
 
 		_, err = s.db.UpdateStackPrimaryAsset(ctx, sqlc.UpdateStackPrimaryAssetParams{
-			ID:             uuidToPgtype(stackUUID),
-			PrimaryAssetId: uuidToPgtype(primaryUUID),
+			ID:             stackUUID,
+			PrimaryAssetId: primaryUUID,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to update stack primary asset: %w", err)
@@ -269,12 +245,12 @@ func (s *Service) DeleteStack(ctx context.Context, stackID string) error {
 	}()
 
 	// Parse stack ID
-	stackUUID, err := stringToUUID(stackID)
+	stackUUID, err := pgutil.StringToUUID(stackID)
 	if err != nil {
 		return fmt.Errorf("invalid stack ID: %w", err)
 	}
 
-	pgStackID := uuidToPgtype(stackUUID)
+	pgStackID := stackUUID
 
 	// Clear stack references from assets first
 	err = s.db.ClearStackAssets(ctx, pgStackID)
@@ -313,21 +289,21 @@ func (s *Service) DeleteStacks(ctx context.Context, stackIDs []string) error {
 	}
 
 	// Parse stack IDs
-	stackUUIDs, err := stringsToUUIDs(stackIDs)
+	stackUUIDs, err := stringsToPgtypeUUIDs(stackIDs)
 	if err != nil {
 		return fmt.Errorf("invalid stack IDs: %w", err)
 	}
 
 	// Clear stack references from assets for each stack
 	for _, stackUUID := range stackUUIDs {
-		err = s.db.ClearStackAssets(ctx, uuidToPgtype(stackUUID))
+		err = s.db.ClearStackAssets(ctx, stackUUID)
 		if err != nil {
 			return fmt.Errorf("failed to clear stack assets: %w", err)
 		}
 	}
 
 	// Delete all stacks
-	err = s.db.DeleteStacksByIds(ctx, uuidsToPgtype(stackUUIDs))
+	err = s.db.DeleteStacksByIds(ctx, stackUUIDs)
 	if err != nil {
 		return fmt.Errorf("failed to delete stacks: %w", err)
 	}
@@ -356,25 +332,25 @@ func (s *Service) SearchStacks(ctx context.Context, req SearchStacksRequest) (*S
 	}
 
 	// Parse user ID
-	userUUID, err := stringToUUID(*req.UserID)
+	userUUID, err := pgutil.StringToUUID(*req.UserID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid user ID: %w", err)
 	}
 
 	// Build search params
 	params := sqlc.SearchStacksParams{
-		OwnerId: uuidToPgtype(userUUID),
+		OwnerId: userUUID,
 		Limit:   100, // Default limit
 		Offset:  0,
 	}
 
 	// Add primary asset filter if specified
 	if req.PrimaryAssetID != nil {
-		primaryUUID, err := stringToUUID(*req.PrimaryAssetID)
+		primaryUUID, err := pgutil.StringToUUID(*req.PrimaryAssetID)
 		if err != nil {
 			return nil, fmt.Errorf("invalid primary asset ID: %w", err)
 		}
-		params.PrimaryAssetID = uuidToPgtype(primaryUUID)
+		params.PrimaryAssetID = primaryUUID
 	}
 
 	// Execute search
@@ -394,12 +370,12 @@ func (s *Service) SearchStacks(ctx context.Context, req SearchStacksRequest) (*S
 
 		assetIDs := make([]string, len(assets))
 		for j, asset := range assets {
-			assetIDs[j] = pgtypeToUUID(asset.ID).String()
+			assetIDs[j] = pgutil.UUIDToString(asset.ID)
 		}
 
 		results[i] = &StackResponse{
-			ID:             pgtypeToUUID(stack.ID).String(),
-			PrimaryAssetID: pgtypeToUUID(stack.PrimaryAssetId).String(),
+			ID:             pgutil.UUIDToString(stack.ID),
+			PrimaryAssetID: pgutil.UUIDToString(stack.PrimaryAssetId),
 			AssetIDs:       assetIDs,
 			AssetCount:     int32(stack.AssetCount),
 			CreatedAt:      time.Now(),
@@ -427,14 +403,14 @@ func (s *Service) GetUserStacks(ctx context.Context, userID string, limit, offse
 	}()
 
 	// Parse user ID
-	userUUID, err := stringToUUID(userID)
+	userUUID, err := pgutil.StringToUUID(userID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid user ID: %w", err)
 	}
 
 	// Get stacks
 	stacks, err := s.db.GetUserStacks(ctx, sqlc.GetUserStacksParams{
-		OwnerId: uuidToPgtype(userUUID),
+		OwnerId: userUUID,
 		Limit:   limit,
 		Offset:  offset,
 	})
@@ -453,12 +429,12 @@ func (s *Service) GetUserStacks(ctx context.Context, userID string, limit, offse
 
 		assetIDs := make([]string, len(assets))
 		for j, asset := range assets {
-			assetIDs[j] = pgtypeToUUID(asset.ID).String()
+			assetIDs[j] = pgutil.UUIDToString(asset.ID)
 		}
 
 		results[i] = &StackResponse{
-			ID:             pgtypeToUUID(stack.ID).String(),
-			PrimaryAssetID: pgtypeToUUID(stack.PrimaryAssetId).String(),
+			ID:             pgutil.UUIDToString(stack.ID),
+			PrimaryAssetID: pgutil.UUIDToString(stack.PrimaryAssetId),
 			AssetIDs:       assetIDs,
 			AssetCount:     int32(stack.AssetCount),
 			CreatedAt:      time.Now(),
@@ -488,21 +464,21 @@ func (s *Service) AddAssetsToStack(ctx context.Context, stackID string, assetIDs
 	}()
 
 	// Parse stack ID
-	stackUUID, err := stringToUUID(stackID)
+	stackUUID, err := pgutil.StringToUUID(stackID)
 	if err != nil {
 		return fmt.Errorf("invalid stack ID: %w", err)
 	}
 
 	// Parse asset IDs
-	assetUUIDs, err := stringsToUUIDs(assetIDs)
+	assetUUIDs, err := stringsToPgtypeUUIDs(assetIDs)
 	if err != nil {
 		return fmt.Errorf("invalid asset IDs: %w", err)
 	}
 
 	// Add assets to stack
 	err = s.db.AddAssetsToStack(ctx, sqlc.AddAssetsToStackParams{
-		StackId: uuidToPgtype(stackUUID),
-		Column2: uuidsToPgtype(assetUUIDs),
+		StackId: stackUUID,
+		Column2: assetUUIDs,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to add assets to stack: %w", err)
@@ -526,13 +502,13 @@ func (s *Service) RemoveAssetsFromStack(ctx context.Context, assetIDs []string) 
 	}()
 
 	// Parse asset IDs
-	assetUUIDs, err := stringsToUUIDs(assetIDs)
+	assetUUIDs, err := stringsToPgtypeUUIDs(assetIDs)
 	if err != nil {
 		return fmt.Errorf("invalid asset IDs: %w", err)
 	}
 
 	// Remove assets from stack
-	err = s.db.RemoveAssetsFromStack(ctx, uuidsToPgtype(assetUUIDs))
+	err = s.db.RemoveAssetsFromStack(ctx, assetUUIDs)
 	if err != nil {
 		return fmt.Errorf("failed to remove assets from stack: %w", err)
 	}

@@ -8,10 +8,10 @@ import (
 	"testing"
 
 	"github.com/denysvitali/immich-go-backend/internal/config"
+	"github.com/denysvitali/immich-go-backend/internal/db/pgutil"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/denysvitali/immich-go-backend/internal/db/testdb"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -22,10 +22,9 @@ func createTestUser(t *testing.T, tdb *testdb.TestDB, email string) uuid.UUID {
 	ctx := context.Background()
 
 	userID := uuid.New()
-	userUUID := pgtype.UUID{Bytes: userID, Valid: true}
 
 	_, err := tdb.Queries.CreateUser(ctx, sqlc.CreateUserParams{
-		ID:       userUUID,
+		ID:       pgutil.UUIDToPgtype(userID),
 		Email:    email,
 		Name:     "Test User",
 		Password: "hashedpassword",
@@ -41,11 +40,9 @@ func createTestAsset(t *testing.T, tdb *testdb.TestDB, ownerID uuid.UUID, device
 	t.Helper()
 	ctx := context.Background()
 
-	ownerUUID := pgtype.UUID{Bytes: ownerID, Valid: true}
-
 	asset, err := tdb.Queries.CreateAsset(ctx, sqlc.CreateAssetParams{
 		DeviceAssetId:    deviceAssetID,
-		OwnerId:          ownerUUID,
+		OwnerId:          pgutil.UUIDToPgtype(ownerID),
 		DeviceId:         "test-device",
 		Type:             "IMAGE",
 		OriginalPath:     "/test/path/" + deviceAssetID + ".jpg",
