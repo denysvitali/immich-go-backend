@@ -40,7 +40,7 @@ test('album created via API shows up on the albums page', async ({ page, request
   await expect(page.getByText(albumName).first()).toBeVisible({ timeout: 15_000 });
 
   await page.goto(`/albums/${albumBody.id}`);
-  await expect(page.getByText(albumName).first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole('textbox', { name: 'Edit Title' })).toHaveValue(albumName, { timeout: 15_000 });
 });
 
 test('favorited asset appears on the favorites page', async ({ page, request }) => {
