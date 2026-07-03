@@ -55,3 +55,14 @@ func (s *Server) getSessionIDFromContext(ctx context.Context) (string, error) {
 func (s *Server) getUserFromContext(ctx context.Context) (*auth.Claims, error) {
 	return auth.ClaimsFromContext(ctx, s.authService.ValidateToken)
 }
+
+func (s *Server) requireAdmin(ctx context.Context) (*auth.Claims, error) {
+	claims, err := s.getUserFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.Unauthenticated, "authentication required")
+	}
+	if !claims.IsAdmin {
+		return nil, status.Error(codes.PermissionDenied, "admin access required")
+	}
+	return claims, nil
+}

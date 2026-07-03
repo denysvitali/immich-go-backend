@@ -14,13 +14,8 @@ import (
 
 // ListPlugins returns all installed plugins
 func (s *Server) ListPlugins(ctx context.Context, _ *emptypb.Empty) (*immichv1.ListPluginsResponse, error) {
-	// Verify user is admin
-	claims, err := s.getUserFromContext(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "authentication required")
-	}
-	if !claims.IsAdmin {
-		return nil, status.Errorf(codes.PermissionDenied, "admin access required")
+	if _, err := s.requireAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	plugins, err := s.pluginService.ListPlugins(ctx)
@@ -40,13 +35,8 @@ func (s *Server) ListPlugins(ctx context.Context, _ *emptypb.Empty) (*immichv1.L
 
 // GetPlugin returns a specific plugin by ID
 func (s *Server) GetPlugin(ctx context.Context, req *immichv1.GetPluginRequest) (*immichv1.PluginInfo, error) {
-	// Verify user is admin
-	claims, err := s.getUserFromContext(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "authentication required")
-	}
-	if !claims.IsAdmin {
-		return nil, status.Errorf(codes.PermissionDenied, "admin access required")
+	if _, err := s.requireAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	p, err := s.pluginService.GetPlugin(ctx, req.PluginId)
@@ -59,13 +49,8 @@ func (s *Server) GetPlugin(ctx context.Context, req *immichv1.GetPluginRequest) 
 
 // InstallPlugin installs a new plugin
 func (s *Server) InstallPlugin(ctx context.Context, req *immichv1.InstallPluginRequest) (*immichv1.PluginInfo, error) {
-	// Verify user is admin
-	claims, err := s.getUserFromContext(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "authentication required")
-	}
-	if !claims.IsAdmin {
-		return nil, status.Errorf(codes.PermissionDenied, "admin access required")
+	if _, err := s.requireAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	p, err := s.pluginService.InstallPlugin(ctx, req.Source, req.Version)
@@ -78,13 +63,8 @@ func (s *Server) InstallPlugin(ctx context.Context, req *immichv1.InstallPluginR
 
 // UninstallPlugin removes a plugin
 func (s *Server) UninstallPlugin(ctx context.Context, req *immichv1.UninstallPluginRequest) (*emptypb.Empty, error) {
-	// Verify user is admin
-	claims, err := s.getUserFromContext(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "authentication required")
-	}
-	if !claims.IsAdmin {
-		return nil, status.Errorf(codes.PermissionDenied, "admin access required")
+	if _, err := s.requireAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	removeData := false
@@ -92,7 +72,7 @@ func (s *Server) UninstallPlugin(ctx context.Context, req *immichv1.UninstallPlu
 		removeData = *req.RemoveData
 	}
 
-	err = s.pluginService.UninstallPlugin(ctx, req.PluginId, removeData)
+	err := s.pluginService.UninstallPlugin(ctx, req.PluginId, removeData)
 	if err != nil {
 		return nil, SanitizedInternal(ctx, "failed to uninstall plugin", err)
 	}
@@ -102,13 +82,8 @@ func (s *Server) UninstallPlugin(ctx context.Context, req *immichv1.UninstallPlu
 
 // GetPluginConfig returns the configuration for a plugin
 func (s *Server) GetPluginConfig(ctx context.Context, req *immichv1.GetPluginConfigRequest) (*immichv1.PluginConfigResponse, error) {
-	// Verify user is admin
-	claims, err := s.getUserFromContext(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "authentication required")
-	}
-	if !claims.IsAdmin {
-		return nil, status.Errorf(codes.PermissionDenied, "admin access required")
+	if _, err := s.requireAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	config, schema, err := s.pluginService.GetPluginConfig(ctx, req.PluginId)
@@ -128,13 +103,8 @@ func (s *Server) GetPluginConfig(ctx context.Context, req *immichv1.GetPluginCon
 
 // UpdatePluginConfig updates the configuration for a plugin
 func (s *Server) UpdatePluginConfig(ctx context.Context, req *immichv1.UpdatePluginConfigRequest) (*immichv1.PluginConfigResponse, error) {
-	// Verify user is admin
-	claims, err := s.getUserFromContext(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "authentication required")
-	}
-	if !claims.IsAdmin {
-		return nil, status.Errorf(codes.PermissionDenied, "admin access required")
+	if _, err := s.requireAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	config := req.Config.AsMap()
@@ -158,13 +128,8 @@ func (s *Server) UpdatePluginConfig(ctx context.Context, req *immichv1.UpdatePlu
 
 // SetPluginEnabled enables or disables a plugin
 func (s *Server) SetPluginEnabled(ctx context.Context, req *immichv1.SetPluginEnabledRequest) (*immichv1.PluginInfo, error) {
-	// Verify user is admin
-	claims, err := s.getUserFromContext(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "authentication required")
-	}
-	if !claims.IsAdmin {
-		return nil, status.Errorf(codes.PermissionDenied, "admin access required")
+	if _, err := s.requireAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	p, err := s.pluginService.SetPluginEnabled(ctx, req.PluginId, req.Enabled)

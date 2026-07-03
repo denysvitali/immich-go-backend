@@ -14,13 +14,8 @@ import (
 
 // ListWorkflows returns all workflows
 func (s *Server) ListWorkflows(ctx context.Context, _ *emptypb.Empty) (*immichv1.ListWorkflowsResponse, error) {
-	// Verify user is admin
-	claims, err := s.getUserFromContext(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "authentication required")
-	}
-	if !claims.IsAdmin {
-		return nil, status.Errorf(codes.PermissionDenied, "admin access required")
+	if _, err := s.requireAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	workflows, err := s.workflowService.ListWorkflows(ctx)
@@ -40,13 +35,8 @@ func (s *Server) ListWorkflows(ctx context.Context, _ *emptypb.Empty) (*immichv1
 
 // GetWorkflow returns a specific workflow by ID
 func (s *Server) GetWorkflow(ctx context.Context, req *immichv1.GetWorkflowRequest) (*immichv1.WorkflowInfo, error) {
-	// Verify user is admin
-	claims, err := s.getUserFromContext(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "authentication required")
-	}
-	if !claims.IsAdmin {
-		return nil, status.Errorf(codes.PermissionDenied, "admin access required")
+	if _, err := s.requireAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	w, err := s.workflowService.GetWorkflow(ctx, req.WorkflowId)
@@ -59,13 +49,9 @@ func (s *Server) GetWorkflow(ctx context.Context, req *immichv1.GetWorkflowReque
 
 // CreateWorkflow creates a new workflow
 func (s *Server) CreateWorkflow(ctx context.Context, req *immichv1.CreateWorkflowRequest) (*immichv1.WorkflowInfo, error) {
-	// Verify user is admin
-	claims, err := s.getUserFromContext(ctx)
+	claims, err := s.requireAdmin(ctx)
 	if err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "authentication required")
-	}
-	if !claims.IsAdmin {
-		return nil, status.Errorf(codes.PermissionDenied, "admin access required")
+		return nil, err
 	}
 
 	trigger := protoTriggerToInternal(req.Trigger)
@@ -94,13 +80,8 @@ func (s *Server) CreateWorkflow(ctx context.Context, req *immichv1.CreateWorkflo
 
 // UpdateWorkflow updates an existing workflow
 func (s *Server) UpdateWorkflow(ctx context.Context, req *immichv1.UpdateWorkflowRequest) (*immichv1.WorkflowInfo, error) {
-	// Verify user is admin
-	claims, err := s.getUserFromContext(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "authentication required")
-	}
-	if !claims.IsAdmin {
-		return nil, status.Errorf(codes.PermissionDenied, "admin access required")
+	if _, err := s.requireAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	var trigger *workflow.Trigger
@@ -127,16 +108,11 @@ func (s *Server) UpdateWorkflow(ctx context.Context, req *immichv1.UpdateWorkflo
 
 // DeleteWorkflow deletes a workflow
 func (s *Server) DeleteWorkflow(ctx context.Context, req *immichv1.DeleteWorkflowRequest) (*emptypb.Empty, error) {
-	// Verify user is admin
-	claims, err := s.getUserFromContext(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "authentication required")
-	}
-	if !claims.IsAdmin {
-		return nil, status.Errorf(codes.PermissionDenied, "admin access required")
+	if _, err := s.requireAdmin(ctx); err != nil {
+		return nil, err
 	}
 
-	err = s.workflowService.DeleteWorkflow(ctx, req.WorkflowId)
+	err := s.workflowService.DeleteWorkflow(ctx, req.WorkflowId)
 	if err != nil {
 		return nil, SanitizedInternal(ctx, "failed to delete workflow", err)
 	}
@@ -146,13 +122,8 @@ func (s *Server) DeleteWorkflow(ctx context.Context, req *immichv1.DeleteWorkflo
 
 // TriggerWorkflow manually triggers a workflow execution
 func (s *Server) TriggerWorkflow(ctx context.Context, req *immichv1.TriggerWorkflowRequest) (*immichv1.WorkflowExecutionInfo, error) {
-	// Verify user is admin
-	claims, err := s.getUserFromContext(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "authentication required")
-	}
-	if !claims.IsAdmin {
-		return nil, status.Errorf(codes.PermissionDenied, "admin access required")
+	if _, err := s.requireAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	var triggerData map[string]interface{}
@@ -170,13 +141,8 @@ func (s *Server) TriggerWorkflow(ctx context.Context, req *immichv1.TriggerWorkf
 
 // GetWorkflowExecutions returns execution history for a workflow
 func (s *Server) GetWorkflowExecutions(ctx context.Context, req *immichv1.GetWorkflowExecutionsRequest) (*immichv1.ListWorkflowExecutionsResponse, error) {
-	// Verify user is admin
-	claims, err := s.getUserFromContext(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "authentication required")
-	}
-	if !claims.IsAdmin {
-		return nil, status.Errorf(codes.PermissionDenied, "admin access required")
+	if _, err := s.requireAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	limit := 50
@@ -212,13 +178,8 @@ func (s *Server) GetWorkflowExecutions(ctx context.Context, req *immichv1.GetWor
 
 // SetWorkflowEnabled enables or disables a workflow
 func (s *Server) SetWorkflowEnabled(ctx context.Context, req *immichv1.SetWorkflowEnabledRequest) (*immichv1.WorkflowInfo, error) {
-	// Verify user is admin
-	claims, err := s.getUserFromContext(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "authentication required")
-	}
-	if !claims.IsAdmin {
-		return nil, status.Errorf(codes.PermissionDenied, "admin access required")
+	if _, err := s.requireAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	w, err := s.workflowService.SetWorkflowEnabled(ctx, req.WorkflowId, req.Enabled)

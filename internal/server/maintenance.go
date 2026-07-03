@@ -12,14 +12,9 @@ import (
 
 // SetMaintenanceMode sets the maintenance mode
 func (s *Server) SetMaintenanceMode(ctx context.Context, req *immichv1.SetMaintenanceModeRequest) (*immichv1.SetMaintenanceModeResponse, error) {
-	// Verify user is authenticated and is admin
-	claims, err := s.getUserFromContext(ctx)
+	claims, err := s.requireAdmin(ctx)
 	if err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "authentication required")
-	}
-
-	if !claims.IsAdmin {
-		return nil, status.Errorf(codes.PermissionDenied, "admin access required")
+		return nil, err
 	}
 
 	switch req.Action {

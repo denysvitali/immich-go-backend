@@ -13,14 +13,8 @@ import (
 
 // ListQueues returns a list of all queues
 func (s *Server) ListQueues(ctx context.Context, _ *emptypb.Empty) (*immichv1.ListQueuesResponse, error) {
-	// Verify user is authenticated and is admin
-	claims, err := s.getUserFromContext(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "authentication required")
-	}
-
-	if !claims.IsAdmin {
-		return nil, status.Errorf(codes.PermissionDenied, "admin access required")
+	if _, err := s.requireAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	queues, err := s.queueService.GetAllQueues(ctx)
@@ -40,14 +34,8 @@ func (s *Server) ListQueues(ctx context.Context, _ *emptypb.Empty) (*immichv1.Li
 
 // GetQueue returns information about a specific queue
 func (s *Server) GetQueue(ctx context.Context, req *immichv1.GetQueueRequest) (*immichv1.QueueInfo, error) {
-	// Verify user is authenticated and is admin
-	claims, err := s.getUserFromContext(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "authentication required")
-	}
-
-	if !claims.IsAdmin {
-		return nil, status.Errorf(codes.PermissionDenied, "admin access required")
+	if _, err := s.requireAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	queueInfo, err := s.queueService.GetQueue(ctx, req.Name)
@@ -60,14 +48,8 @@ func (s *Server) GetQueue(ctx context.Context, req *immichv1.GetQueueRequest) (*
 
 // UpdateQueue updates a queue (pause/resume)
 func (s *Server) UpdateQueue(ctx context.Context, req *immichv1.UpdateQueueRequest) (*immichv1.QueueInfo, error) {
-	// Verify user is authenticated and is admin
-	claims, err := s.getUserFromContext(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "authentication required")
-	}
-
-	if !claims.IsAdmin {
-		return nil, status.Errorf(codes.PermissionDenied, "admin access required")
+	if _, err := s.requireAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	var isPaused *bool
@@ -85,14 +67,8 @@ func (s *Server) UpdateQueue(ctx context.Context, req *immichv1.UpdateQueueReque
 
 // GetQueueJobs returns jobs from a specific queue
 func (s *Server) GetQueueJobs(ctx context.Context, req *immichv1.GetQueueJobsRequest) (*immichv1.ListQueueJobsResponse, error) {
-	// Verify user is authenticated and is admin
-	claims, err := s.getUserFromContext(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "authentication required")
-	}
-
-	if !claims.IsAdmin {
-		return nil, status.Errorf(codes.PermissionDenied, "admin access required")
+	if _, err := s.requireAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	// Convert proto status to internal status
@@ -125,17 +101,11 @@ func (s *Server) GetQueueJobs(ctx context.Context, req *immichv1.GetQueueJobsReq
 
 // ClearQueueJobs clears jobs from a queue
 func (s *Server) ClearQueueJobs(ctx context.Context, req *immichv1.ClearQueueJobsRequest) (*emptypb.Empty, error) {
-	// Verify user is authenticated and is admin
-	claims, err := s.getUserFromContext(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "authentication required")
+	if _, err := s.requireAdmin(ctx); err != nil {
+		return nil, err
 	}
 
-	if !claims.IsAdmin {
-		return nil, status.Errorf(codes.PermissionDenied, "admin access required")
-	}
-
-	err = s.queueService.ClearQueueJobs(ctx, req.Name, req.IncludeFailed)
+	err := s.queueService.ClearQueueJobs(ctx, req.Name, req.IncludeFailed)
 	if err != nil {
 		return nil, status.Errorf(codes.NotFound, "queue not found: %v", err)
 	}
