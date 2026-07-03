@@ -264,13 +264,13 @@ func (r *RcloneBackend) GetSize(ctx context.Context, path string) (int64, error)
 // GetPresignedUploadURL is not supported by rclone
 func (r *RcloneBackend) GetPresignedUploadURL(ctx context.Context, path string, contentType string, expiry time.Duration) (*PresignedURL, error) {
 	_ = ctx // Mark as intentionally unused
-	return nil, fmt.Errorf("%w", &StorageError{Op: "get presigned upload URL", Path: path, Backend: "rclone", Err: ErrPresignedURLsNotSupported})
+	return nil, wrapError("get presigned upload URL", path, "rclone", ErrPresignedURLsNotSupported)
 }
 
 // GetPresignedDownloadURL is not supported by rclone
 func (r *RcloneBackend) GetPresignedDownloadURL(ctx context.Context, path string, expiry time.Duration) (*PresignedURL, error) {
 	_ = ctx // Mark as intentionally unused
-	return nil, fmt.Errorf("%w", &StorageError{Op: "get presigned download URL", Path: path, Backend: "rclone", Err: ErrPresignedURLsNotSupported})
+	return nil, wrapError("get presigned download URL", path, "rclone", ErrPresignedURLsNotSupported)
 }
 
 // SupportsPresignedURLs returns false for rclone
@@ -281,7 +281,7 @@ func (r *RcloneBackend) SupportsPresignedURLs() bool {
 // GetPublicURL is not supported by rclone
 func (r *RcloneBackend) GetPublicURL(ctx context.Context, path string) (string, error) {
 	_ = ctx // Mark as intentionally unused
-	return "", fmt.Errorf("%w", &StorageError{Op: "get public URL", Path: path, Backend: "rclone", Err: ErrPublicURLNotSupported})
+	return "", wrapError("get public URL", path, "rclone", ErrPublicURLNotSupported)
 }
 
 // Copy copies a file within the rclone remote

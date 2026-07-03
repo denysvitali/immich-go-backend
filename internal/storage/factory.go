@@ -20,11 +20,7 @@ func NewStorageBackend(config StorageConfig) (StorageBackend, error) {
 		return NewRcloneBackend(config.Rclone)
 
 	default:
-		return nil, &StorageError{
-			Op:      "create storage backend",
-			Backend: backend,
-			Err:     fmt.Errorf("unsupported storage backend: %s", backend),
-		}
+		return nil, wrapError("create storage backend", "", backend, fmt.Errorf("unsupported storage backend: %s", backend))
 	}
 }
 
@@ -43,22 +39,14 @@ func ValidateStorageConfig(config StorageConfig) error {
 		return validateRcloneConfig(config.Rclone)
 
 	default:
-		return &StorageError{
-			Op:      "validate storage config",
-			Backend: backend,
-			Err:     fmt.Errorf("unsupported storage backend: %s", backend),
-		}
+		return wrapError("validate storage config", "", backend, fmt.Errorf("unsupported storage backend: %s", backend))
 	}
 }
 
 // validateLocalConfig validates local storage configuration
 func validateLocalConfig(config LocalConfig) error {
 	if config.RootPath == "" {
-		return &StorageError{
-			Op:      "validate local config",
-			Backend: "local",
-			Err:     fmt.Errorf("root_path is required"),
-		}
+		return wrapError("validate local config", "", "local", fmt.Errorf("root_path is required"))
 	}
 
 	return nil
@@ -67,35 +55,19 @@ func validateLocalConfig(config LocalConfig) error {
 // validateS3Config validates S3 storage configuration
 func validateS3Config(config S3Config) error {
 	if config.Bucket == "" {
-		return &StorageError{
-			Op:      "validate s3 config",
-			Backend: "s3",
-			Err:     fmt.Errorf("bucket is required"),
-		}
+		return wrapError("validate s3 config", "", "s3", fmt.Errorf("bucket is required"))
 	}
 
 	if config.AccessKeyID == "" {
-		return &StorageError{
-			Op:      "validate s3 config",
-			Backend: "s3",
-			Err:     fmt.Errorf("access_key_id is required"),
-		}
+		return wrapError("validate s3 config", "", "s3", fmt.Errorf("access_key_id is required"))
 	}
 
 	if config.SecretAccessKey == "" {
-		return &StorageError{
-			Op:      "validate s3 config",
-			Backend: "s3",
-			Err:     fmt.Errorf("secret_access_key is required"),
-		}
+		return wrapError("validate s3 config", "", "s3", fmt.Errorf("secret_access_key is required"))
 	}
 
 	if config.Region == "" {
-		return &StorageError{
-			Op:      "validate s3 config",
-			Backend: "s3",
-			Err:     fmt.Errorf("region is required"),
-		}
+		return wrapError("validate s3 config", "", "s3", fmt.Errorf("region is required"))
 	}
 
 	return nil
@@ -104,11 +76,7 @@ func validateS3Config(config S3Config) error {
 // validateRcloneConfig validates rclone storage configuration
 func validateRcloneConfig(config RcloneConfig) error {
 	if config.Remote == "" {
-		return &StorageError{
-			Op:      "validate rclone config",
-			Backend: "rclone",
-			Err:     fmt.Errorf("remote is required"),
-		}
+		return wrapError("validate rclone config", "", "rclone", fmt.Errorf("remote is required"))
 	}
 
 	return nil

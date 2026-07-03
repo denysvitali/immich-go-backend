@@ -220,13 +220,13 @@ func (l *LocalBackend) GetSize(ctx context.Context, path string) (int64, error) 
 // GetPresignedUploadURL is not supported by local backend
 func (l *LocalBackend) GetPresignedUploadURL(ctx context.Context, path string, contentType string, expiry time.Duration) (*PresignedURL, error) {
 	_ = ctx // Mark as intentionally unused
-	return nil, fmt.Errorf("%w", &StorageError{Op: "get presigned upload URL", Path: path, Backend: "local", Err: ErrPresignedURLsNotSupported})
+	return nil, wrapError("get presigned upload URL", path, "local", ErrPresignedURLsNotSupported)
 }
 
 // GetPresignedDownloadURL is not supported by local backend
 func (l *LocalBackend) GetPresignedDownloadURL(ctx context.Context, path string, expiry time.Duration) (*PresignedURL, error) {
 	_ = ctx // Mark as intentionally unused
-	return nil, fmt.Errorf("%w", &StorageError{Op: "get presigned download URL", Path: path, Backend: "local", Err: ErrPresignedURLsNotSupported})
+	return nil, wrapError("get presigned download URL", path, "local", ErrPresignedURLsNotSupported)
 }
 
 // SupportsPresignedURLs returns false for local backend
@@ -237,7 +237,7 @@ func (l *LocalBackend) SupportsPresignedURLs() bool {
 // GetPublicURL is not supported by local backend
 func (l *LocalBackend) GetPublicURL(ctx context.Context, path string) (string, error) {
 	_ = ctx // Mark as intentionally unused
-	return "", fmt.Errorf("%w", &StorageError{Op: "get public URL", Path: path, Backend: "local", Err: ErrPublicURLNotSupported})
+	return "", wrapError("get public URL", path, "local", ErrPublicURLNotSupported)
 }
 
 // Copy copies a file within the local filesystem

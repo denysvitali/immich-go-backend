@@ -43,12 +43,7 @@ func NewService(config StorageConfig) (*Service, error) {
 func (s *Service) validateUpload(filename, contentType string) (ext string, err error) {
 	ext = strings.ToLower(filepath.Ext(filename))
 	if !s.isAllowedExtension(ext) {
-		return "", &StorageError{
-			Op:      "upload asset",
-			Path:    filename,
-			Backend: s.config.Backend,
-			Err:     fmt.Errorf("file extension %s is not allowed", ext),
-		}
+		return "", wrapError("upload asset", filename, s.config.Backend, fmt.Errorf("file extension %s is not allowed", ext))
 	}
 	if contentType == "" {
 		contentType = mime.TypeByExtension(ext)
@@ -57,12 +52,7 @@ func (s *Service) validateUpload(filename, contentType string) (ext string, err 
 		}
 	}
 	if !s.isAllowedMimeType(contentType) {
-		return "", &StorageError{
-			Op:      "upload asset",
-			Path:    filename,
-			Backend: s.config.Backend,
-			Err:     fmt.Errorf("MIME type %s is not allowed", contentType),
-		}
+		return "", wrapError("upload asset", filename, s.config.Backend, fmt.Errorf("MIME type %s is not allowed", contentType))
 	}
 	return ext, nil
 }
@@ -79,12 +69,7 @@ func (s *Service) UploadAsset(ctx context.Context, userID string, filename strin
 
 	// Validate file size
 	if size > s.config.Upload.MaxFileSize {
-		return nil, &StorageError{
-			Op:      "upload asset",
-			Path:    filename,
-			Backend: s.config.Backend,
-			Err:     fmt.Errorf("file size %d exceeds maximum allowed size %d", size, s.config.Upload.MaxFileSize),
-		}
+		return nil, wrapError("upload asset", filename, s.config.Backend, fmt.Errorf("file size %d exceeds maximum allowed size %d", size, s.config.Upload.MaxFileSize))
 	}
 
 	// Validate extension and MIME type
@@ -144,11 +129,7 @@ func (s *Service) GetAssetUploadURL(ctx context.Context, userID string, filename
 	defer span.End()
 
 	if !s.backend.SupportsPresignedURLs() {
-		return nil, &StorageError{
-			Op:      "get asset upload URL",
-			Backend: s.config.Backend,
-			Err:     fmt.Errorf("presigned URLs not supported by backend %s", s.config.Backend),
-		}
+		return nil, wrapError("get asset upload URL", "", s.config.Backend, fmt.Errorf("presigned URLs not supported by backend %s", s.config.Backend))
 	}
 
 	// Validate extension and MIME type
