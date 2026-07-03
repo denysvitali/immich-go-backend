@@ -283,8 +283,6 @@ func (s *Service) Start() error {
 	for jobType, handler := range s.handlers {
 		mux.HandleFunc(jobType, handler)
 	}
-	// Add default handler for unregistered job types
-	mux.HandleFunc("*", s.processJob)
 	return s.server.Start(mux)
 }
 
@@ -294,25 +292,6 @@ func (s *Service) Stop() {
 	s.server.Stop()
 	s.server.Shutdown()
 	s.client.Close()
-}
-
-// processJob is the main job processor
-func (s *Service) processJob(ctx context.Context, task *asynq.Task) error {
-	var payload JobPayload
-	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
-		return fmt.Errorf("failed to unmarshal payload: %w", err)
-	}
-
-	s.logger.WithFields(logrus.Fields{
-		"job_type": task.Type(),
-		"job_id":   payload.ID,
-		"user_id":  payload.UserID,
-	}).Info("Processing job")
-
-	// Job processing logic would be implemented here based on job type
-	// For now, we'll just log that we're processing it
-
-	return nil
 }
 
 // getQueueByPriority returns the queue name based on priority
