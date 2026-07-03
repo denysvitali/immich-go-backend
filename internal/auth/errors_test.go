@@ -76,3 +76,62 @@ func TestMapAuthErrorToGRPC(t *testing.T) {
 		})
 	}
 }
+
+func TestAuthErrorConstructors(t *testing.T) {
+	cause := errors.New("bad signature")
+	tests := []struct {
+		name string
+		got  *AuthError
+		want AuthError
+	}{
+		{
+			name: "invalid credentials",
+			got:  NewInvalidCredentialsError("bad credentials"),
+			want: AuthError{Type: ErrInvalidCredentials, Message: "bad credentials"},
+		},
+		{
+			name: "invalid token",
+			got:  NewInvalidTokenError("invalid token", cause),
+			want: AuthError{Type: ErrInvalidToken, Message: "invalid token", Err: cause},
+		},
+		{
+			name: "token expired",
+			got:  NewTokenExpiredError(),
+			want: AuthError{Type: ErrTokenExpired, Message: "Token has expired"},
+		},
+		{
+			name: "user not found",
+			got:  NewUserNotFoundError(),
+			want: AuthError{Type: ErrUserNotFound, Message: "User not found"},
+		},
+		{
+			name: "user exists",
+			got:  NewUserExistsError(),
+			want: AuthError{Type: ErrUserExists, Message: "User already exists"},
+		},
+		{
+			name: "registration disabled",
+			got:  NewRegistrationDisabledError(),
+			want: AuthError{Type: ErrRegistrationDisabled, Message: "User registration is disabled"},
+		},
+		{
+			name: "insufficient permissions",
+			got:  NewInsufficientPermissionsError("admin required"),
+			want: AuthError{Type: ErrInsufficientPermissions, Message: "admin required"},
+		},
+		{
+			name: "unauthorized",
+			got:  NewUnauthorizedError("not authenticated"),
+			want: AuthError{Type: ErrUnauthorized, Message: "not authenticated"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.NotNil(t, tt.got)
+			assert.Equal(t, tt.want.Type, tt.got.Type)
+			assert.Equal(t, tt.want.Message, tt.got.Message)
+			assert.ErrorIs(t, tt.got.Err, tt.want.Err)
+		})
+	}
+}

@@ -129,65 +129,40 @@ func NewAuthError(errorType AuthErrorType, message string, err error) *AuthError
 
 // NewInvalidCredentialsError creates an invalid credentials error
 func NewInvalidCredentialsError(message string) *AuthError {
-	return &AuthError{
-		Type:    ErrInvalidCredentials,
-		Message: message,
-	}
+	return NewAuthError(ErrInvalidCredentials, message, nil)
 }
 
 // NewInvalidTokenError creates an invalid token error
 func NewInvalidTokenError(message string, err error) *AuthError {
-	return &AuthError{
-		Type:    ErrInvalidToken,
-		Message: message,
-		Err:     err,
-	}
+	return NewAuthError(ErrInvalidToken, message, err)
 }
 
 // NewTokenExpiredError creates a token expired error
 func NewTokenExpiredError() *AuthError {
-	return &AuthError{
-		Type:    ErrTokenExpired,
-		Message: "Token has expired",
-	}
+	return NewAuthError(ErrTokenExpired, "Token has expired", nil)
 }
 
 // NewUserNotFoundError creates a user not found error
 func NewUserNotFoundError() *AuthError {
-	return &AuthError{
-		Type:    ErrUserNotFound,
-		Message: "User not found",
-	}
+	return NewAuthError(ErrUserNotFound, "User not found", nil)
 }
 
 // NewUserExistsError creates a user exists error
 func NewUserExistsError() *AuthError {
-	return &AuthError{
-		Type:    ErrUserExists,
-		Message: "User already exists",
-	}
+	return NewAuthError(ErrUserExists, "User already exists", nil)
 }
 
 // NewRegistrationDisabledError creates a registration disabled error
 func NewRegistrationDisabledError() *AuthError {
-	return &AuthError{
-		Type:    ErrRegistrationDisabled,
-		Message: "User registration is disabled",
-	}
+	return NewAuthError(ErrRegistrationDisabled, "User registration is disabled", nil)
 }
 
 // NewInsufficientPermissionsError creates an insufficient permissions error
 func NewInsufficientPermissionsError(message string) *AuthError {
-	return &AuthError{
-		Type:    ErrInsufficientPermissions,
-		Message: message,
-	}
+	return NewAuthError(ErrInsufficientPermissions, message, nil)
 }
 
 // NewUnauthorizedError creates an unauthorized error
 func NewUnauthorizedError(message string) *AuthError {
-	return &AuthError{
-		Type:    ErrUnauthorized,
-		Message: message,
-	}
+	return NewAuthError(ErrUnauthorized, message, nil)
 }

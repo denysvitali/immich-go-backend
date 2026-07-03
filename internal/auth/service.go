@@ -19,6 +19,13 @@ import (
 
 var tracer = otel.Tracer("immich-go-backend/auth")
 
+func recordedAuthError(span trace.Span, errorType AuthErrorType, message string, err error) *AuthError {
+	if err != nil {
+		span.RecordError(err)
+	}
+	return NewAuthError(errorType, message, err)
+}
+
 // Service provides authentication functionality
 type Service struct {
 	config       config.AuthConfig
@@ -94,53 +101,32 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (*AuthResponse, e
 
 	loginKey := loginRateLimitKey(req.Email)
 	if !s.allowLoginAttempt(loginKey) {
-		return nil, &AuthError{
-			Type:    ErrRateLimited,
-			Message: "Too many failed login attempts",
-		}
+		return nil, NewAuthError(ErrRateLimited, "Too many failed login attempts", nil)
 	}
 
 	// Validate password complexity
 	if err := s.validatePassword(req.Password); err != nil {
-		span.RecordError(err)
 		s.recordFailedLogin(loginKey)
-		return nil, &AuthError{
-			Type:    ErrInvalidCredentials,
-			Message: "Invalid password format",
-			Err:     err,
-		}
+		return nil, recordedAuthError(span, ErrInvalidCredentials, "Invalid password format", err)
 	}
 
 	// Get user by email
 	user, err := s.queries.GetUserByEmail(ctx, req.Email)
 	if err != nil {
-		span.RecordError(err)
 		s.recordFailedLogin(loginKey)
-		return nil, &AuthError{
-			Type:    ErrInvalidCredentials,
-			Message: "Invalid email or password",
-			Err:     err,
-		}
+		return nil, recordedAuthError(span, ErrInvalidCredentials, "Invalid email or password", err)
 	}
 
 	// Check if user is deleted
 	if user.DeletedAt.Valid {
 		s.recordFailedLogin(loginKey)
-		return nil, &AuthError{
-			Type:    ErrUserDeleted,
-			Message: "User account has been deleted",
-		}
+		return nil, NewAuthError(ErrUserDeleted, "User account has been deleted", nil)
 	}
 
 	// Verify password
 	if passwordErr := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); passwordErr != nil {
-		span.RecordError(passwordErr)
 		s.recordFailedLogin(loginKey)
-		return nil, &AuthError{
-			Type:    ErrInvalidCredentials,
-			Message: "Invalid email or password",
-			Err:     passwordErr,
-		}
+		return nil, recordedAuthError(span, ErrInvalidCredentials, "Invalid email or password", passwordErr)
 	}
 
 	s.resetLoginAttempts(loginKey)
@@ -148,22 +134,12 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (*AuthResponse, e
 	// Generate tokens
 	accessToken, refreshToken, expiresAt, err := s.generateTokens(pgutil.UUIDToString(user.ID), user.Email, user.IsAdmin)
 	if err != nil {
-		span.RecordError(err)
-		return nil, &AuthError{
-			Type:    ErrTokenGeneration,
-			Message: "Failed to generate authentication tokens",
-			Err:     err,
-		}
+		return nil, recordedAuthError(span, ErrTokenGeneration, "Failed to generate authentication tokens", err)
 	}
 
 	// Store refresh token
 	if err := s.storeRefreshToken(ctx, pgutil.UUIDToString(user.ID), refreshToken); err != nil {
-		span.RecordError(err)
-		return nil, &AuthError{
-			Type:    ErrTokenStorage,
-			Message: "Failed to store refresh token",
-			Err:     err,
-		}
+		return nil, recordedAuthError(span, ErrTokenStorage, "Failed to store refresh token", err)
 	}
 
 	// Update last login
@@ -229,11 +205,7 @@ func (s *Service) IsInitialized(ctx context.Context) (bool, error) {
 func (s *Service) countUsers(ctx context.Context) (int64, error) {
 	userCount, err := s.queries.CountUsers(ctx, pgtype.Bool{Valid: false})
 	if err != nil {
-		return 0, &AuthError{
-			Type:    ErrUserCreation,
-			Message: "Failed to count existing users",
-			Err:     err,
-		}
+		return 0, NewAuthError(ErrUserCreation, "Failed to count existing users", err)
 	}
 	return userCount, nil
 }
@@ -245,62 +217,36 @@ func (s *Service) register(ctx context.Context, req RegisterRequest, isAdmin boo
 
 	// Check if registration is enabled
 	if !s.config.RegistrationEnabled {
-		return nil, &AuthError{
-			Type:    ErrRegistrationDisabled,
-			Message: "User registration is disabled",
-		}
+		return nil, NewAuthError(ErrRegistrationDisabled, "User registration is disabled", nil)
 	}
 
 	// Validate password
 	if err := s.validatePassword(req.Password); err != nil {
-		span.RecordError(err)
-		return nil, &AuthError{
-			Type:    ErrInvalidPassword,
-			Message: "Password does not meet requirements",
-			Err:     err,
-		}
+		return nil, recordedAuthError(span, ErrInvalidPassword, "Password does not meet requirements", err)
 	}
 
 	// Check if user already exists
 	existingUser, err := s.queries.GetUserByEmail(ctx, req.Email)
 	if err == nil && existingUser.ID.Valid {
-		return nil, &AuthError{
-			Type:    ErrUserExists,
-			Message: "User with this email already exists",
-		}
+		return nil, NewAuthError(ErrUserExists, "User with this email already exists", nil)
 	}
 
 	// Hash password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
-		span.RecordError(err)
-		return nil, &AuthError{
-			Type:    ErrPasswordHashing,
-			Message: "Failed to hash password",
-			Err:     err,
-		}
+		return nil, recordedAuthError(span, ErrPasswordHashing, "Failed to hash password", err)
 	}
 
 	// Generate user ID
 	userID, err := s.generateUserID()
 	if err != nil {
-		span.RecordError(err)
-		return nil, &AuthError{
-			Type:    ErrUserCreation,
-			Message: "Failed to generate user ID",
-			Err:     err,
-		}
+		return nil, recordedAuthError(span, ErrUserCreation, "Failed to generate user ID", err)
 	}
 
 	// Create user
 	userUUID, err := pgutil.StringToUUID(userID)
 	if err != nil {
-		span.RecordError(err)
-		return nil, &AuthError{
-			Type:    ErrUserCreation,
-			Message: "Failed to convert user ID",
-			Err:     err,
-		}
+		return nil, recordedAuthError(span, ErrUserCreation, "Failed to convert user ID", err)
 	}
 
 	createUserParams := sqlc.CreateUserParams{
@@ -314,33 +260,18 @@ func (s *Service) register(ctx context.Context, req RegisterRequest, isAdmin boo
 
 	user, err := s.queries.CreateUser(ctx, createUserParams)
 	if err != nil {
-		span.RecordError(err)
-		return nil, &AuthError{
-			Type:    ErrUserCreation,
-			Message: "Failed to create user account",
-			Err:     err,
-		}
+		return nil, recordedAuthError(span, ErrUserCreation, "Failed to create user account", err)
 	}
 
 	// Generate tokens
 	accessToken, refreshToken, expiresAt, err := s.generateTokens(pgutil.UUIDToString(user.ID), user.Email, user.IsAdmin)
 	if err != nil {
-		span.RecordError(err)
-		return nil, &AuthError{
-			Type:    ErrTokenGeneration,
-			Message: "Failed to generate authentication tokens",
-			Err:     err,
-		}
+		return nil, recordedAuthError(span, ErrTokenGeneration, "Failed to generate authentication tokens", err)
 	}
 
 	// Store refresh token
 	if err := s.storeRefreshToken(ctx, pgutil.UUIDToString(user.ID), refreshToken); err != nil {
-		span.RecordError(err)
-		return nil, &AuthError{
-			Type:    ErrTokenStorage,
-			Message: "Failed to store refresh token",
-			Err:     err,
-		}
+		return nil, recordedAuthError(span, ErrTokenStorage, "Failed to store refresh token", err)
 	}
 
 	return &AuthResponse{
@@ -367,71 +298,40 @@ func (s *Service) RefreshToken(ctx context.Context, req RefreshRequest) (*AuthRe
 	// Validate refresh token
 	claims, err := s.validateToken(req.RefreshToken)
 	if err != nil {
-		span.RecordError(err)
-		return nil, &AuthError{
-			Type:    ErrInvalidToken,
-			Message: "Invalid refresh token",
-			Err:     err,
-		}
+		return nil, recordedAuthError(span, ErrInvalidToken, "Invalid refresh token", err)
 	}
 
 	// Check if refresh token exists in database
 	storedToken, err := s.queries.GetRefreshToken(ctx, req.RefreshToken)
 	if err != nil {
-		span.RecordError(err)
-		return nil, &AuthError{
-			Type:    ErrInvalidToken,
-			Message: "Refresh token not found",
-			Err:     err,
-		}
+		return nil, recordedAuthError(span, ErrInvalidToken, "Refresh token not found", err)
 	}
 
 	// Check if token is expired
 	if pgutil.TimestamptzToTime(storedToken.ExpiresAt).Before(time.Now()) {
-		return nil, &AuthError{
-			Type:    ErrTokenExpired,
-			Message: "Refresh token has expired",
-		}
+		return nil, NewAuthError(ErrTokenExpired, "Refresh token has expired", nil)
 	}
 
 	// Get user
 	userUUID, err := pgutil.StringToUUID(claims.UserID)
 	if err != nil {
-		span.RecordError(err)
-		return nil, &AuthError{
-			Type:    ErrInvalidToken,
-			Message: "Invalid user ID in token",
-			Err:     err,
-		}
+		return nil, recordedAuthError(span, ErrInvalidToken, "Invalid user ID in token", err)
 	}
 
 	user, err := s.queries.GetUserByID(ctx, userUUID)
 	if err != nil {
-		span.RecordError(err)
-		return nil, &AuthError{
-			Type:    ErrUserNotFound,
-			Message: "User not found",
-			Err:     err,
-		}
+		return nil, recordedAuthError(span, ErrUserNotFound, "User not found", err)
 	}
 
 	// Check if user is deleted
 	if user.DeletedAt.Valid {
-		return nil, &AuthError{
-			Type:    ErrUserDeleted,
-			Message: "User account has been deleted",
-		}
+		return nil, NewAuthError(ErrUserDeleted, "User account has been deleted", nil)
 	}
 
 	// Generate new tokens
 	accessToken, newRefreshToken, expiresAt, err := s.generateTokens(pgutil.UUIDToString(user.ID), user.Email, user.IsAdmin)
 	if err != nil {
-		span.RecordError(err)
-		return nil, &AuthError{
-			Type:    ErrTokenGeneration,
-			Message: "Failed to generate new tokens",
-			Err:     err,
-		}
+		return nil, recordedAuthError(span, ErrTokenGeneration, "Failed to generate new tokens", err)
 	}
 
 	// Delete old refresh token and store new one
@@ -440,12 +340,7 @@ func (s *Service) RefreshToken(ctx context.Context, req RefreshRequest) (*AuthRe
 	}
 
 	if err := s.storeRefreshToken(ctx, pgutil.UUIDToString(user.ID), newRefreshToken); err != nil {
-		span.RecordError(err)
-		return nil, &AuthError{
-			Type:    ErrTokenStorage,
-			Message: "Failed to store new refresh token",
-			Err:     err,
-		}
+		return nil, recordedAuthError(span, ErrTokenStorage, "Failed to store new refresh token", err)
 	}
 
 	return &AuthResponse{
@@ -475,12 +370,7 @@ func (s *Service) Logout(ctx context.Context, refreshToken string) error {
 	defer span.End()
 
 	if err := s.queries.DeleteRefreshToken(ctx, refreshToken); err != nil {
-		span.RecordError(err)
-		return &AuthError{
-			Type:    ErrTokenDeletion,
-			Message: "Failed to logout",
-			Err:     err,
-		}
+		return recordedAuthError(span, ErrTokenDeletion, "Failed to logout", err)
 	}
 
 	return nil
@@ -495,53 +385,28 @@ func (s *Service) ChangePassword(ctx context.Context, userID string, req ChangeP
 	// Get user
 	userUUID, err := pgutil.StringToUUID(userID)
 	if err != nil {
-		span.RecordError(err)
-		return &AuthError{
-			Type:    ErrInvalidCredentials,
-			Message: "Invalid user ID",
-			Err:     err,
-		}
+		return recordedAuthError(span, ErrInvalidCredentials, "Invalid user ID", err)
 	}
 
 	user, err := s.queries.GetUserByID(ctx, userUUID)
 	if err != nil {
-		span.RecordError(err)
-		return &AuthError{
-			Type:    ErrUserNotFound,
-			Message: "User not found",
-			Err:     err,
-		}
+		return recordedAuthError(span, ErrUserNotFound, "User not found", err)
 	}
 
 	// Verify current password
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.CurrentPassword)); err != nil {
-		span.RecordError(err)
-		return &AuthError{
-			Type:    ErrInvalidCredentials,
-			Message: "Current password is incorrect",
-			Err:     err,
-		}
+		return recordedAuthError(span, ErrInvalidCredentials, "Current password is incorrect", err)
 	}
 
 	// Validate new password
 	if err := s.validatePassword(req.NewPassword); err != nil {
-		span.RecordError(err)
-		return &AuthError{
-			Type:    ErrInvalidPassword,
-			Message: "New password does not meet requirements",
-			Err:     err,
-		}
+		return recordedAuthError(span, ErrInvalidPassword, "New password does not meet requirements", err)
 	}
 
 	// Hash new password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
 	if err != nil {
-		span.RecordError(err)
-		return &AuthError{
-			Type:    ErrPasswordHashing,
-			Message: "Failed to hash new password",
-			Err:     err,
-		}
+		return recordedAuthError(span, ErrPasswordHashing, "Failed to hash new password", err)
 	}
 
 	// Update password
@@ -551,12 +416,7 @@ func (s *Service) ChangePassword(ctx context.Context, userID string, req ChangeP
 	}
 
 	if err := s.queries.UpdateUserPassword(ctx, updateParams); err != nil {
-		span.RecordError(err)
-		return &AuthError{
-			Type:    ErrPasswordUpdate,
-			Message: "Failed to update password",
-			Err:     err,
-		}
+		return recordedAuthError(span, ErrPasswordUpdate, "Failed to update password", err)
 	}
 
 	// Invalidate all refresh tokens for this user
@@ -711,41 +571,23 @@ func (s *Service) SetupPinCode(ctx context.Context, userID, pinCode string) erro
 
 	userUUID, err := pgutil.StringToUUID(userID)
 	if err != nil {
-		span.RecordError(err)
-		return &AuthError{
-			Type:    ErrInvalidCredentials,
-			Message: "Invalid user ID",
-			Err:     err,
-		}
+		return recordedAuthError(span, ErrInvalidCredentials, "Invalid user ID", err)
 	}
 
 	// Check if PIN code already exists
 	hasPinCode, err := s.queries.HasUserPinCode(ctx, userUUID)
 	if err != nil {
-		span.RecordError(err)
-		return &AuthError{
-			Type:    ErrPinCodeUpdate,
-			Message: "Failed to check PIN code status",
-			Err:     err,
-		}
+		return recordedAuthError(span, ErrPinCodeUpdate, "Failed to check PIN code status", err)
 	}
 
 	if hasPinCode {
-		return &AuthError{
-			Type:    ErrPinCodeExists,
-			Message: "PIN code already set. Use change PIN code instead.",
-		}
+		return NewAuthError(ErrPinCodeExists, "PIN code already set. Use change PIN code instead.", nil)
 	}
 
 	// Hash the PIN code
 	hashedPinCode, err := bcrypt.GenerateFromPassword([]byte(pinCode), bcrypt.DefaultCost)
 	if err != nil {
-		span.RecordError(err)
-		return &AuthError{
-			Type:    ErrPasswordHashing,
-			Message: "Failed to hash PIN code",
-			Err:     err,
-		}
+		return recordedAuthError(span, ErrPasswordHashing, "Failed to hash PIN code", err)
 	}
 
 	// Store the PIN code
@@ -753,12 +595,7 @@ func (s *Service) SetupPinCode(ctx context.Context, userID, pinCode string) erro
 		PinCode: pgutil.Text(string(hashedPinCode)),
 		ID:      userUUID,
 	}); err != nil {
-		span.RecordError(err)
-		return &AuthError{
-			Type:    ErrPinCodeUpdate,
-			Message: "Failed to set PIN code",
-			Err:     err,
-		}
+		return recordedAuthError(span, ErrPinCodeUpdate, "Failed to set PIN code", err)
 	}
 
 	return nil
@@ -772,51 +609,28 @@ func (s *Service) ChangePinCode(ctx context.Context, userID, currentPinCode, new
 
 	userUUID, err := pgutil.StringToUUID(userID)
 	if err != nil {
-		span.RecordError(err)
-		return &AuthError{
-			Type:    ErrInvalidCredentials,
-			Message: "Invalid user ID",
-			Err:     err,
-		}
+		return recordedAuthError(span, ErrInvalidCredentials, "Invalid user ID", err)
 	}
 
 	// Get current PIN code
 	result, err := s.queries.GetUserPinCode(ctx, userUUID)
 	if err != nil {
-		span.RecordError(err)
-		return &AuthError{
-			Type:    ErrPinCodeUpdate,
-			Message: "Failed to get current PIN code",
-			Err:     err,
-		}
+		return recordedAuthError(span, ErrPinCodeUpdate, "Failed to get current PIN code", err)
 	}
 
 	if !result.Valid {
-		return &AuthError{
-			Type:    ErrNoPinCode,
-			Message: "No PIN code set",
-		}
+		return NewAuthError(ErrNoPinCode, "No PIN code set", nil)
 	}
 
 	// Verify current PIN code
 	if err := bcrypt.CompareHashAndPassword([]byte(result.String), []byte(currentPinCode)); err != nil {
-		span.RecordError(err)
-		return &AuthError{
-			Type:    ErrInvalidCredentials,
-			Message: "Current PIN code is incorrect",
-			Err:     err,
-		}
+		return recordedAuthError(span, ErrInvalidCredentials, "Current PIN code is incorrect", err)
 	}
 
 	// Hash the new PIN code
 	hashedPinCode, err := bcrypt.GenerateFromPassword([]byte(newPinCode), bcrypt.DefaultCost)
 	if err != nil {
-		span.RecordError(err)
-		return &AuthError{
-			Type:    ErrPasswordHashing,
-			Message: "Failed to hash new PIN code",
-			Err:     err,
-		}
+		return recordedAuthError(span, ErrPasswordHashing, "Failed to hash new PIN code", err)
 	}
 
 	// Store the new PIN code
@@ -824,12 +638,7 @@ func (s *Service) ChangePinCode(ctx context.Context, userID, currentPinCode, new
 		PinCode: pgutil.Text(string(hashedPinCode)),
 		ID:      userUUID,
 	}); err != nil {
-		span.RecordError(err)
-		return &AuthError{
-			Type:    ErrPinCodeUpdate,
-			Message: "Failed to update PIN code",
-			Err:     err,
-		}
+		return recordedAuthError(span, ErrPinCodeUpdate, "Failed to update PIN code", err)
 	}
 
 	return nil
@@ -843,43 +652,23 @@ func (s *Service) ResetPinCode(ctx context.Context, userID, password string) err
 
 	userUUID, err := pgutil.StringToUUID(userID)
 	if err != nil {
-		span.RecordError(err)
-		return &AuthError{
-			Type:    ErrInvalidCredentials,
-			Message: "Invalid user ID",
-			Err:     err,
-		}
+		return recordedAuthError(span, ErrInvalidCredentials, "Invalid user ID", err)
 	}
 
 	// Get user to verify password
 	user, err := s.queries.GetUserByID(ctx, userUUID)
 	if err != nil {
-		span.RecordError(err)
-		return &AuthError{
-			Type:    ErrUserNotFound,
-			Message: "User not found",
-			Err:     err,
-		}
+		return recordedAuthError(span, ErrUserNotFound, "User not found", err)
 	}
 
 	// Verify password
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
-		span.RecordError(err)
-		return &AuthError{
-			Type:    ErrInvalidCredentials,
-			Message: "Password is incorrect",
-			Err:     err,
-		}
+		return recordedAuthError(span, ErrInvalidCredentials, "Password is incorrect", err)
 	}
 
 	// Clear the PIN code
 	if err := s.queries.ClearUserPinCode(ctx, userUUID); err != nil {
-		span.RecordError(err)
-		return &AuthError{
-			Type:    ErrPinCodeUpdate,
-			Message: "Failed to clear PIN code",
-			Err:     err,
-		}
+		return recordedAuthError(span, ErrPinCodeUpdate, "Failed to clear PIN code", err)
 	}
 
 	return nil
@@ -895,63 +684,35 @@ func (s *Service) UnlockSession(ctx context.Context, userID, sessionID, pinCode 
 
 	userUUID, err := pgutil.StringToUUID(userID)
 	if err != nil {
-		span.RecordError(err)
-		return &AuthError{
-			Type:    ErrInvalidCredentials,
-			Message: "Invalid user ID",
-			Err:     err,
-		}
+		return recordedAuthError(span, ErrInvalidCredentials, "Invalid user ID", err)
 	}
 
 	// Get user's PIN code
 	result, err := s.queries.GetUserPinCode(ctx, userUUID)
 	if err != nil {
-		span.RecordError(err)
-		return &AuthError{
-			Type:    ErrPinCodeUpdate,
-			Message: "Failed to get PIN code",
-			Err:     err,
-		}
+		return recordedAuthError(span, ErrPinCodeUpdate, "Failed to get PIN code", err)
 	}
 
 	if !result.Valid {
-		return &AuthError{
-			Type:    ErrNoPinCode,
-			Message: "No PIN code set",
-		}
+		return NewAuthError(ErrNoPinCode, "No PIN code set", nil)
 	}
 
 	// Verify PIN code
 	if err := bcrypt.CompareHashAndPassword([]byte(result.String), []byte(pinCode)); err != nil {
-		span.RecordError(err)
-		return &AuthError{
-			Type:    ErrInvalidCredentials,
-			Message: "PIN code is incorrect",
-			Err:     err,
-		}
+		return recordedAuthError(span, ErrInvalidCredentials, "PIN code is incorrect", err)
 	}
 
 	// Set session PIN elevation (expires in 1 hour)
 	sessionUUID, err := pgutil.StringToUUID(sessionID)
 	if err != nil {
-		span.RecordError(err)
-		return &AuthError{
-			Type:    ErrInvalidCredentials,
-			Message: "Invalid session ID",
-			Err:     err,
-		}
+		return recordedAuthError(span, ErrInvalidCredentials, "Invalid session ID", err)
 	}
 
 	if err := s.queries.SetSessionPinElevation(ctx, sqlc.SetSessionPinElevationParams{
 		PinExpiresAt: pgutil.TimeToTimestamptz(time.Now().Add(1 * time.Hour)),
 		ID:           sessionUUID,
 	}); err != nil {
-		span.RecordError(err)
-		return &AuthError{
-			Type:    ErrSessionUpdate,
-			Message: "Failed to elevate session",
-			Err:     err,
-		}
+		return recordedAuthError(span, ErrSessionUpdate, "Failed to elevate session", err)
 	}
 
 	return nil
@@ -965,21 +726,11 @@ func (s *Service) LockSession(ctx context.Context, sessionID string) error {
 
 	sessionUUID, err := pgutil.StringToUUID(sessionID)
 	if err != nil {
-		span.RecordError(err)
-		return &AuthError{
-			Type:    ErrInvalidCredentials,
-			Message: "Invalid session ID",
-			Err:     err,
-		}
+		return recordedAuthError(span, ErrInvalidCredentials, "Invalid session ID", err)
 	}
 
 	if err := s.queries.ClearSessionPinElevation(ctx, sessionUUID); err != nil {
-		span.RecordError(err)
-		return &AuthError{
-			Type:    ErrSessionUpdate,
-			Message: "Failed to lock session",
-			Err:     err,
-		}
+		return recordedAuthError(span, ErrSessionUpdate, "Failed to lock session", err)
 	}
 
 	return nil
