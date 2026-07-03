@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/denysvitali/immich-go-backend/internal/db/pgutil"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -42,12 +43,10 @@ type TimelineOptions struct {
 
 func (s *Service) GetTimeBuckets(ctx context.Context, opts TimelineOptions) ([]*TimeBucket, error) {
 	// Parse user ID
-	uuid, err := uuid.Parse(opts.UserID)
+	userUUID, err := pgutil.ParseUserID(opts.UserID)
 	if err != nil {
 		return nil, err
 	}
-
-	userUUID := pgtype.UUID{Bytes: uuid, Valid: true}
 
 	// Determine time bucket interval
 	timeBucket := "day"
@@ -83,12 +82,10 @@ func (s *Service) GetTimeBuckets(ctx context.Context, opts TimelineOptions) ([]*
 
 func (s *Service) GetTimelineAssets(ctx context.Context, opts TimelineOptions) ([]string, error) {
 	// Parse user ID
-	uid, err := uuid.Parse(opts.UserID)
+	userUUID, err := pgutil.ParseUserID(opts.UserID)
 	if err != nil {
 		return nil, err
 	}
-
-	userUUID := pgtype.UUID{Bytes: uid, Valid: true}
 
 	// Build query parameters
 	params := sqlc.GetUserAssetsParams{
@@ -115,12 +112,10 @@ func (s *Service) GetTimelineAssets(ctx context.Context, opts TimelineOptions) (
 
 func (s *Service) GetMonthlyBuckets(ctx context.Context, userID string, year int) ([]*TimeBucket, error) {
 	// Parse user ID
-	uid, err := uuid.Parse(userID)
+	userUUID, err := pgutil.ParseUserID(userID)
 	if err != nil {
 		return nil, err
 	}
-
-	userUUID := pgtype.UUID{Bytes: uid, Valid: true}
 
 	// Get monthly buckets from database
 	dbBuckets, err := s.queries.GetTimelineBuckets(ctx, sqlc.GetTimelineBucketsParams{
@@ -146,12 +141,10 @@ func (s *Service) GetMonthlyBuckets(ctx context.Context, userID string, year int
 
 func (s *Service) GetYearlyBuckets(ctx context.Context, userID string) ([]*TimeBucket, error) {
 	// Parse user ID
-	uid, err := uuid.Parse(userID)
+	userUUID, err := pgutil.ParseUserID(userID)
 	if err != nil {
 		return nil, err
 	}
-
-	userUUID := pgtype.UUID{Bytes: uid, Valid: true}
 
 	// Get yearly buckets from database
 	dbBuckets, err := s.queries.GetTimelineBuckets(ctx, sqlc.GetTimelineBucketsParams{
@@ -177,12 +170,10 @@ func (s *Service) GetYearlyBuckets(ctx context.Context, userID string) ([]*TimeB
 
 func (s *Service) GetDayDetail(ctx context.Context, userID string, date time.Time) (*TimeBucket, error) {
 	// Parse user ID
-	uid, err := uuid.Parse(userID)
+	userUUID, err := pgutil.ParseUserID(userID)
 	if err != nil {
 		return nil, err
 	}
-
-	userUUID := pgtype.UUID{Bytes: uid, Valid: true}
 
 	// Get daily buckets to find this specific day
 	dbBuckets, err := s.queries.GetTimelineBuckets(ctx, sqlc.GetTimelineBucketsParams{
@@ -215,12 +206,10 @@ func (s *Service) GetDayDetail(ctx context.Context, userID string, date time.Tim
 
 func (s *Service) GetTimelineStats(ctx context.Context, userID string) (map[string]interface{}, error) {
 	// Parse user ID
-	uid, err := uuid.Parse(userID)
+	userUUID, err := pgutil.ParseUserID(userID)
 	if err != nil {
 		return nil, err
 	}
-
-	userUUID := pgtype.UUID{Bytes: uid, Valid: true}
 
 	// Get asset statistics from database
 	statsRow, err := s.queries.GetAssetStatsByUser(ctx, userUUID)

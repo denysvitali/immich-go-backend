@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/denysvitali/immich-go-backend/internal/config"
+	"github.com/denysvitali/immich-go-backend/internal/db/pgutil"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/denysvitali/immich-go-backend/internal/telemetry"
 	"github.com/google/uuid"
@@ -15,6 +16,8 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/crypto/bcrypt"
+
+	"github.com/denysvitali/immich-go-backend/internal/util"
 )
 
 var tracer = telemetry.GetTracer("users")
@@ -81,15 +84,7 @@ func (s *Service) GetUser(ctx context.Context, userID uuid.UUID) (*UserInfo, err
 			metric.WithAttributes(attribute.String("operation", "get_user")))
 	}()
 
-	userUUID := pgtype.UUID{}
-	if err := userUUID.Scan(userID.String()); err != nil {
-		span.RecordError(err)
-		return nil, &UserError{
-			Type:    ErrInvalidUserID,
-			Message: "Invalid user ID format",
-			Err:     err,
-		}
-	}
+	userUUID := pgutil.UUIDToPgtype(userID)
 
 	user, err := s.db.GetUser(ctx, userUUID)
 	if err != nil {
@@ -239,43 +234,21 @@ func (s *Service) UpdateUser(ctx context.Context, userID uuid.UUID, req UpdateUs
 			metric.WithAttributes(attribute.String("operation", "update_user")))
 	}()
 
-	userUUID := pgtype.UUID{}
-	if err := userUUID.Scan(userID.String()); err != nil {
-		span.RecordError(err)
-		return nil, &UserError{
-			Type:    ErrInvalidUserID,
-			Message: "Invalid user ID format",
-			Err:     err,
-		}
-	}
+	userUUID := pgutil.UUIDToPgtype(userID)
 
 	// Build update parameters
 	updateParams := sqlc.UpdateUserParams{
 		ID: userUUID,
 	}
 
-	if req.Name != nil {
-		updateParams.Name = pgtype.Text{String: *req.Name, Valid: true}
-	}
-
-	if req.Email != nil {
-		updateParams.Email = pgtype.Text{String: *req.Email, Valid: true}
-	}
-
-	if req.AvatarColor != nil {
-		updateParams.AvatarColor = pgtype.Text{String: *req.AvatarColor, Valid: true}
-	}
-
-	if req.ProfileImagePath != nil {
-		updateParams.ProfileImagePath = pgtype.Text{String: *req.ProfileImagePath, Valid: true}
-	}
+	updateParams.Name = util.OptionalText(req.Name)
+	updateParams.Email = util.OptionalText(req.Email)
+	updateParams.AvatarColor = util.OptionalText(req.AvatarColor)
+	updateParams.ProfileImagePath = util.OptionalText(req.ProfileImagePath)
+	updateParams.StorageLabel = util.OptionalText(req.StorageLabel)
 
 	if req.QuotaSizeInBytes != nil {
 		updateParams.QuotaSizeInBytes = pgtype.Int8{Int64: *req.QuotaSizeInBytes, Valid: true}
-	}
-
-	if req.StorageLabel != nil {
-		updateParams.StorageLabel = pgtype.Text{String: *req.StorageLabel, Valid: true}
 	}
 
 	// Update user in database
@@ -306,15 +279,7 @@ func (s *Service) UpdateUserPassword(ctx context.Context, userID uuid.UUID, req 
 			metric.WithAttributes(attribute.String("operation", "update_user_password")))
 	}()
 
-	userUUID := pgtype.UUID{}
-	if err := userUUID.Scan(userID.String()); err != nil {
-		span.RecordError(err)
-		return &UserError{
-			Type:    ErrInvalidUserID,
-			Message: "Invalid user ID format",
-			Err:     err,
-		}
-	}
+	userUUID := pgutil.UUIDToPgtype(userID)
 
 	// Validate password
 	if err := s.validatePassword(req.NewPassword); err != nil {
@@ -378,15 +343,7 @@ func (s *Service) UpdateUserAdmin(ctx context.Context, userID uuid.UUID, isAdmin
 			metric.WithAttributes(attribute.String("operation", "update_user_admin")))
 	}()
 
-	userUUID := pgtype.UUID{}
-	if err := userUUID.Scan(userID.String()); err != nil {
-		span.RecordError(err)
-		return nil, &UserError{
-			Type:    ErrInvalidUserID,
-			Message: "Invalid user ID format",
-			Err:     err,
-		}
-	}
+	userUUID := pgutil.UUIDToPgtype(userID)
 
 	user, err := s.db.UpdateUserAdmin(ctx, sqlc.UpdateUserAdminParams{
 		ID:      userUUID,
@@ -421,15 +378,7 @@ func (s *Service) DeleteUser(ctx context.Context, userID uuid.UUID, hardDelete b
 			metric.WithAttributes(attribute.String("operation", "delete_user")))
 	}()
 
-	userUUID := pgtype.UUID{}
-	if err := userUUID.Scan(userID.String()); err != nil {
-		span.RecordError(err)
-		return &UserError{
-			Type:    ErrInvalidUserID,
-			Message: "Invalid user ID format",
-			Err:     err,
-		}
-	}
+	userUUID := pgutil.UUIDToPgtype(userID)
 
 	if hardDelete {
 		// Hard delete - permanently remove user
@@ -471,15 +420,7 @@ func (s *Service) RestoreUser(ctx context.Context, userID uuid.UUID) (*UserInfo,
 			metric.WithAttributes(attribute.String("operation", "restore_user")))
 	}()
 
-	userUUID := pgtype.UUID{}
-	if err := userUUID.Scan(userID.String()); err != nil {
-		span.RecordError(err)
-		return nil, &UserError{
-			Type:    ErrInvalidUserID,
-			Message: "Invalid user ID format",
-			Err:     err,
-		}
-	}
+	userUUID := pgutil.UUIDToPgtype(userID)
 
 	user, err := s.db.RestoreUser(ctx, userUUID)
 	if err != nil {
@@ -508,15 +449,7 @@ func (s *Service) GetUserPreferences(ctx context.Context, userID uuid.UUID) (*Us
 			metric.WithAttributes(attribute.String("operation", "get_user_preferences")))
 	}()
 
-	userUUID := pgtype.UUID{}
-	if err := userUUID.Scan(userID.String()); err != nil {
-		span.RecordError(err)
-		return nil, &UserError{
-			Type:    ErrInvalidUserID,
-			Message: "Invalid user ID format",
-			Err:     err,
-		}
-	}
+	userUUID := pgutil.UUIDToPgtype(userID)
 
 	// Get preferences JSON data from database
 	prefsData, err := s.db.GetUserPreferencesData(ctx, userUUID)
@@ -558,15 +491,7 @@ func (s *Service) UpdateUserPreferences(ctx context.Context, userID uuid.UUID, r
 			metric.WithAttributes(attribute.String("operation", "update_user_preferences")))
 	}()
 
-	userUUID := pgtype.UUID{}
-	if err := userUUID.Scan(userID.String()); err != nil {
-		span.RecordError(err)
-		return nil, &UserError{
-			Type:    ErrInvalidUserID,
-			Message: "Invalid user ID format",
-			Err:     err,
-		}
-	}
+	userUUID := pgutil.UUIDToPgtype(userID)
 
 	// Get current preferences or create default
 	currentPrefs, err := s.GetUserPreferences(ctx, userID)
@@ -679,27 +604,17 @@ func (s *Service) dbUserToUserInfo(user sqlc.User) *UserInfo {
 
 // getDefaultUserPreferences returns default user preferences
 func (s *Service) getDefaultUserPreferences(userID uuid.UUID) *UserPreferences {
-	emailNotifications := true
-	downloadIncludeEmbeddedVideos := false
-	foldersEnabled := true
-	memoriesEnabled := true
-	peopleEnabled := true
-	peopleSizeThreshold := int32(10)
-	sharedLinksEnabled := true
-	tagsEnabled := true
-	tagsSizeThreshold := int32(10)
-
 	return &UserPreferences{
 		UserID:                        userID,
-		EmailNotifications:            &emailNotifications,
-		DownloadIncludeEmbeddedVideos: &downloadIncludeEmbeddedVideos,
-		FoldersEnabled:                &foldersEnabled,
-		MemoriesEnabled:               &memoriesEnabled,
-		PeopleEnabled:                 &peopleEnabled,
-		PeopleSizeThreshold:           &peopleSizeThreshold,
-		SharedLinksEnabled:            &sharedLinksEnabled,
-		TagsEnabled:                   &tagsEnabled,
-		TagsSizeThreshold:             &tagsSizeThreshold,
+		EmailNotifications:            util.Ptr(true),
+		DownloadIncludeEmbeddedVideos: util.Ptr(false),
+		FoldersEnabled:                util.Ptr(true),
+		MemoriesEnabled:               util.Ptr(true),
+		PeopleEnabled:                 util.Ptr(true),
+		PeopleSizeThreshold:           util.Ptr(int32(10)),
+		SharedLinksEnabled:            util.Ptr(true),
+		TagsEnabled:                   util.Ptr(true),
+		TagsSizeThreshold:             util.Ptr(int32(10)),
 	}
 }
 
@@ -757,15 +672,7 @@ func (s *Service) GetUserOnboarding(ctx context.Context, userID uuid.UUID) (*Onb
 			metric.WithAttributes(attribute.String("operation", "get_user_onboarding")))
 	}()
 
-	userUUID := pgtype.UUID{}
-	if err := userUUID.Scan(userID.String()); err != nil {
-		span.RecordError(err)
-		return nil, &UserError{
-			Type:    ErrInvalidUserID,
-			Message: "Invalid user ID format",
-			Err:     err,
-		}
-	}
+	userUUID := pgutil.UUIDToPgtype(userID)
 
 	// Try to get onboarding data
 	data, err := s.db.GetUserOnboarding(ctx, userUUID)
@@ -809,15 +716,7 @@ func (s *Service) UpdateUserOnboarding(ctx context.Context, userID uuid.UUID, is
 			metric.WithAttributes(attribute.String("operation", "update_user_onboarding")))
 	}()
 
-	userUUID := pgtype.UUID{}
-	if err := userUUID.Scan(userID.String()); err != nil {
-		span.RecordError(err)
-		return nil, &UserError{
-			Type:    ErrInvalidUserID,
-			Message: "Invalid user ID format",
-			Err:     err,
-		}
-	}
+	userUUID := pgutil.UUIDToPgtype(userID)
 
 	status := OnboardingStatus{IsOnboarded: isOnboarded}
 	data, err := json.Marshal(status)

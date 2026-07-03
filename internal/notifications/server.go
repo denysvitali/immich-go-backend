@@ -6,6 +6,7 @@ import (
 
 	"github.com/denysvitali/immich-go-backend/internal/auth"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
+	"github.com/denysvitali/immich-go-backend/internal/util"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -143,7 +144,7 @@ func (s *Server) GetNotification(ctx context.Context, req *immichv1.GetNotificat
 	protoNotif := &immichv1.NotificationDto{
 		Id:          notification.ID,
 		Title:       notification.Title,
-		Description: ptrString(notification.Description),
+		Description: util.Ptr(notification.Description),
 		Level:       level,
 		Type:        notifType,
 		CreatedAt:   timestamppb.New(notification.CreatedAt),
@@ -213,7 +214,7 @@ func (s *Server) UpdateNotification(ctx context.Context, req *immichv1.UpdateNot
 	protoNotif := &immichv1.NotificationDto{
 		Id:          notification.ID,
 		Title:       notification.Title,
-		Description: ptrString(notification.Description),
+		Description: util.Ptr(notification.Description),
 		Level:       level,
 		Type:        notifType,
 		CreatedAt:   timestamppb.New(notification.CreatedAt),
@@ -297,9 +298,4 @@ func (s *Server) DeleteNotifications(ctx context.Context, req *immichv1.DeleteNo
 	}
 
 	return &emptypb.Empty{}, nil
-}
-
-// Helper function to create string pointer
-func ptrString(s string) *string {
-	return &s
 }

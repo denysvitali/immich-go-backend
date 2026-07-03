@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/denysvitali/immich-go-backend/internal/config"
+	"github.com/denysvitali/immich-go-backend/internal/db/pgutil"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/denysvitali/immich-go-backend/internal/telemetry"
 	"github.com/google/uuid"
@@ -13,6 +14,9 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
+
+	assetdomain "github.com/denysvitali/immich-go-backend/internal/assets"
+	"github.com/denysvitali/immich-go-backend/internal/util"
 )
 
 var tracer = telemetry.GetTracer("view")
@@ -70,7 +74,7 @@ func (s *Service) GetAssetsByOriginalPath(ctx context.Context, req GetAssetsByOr
 	}()
 
 	// Convert UUID to pgtype.UUID
-	ownerUUID := pgtype.UUID{Bytes: req.UserID, Valid: true}
+	ownerUUID := pgutil.UUIDToPgtype(req.UserID)
 
 	// Set default pagination
 	limit := int32(100)
@@ -91,12 +95,8 @@ func (s *Service) GetAssetsByOriginalPath(ctx context.Context, req GetAssetsByOr
 	}
 
 	// Add optional filters
-	if req.IsArchived != nil {
-		params.IsArchived = pgtype.Bool{Bool: *req.IsArchived, Valid: true}
-	}
-	if req.IsFavorite != nil {
-		params.IsFavorite = pgtype.Bool{Bool: *req.IsFavorite, Valid: true}
-	}
+	params.IsArchived = util.OptionalBool(req.IsArchived)
+	params.IsFavorite = util.OptionalBool(req.IsFavorite)
 
 	// Get assets from database
 	assets, err := s.db.GetAssetsByOriginalPathPrefix(ctx, params)
@@ -142,7 +142,7 @@ func (s *Service) GetUniqueOriginalPaths(ctx context.Context, userID uuid.UUID) 
 	}()
 
 	// Convert UUID to pgtype.UUID
-	ownerUUID := pgtype.UUID{Bytes: userID, Valid: true}
+	ownerUUID := pgutil.UUIDToPgtype(userID)
 
 	// Get unique paths from database
 	paths, err := s.db.GetUniqueOriginalPathPrefixes(ctx, ownerUUID)
@@ -190,10 +190,10 @@ type AssetInfo struct {
 type AssetType int32
 
 const (
-	AssetType_IMAGE AssetType = 0
-	AssetType_VIDEO AssetType = 1
-	AssetType_AUDIO AssetType = 2
-	AssetType_OTHER AssetType = 3
+	AssetType_IMAGE AssetType = 1
+	AssetType_VIDEO AssetType = 2
+	AssetType_AUDIO AssetType = 3
+	AssetType_OTHER AssetType = 4
 )
 
 // convertAssetToAssetInfo converts a database asset to an AssetInfo struct
@@ -202,17 +202,7 @@ func convertAssetToAssetInfo(asset *sqlc.Asset) *AssetInfo {
 	assetID := uuid.UUID(asset.ID.Bytes).String()
 
 	// Determine asset type from string
-	var assetType AssetType
-	switch asset.Type {
-	case "IMAGE":
-		assetType = AssetType_IMAGE
-	case "VIDEO":
-		assetType = AssetType_VIDEO
-	case "AUDIO":
-		assetType = AssetType_AUDIO
-	default:
-		assetType = AssetType_OTHER
-	}
+	assetType := assetdomain.AssetTypeFromString(asset.Type)
 
 	// Check if archived (visibility == 'archive')
 	isArchived := asset.Visibility == sqlc.AssetVisibilityEnumArchive
@@ -224,7 +214,7 @@ func convertAssetToAssetInfo(asset *sqlc.Asset) *AssetInfo {
 		ID:               assetID,
 		DeviceAssetID:    asset.DeviceAssetId,
 		DeviceID:         asset.DeviceId,
-		Type:             assetType,
+		Type:             AssetType(assetType),
 		OriginalPath:     asset.OriginalPath,
 		OriginalFileName: asset.OriginalFileName,
 		IsArchived:       isArchived,

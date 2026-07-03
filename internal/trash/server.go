@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/denysvitali/immich-go-backend/internal/auth"
+	"github.com/denysvitali/immich-go-backend/internal/db/pgutil"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 	"github.com/google/uuid"
@@ -35,14 +36,13 @@ func (s *Server) EmptyTrash(ctx context.Context, _ *emptypb.Empty) (*emptypb.Emp
 	}
 
 	// Parse user ID
-	userID, err := uuid.Parse(claims.UserID)
+	userID, err := pgutil.ParseUserID(claims.UserID)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "invalid user ID: %v", err)
 	}
-	userUUID := pgtype.UUID{Bytes: userID, Valid: true}
 
 	// Get all trashed assets for the user
-	trashedAssets, err := s.queries.GetTrashedAssetsByUser(ctx, userUUID)
+	trashedAssets, err := s.queries.GetTrashedAssetsByUser(ctx, userID)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get trashed assets: %v", err)
 	}
@@ -68,14 +68,13 @@ func (s *Server) RestoreTrash(ctx context.Context, _ *emptypb.Empty) (*emptypb.E
 	}
 
 	// Parse user ID
-	userID, err := uuid.Parse(claims.UserID)
+	userID, err := pgutil.ParseUserID(claims.UserID)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "invalid user ID: %v", err)
 	}
-	userUUID := pgtype.UUID{Bytes: userID, Valid: true}
 
 	// Get all trashed assets for the user
-	trashedAssets, err := s.queries.GetTrashedAssetsByUser(ctx, userUUID)
+	trashedAssets, err := s.queries.GetTrashedAssetsByUser(ctx, userID)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get trashed assets: %v", err)
 	}
@@ -101,11 +100,10 @@ func (s *Server) RestoreAssets(ctx context.Context, request *immichv1.RestoreAss
 	}
 
 	// Parse user ID
-	userID, err := uuid.Parse(claims.UserID)
+	userID, err := pgutil.ParseUserID(claims.UserID)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "invalid user ID: %v", err)
 	}
-	userUUID := pgtype.UUID{Bytes: userID, Valid: true}
 
 	// Collect valid asset UUIDs
 	var assetUUIDs []pgtype.UUID
@@ -122,7 +120,7 @@ func (s *Server) RestoreAssets(ctx context.Context, request *immichv1.RestoreAss
 	if len(assetUUIDs) > 0 {
 		err = s.queries.RestoreAssets(ctx, sqlc.RestoreAssetsParams{
 			Column1: assetUUIDs,
-			OwnerId: userUUID,
+			OwnerId: userID,
 		})
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "failed to restore assets: %v", err)

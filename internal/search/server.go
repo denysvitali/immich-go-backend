@@ -15,6 +15,7 @@ import (
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/denysvitali/immich-go-backend/internal/grpcutil"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
+	"github.com/denysvitali/immich-go-backend/internal/util"
 )
 
 // Server implements the SearchServiceServer interface
@@ -39,11 +40,11 @@ func (s *Server) SearchMetadata(ctx context.Context, req *immichv1.SearchMetadat
 
 	var isFavorite, isArchived *bool
 	if req.IsFavorite != nil {
-		f := boolValue(req.IsFavorite)
+		f := util.OptionalBool(req.IsFavorite).Bool
 		isFavorite = &f
 	}
 	if req.IsArchived != nil {
-		a := boolValue(req.IsArchived)
+		a := util.OptionalBool(req.IsArchived).Bool
 		isArchived = &a
 	}
 
@@ -402,11 +403,4 @@ func stringValue(s *string) string {
 		return ""
 	}
 	return *s
-}
-
-func boolValue(b *bool) bool {
-	if b == nil {
-		return false
-	}
-	return *b
 }

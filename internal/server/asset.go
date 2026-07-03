@@ -18,9 +18,11 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/denysvitali/immich-go-backend/internal/assets"
+	"github.com/denysvitali/immich-go-backend/internal/db/pgutil"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/denysvitali/immich-go-backend/internal/jobs"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
+	"github.com/denysvitali/immich-go-backend/internal/util"
 )
 
 func (s *Server) GetAssets(ctx context.Context, request *immichv1.GetAssetsRequest) (*immichv1.GetAssetsResponse, error) {
@@ -30,17 +32,13 @@ func (s *Server) GetAssets(ctx context.Context, request *immichv1.GetAssetsReque
 		return nil, err
 	}
 
-	uid, err := uuid.Parse(claims.UserID)
+	userID, err := pgutil.ParseUserID(claims.UserID)
 	if err != nil {
 		return nil, SanitizedInternal(ctx, "invalid user ID", err)
 	}
-	userID := pgtype.UUID{Bytes: uid, Valid: true}
 
 	// Calculate offset for pagination
-	offset := int32(0)
-	if request.Page > 0 {
-		offset = (request.Page - 1) * request.Size
-	}
+	offset := util.Offset(request.GetPage(), request.GetSize())
 
 	// Build query parameters
 	var assetType pgtype.Text
@@ -53,16 +51,9 @@ func (s *Server) GetAssets(ctx context.Context, request *immichv1.GetAssetsReque
 		}
 	}
 
-	var isFavorite, isArchived, isTrashed pgtype.Bool
-	if request.IsFavorite != nil {
-		isFavorite = pgtype.Bool{Bool: *request.IsFavorite, Valid: true}
-	}
-	if request.IsArchived != nil {
-		isArchived = pgtype.Bool{Bool: *request.IsArchived, Valid: true}
-	}
-	if request.IsTrashed != nil {
-		isTrashed = pgtype.Bool{Bool: *request.IsTrashed, Valid: true}
-	}
+	isFavorite := util.OptionalBool(request.IsFavorite)
+	isArchived := util.OptionalBool(request.IsArchived)
+	isTrashed := util.OptionalBool(request.IsTrashed)
 
 	assets, err := s.db.GetAssets(ctx, sqlc.GetAssetsParams{
 		OwnerId:    userID,
@@ -126,11 +117,10 @@ func (s *Server) UploadAsset(ctx context.Context, request *immichv1.UploadAssetR
 		return nil, err
 	}
 
-	uid, err := uuid.Parse(claims.UserID)
+	userID, err := pgutil.ParseUserID(claims.UserID)
 	if err != nil {
 		return nil, SanitizedInternal(ctx, "invalid user ID", err)
 	}
-	userID := pgtype.UUID{Bytes: uid, Valid: true}
 
 	assetData := request.AssetData
 	if assetData == nil {
@@ -335,11 +325,10 @@ func (s *Server) CheckExistingAssets(ctx context.Context, request *immichv1.Chec
 		return nil, err
 	}
 
-	uid, err := uuid.Parse(claims.UserID)
+	userID, err := pgutil.ParseUserID(claims.UserID)
 	if err != nil {
 		return nil, SanitizedInternal(ctx, "invalid user ID", err)
 	}
-	userID := pgtype.UUID{Bytes: uid, Valid: true}
 
 	existingAssets, err := s.db.CheckExistingAssets(ctx, sqlc.CheckExistingAssetsParams{
 		OwnerId:  userID,
@@ -383,11 +372,10 @@ func (s *Server) GetAssetStatistics(ctx context.Context, request *immichv1.GetAs
 		return nil, err
 	}
 
-	uid, err := uuid.Parse(claims.UserID)
+	userID, err := pgutil.ParseUserID(claims.UserID)
 	if err != nil {
 		return nil, SanitizedInternal(ctx, "invalid user ID", err)
 	}
-	userID := pgtype.UUID{Bytes: uid, Valid: true}
 
 	stats, err := s.db.GetAssetStatistics(ctx, userID)
 	if err != nil {
@@ -408,11 +396,10 @@ func (s *Server) GetAllUserAssetsByDeviceId(ctx context.Context, request *immich
 		return nil, err
 	}
 
-	uid, err := uuid.Parse(claims.UserID)
+	userID, err := pgutil.ParseUserID(claims.UserID)
 	if err != nil {
 		return nil, SanitizedInternal(ctx, "invalid user ID", err)
 	}
-	userID := pgtype.UUID{Bytes: uid, Valid: true}
 
 	assetIDs, err := s.db.GetAssetsByDeviceId(ctx, sqlc.GetAssetsByDeviceIdParams{
 		OwnerId:  userID,
@@ -440,11 +427,10 @@ func (s *Server) GetRandom(ctx context.Context, request *immichv1.GetRandomReque
 		return nil, err
 	}
 
-	uid, err := uuid.Parse(claims.UserID)
+	userID, err := pgutil.ParseUserID(claims.UserID)
 	if err != nil {
 		return nil, SanitizedInternal(ctx, "invalid user ID", err)
 	}
-	userID := pgtype.UUID{Bytes: uid, Valid: true}
 
 	count := int32(10) // Default count
 	if request.Count != nil {
@@ -476,11 +462,10 @@ func (s *Server) GetRecentlyAddedAssets(ctx context.Context, request *immichv1.G
 		return nil, err
 	}
 
-	uid, err := uuid.Parse(claims.UserID)
+	userID, err := pgutil.ParseUserID(claims.UserID)
 	if err != nil {
 		return nil, SanitizedInternal(ctx, "invalid user ID", err)
 	}
-	userID := pgtype.UUID{Bytes: uid, Valid: true}
 
 	// Default to 12 when limit is 0, cap at 100 to prevent abuse
 	limit := request.GetLimit()

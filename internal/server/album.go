@@ -3,15 +3,16 @@ package server
 import (
 	"context"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/denysvitali/immich-go-backend/internal/db/pgutil"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
+	"github.com/denysvitali/immich-go-backend/internal/util"
 )
 
 func (s *Server) GetAllAlbums(ctx context.Context, request *immichv1.GetAllAlbumsRequest) (*immichv1.GetAllAlbumsResponse, error) {
@@ -21,11 +22,10 @@ func (s *Server) GetAllAlbums(ctx context.Context, request *immichv1.GetAllAlbum
 		return nil, err
 	}
 
-	uid, err := uuid.Parse(claims.UserID)
+	userID, err := pgutil.ParseUserID(claims.UserID)
 	if err != nil {
 		return nil, SanitizedInternal(ctx, "invalid user ID", err)
 	}
-	userID := pgtype.UUID{Bytes: uid, Valid: true}
 
 	// Get albums owned by the user
 	albums, err := s.db.GetAlbumsByOwner(ctx, userID)
@@ -47,11 +47,10 @@ func (s *Server) CreateAlbum(ctx context.Context, request *immichv1.CreateAlbumR
 		return nil, err
 	}
 
-	uid, err := uuid.Parse(claims.UserID)
+	userID, err := pgutil.ParseUserID(claims.UserID)
 	if err != nil {
 		return nil, SanitizedInternal(ctx, "invalid user ID", err)
 	}
-	userID := pgtype.UUID{Bytes: uid, Valid: true}
 
 	album, err := s.db.CreateAlbum(ctx, sqlc.CreateAlbumParams{
 		OwnerId:     userID,
@@ -97,23 +96,15 @@ func (s *Server) UpdateAlbumInfo(ctx context.Context, request *immichv1.UpdateAl
 		return nil, status.Errorf(codes.InvalidArgument, "invalid album ID: %v", err)
 	}
 
-	var albumName, description pgtype.Text
-	var thumbnailAssetID pgtype.UUID
-	var isActivityEnabled pgtype.Bool
+	albumName := util.OptionalText(request.AlbumName)
+	description := util.OptionalText(request.Description)
+	isActivityEnabled := util.OptionalBool(request.IsActivityEnabled)
 
-	if request.AlbumName != nil {
-		albumName = pgtype.Text{String: *request.AlbumName, Valid: true}
-	}
-	if request.Description != nil {
-		description = pgtype.Text{String: *request.Description, Valid: true}
-	}
+	var thumbnailAssetID pgtype.UUID
 	if request.AlbumThumbnailAssetId != nil {
 		if err := thumbnailAssetID.Scan(*request.AlbumThumbnailAssetId); err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "invalid thumbnail asset ID: %v", err)
 		}
-	}
-	if request.IsActivityEnabled != nil {
-		isActivityEnabled = pgtype.Bool{Bool: *request.IsActivityEnabled, Valid: true}
 	}
 
 	album, err := s.db.UpdateAlbum(ctx, sqlc.UpdateAlbumParams{
@@ -156,7 +147,7 @@ func (s *Server) AddAssetsToAlbum(ctx context.Context, request *immichv1.AddAsse
 			results[i] = &immichv1.BulkIdResponse{
 				Id:      assetID,
 				Success: false,
-				Error:   &[]string{"invalid asset ID"}[0],
+				Error:   util.Ptr("invalid asset ID"),
 			}
 			continue
 		}
@@ -191,7 +182,7 @@ func (s *Server) RemoveAssetFromAlbum(ctx context.Context, request *immichv1.Rem
 			results[i] = &immichv1.BulkIdResponse{
 				Id:      assetID,
 				Success: false,
-				Error:   &[]string{"invalid asset ID"}[0],
+				Error:   util.Ptr("invalid asset ID"),
 			}
 			continue
 		}
@@ -295,11 +286,10 @@ func (s *Server) GetAlbumStatistics(ctx context.Context, request *immichv1.GetAl
 		return nil, err
 	}
 
-	uid, err := uuid.Parse(claims.UserID)
+	userID, err := pgutil.ParseUserID(claims.UserID)
 	if err != nil {
 		return nil, SanitizedInternal(ctx, "invalid user ID", err)
 	}
-	userID := pgtype.UUID{Bytes: uid, Valid: true}
 
 	stats, err := s.db.GetAlbumStatistics(ctx, userID)
 	if err != nil {
