@@ -6,7 +6,6 @@ import (
 
 	"github.com/denysvitali/immich-go-backend/internal/auth"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
-	"github.com/denysvitali/immich-go-backend/internal/util"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -27,6 +26,61 @@ func NewServer(service *Service) *Server {
 	}
 }
 
+var notificationTypesToProto = map[string]immichv1.NotificationType{
+	"job_failed":    immichv1.NotificationType_NOTIFICATION_TYPE_JOB_FAILED,
+	"backup_failed": immichv1.NotificationType_NOTIFICATION_TYPE_BACKUP_FAILED,
+	"custom":        immichv1.NotificationType_NOTIFICATION_TYPE_CUSTOM,
+}
+
+var notificationLevelsToProto = map[string]immichv1.NotificationLevel{
+	"success": immichv1.NotificationLevel_NOTIFICATION_LEVEL_SUCCESS,
+	"error":   immichv1.NotificationLevel_NOTIFICATION_LEVEL_ERROR,
+	"warning": immichv1.NotificationLevel_NOTIFICATION_LEVEL_WARNING,
+	"info":    immichv1.NotificationLevel_NOTIFICATION_LEVEL_INFO,
+}
+
+func notificationTypeToProto(notificationType string) immichv1.NotificationType {
+	if protoType, ok := notificationTypesToProto[notificationType]; ok {
+		return protoType
+	}
+
+	return immichv1.NotificationType_NOTIFICATION_TYPE_SYSTEM_MESSAGE
+}
+
+func notificationLevelToProto(level string) immichv1.NotificationLevel {
+	if protoLevel, ok := notificationLevelsToProto[level]; ok {
+		return protoLevel
+	}
+
+	return immichv1.NotificationLevel_NOTIFICATION_LEVEL_INFO
+}
+
+func notificationToProto(notification *Notification) *immichv1.NotificationDto {
+	protoNotif := &immichv1.NotificationDto{
+		Id:          notification.ID,
+		Title:       notification.Title,
+		Description: &notification.Description,
+		Level:       notificationLevelToProto(notification.Level),
+		Type:        notificationTypeToProto(notification.Type),
+		CreatedAt:   timestamppb.New(notification.CreatedAt),
+	}
+
+	if notification.ReadAt != nil {
+		protoNotif.ReadAt = timestamppb.New(*notification.ReadAt)
+	} else if notification.Read {
+		protoNotif.ReadAt = timestamppb.New(time.Now())
+	}
+
+	if len(notification.Data) > 0 {
+		dataStruct, err := structpb.NewStruct(notification.Data)
+		if err == nil {
+			protoNotif.Data = dataStruct
+		}
+	}
+
+	return protoNotif
+}
+
 // GetNotifications returns notifications based on filters
 func (s *Server) GetNotifications(ctx context.Context, req *immichv1.GetNotificationsRequest) (*immichv1.GetNotificationsResponse, error) {
 	claims, ok := auth.GetClaimsFromStdContext(ctx)
@@ -43,49 +97,7 @@ func (s *Server) GetNotifications(ctx context.Context, req *immichv1.GetNotifica
 	// Convert to proto notifications
 	var protoNotifications []*immichv1.NotificationDto
 	for _, notif := range notifications {
-		// Convert notification type
-		notifType := immichv1.NotificationType_NOTIFICATION_TYPE_SYSTEM_MESSAGE
-		switch notif.Type {
-		case "job_failed":
-			notifType = immichv1.NotificationType_NOTIFICATION_TYPE_JOB_FAILED
-		case "backup_failed":
-			notifType = immichv1.NotificationType_NOTIFICATION_TYPE_BACKUP_FAILED
-		case "custom":
-			notifType = immichv1.NotificationType_NOTIFICATION_TYPE_CUSTOM
-		}
-
-		// Convert notification level
-		level := immichv1.NotificationLevel_NOTIFICATION_LEVEL_INFO
-		switch notif.Type {
-		case "error":
-			level = immichv1.NotificationLevel_NOTIFICATION_LEVEL_ERROR
-		case "warning":
-			level = immichv1.NotificationLevel_NOTIFICATION_LEVEL_WARNING
-		case "success":
-			level = immichv1.NotificationLevel_NOTIFICATION_LEVEL_SUCCESS
-		}
-
-		protoNotif := &immichv1.NotificationDto{
-			Id:          notif.ID,
-			Title:       notif.Title,
-			Description: &notif.Description,
-			Level:       level,
-			Type:        notifType,
-			CreatedAt:   timestamppb.New(notif.CreatedAt),
-		}
-
-		// Add data if present
-		if len(notif.Data) > 0 {
-			dataStruct, err := structpb.NewStruct(notif.Data)
-			if err == nil {
-				protoNotif.Data = dataStruct
-			}
-		}
-
-		// Add read time if read
-		if notif.Read {
-			protoNotif.ReadAt = timestamppb.New(time.Now())
-		}
+		protoNotif := notificationToProto(notif)
 
 		// Apply filters if provided
 		if req.Level != nil && *req.Level != protoNotif.Level {
@@ -120,49 +132,7 @@ func (s *Server) GetNotification(ctx context.Context, req *immichv1.GetNotificat
 		return nil, status.Error(codes.NotFound, "notification not found")
 	}
 
-	// Convert notification type
-	notifType := immichv1.NotificationType_NOTIFICATION_TYPE_SYSTEM_MESSAGE
-	switch notification.Type {
-	case "job_failed":
-		notifType = immichv1.NotificationType_NOTIFICATION_TYPE_JOB_FAILED
-	case "backup_failed":
-		notifType = immichv1.NotificationType_NOTIFICATION_TYPE_BACKUP_FAILED
-	case "custom":
-		notifType = immichv1.NotificationType_NOTIFICATION_TYPE_CUSTOM
-	}
-
-	// Convert notification level
-	level := immichv1.NotificationLevel_NOTIFICATION_LEVEL_INFO
-	switch notification.Level {
-	case "error":
-		level = immichv1.NotificationLevel_NOTIFICATION_LEVEL_ERROR
-	case "warning":
-		level = immichv1.NotificationLevel_NOTIFICATION_LEVEL_WARNING
-	}
-
-	// Build proto notification
-	protoNotif := &immichv1.NotificationDto{
-		Id:          notification.ID,
-		Title:       notification.Title,
-		Description: util.Ptr(notification.Description),
-		Level:       level,
-		Type:        notifType,
-		CreatedAt:   timestamppb.New(notification.CreatedAt),
-	}
-
-	if notification.ReadAt != nil {
-		protoNotif.ReadAt = timestamppb.New(*notification.ReadAt)
-	}
-
-	// Add data if available
-	if notification.Data != nil {
-		dataStruct, err := structpb.NewStruct(notification.Data)
-		if err == nil {
-			protoNotif.Data = dataStruct
-		}
-	}
-
-	return protoNotif, nil
+	return notificationToProto(notification), nil
 }
 
 // UpdateNotification updates a notification (mainly to mark as read)
@@ -190,49 +160,11 @@ func (s *Server) UpdateNotification(ctx context.Context, req *immichv1.UpdateNot
 		return nil, status.Error(codes.NotFound, "notification not found")
 	}
 
-	// Convert notification type
-	notifType := immichv1.NotificationType_NOTIFICATION_TYPE_SYSTEM_MESSAGE
-	switch notification.Type {
-	case "job_failed":
-		notifType = immichv1.NotificationType_NOTIFICATION_TYPE_JOB_FAILED
-	case "backup_failed":
-		notifType = immichv1.NotificationType_NOTIFICATION_TYPE_BACKUP_FAILED
-	case "custom":
-		notifType = immichv1.NotificationType_NOTIFICATION_TYPE_CUSTOM
-	}
-
-	// Convert notification level
-	level := immichv1.NotificationLevel_NOTIFICATION_LEVEL_INFO
-	switch notification.Level {
-	case "error":
-		level = immichv1.NotificationLevel_NOTIFICATION_LEVEL_ERROR
-	case "warning":
-		level = immichv1.NotificationLevel_NOTIFICATION_LEVEL_WARNING
-	}
-
-	// Build proto notification with actual data
-	protoNotif := &immichv1.NotificationDto{
-		Id:          notification.ID,
-		Title:       notification.Title,
-		Description: util.Ptr(notification.Description),
-		Level:       level,
-		Type:        notifType,
-		CreatedAt:   timestamppb.New(notification.CreatedAt),
-	}
+	protoNotif := notificationToProto(notification)
 
 	// Use the updated read time
 	if req.ReadAt != nil {
 		protoNotif.ReadAt = req.ReadAt
-	} else if notification.ReadAt != nil {
-		protoNotif.ReadAt = timestamppb.New(*notification.ReadAt)
-	}
-
-	// Add data if available
-	if notification.Data != nil {
-		dataStruct, err := structpb.NewStruct(notification.Data)
-		if err == nil {
-			protoNotif.Data = dataStruct
-		}
 	}
 
 	return protoNotif, nil
