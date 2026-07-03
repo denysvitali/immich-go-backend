@@ -142,7 +142,7 @@ func (s *Service) DownloadAsset(ctx context.Context, userID uuid.UUID, assetID u
 	// Use original path or construct from ID
 	filePath := asset.OriginalPath
 	if filePath == "" {
-		filePath = fmt.Sprintf("%s/%s", assetID.String(), asset.OriginalFileName)
+		filePath = storage.AssetFallbackPath(assetID, asset.OriginalFileName)
 	}
 	reader, err := s.storageService.Download(ctx, filePath)
 	if err != nil {
@@ -217,7 +217,7 @@ func (s *Service) DownloadArchive(ctx context.Context, userID uuid.UUID, req *Do
 		// Get file from storage
 		filePath := asset.OriginalPath
 		if filePath == "" {
-			filePath = fmt.Sprintf("%s/%s", assetID.String(), asset.OriginalFileName)
+			filePath = storage.AssetFallbackPath(assetID, asset.OriginalFileName)
 		}
 		reader, err := s.storageService.Download(ctx, filePath)
 		if err != nil {
@@ -290,7 +290,7 @@ func (s *Service) GetThumbnail(ctx context.Context, userID uuid.UUID, assetID uu
 		// Fallback to original if thumbnail doesn't exist
 		filePath := asset.OriginalPath
 		if filePath == "" {
-			filePath = fmt.Sprintf("%s/%s", assetID.String(), asset.OriginalFileName)
+			filePath = storage.AssetFallbackPath(assetID, asset.OriginalFileName)
 		}
 		reader, err = s.storageService.Download(ctx, filePath)
 		if err != nil {
@@ -320,7 +320,7 @@ func (s *Service) GetPresignedURL(ctx context.Context, userID uuid.UUID, assetID
 	// Get file path
 	filePath := asset.OriginalPath
 	if filePath == "" {
-		filePath = fmt.Sprintf("%s/%s", assetID.String(), asset.OriginalFileName)
+		filePath = storage.AssetFallbackPath(assetID, asset.OriginalFileName)
 	}
 
 	// Generate presigned URL
