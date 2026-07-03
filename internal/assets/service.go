@@ -131,7 +131,7 @@ func (s *Service) InitiateUpload(ctx context.Context, req UploadRequest) (*Uploa
 	storagePath := s.generateStoragePath(req.UserID, assetID, req.Filename, assetType)
 
 	// Create asset record in database with uploading status
-	userUUID, err := stringToUUID(req.UserID.String())
+	userUUID, err := pgutil.StringToUUID(req.UserID.String())
 	if err != nil {
 		span.RecordError(err)
 		return nil, fmt.Errorf("invalid user ID: %w", err)
@@ -159,7 +159,7 @@ func (s *Service) InitiateUpload(ctx context.Context, req UploadRequest) (*Uploa
 
 	// Broadcast asset creation event
 	if s.sync != nil {
-		s.sync.BroadcastAssetEvent(req.UserID.String(), uuidToString(asset.ID), "upsert")
+		s.sync.BroadcastAssetEvent(req.UserID.String(), pgutil.UUIDToString(asset.ID), "upsert")
 	}
 
 	// Check if we should use direct S3 upload
@@ -201,7 +201,7 @@ func (s *Service) CompleteUpload(ctx context.Context, assetID uuid.UUID, reader 
 	}()
 
 	// Get asset record
-	assetUUID, err := stringToUUID(assetID.String())
+	assetUUID, err := pgutil.StringToUUID(assetID.String())
 	if err != nil {
 		span.RecordError(err)
 		return fmt.Errorf("invalid asset ID: %w", err)
@@ -238,7 +238,7 @@ func (s *Service) CompleteUpload(ctx context.Context, assetID uuid.UUID, reader 
 
 	s.uploadCounter.Add(ctx, 1,
 		metric.WithAttributes(
-			attribute.String("user_id", uuidToString(asset.OwnerId)),
+			attribute.String("user_id", pgutil.UUIDToString(asset.OwnerId)),
 			attribute.String("type", asset.Type),
 		))
 
@@ -266,7 +266,7 @@ func (s *Service) processAsset(ctx context.Context, assetID uuid.UUID) {
 			metric.WithAttributes(attribute.String("operation", "process")))
 	}()
 
-	assetUUID, err := stringToUUID(assetID.String())
+	assetUUID, err := pgutil.StringToUUID(assetID.String())
 	if err != nil {
 		span.RecordError(err)
 		return
@@ -346,7 +346,7 @@ func (s *Service) processAsset(ctx context.Context, assetID uuid.UUID) {
 func (s *Service) generateAndStoreThumbnails(ctx context.Context, assetID pgtype.UUID, originalPath, filename string) error {
 	ctx, span := tracer.Start(ctx, "assets.generate_thumbnails",
 		trace.WithAttributes(
-			attribute.String("asset_id", uuidToString(assetID)),
+			attribute.String("asset_id", pgutil.UUIDToString(assetID)),
 		))
 	defer span.End()
 
@@ -402,10 +402,7 @@ func (s *Service) updateAssetMetadata(ctx context.Context, assetID pgtype.UUID, 
 
 	// Convert metadata to database format
 	if metadata.DateTaken != nil {
-		dateTaken, err := timeToTimestamptz(*metadata.DateTaken)
-		if err == nil {
-			params.DateTimeOriginal = dateTaken
-		}
+		params.DateTimeOriginal = pgutil.TimeToTimestamptz(*metadata.DateTaken)
 	}
 
 	if metadata.Width != nil {
@@ -485,13 +482,13 @@ func (s *Service) GetAsset(ctx context.Context, assetID uuid.UUID, userID uuid.U
 		))
 	defer span.End()
 
-	assetUUID, err := stringToUUID(assetID.String())
+	assetUUID, err := pgutil.StringToUUID(assetID.String())
 	if err != nil {
 		span.RecordError(err)
 		return nil, fmt.Errorf("invalid asset ID: %w", err)
 	}
 
-	userUUID, err := stringToUUID(userID.String())
+	userUUID, err := pgutil.StringToUUID(userID.String())
 	if err != nil {
 		span.RecordError(err)
 		return nil, fmt.Errorf("invalid user ID: %w", err)
@@ -610,7 +607,7 @@ func (s *Service) SearchAssets(ctx context.Context, req SearchRequest) (*SearchR
 		))
 	defer span.End()
 
-	userUUID, err := stringToUUID(req.UserID.String())
+	userUUID, err := pgutil.StringToUUID(req.UserID.String())
 	if err != nil {
 		span.RecordError(err)
 		return nil, fmt.Errorf("invalid user ID: %w", err)
@@ -649,16 +646,8 @@ func (s *Service) SearchAssets(ctx context.Context, req SearchRequest) (*SearchR
 	case req.StartDate != nil && req.EndDate != nil:
 		// Date range search
 		span.SetAttributes(attribute.String("search_type", "date_range"))
-		startTime, err := timeToTimestamptz(*req.StartDate)
-		if err != nil {
-			span.RecordError(err)
-			return nil, fmt.Errorf("invalid start date: %w", err)
-		}
-		endTime, err := timeToTimestamptz(*req.EndDate)
-		if err != nil {
-			span.RecordError(err)
-			return nil, fmt.Errorf("invalid end date: %w", err)
-		}
+		startTime := pgutil.TimeToTimestamptz(*req.StartDate)
+		endTime := pgutil.TimeToTimestamptz(*req.EndDate)
 
 		dateAssets, err := s.db.GetAssetsByDateRange(ctx, sqlc.GetAssetsByDateRangeParams{
 			OwnerId:         userUUID,
@@ -773,7 +762,7 @@ func (s *Service) DeleteAsset(ctx context.Context, assetID uuid.UUID, userID uui
 		return fmt.Errorf("failed to get asset: %w", err)
 	}
 
-	assetUUID, err := stringToUUID(assetID.String())
+	assetUUID, err := pgutil.StringToUUID(assetID.String())
 	if err != nil {
 		span.RecordError(err)
 		return fmt.Errorf("invalid asset ID: %w", err)
@@ -831,7 +820,7 @@ func (s *Service) HardDeleteAsset(ctx context.Context, assetID uuid.UUID, userID
 		return fmt.Errorf("failed to get asset: %w", err)
 	}
 
-	assetUUID, err := stringToUUID(assetID.String())
+	assetUUID, err := pgutil.StringToUUID(assetID.String())
 	if err != nil {
 		span.RecordError(err)
 		return fmt.Errorf("invalid asset ID: %w", err)
@@ -879,7 +868,7 @@ func (s *Service) HardDeleteAsset(ctx context.Context, assetID uuid.UUID, userID
 func (s *Service) cleanupAssetFiles(ctx context.Context, assetID pgtype.UUID, originalPath string) error {
 	ctx, span := tracer.Start(ctx, "assets.cleanup_files",
 		trace.WithAttributes(
-			attribute.String("asset_id", uuidToString(assetID)),
+			attribute.String("asset_id", pgutil.UUIDToString(assetID)),
 		))
 	defer span.End()
 
@@ -927,13 +916,13 @@ func (s *Service) RestoreAsset(ctx context.Context, assetID uuid.UUID, userID uu
 		))
 	defer span.End()
 
-	assetUUID, err := stringToUUID(assetID.String())
+	assetUUID, err := pgutil.StringToUUID(assetID.String())
 	if err != nil {
 		span.RecordError(err)
 		return fmt.Errorf("invalid asset ID: %w", err)
 	}
 
-	userUUID, err := stringToUUID(userID.String())
+	userUUID, err := pgutil.StringToUUID(userID.String())
 	if err != nil {
 		span.RecordError(err)
 		return fmt.Errorf("invalid user ID: %w", err)
@@ -974,13 +963,13 @@ func (s *Service) generateStoragePath(userID uuid.UUID, assetID uuid.UUID, filen
 
 func (s *Service) convertToAssetInfo(asset sqlc.Asset, thumbnails []AssetThumbnail) *AssetInfo {
 	info := &AssetInfo{
-		ID:           uuid.MustParse(uuidToString(asset.ID)),
-		UserID:       uuid.MustParse(uuidToString(asset.OwnerId)),
+		ID:           uuid.MustParse(pgutil.UUIDToString(asset.ID)),
+		UserID:       uuid.MustParse(pgutil.UUIDToString(asset.OwnerId)),
 		Type:         AssetType(asset.Type),
 		Status:       AssetStatus(asset.Status),
 		OriginalPath: asset.OriginalPath,
-		CreatedAt:    timestamptzToTime(asset.CreatedAt),
-		UpdatedAt:    timestamptzToTime(asset.UpdatedAt),
+		CreatedAt:    pgutil.TimestamptzToTime(asset.CreatedAt),
+		UpdatedAt:    pgutil.TimestamptzToTime(asset.UpdatedAt),
 		Metadata: AssetMetadata{
 			Filename:    asset.OriginalFileName,
 			ContentType: s.getMimeTypeFromAssetType(asset.Type),
@@ -990,16 +979,16 @@ func (s *Service) convertToAssetInfo(asset sqlc.Asset, thumbnails []AssetThumbna
 
 	// Add metadata if available
 	if asset.LocalDateTime.Valid {
-		dateTaken := timestamptzToTime(asset.LocalDateTime)
+		dateTaken := pgutil.TimestamptzToTime(asset.LocalDateTime)
 		info.Metadata.DateTaken = &dateTaken
 	}
 
 	if asset.FileCreatedAt.Valid {
-		info.Metadata.CreatedAt = timestamptzToTime(asset.FileCreatedAt)
+		info.Metadata.CreatedAt = pgutil.TimestamptzToTime(asset.FileCreatedAt)
 	}
 
 	if asset.FileModifiedAt.Valid {
-		info.Metadata.ModifiedAt = timestamptzToTime(asset.FileModifiedAt)
+		info.Metadata.ModifiedAt = pgutil.TimestamptzToTime(asset.FileModifiedAt)
 	}
 
 	// Get EXIF data from separate exif table
@@ -1081,7 +1070,7 @@ func (s *Service) assetFilesToThumbnails(ctx context.Context, files []sqlc.Asset
 
 		width, height := s.thumbnailGen.GetThumbnailDimensions(thumbType)
 		thumbnails = append(thumbnails, AssetThumbnail{
-			AssetID: uuid.MustParse(uuidToString(file.AssetId)),
+			AssetID: uuid.MustParse(pgutil.UUIDToString(file.AssetId)),
 			Type:    file.Type,
 			Path:    file.Path,
 			Width:   width,
@@ -1112,11 +1101,6 @@ func (s *Service) thumbnailSize(ctx context.Context, path string, sizeMode thumb
 	return metadata.Size
 }
 
-// Helper functions for type conversions (reuse from auth package)
-func stringToUUID(s string) (pgtype.UUID, error) {
-	return pgutil.StringToUUID(s)
-}
-
 func stringToUUIDUnsafe(s string) pgtype.UUID {
 	id, _ := uuid.Parse(s)
 	return pgtype.UUID{Bytes: id, Valid: true}
@@ -1132,16 +1116,4 @@ func (s *Service) getMimeTypeFromAssetType(assetType string) string {
 	default:
 		return "application/octet-stream"
 	}
-}
-
-func uuidToString(u pgtype.UUID) string {
-	return pgutil.UUIDToString(u)
-}
-
-func timestamptzToTime(t pgtype.Timestamptz) time.Time {
-	return pgutil.TimestamptzToTime(t)
-}
-
-func timeToTimestamptz(t time.Time) (pgtype.Timestamptz, error) {
-	return pgutil.TimeToTimestamptz(t), nil
 }
