@@ -5310,10 +5310,9 @@ FROM assets a
 LEFT JOIN exif e ON e."assetId" = a.id
 WHERE a."ownerId" = $1
 AND a."deletedAt" IS NULL
-AND a.status = 'active'
 AND a.visibility = 'timeline'
+AND ($6::bool = false AND a.status = 'active' OR $6::bool = true AND a.status = 'trashed')
 AND ($5::bool = false OR a."isFavorite" = true)
-AND ($6::bool = false OR a."isTrashed" = true)
 AND ($2 = 'day' AND date_trunc('day', a."localDateTime")::date = $3::date
      OR $2 = 'month' AND date_trunc('month', a."localDateTime")::date = $3::date
      OR $2 = 'year' AND date_trunc('year', a."localDateTime")::date = $3::date)
@@ -5421,10 +5420,9 @@ SELECT
 FROM assets
 WHERE "ownerId" = $1
 AND "deletedAt" IS NULL
-AND status = 'active'
 AND visibility = 'timeline'
+AND ($4::bool = false AND status = 'active' OR $4::bool = true AND status = 'trashed')
 AND ($3::bool = false OR "isFavorite" = true)
-AND ($4::bool = false OR "isTrashed" = true)
 GROUP BY time_bucket
 ORDER BY time_bucket DESC
 `
