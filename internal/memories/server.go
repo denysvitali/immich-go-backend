@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	assetdomain "github.com/denysvitali/immich-go-backend/internal/assets"
 	"github.com/denysvitali/immich-go-backend/internal/auth"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
@@ -86,17 +87,12 @@ func (s *Server) assetsForMemoryIDs(ctx context.Context, memoryIDs []string) (ma
 // lives in this package to avoid an import cycle. Memories are
 // intentionally a lighter conversion than the full asset viewer.
 func (s *Server) convertAssetToProto(asset sqlc.Asset) *immichv1.Asset {
-	assetType := immichv1.AssetType_ASSET_TYPE_IMAGE
-	if asset.Type == "VIDEO" {
-		assetType = immichv1.AssetType_ASSET_TYPE_VIDEO
-	}
-
 	proto := &immichv1.Asset{
 		Id:               uuid.UUID(asset.ID.Bytes).String(),
 		DeviceAssetId:    asset.DeviceAssetId,
 		OwnerId:          uuid.UUID(asset.OwnerId.Bytes).String(),
 		DeviceId:         asset.DeviceId,
-		Type:             assetType,
+		Type:             assetdomain.AssetTypeFromString(asset.Type),
 		OriginalPath:     asset.OriginalPath,
 		OriginalFileName: asset.OriginalFileName,
 		CreatedAt:        timestamppb.New(asset.CreatedAt.Time),

@@ -787,17 +787,12 @@ func (s *Server) getVideoContentType(filename string) string {
 
 // Helper function to convert database asset to proto
 func (s *Server) convertAssetToProto(asset sqlc.Asset) *immichv1.Asset {
-	assetType := immichv1.AssetType_ASSET_TYPE_IMAGE
-	if asset.Type == "VIDEO" {
-		assetType = immichv1.AssetType_ASSET_TYPE_VIDEO
-	}
-
 	protoAsset := &immichv1.Asset{
 		Id:               asset.ID.String(),
 		DeviceAssetId:    asset.DeviceAssetId,
 		OwnerId:          asset.OwnerId.String(),
 		DeviceId:         asset.DeviceId,
-		Type:             assetType,
+		Type:             assets.AssetTypeFromString(asset.Type),
 		OriginalPath:     asset.OriginalPath,
 		OriginalFileName: asset.OriginalFileName,
 		CreatedAt:        timestamppb.New(asset.CreatedAt.Time),
