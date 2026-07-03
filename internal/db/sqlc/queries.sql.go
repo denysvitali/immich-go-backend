@@ -3411,80 +3411,6 @@ func (q *Queries) GetAssetsByOriginalPathPrefix(ctx context.Context, arg GetAsse
 	return items, nil
 }
 
-const getAssetsByTimeBucket = `-- name: GetAssetsByTimeBucket :many
-SELECT id, "deviceAssetId", "ownerId", "deviceId", type, "originalPath", "fileCreatedAt", "fileModifiedAt", "isFavorite", duration, "encodedVideoPath", checksum, "livePhotoVideoId", "updatedAt", "createdAt", "originalFileName", "sidecarPath", thumbhash, "isOffline", "libraryId", "isExternal", "deletedAt", "localDateTime", "stackId", "duplicateId", status, "updateId", visibility FROM assets
-WHERE "ownerId" = $1 
-AND "deletedAt" IS NULL
-AND status = 'active'
-AND visibility = 'timeline'
-AND date_trunc($2, "localDateTime") = $3
-ORDER BY "localDateTime" DESC
-LIMIT $4 OFFSET $5
-`
-
-type GetAssetsByTimeBucketParams struct {
-	OwnerId       pgtype.UUID
-	DateTrunc     string
-	LocalDateTime pgtype.Timestamptz
-	Limit         int32
-	Offset        int32
-}
-
-func (q *Queries) GetAssetsByTimeBucket(ctx context.Context, arg GetAssetsByTimeBucketParams) ([]Asset, error) {
-	rows, err := q.db.Query(ctx, getAssetsByTimeBucket,
-		arg.OwnerId,
-		arg.DateTrunc,
-		arg.LocalDateTime,
-		arg.Limit,
-		arg.Offset,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Asset
-	for rows.Next() {
-		var i Asset
-		if err := rows.Scan(
-			&i.ID,
-			&i.DeviceAssetId,
-			&i.OwnerId,
-			&i.DeviceId,
-			&i.Type,
-			&i.OriginalPath,
-			&i.FileCreatedAt,
-			&i.FileModifiedAt,
-			&i.IsFavorite,
-			&i.Duration,
-			&i.EncodedVideoPath,
-			&i.Checksum,
-			&i.LivePhotoVideoId,
-			&i.UpdatedAt,
-			&i.CreatedAt,
-			&i.OriginalFileName,
-			&i.SidecarPath,
-			&i.Thumbhash,
-			&i.IsOffline,
-			&i.LibraryId,
-			&i.IsExternal,
-			&i.DeletedAt,
-			&i.LocalDateTime,
-			&i.StackId,
-			&i.DuplicateId,
-			&i.Status,
-			&i.UpdateId,
-			&i.Visibility,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const getAssetsNeedingFaceDetection = `-- name: GetAssetsNeedingFaceDetection :many
 SELECT a.id, a."deviceAssetId", a."ownerId", a."deviceId", a.type, a."originalPath", a."fileCreatedAt", a."fileModifiedAt", a."isFavorite", a.duration, a."encodedVideoPath", a.checksum, a."livePhotoVideoId", a."updatedAt", a."createdAt", a."originalFileName", a."sidecarPath", a.thumbhash, a."isOffline", a."libraryId", a."isExternal", a."deletedAt", a."localDateTime", a."stackId", a."duplicateId", a.status, a."updateId", a.visibility FROM assets a
 LEFT JOIN asset_job_status ajs ON a.id = ajs."assetId"
@@ -5352,27 +5278,166 @@ func (q *Queries) GetTagsByUser(ctx context.Context, userid pgtype.UUID) ([]Tag,
 	return items, nil
 }
 
+const getTimelineBucketAssets = `-- name: GetTimelineBucketAssets :many
+SELECT
+    a.id,
+    a."deviceAssetId",
+    a."ownerId",
+    a."deviceId",
+    a.type,
+    a."originalPath",
+    a."fileCreatedAt",
+    a."fileModifiedAt",
+    a."isFavorite",
+    a.duration,
+    a."encodedVideoPath",
+    a."livePhotoVideoId",
+    a."originalFileName",
+    a."isExternal",
+    a."stackId",
+    a."localDateTime",
+    a.visibility,
+    a.status,
+    e."exifImageWidth",
+    e."exifImageHeight",
+    e.latitude,
+    e.longitude,
+    e.city,
+    e.country,
+    e."projectionType",
+    encode(a.thumbhash, 'base64') as thumbhash
+FROM assets a
+LEFT JOIN exif e ON e."assetId" = a.id
+WHERE a."ownerId" = $1
+AND a."deletedAt" IS NULL
+AND a.status = 'active'
+AND a.visibility = 'timeline'
+AND ($5::bool = false OR a."isFavorite" = true)
+AND ($6::bool = false OR a."isTrashed" = true)
+AND ($2 = 'day' AND date_trunc('day', a."localDateTime")::date = $3::date
+     OR $2 = 'month' AND date_trunc('month', a."localDateTime")::date = $3::date
+     OR $2 = 'year' AND date_trunc('year', a."localDateTime")::date = $3::date)
+ORDER BY a."localDateTime" DESC
+LIMIT $4 OFFSET 0
+`
+
+type GetTimelineBucketAssetsParams struct {
+	OwnerId pgtype.UUID
+	Column2 interface{}
+	Column3 pgtype.Date
+	Limit   int32
+	Column5 bool
+	Column6 bool
+}
+
+type GetTimelineBucketAssetsRow struct {
+	ID               pgtype.UUID
+	DeviceAssetId    string
+	OwnerId          pgtype.UUID
+	DeviceId         string
+	Type             string
+	OriginalPath     string
+	FileCreatedAt    pgtype.Timestamptz
+	FileModifiedAt   pgtype.Timestamptz
+	IsFavorite       bool
+	Duration         pgtype.Text
+	EncodedVideoPath pgtype.Text
+	LivePhotoVideoId pgtype.UUID
+	OriginalFileName string
+	IsExternal       bool
+	StackId          pgtype.UUID
+	LocalDateTime    pgtype.Timestamptz
+	Visibility       AssetVisibilityEnum
+	Status           AssetsStatusEnum
+	ExifImageWidth   pgtype.Int4
+	ExifImageHeight  pgtype.Int4
+	Latitude         pgtype.Float8
+	Longitude        pgtype.Float8
+	City             pgtype.Text
+	Country          pgtype.Text
+	ProjectionType   pgtype.Text
+	Thumbhash        string
+}
+
+func (q *Queries) GetTimelineBucketAssets(ctx context.Context, arg GetTimelineBucketAssetsParams) ([]GetTimelineBucketAssetsRow, error) {
+	rows, err := q.db.Query(ctx, getTimelineBucketAssets,
+		arg.OwnerId,
+		arg.Column2,
+		arg.Column3,
+		arg.Limit,
+		arg.Column5,
+		arg.Column6,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetTimelineBucketAssetsRow
+	for rows.Next() {
+		var i GetTimelineBucketAssetsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.DeviceAssetId,
+			&i.OwnerId,
+			&i.DeviceId,
+			&i.Type,
+			&i.OriginalPath,
+			&i.FileCreatedAt,
+			&i.FileModifiedAt,
+			&i.IsFavorite,
+			&i.Duration,
+			&i.EncodedVideoPath,
+			&i.LivePhotoVideoId,
+			&i.OriginalFileName,
+			&i.IsExternal,
+			&i.StackId,
+			&i.LocalDateTime,
+			&i.Visibility,
+			&i.Status,
+			&i.ExifImageWidth,
+			&i.ExifImageHeight,
+			&i.Latitude,
+			&i.Longitude,
+			&i.City,
+			&i.Country,
+			&i.ProjectionType,
+			&i.Thumbhash,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getTimelineBuckets = `-- name: GetTimelineBuckets :many
 
-SELECT 
-    date_trunc($2, "localDateTime") as time_bucket,
+SELECT
+    date_trunc($2, "localDateTime")::date as time_bucket,
     COUNT(*) as count
 FROM assets
-WHERE "ownerId" = $1 
+WHERE "ownerId" = $1
 AND "deletedAt" IS NULL
 AND status = 'active'
 AND visibility = 'timeline'
-GROUP BY date_trunc($2, "localDateTime")
+AND ($3::bool = false OR "isFavorite" = true)
+AND ($4::bool = false OR "isTrashed" = true)
+GROUP BY time_bucket
 ORDER BY time_bucket DESC
 `
 
 type GetTimelineBucketsParams struct {
 	OwnerId   pgtype.UUID
 	DateTrunc string
+	Column3   bool
+	Column4   bool
 }
 
 type GetTimelineBucketsRow struct {
-	TimeBucket pgtype.Interval
+	TimeBucket pgtype.Date
 	Count      int64
 }
 
@@ -5380,7 +5445,12 @@ type GetTimelineBucketsRow struct {
 // TIMELINE & STATISTICS QUERIES
 // ============================================================================
 func (q *Queries) GetTimelineBuckets(ctx context.Context, arg GetTimelineBucketsParams) ([]GetTimelineBucketsRow, error) {
-	rows, err := q.db.Query(ctx, getTimelineBuckets, arg.OwnerId, arg.DateTrunc)
+	rows, err := q.db.Query(ctx, getTimelineBuckets,
+		arg.OwnerId,
+		arg.DateTrunc,
+		arg.Column3,
+		arg.Column4,
+	)
 	if err != nil {
 		return nil, err
 	}

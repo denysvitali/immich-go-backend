@@ -8,79 +8,66 @@ import (
 	"github.com/denysvitali/immich-go-backend/internal/timeline"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func (s *Server) GetTimeBucket(ctx context.Context, request *immichv1.GetTimeBucketRequest) (*immichv1.TimeBucketAssetResponseDto, error) {
-	// Get user from context
 	claims, err := s.claimsFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// Parse the time bucket string to get the date
-	bucketTime, err := time.Parse(time.RFC3339, request.GetTimeBucket())
+	bucket, date, err := parseTimeBucket(request.GetTimeBucket())
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, "invalid time bucket format")
+		return nil, err
 	}
 
-	// Get day detail from timeline service
-	dayDetail, err := s.timelineService.GetDayDetail(ctx, claims.UserID, bucketTime)
+	opts := timeline.ListOptions{
+		UserID:     claims.UserID,
+		Bucket:     bucketSizeForLayout(date),
+		Date:       bucket.Format("2006-01-02"),
+		IsFavorite: request.GetIsFavorite(),
+		IsTrashed:  request.GetIsTrashed(),
+		IsArchived: request.GetIsTrashed(),
+		Limit:      500,
+	}
+
+	assets, err := s.timelineService.GetBucketAssets(ctx, opts)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to get time bucket", err)
+		return nil, SanitizedInternal(ctx, "failed to get time bucket assets", err)
 	}
 
-	// Get assets for this day
-	opts := timeline.TimelineOptions{
-		UserID:    claims.UserID,
-		StartDate: &dayDetail.StartDate,
-		EndDate:   &dayDetail.EndDate,
-		Limit:     100,
-		Offset:    0,
+	protoAssets := make([]*immichv1.Asset, len(assets))
+	for i, asset := range assets {
+		protoAssets[i] = s.convertBucketAssetToProto(asset)
 	}
-
-	assetIDs, err := s.timelineService.GetTimelineAssets(ctx, opts)
-	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to get assets", err)
-	}
-
-	// Convert asset IDs to Asset objects
-	// For now, return empty assets as we need full asset details
-	assets := make([]*immichv1.Asset, 0)
-	_ = assetIDs
 
 	return &immichv1.TimeBucketAssetResponseDto{
-		Assets:     assets,
+		Assets:     protoAssets,
 		TimeBucket: request.GetTimeBucket(),
+		Count:      int32(len(protoAssets)),
 	}, nil
 }
 
 func (s *Server) GetTimeBuckets(ctx context.Context, request *immichv1.GetTimeBucketsRequest) (*immichv1.GetTimeBucketsResponse, error) {
-	// Get user from context
 	claims, err := s.claimsFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// Build timeline options from request
-	opts := timeline.TimelineOptions{
+	opts := timeline.ListOptions{
 		UserID:     claims.UserID,
-		TimeBucket: "day", // Default to day buckets
-		IsArchived: false, // Use IsTrashed field if needed
+		Bucket:     "day",
 		IsFavorite: request.GetIsFavorite(),
+		IsTrashed:  request.GetIsTrashed(),
+		IsArchived: request.GetIsTrashed(),
 	}
 
-	// Handle trashed items
-	if request.GetIsTrashed() {
-		opts.IsArchived = true
-	}
-
-	// Get time buckets from timeline service
 	buckets, err := s.timelineService.GetTimeBuckets(ctx, opts)
 	if err != nil {
 		return nil, SanitizedInternal(ctx, "failed to get time buckets", err)
 	}
 
-	// Convert to proto response
 	protoBuckets := make([]*immichv1.TimeBucketsResponseDto, len(buckets))
 	for i, bucket := range buckets {
 		protoBuckets[i] = &immichv1.TimeBucketsResponseDto{
@@ -92,4 +79,74 @@ func (s *Server) GetTimeBuckets(ctx context.Context, request *immichv1.GetTimeBu
 	return &immichv1.GetTimeBucketsResponse{
 		Buckets: protoBuckets,
 	}, nil
+}
+
+func (s *Server) convertBucketAssetToProto(asset timeline.BucketAsset) *immichv1.Asset {
+	protoAsset := &immichv1.Asset{
+		Id:               asset.ID.String(),
+		DeviceAssetId:    asset.DeviceAssetId,
+		OwnerId:          asset.OwnerId.String(),
+		DeviceId:         asset.DeviceId,
+		Type:             convertAssetTypeString(asset.Type),
+		OriginalPath:     asset.OriginalPath,
+		OriginalFileName: asset.OriginalFileName,
+		CreatedAt:        timestamppb.New(asset.FileCreatedAt),
+		UpdatedAt:        timestamppb.New(asset.FileModifiedAt),
+		IsFavorite:       asset.IsFavorite,
+		IsArchived:       asset.Visibility == "archive",
+		IsTrashed:        asset.Status == "trashed",
+		Checksum:         "",
+	}
+
+	if asset.Duration != nil {
+		protoAsset.Duration = asset.Duration
+	}
+	if asset.LivePhotoVideoId != nil {
+		id := asset.LivePhotoVideoId.String()
+		protoAsset.LivePhotoVideoId = &id
+	}
+	if asset.StackId != nil {
+		id := asset.StackId.String()
+		protoAsset.StackParentId = &id
+	}
+	if asset.EncodedVideoPath != nil {
+		protoAsset.EncodedVideoPath = asset.EncodedVideoPath
+	}
+
+	return protoAsset
+}
+
+func convertAssetTypeString(assetType string) immichv1.AssetType {
+	switch assetType {
+	case "IMAGE":
+		return immichv1.AssetType_ASSET_TYPE_IMAGE
+	case "VIDEO":
+		return immichv1.AssetType_ASSET_TYPE_VIDEO
+	case "AUDIO":
+		return immichv1.AssetType_ASSET_TYPE_AUDIO
+	default:
+		return immichv1.AssetType_ASSET_TYPE_OTHER
+	}
+}
+
+// parseTimeBucket tries to parse a time-bucket identifier as a date. It is
+// permissive so that month/year values from the upstream SDK are accepted.
+func parseTimeBucket(value string) (time.Time, string, error) {
+	for _, layout := range []string{"2006-01-02", "2006-01-02T15:04:05Z07:00", "2006-01", "2006"} {
+		if t, err := time.Parse(layout, value); err == nil {
+			return t, layout, nil
+		}
+	}
+	return time.Time{}, "", status.Error(codes.InvalidArgument, "invalid time bucket format")
+}
+
+func bucketSizeForLayout(layout string) string {
+	switch layout {
+	case "2006":
+		return "year"
+	case "2006-01":
+		return "month"
+	default:
+		return "day"
+	}
 }

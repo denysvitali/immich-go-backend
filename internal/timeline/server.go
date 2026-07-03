@@ -29,47 +29,36 @@ func (s *Server) GetTimeBucket(ctx context.Context, req *immichv1.GetTimeBucketR
 		return nil, status.Error(codes.Unauthenticated, "unauthorized")
 	}
 
-	// Build options from request
-	opts := TimelineOptions{
+	opts := ListOptions{
 		UserID:     claims.UserID,
-		AlbumID:    req.GetAlbumId(),
+		Bucket:     "day",
+		Date:       req.GetTimeBucket(),
 		IsFavorite: req.GetIsFavorite(),
-		TimeBucket: "day", // Default to day
-		Limit:      50,    // Default limit
-		Offset:     0,
+		IsTrashed:  req.GetIsTrashed(),
+		IsArchived: req.GetIsTrashed(),
+		Limit:      500,
 	}
 
-	// Handle pagination
-	if req.Page != nil && req.PageSize != nil {
-		opts.Limit = int(*req.PageSize)
-		opts.Offset = int(*req.Page) * int(*req.PageSize)
+	if req.PageSize != nil {
+		opts.Limit = *req.PageSize
 	}
 
-	// Handle partner sharing
-	if req.WithPartners != nil && *req.WithPartners {
-		// Would need to fetch partner IDs here
-		opts.PartnerIDs = []string{}
-	}
-
-	// Get assets for the time bucket
-	assetIDs, err := s.service.GetTimelineAssets(ctx, opts)
+	assets, err := s.service.GetBucketAssets(ctx, opts)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get timeline assets: %v", err)
 	}
 
-	// Convert to proto assets (simplified - in production would fetch full asset data)
-	var assets []*immichv1.Asset
-	for _, id := range assetIDs {
-		assets = append(assets, &immichv1.Asset{
-			Id: id,
-			// Other fields would be populated from database
-		})
+	protoAssets := make([]*immichv1.Asset, len(assets))
+	for i, asset := range assets {
+		protoAssets[i] = &immichv1.Asset{
+			Id: asset.ID.String(),
+		}
 	}
 
 	return &immichv1.TimeBucketAssetResponseDto{
-		Assets:     assets,
-		TimeBucket: req.TimeBucket,
-		Count:      int32(len(assets)),
+		Assets:     protoAssets,
+		TimeBucket: req.GetTimeBucket(),
+		Count:      int32(len(protoAssets)),
 	}, nil
 }
 
@@ -80,33 +69,25 @@ func (s *Server) GetTimeBuckets(ctx context.Context, req *immichv1.GetTimeBucket
 		return nil, status.Error(codes.Unauthenticated, "unauthorized")
 	}
 
-	// Build options from request
-	opts := TimelineOptions{
+	opts := ListOptions{
 		UserID:     claims.UserID,
-		AlbumID:    req.GetAlbumId(),
+		Bucket:     "day",
 		IsFavorite: req.GetIsFavorite(),
-		TimeBucket: "day", // Default to day buckets
+		IsTrashed:  req.GetIsTrashed(),
+		IsArchived: req.GetIsTrashed(),
 	}
 
-	// Handle partner sharing
-	if req.WithPartners != nil && *req.WithPartners {
-		// Would need to fetch partner IDs here
-		opts.PartnerIDs = []string{}
-	}
-
-	// Get time buckets
 	buckets, err := s.service.GetTimeBuckets(ctx, opts)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get time buckets: %v", err)
 	}
 
-	// Convert to proto buckets
-	var protoBuckets []*immichv1.TimeBucketsResponseDto
-	for _, bucket := range buckets {
-		protoBuckets = append(protoBuckets, &immichv1.TimeBucketsResponseDto{
+	protoBuckets := make([]*immichv1.TimeBucketsResponseDto, len(buckets))
+	for i, bucket := range buckets {
+		protoBuckets[i] = &immichv1.TimeBucketsResponseDto{
 			Count:      int32(bucket.Count),
 			TimeBucket: bucket.Date,
-		})
+		}
 	}
 
 	return &immichv1.GetTimeBucketsResponse{

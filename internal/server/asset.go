@@ -285,8 +285,8 @@ func (s *Server) UpdateAssets(ctx context.Context, request *immichv1.UpdateAsset
 
 func (s *Server) DeleteAssets(ctx context.Context, request *immichv1.DeleteAssetsRequest) (*emptypb.Empty, error) {
 	// Convert string IDs to UUIDs
-	assetUUIDs := make([]pgtype.UUID, 0, len(request.AssetIds))
-	for _, assetID := range request.AssetIds {
+	assetUUIDs := make([]pgtype.UUID, 0, len(request.Ids))
+	for _, assetID := range request.Ids {
 		assetUUID := pgtype.UUID{}
 		if err := assetUUID.Scan(assetID); err != nil {
 			continue // Skip invalid UUIDs

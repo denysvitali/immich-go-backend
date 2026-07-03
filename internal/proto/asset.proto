@@ -254,7 +254,7 @@ message UpdateAssetsRequest {
 
 // Delete assets request
 message DeleteAssetsRequest {
-  repeated string asset_ids = 1;
+  repeated string ids = 1;
   bool force = 2;
 }
 

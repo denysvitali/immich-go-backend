@@ -1002,26 +1002,60 @@ WHERE "userId" = $1 AND "readAt" IS NULL AND "deletedAt" IS NULL;
 -- ============================================================================
 
 -- name: GetTimelineBuckets :many
-SELECT 
-    date_trunc($2, "localDateTime") as time_bucket,
+SELECT
+    date_trunc($2, "localDateTime")::date as time_bucket,
     COUNT(*) as count
 FROM assets
-WHERE "ownerId" = $1 
+WHERE "ownerId" = $1
 AND "deletedAt" IS NULL
 AND status = 'active'
 AND visibility = 'timeline'
-GROUP BY date_trunc($2, "localDateTime")
+AND ($3::bool = false OR "isFavorite" = true)
+AND ($4::bool = false OR "isTrashed" = true)
+GROUP BY time_bucket
 ORDER BY time_bucket DESC;
 
--- name: GetAssetsByTimeBucket :many
-SELECT * FROM assets
-WHERE "ownerId" = $1 
-AND "deletedAt" IS NULL
-AND status = 'active'
-AND visibility = 'timeline'
-AND date_trunc($2, "localDateTime") = $3
-ORDER BY "localDateTime" DESC
-LIMIT $4 OFFSET $5;
+-- name: GetTimelineBucketAssets :many
+SELECT
+    a.id,
+    a."deviceAssetId",
+    a."ownerId",
+    a."deviceId",
+    a.type,
+    a."originalPath",
+    a."fileCreatedAt",
+    a."fileModifiedAt",
+    a."isFavorite",
+    a.duration,
+    a."encodedVideoPath",
+    a."livePhotoVideoId",
+    a."originalFileName",
+    a."isExternal",
+    a."stackId",
+    a."localDateTime",
+    a.visibility,
+    a.status,
+    e."exifImageWidth",
+    e."exifImageHeight",
+    e.latitude,
+    e.longitude,
+    e.city,
+    e.country,
+    e."projectionType",
+    encode(a.thumbhash, 'base64') as thumbhash
+FROM assets a
+LEFT JOIN exif e ON e."assetId" = a.id
+WHERE a."ownerId" = $1
+AND a."deletedAt" IS NULL
+AND a.status = 'active'
+AND a.visibility = 'timeline'
+AND ($5::bool = false OR a."isFavorite" = true)
+AND ($6::bool = false OR a."isTrashed" = true)
+AND ($2 = 'day' AND date_trunc('day', a."localDateTime")::date = $3::date
+     OR $2 = 'month' AND date_trunc('month', a."localDateTime")::date = $3::date
+     OR $2 = 'year' AND date_trunc('year', a."localDateTime")::date = $3::date)
+ORDER BY a."localDateTime" DESC
+LIMIT $4 OFFSET 0;
 
 -- name: GetAssetStatsByUser :one
 SELECT 

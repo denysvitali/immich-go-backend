@@ -595,6 +595,9 @@ func (s *Server) handleWs(mux *runtime.ServeMux) http.Handler {
 			writeProtoJSON(w, marshaler, resp)
 			return
 		}
+		if s.handleFrontendShape(w, r) {
+			return
+		}
 		mux.ServeHTTP(w, r)
 	})
 }

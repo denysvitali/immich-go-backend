@@ -2,6 +2,7 @@ package timeline
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/denysvitali/immich-go-backend/internal/db/pgutil"
@@ -20,209 +21,193 @@ func NewService(queries *sqlc.Queries) *Service {
 	}
 }
 
-type TimeBucket struct {
-	Date      string    `json:"date"`     // YYYY-MM-DD format
-	Count     int       `json:"count"`    // Number of assets
-	AssetIDs  []string  `json:"assetIds"` // First few asset IDs for preview
-	StartDate time.Time `json:"startDate"`
-	EndDate   time.Time `json:"endDate"`
+// Bucket groups assets by a calendar period.
+type Bucket struct {
+	Date  string
+	Count int64
 }
 
-type TimelineOptions struct {
+// BucketAsset is the data required by the upstream web UI for a timeline
+// bucket. It is a flattened/columnar view of the assets.
+type BucketAsset struct {
+	ID               uuid.UUID
+	DeviceAssetId    string
+	OwnerId          uuid.UUID
+	DeviceId         string
+	Type             string
+	OriginalPath     string
+	OriginalFileName string
+	FileCreatedAt    time.Time
+	FileModifiedAt   time.Time
+	LocalDateTime    time.Time
+	IsFavorite       bool
+	Duration         *string
+	EncodedVideoPath *string
+	LivePhotoVideoId *uuid.UUID
+	StackId          *uuid.UUID
+	IsExternal       bool
+	Visibility       string
+	Status           string
+	Width            *int32
+	Height           *int32
+	Latitude         *float64
+	Longitude        *float64
+	City             *string
+	Country          *string
+	ProjectionType   *string
+	Thumbhash        *string
+}
+
+// ListOptions selects which assets are included in a timeline view.
+type ListOptions struct {
 	UserID     string
-	PartnerIDs []string
-	AlbumID    string
-	IsArchived bool
+	Bucket     string // "day", "month", "year"
+	Date       string // YYYY-MM-DD, YYYY-MM-01 or YYYY-01-01 depending on bucket
 	IsFavorite bool
-	StartDate  *time.Time
-	EndDate    *time.Time
-	TimeBucket string // "day", "month", "year"
-	Limit      int
-	Offset     int
+	IsTrashed  bool
+	IsArchived bool
+	Limit      int32
 }
 
-func (s *Service) GetTimeBuckets(ctx context.Context, opts TimelineOptions) ([]*TimeBucket, error) {
-	// Parse user ID
-	userUUID, err := pgutil.ParseUserID(opts.UserID)
+func (s *Service) GetTimeBuckets(ctx context.Context, opts ListOptions) ([]Bucket, error) {
+	userUUID, err := pgutil.StringToUUID(opts.UserID)
 	if err != nil {
 		return nil, err
 	}
 
-	// Determine time bucket interval
-	timeBucket := "day"
-	if opts.TimeBucket != "" {
-		timeBucket = opts.TimeBucket
-	}
-
-	// Get timeline buckets from database
-	dbBuckets, err := s.queries.GetTimelineBuckets(ctx, sqlc.GetTimelineBucketsParams{
+	rows, err := s.queries.GetTimelineBuckets(ctx, sqlc.GetTimelineBucketsParams{
 		OwnerId:   userUUID,
-		DateTrunc: timeBucket,
+		DateTrunc: opts.Bucket,
+		Column3:   opts.IsFavorite,
+		Column4:   opts.IsTrashed,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	// Convert database results to service layer format
-	buckets := make([]*TimeBucket, len(dbBuckets))
-	for i, row := range dbBuckets {
-		// Parse interval to get actual date
-		// For now, we'll create a basic time bucket
-		// The interval would need proper parsing to get the actual date
-		buckets[i] = &TimeBucket{
-			Date:     "", // Would need to parse row.TimeBucket interval
-			Count:    int(row.Count),
-			AssetIDs: []string{}, // Would need separate query to get asset IDs
-			// StartDate and EndDate would be calculated from the interval
+	buckets := make([]Bucket, len(rows))
+	for i, row := range rows {
+		buckets[i] = Bucket{
+			Date:  row.TimeBucket.Time.Format("2006-01-02"),
+			Count: row.Count,
 		}
 	}
-
 	return buckets, nil
 }
 
-func (s *Service) GetTimelineAssets(ctx context.Context, opts TimelineOptions) ([]string, error) {
-	// Parse user ID
-	userUUID, err := pgutil.ParseUserID(opts.UserID)
+func (s *Service) GetBucketAssets(ctx context.Context, opts ListOptions) ([]BucketAsset, error) {
+	userUUID, err := pgutil.StringToUUID(opts.UserID)
 	if err != nil {
 		return nil, err
 	}
 
-	// Build query parameters
-	params := sqlc.GetUserAssetsParams{
+	parsedDate, err := time.Parse("2006-01-02", opts.Date)
+	if err != nil {
+		return nil, fmt.Errorf("invalid date %q: %w", opts.Date, err)
+	}
+
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = 500
+	}
+
+	rows, err := s.queries.GetTimelineBucketAssets(ctx, sqlc.GetTimelineBucketAssetsParams{
 		OwnerId: userUUID,
-		Status:  sqlc.NullAssetsStatusEnum{Valid: false}, // All statuses
-		Limit:   pgtype.Int4{Int32: int32(opts.Limit), Valid: true},
-		Offset:  pgtype.Int4{Int32: int32(opts.Offset), Valid: true},
-	}
-
-	// Get assets from database
-	assets, err := s.queries.GetUserAssets(ctx, params)
-	if err != nil {
-		return nil, err
-	}
-
-	// Extract asset IDs
-	assetIDs := make([]string, len(assets))
-	for i, asset := range assets {
-		assetIDs[i] = uuid.UUID(asset.ID.Bytes).String()
-	}
-
-	return assetIDs, nil
-}
-
-func (s *Service) GetMonthlyBuckets(ctx context.Context, userID string, year int) ([]*TimeBucket, error) {
-	// Parse user ID
-	userUUID, err := pgutil.ParseUserID(userID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Get monthly buckets from database
-	dbBuckets, err := s.queries.GetTimelineBuckets(ctx, sqlc.GetTimelineBucketsParams{
-		OwnerId:   userUUID,
-		DateTrunc: "month",
+		Column2: opts.Bucket,
+		Column3: pgtype.Date{Time: parsedDate, Valid: true},
+		Limit:   limit,
+		Column5: opts.IsFavorite,
+		Column6: opts.IsTrashed,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	// Convert to service layer format
-	buckets := make([]*TimeBucket, len(dbBuckets))
-	for i, row := range dbBuckets {
-		buckets[i] = &TimeBucket{
-			Date:     "", // Would need to parse row.TimeBucket interval
-			Count:    int(row.Count),
-			AssetIDs: []string{}, // Would need separate query
+	assets := make([]BucketAsset, len(rows))
+	for i, row := range rows {
+		assets[i] = BucketAsset{
+			ID:               uuid.UUID(row.ID.Bytes),
+			DeviceAssetId:    row.DeviceAssetId,
+			OwnerId:          uuid.UUID(row.OwnerId.Bytes),
+			DeviceId:         row.DeviceId,
+			Type:             row.Type,
+			OriginalPath:     row.OriginalPath,
+			OriginalFileName: row.OriginalFileName,
+			FileCreatedAt:    row.FileCreatedAt.Time,
+			FileModifiedAt:   row.FileModifiedAt.Time,
+			LocalDateTime:    row.LocalDateTime.Time,
+			IsFavorite:       row.IsFavorite,
+			IsExternal:       row.IsExternal,
+			Visibility:       string(row.Visibility),
+			Status:           string(row.Status),
+		}
+		if row.Duration.Valid {
+			d := row.Duration.String
+			assets[i].Duration = &d
+		}
+		if row.EncodedVideoPath.Valid {
+			v := row.EncodedVideoPath.String
+			assets[i].EncodedVideoPath = &v
+		}
+		if row.LivePhotoVideoId.Valid {
+			id := uuid.UUID(row.LivePhotoVideoId.Bytes)
+			assets[i].LivePhotoVideoId = &id
+		}
+		if row.StackId.Valid {
+			id := uuid.UUID(row.StackId.Bytes)
+			assets[i].StackId = &id
+		}
+		if row.ExifImageWidth.Valid {
+			w := row.ExifImageWidth.Int32
+			assets[i].Width = &w
+		}
+		if row.ExifImageHeight.Valid {
+			h := row.ExifImageHeight.Int32
+			assets[i].Height = &h
+		}
+		if row.Latitude.Valid {
+			lat := row.Latitude.Float64
+			assets[i].Latitude = &lat
+		}
+		if row.Longitude.Valid {
+			lon := row.Longitude.Float64
+			assets[i].Longitude = &lon
+		}
+		if row.City.Valid {
+			c := row.City.String
+			assets[i].City = &c
+		}
+		if row.Country.Valid {
+			c := row.Country.String
+			assets[i].Country = &c
+		}
+		if row.ProjectionType.Valid {
+			p := row.ProjectionType.String
+			assets[i].ProjectionType = &p
+		}
+		if row.Thumbhash != "" {
+			th := row.Thumbhash
+			assets[i].Thumbhash = &th
 		}
 	}
 
-	return buckets, nil
-}
-
-func (s *Service) GetYearlyBuckets(ctx context.Context, userID string) ([]*TimeBucket, error) {
-	// Parse user ID
-	userUUID, err := pgutil.ParseUserID(userID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Get yearly buckets from database
-	dbBuckets, err := s.queries.GetTimelineBuckets(ctx, sqlc.GetTimelineBucketsParams{
-		OwnerId:   userUUID,
-		DateTrunc: "year",
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	// Convert to service layer format
-	buckets := make([]*TimeBucket, len(dbBuckets))
-	for i, row := range dbBuckets {
-		buckets[i] = &TimeBucket{
-			Date:     "", // Would need to parse row.TimeBucket interval
-			Count:    int(row.Count),
-			AssetIDs: []string{}, // Would need separate query
-		}
-	}
-
-	return buckets, nil
-}
-
-func (s *Service) GetDayDetail(ctx context.Context, userID string, date time.Time) (*TimeBucket, error) {
-	// Parse user ID
-	userUUID, err := pgutil.ParseUserID(userID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Get daily buckets to find this specific day
-	dbBuckets, err := s.queries.GetTimelineBuckets(ctx, sqlc.GetTimelineBucketsParams{
-		OwnerId:   userUUID,
-		DateTrunc: "day",
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	// For now, create a basic bucket for the requested day
-	// In a complete implementation, we'd filter for the specific date
-	bucket := &TimeBucket{
-		Date:      date.Format("2006-01-02"),
-		Count:     0,
-		AssetIDs:  []string{},
-		StartDate: date.Truncate(24 * time.Hour),
-		EndDate:   date.Truncate(24 * time.Hour).Add(24 * time.Hour),
-	}
-
-	// Check if we have data for this day
-	for _, row := range dbBuckets {
-		// Would need to parse row.TimeBucket to match against date
-		bucket.Count = int(row.Count)
-		break // For now, just use the first result
-	}
-
-	return bucket, nil
+	return assets, nil
 }
 
 func (s *Service) GetTimelineStats(ctx context.Context, userID string) (map[string]interface{}, error) {
-	// Parse user ID
 	userUUID, err := pgutil.ParseUserID(userID)
 	if err != nil {
 		return nil, err
 	}
 
-	// Get asset statistics from database
 	statsRow, err := s.queries.GetAssetStatsByUser(ctx, userUUID)
 	if err != nil {
 		return nil, err
 	}
 
-	// Convert to map format
-	stats := map[string]interface{}{
+	return map[string]interface{}{
 		"images": statsRow.Images,
 		"videos": statsRow.Videos,
 		"total":  statsRow.Total,
-	}
-
-	return stats, nil
+	}, nil
 }
