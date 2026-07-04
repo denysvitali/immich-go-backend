@@ -93,6 +93,27 @@ test.describe('system config', () => {
   });
 });
 
+test.describe('system metadata', () => {
+  test('version check state is admin-only and keeps upstream nullable shape', async ({
+    request,
+  }) => {
+    const unauthenticated = await request.get('/system-metadata/version-check-state');
+    expect(unauthenticated.status()).toBe(401);
+
+    const admin = await signUpAdmin(request, 'version-check-state');
+    const response = await request.get('/system-metadata/version-check-state', {
+      headers: admin.headers,
+    });
+    await expectOk(response);
+
+    const body = await response.json();
+    expect(body).toHaveProperty('checkedAt');
+    expect(body).toHaveProperty('releaseVersion');
+    expect(body.checkedAt === null || typeof body.checkedAt === 'string').toBe(true);
+    expect(body.releaseVersion === null || typeof body.releaseVersion === 'string').toBe(true);
+  });
+});
+
 test.describe('multipart upload', () => {
   test('POST /api/assets multipart creates an asset and detects duplicates', async ({
     request,

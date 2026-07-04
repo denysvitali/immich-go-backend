@@ -29,6 +29,13 @@ service SystemMetadataService {
       get: "/system-metadata/reverse-geocoding-state"
     };
   }
+
+  // Get version check state
+  rpc GetVersionCheckState(GetVersionCheckStateRequest) returns (VersionCheckStateResponse) {
+    option (google.api.http) = {
+      get: "/system-metadata/version-check-state"
+    };
+  }
 }
 
 // Request to get admin onboarding
@@ -60,4 +67,15 @@ message GetReverseGeocodingStateRequest {
 message GetReverseGeocodingStateResponse {
   int32 last_update = 1;
   int32 last_import_file_name = 2;
+}
+
+// Request to get version check state
+message GetVersionCheckStateRequest {
+  // No parameters needed
+}
+
+// Response for version check state
+message VersionCheckStateResponse {
+  optional string checked_at = 1;
+  optional string release_version = 2;
 }

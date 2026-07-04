@@ -15,7 +15,7 @@ env:
   GO_VERSION: '1.24'
   BUF_VERSION: '1.49.0'
   IMMICH_UPSTREAM_REF: 'v2.7.5'
-  OPENAPI_COVERAGE_FAIL_UNDER: '86.53'
+  OPENAPI_COVERAGE_FAIL_UNDER: '86.94'
 
 # Cancel in-progress runs for the same ref when a new commit is pushed.
 concurrency:

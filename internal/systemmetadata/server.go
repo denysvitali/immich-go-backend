@@ -92,3 +92,21 @@ func (s *Server) GetReverseGeocodingState(ctx context.Context, request *immichv1
 		LastImportFileName: response.LastImportFileName,
 	}, nil
 }
+
+// GetVersionCheckState retrieves version check state.
+func (s *Server) GetVersionCheckState(ctx context.Context, request *immichv1.GetVersionCheckStateRequest) (*immichv1.VersionCheckStateResponse, error) {
+	_, err := auth.RequireAdmin(ctx)
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, "admin privileges required")
+	}
+
+	response, err := s.service.GetVersionCheckState(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get version check state: %v", err)
+	}
+
+	return &immichv1.VersionCheckStateResponse{
+		CheckedAt:      response.CheckedAt,
+		ReleaseVersion: response.ReleaseVersion,
+	}, nil
+}

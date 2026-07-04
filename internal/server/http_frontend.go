@@ -21,6 +21,9 @@ func (s *Server) handleFrontendShape(w http.ResponseWriter, r *http.Request) (ha
 	switch r.Method {
 	case http.MethodGet:
 		switch r.URL.Path {
+		case "/system-metadata/version-check-state":
+			s.handleVersionCheckState(w, r)
+			return true
 		case "/api/timeline/buckets":
 			s.handleTimelineBuckets(w, r)
 			return true

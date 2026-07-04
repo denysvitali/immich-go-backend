@@ -154,6 +154,36 @@ func (s *Service) GetReverseGeocodingState(ctx context.Context) (*GetReverseGeoc
 	}, nil
 }
 
+// GetVersionCheckState retrieves the latest persisted version check state.
+func (s *Service) GetVersionCheckState(ctx context.Context) (*VersionCheckStateResponse, error) {
+	ctx, span := tracer.Start(ctx, "systemmetadata.get_version_check_state")
+	defer span.End()
+
+	start := time.Now()
+	defer func() {
+		s.operationDuration.Record(ctx, time.Since(start).Seconds(),
+			metric.WithAttributes(attribute.String("operation", "get_version_check_state")))
+		s.operationCounter.Add(ctx, 1,
+			metric.WithAttributes(attribute.String("operation", "get_version_check_state")))
+	}()
+
+	checkedAtMetadata, _ := s.db.GetSystemMetadata(ctx, "version_check_checked_at")
+	releaseVersionMetadata, _ := s.db.GetSystemMetadata(ctx, "version_check_release_version")
+
+	return &VersionCheckStateResponse{
+		CheckedAt:      metadataStringPtr(checkedAtMetadata.Value),
+		ReleaseVersion: metadataStringPtr(releaseVersionMetadata.Value),
+	}, nil
+}
+
+func metadataStringPtr(value []byte) *string {
+	if len(value) == 0 {
+		return nil
+	}
+	s := string(value)
+	return &s
+}
+
 // SetReverseGeocodingState updates reverse geocoding state
 func (s *Service) SetReverseGeocodingState(ctx context.Context, lastUpdate int32, lastImportFileName int32) error {
 	ctx, span := tracer.Start(ctx, "systemmetadata.set_reverse_geocoding_state",
@@ -208,4 +238,9 @@ type UpdateAdminOnboardingResponse struct {
 type GetReverseGeocodingStateResponse struct {
 	LastUpdate         int32
 	LastImportFileName int32
+}
+
+type VersionCheckStateResponse struct {
+	CheckedAt      *string
+	ReleaseVersion *string
 }
