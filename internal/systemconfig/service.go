@@ -3,7 +3,10 @@ package systemconfig
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 )
@@ -189,6 +192,53 @@ type ThumbnailConfig struct {
 type TrashConfig struct {
 	Enabled bool `json:"enabled"`
 	Days    int  `json:"days"`
+}
+
+// systemConfigMetadataKey is the system_metadata key upstream Immich uses to
+// persist admin configuration overrides ("system-config").
+const systemConfigMetadataKey = "system-config"
+
+// GetConfigDto returns the effective configuration: upstream defaults with any
+// stored overrides from system_metadata applied on top.
+func (s *Service) GetConfigDto(ctx context.Context) (Dto, error) {
+	cfg := DefaultDto()
+
+	meta, err := s.db.GetSystemMetadata(ctx, systemConfigMetadataKey)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return cfg, nil
+		}
+		return cfg, fmt.Errorf("load system config: %w", err)
+	}
+
+	if len(meta.Value) > 0 {
+		if err := json.Unmarshal(meta.Value, &cfg); err != nil {
+			return cfg, fmt.Errorf("parse stored system config: %w", err)
+		}
+	}
+	return cfg, nil
+}
+
+// UpdateConfigDto validates and persists a full configuration document
+// (the web UI always PUTs the entire DTO) and returns the effective config.
+func (s *Service) UpdateConfigDto(ctx context.Context, raw []byte) (Dto, error) {
+	cfg := DefaultDto()
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return Dto{}, fmt.Errorf("invalid system config payload: %w", err)
+	}
+
+	stored, err := json.Marshal(cfg)
+	if err != nil {
+		return Dto{}, fmt.Errorf("marshal system config: %w", err)
+	}
+
+	if _, err := s.db.SetSystemMetadata(ctx, sqlc.SetSystemMetadataParams{
+		Key:   systemConfigMetadataKey,
+		Value: stored,
+	}); err != nil {
+		return Dto{}, fmt.Errorf("store system config: %w", err)
+	}
+	return cfg, nil
 }
 
 // GetSystemConfig retrieves the current system configuration
