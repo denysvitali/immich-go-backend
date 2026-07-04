@@ -18,6 +18,20 @@ service PluginService {
     };
   }
 
+  // Search available plugin workflow methods
+  rpc SearchPluginMethods(SearchPluginMethodsRequest) returns (SearchPluginMethodsResponse) {
+    option (google.api.http) = {
+      get: "/api/plugins/methods"
+    };
+  }
+
+  // Search workflow templates provided by installed plugins
+  rpc SearchPluginTemplates(google.protobuf.Empty) returns (SearchPluginTemplatesResponse) {
+    option (google.api.http) = {
+      get: "/api/plugins/templates"
+    };
+  }
+
   // Get plugin details
   rpc GetPlugin(GetPluginRequest) returns (PluginInfo) {
     option (google.api.http) = {
@@ -104,6 +118,52 @@ message PluginInfo {
 // List plugins response
 message ListPluginsResponse {
   repeated PluginInfo plugins = 1;
+}
+
+message SearchPluginMethodsRequest {
+  optional string description = 1;
+  optional bool enabled = 2;
+  optional string id = 3;
+  optional string name = 4;
+  optional string plugin_name = 5;
+  optional string plugin_version = 6;
+  optional string title = 7;
+  optional string trigger = 8;
+  optional string type = 9;
+}
+
+message PluginMethodResponseDto {
+  string description = 1;
+  bool host_functions = 2;
+  string key = 3;
+  string name = 4;
+  google.protobuf.Struct schema = 5;
+  string title = 6;
+  repeated string types = 7;
+  repeated string ui_hints = 8;
+}
+
+message SearchPluginMethodsResponse {
+  repeated PluginMethodResponseDto methods = 1;
+}
+
+message PluginTemplateStepResponseDto {
+  string method = 1;
+  google.protobuf.Struct config = 2;
+  optional bool enabled = 3;
+}
+
+message PluginTemplateResponseDto {
+  string description = 1;
+  string key = 2;
+  repeated PluginTemplateStepResponseDto steps = 3;
+  string title = 4;
+  string trigger = 5;
+  repeated string ui_hints = 6;
+}
+
+message SearchPluginTemplatesResponse {
+  repeated PluginTemplateResponseDto templates = 1;
 }
 
 // Get plugin request

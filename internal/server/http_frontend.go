@@ -60,6 +60,12 @@ func (s *Server) handleFrontendShape(w http.ResponseWriter, r *http.Request) (ha
 		case "/api/plugins/triggers":
 			s.handlePluginTriggers(w, r)
 			return true
+		case "/api/plugins/methods":
+			s.handlePluginMethods(w, r)
+			return true
+		case "/api/plugins/templates":
+			s.handlePluginTemplates(w, r)
+			return true
 		case "/api/system-config":
 			s.handleSystemConfigGet(w, r)
 			return true

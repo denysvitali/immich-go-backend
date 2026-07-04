@@ -136,6 +136,58 @@ test.describe('plugins', () => {
       { contextType: 'person', type: 'PersonRecognized' },
     ]);
   });
+
+  test('plugin methods and templates are searchable arrays', async ({ request }) => {
+    expect((await request.get('/api/plugins/methods')).status()).toBe(401);
+    expect((await request.get('/api/plugins/templates')).status()).toBe(401);
+
+    const admin = await signUpAdmin(request, 'plugin-methods');
+    const methods = await request.get(
+      '/api/plugins/methods?pluginName=thumbnail-processor&type=AssetV1&trigger=AssetCreate&enabled=true',
+      { headers: admin.headers },
+    );
+    await expectOk(methods);
+
+    const methodBody = await methods.json();
+    expect(Array.isArray(methodBody)).toBe(true);
+    expect(methodBody).toHaveLength(1);
+    expect(methodBody[0]).toMatchObject({
+      key: 'thumbnail-processor#generate-thumbnail',
+      name: 'generate-thumbnail',
+      title: 'Generate thumbnail',
+      description: 'Generate thumbnails for an asset',
+      hostFunctions: false,
+      types: ['AssetV1'],
+      uiHints: ['asset'],
+    });
+    expect(methodBody[0].schema.type).toBe('object');
+
+    const noMatch = await request.get('/api/plugins/methods?pluginName=missing', {
+      headers: admin.headers,
+    });
+    await expectOk(noMatch);
+    expect(await noMatch.json()).toEqual([]);
+
+    const templates = await request.get('/api/plugins/templates', { headers: admin.headers });
+    await expectOk(templates);
+    const templateBody = await templates.json();
+    expect(Array.isArray(templateBody)).toBe(true);
+    expect(templateBody).toHaveLength(1);
+    expect(templateBody[0]).toMatchObject({
+      key: 'thumbnail-processor#generate-thumbnail-on-upload',
+      title: 'Generate thumbnail on upload',
+      description: 'Generate thumbnails when a new asset is uploaded',
+      trigger: 'AssetCreate',
+      uiHints: ['asset'],
+      steps: [
+        {
+          method: 'thumbnail-processor#generate-thumbnail',
+          config: { force: false },
+          enabled: true,
+        },
+      ],
+    });
+  });
 });
 
 test.describe('multipart upload', () => {

@@ -33,6 +33,62 @@ func (s *Server) ListPlugins(ctx context.Context, _ *emptypb.Empty) (*immichv1.L
 	}, nil
 }
 
+// SearchPluginMethods returns available workflow methods exposed by plugins.
+func (s *Server) SearchPluginMethods(ctx context.Context, req *immichv1.SearchPluginMethodsRequest) (*immichv1.SearchPluginMethodsResponse, error) {
+	if _, err := s.getUserFromContext(ctx); err != nil {
+		return nil, status.Error(codes.Unauthenticated, "authentication required")
+	}
+
+	methods, err := s.pluginService.SearchPluginMethods(ctx, plugin.PluginMethodSearchFilter{
+		Description:   req.Description,
+		Enabled:       req.Enabled,
+		ID:            req.Id,
+		Name:          req.Name,
+		PluginName:    req.PluginName,
+		PluginVersion: req.PluginVersion,
+		Title:         req.Title,
+		Trigger:       req.Trigger,
+		Type:          req.Type,
+	})
+	if err != nil {
+		return nil, SanitizedInternal(ctx, "failed to search plugin methods", err)
+	}
+
+	protoMethods := make([]*immichv1.PluginMethodResponseDto, 0, len(methods))
+	for _, method := range methods {
+		protoMethod, err := pluginMethodToProto(method)
+		if err != nil {
+			return nil, SanitizedInternal(ctx, "failed to convert plugin method", err)
+		}
+		protoMethods = append(protoMethods, protoMethod)
+	}
+
+	return &immichv1.SearchPluginMethodsResponse{Methods: protoMethods}, nil
+}
+
+// SearchPluginTemplates returns workflow templates exposed by plugins.
+func (s *Server) SearchPluginTemplates(ctx context.Context, _ *emptypb.Empty) (*immichv1.SearchPluginTemplatesResponse, error) {
+	if _, err := s.getUserFromContext(ctx); err != nil {
+		return nil, status.Error(codes.Unauthenticated, "authentication required")
+	}
+
+	templates, err := s.pluginService.SearchPluginTemplates(ctx)
+	if err != nil {
+		return nil, SanitizedInternal(ctx, "failed to search plugin templates", err)
+	}
+
+	protoTemplates := make([]*immichv1.PluginTemplateResponseDto, 0, len(templates))
+	for _, template := range templates {
+		protoTemplate, err := pluginTemplateToProto(template)
+		if err != nil {
+			return nil, SanitizedInternal(ctx, "failed to convert plugin template", err)
+		}
+		protoTemplates = append(protoTemplates, protoTemplate)
+	}
+
+	return &immichv1.SearchPluginTemplatesResponse{Templates: protoTemplates}, nil
+}
+
 // GetPlugin returns a specific plugin by ID
 func (s *Server) GetPlugin(ctx context.Context, req *immichv1.GetPluginRequest) (*immichv1.PluginInfo, error) {
 	if _, err := s.requireAdmin(ctx); err != nil {
@@ -166,6 +222,47 @@ func pluginToProto(p *plugin.PluginInfo) *immichv1.PluginInfo {
 	}
 
 	return proto
+}
+
+func pluginMethodToProto(method plugin.PluginMethodInfo) (*immichv1.PluginMethodResponseDto, error) {
+	schema, err := structpb.NewStruct(method.Schema)
+	if err != nil {
+		return nil, err
+	}
+	return &immichv1.PluginMethodResponseDto{
+		Description:   method.Description,
+		HostFunctions: method.HostFunctions,
+		Key:           method.PluginName + "#" + method.Name,
+		Name:          method.Name,
+		Schema:        schema,
+		Title:         method.Title,
+		Types:         append([]string(nil), method.Types...),
+		UiHints:       append([]string(nil), method.UIHints...),
+	}, nil
+}
+
+func pluginTemplateToProto(template plugin.PluginTemplateInfo) (*immichv1.PluginTemplateResponseDto, error) {
+	steps := make([]*immichv1.PluginTemplateStepResponseDto, 0, len(template.Steps))
+	for _, step := range template.Steps {
+		config, err := structpb.NewStruct(step.Config)
+		if err != nil {
+			return nil, err
+		}
+		steps = append(steps, &immichv1.PluginTemplateStepResponseDto{
+			Method:  step.Method,
+			Config:  config,
+			Enabled: step.Enabled,
+		})
+	}
+
+	return &immichv1.PluginTemplateResponseDto{
+		Description: template.Description,
+		Key:         template.PluginName + "#" + template.Name,
+		Steps:       steps,
+		Title:       template.Title,
+		Trigger:     template.Trigger,
+		UiHints:     append([]string(nil), template.UIHints...),
+	}, nil
 }
 
 func pluginTypeToProto(t plugin.PluginType) immichv1.PluginType {

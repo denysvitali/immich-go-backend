@@ -39,6 +39,12 @@ const (
 	PluginTypeIntegration  PluginType = "integration"
 )
 
+const (
+	WorkflowTriggerAssetCreate             = "AssetCreate"
+	WorkflowTriggerAssetMetadataExtraction = "AssetMetadataExtraction"
+	WorkflowTypeAssetV1                    = "AssetV1"
+)
+
 // PluginInfo contains information about a plugin
 type PluginInfo struct {
 	ID            string
@@ -58,14 +64,62 @@ type PluginInfo struct {
 	ConfigSchema  map[string]interface{}
 }
 
+// PluginMethodSearchFilter contains filters supported by the upstream plugin
+// method search endpoint.
+type PluginMethodSearchFilter struct {
+	Description   *string
+	Enabled       *bool
+	ID            *string
+	Name          *string
+	PluginName    *string
+	PluginVersion *string
+	Title         *string
+	Trigger       *string
+	Type          *string
+}
+
+// PluginMethodInfo describes a workflow method exposed by a plugin.
+type PluginMethodInfo struct {
+	ID            string
+	PluginName    string
+	PluginVersion string
+	Name          string
+	Title         string
+	Description   string
+	Types         []string
+	UIHints       []string
+	Schema        map[string]interface{}
+	HostFunctions bool
+}
+
+// PluginTemplateInfo describes a workflow template exposed by a plugin.
+type PluginTemplateInfo struct {
+	PluginName  string
+	Name        string
+	Title       string
+	Description string
+	Trigger     string
+	Steps       []PluginTemplateStepInfo
+	UIHints     []string
+}
+
+// PluginTemplateStepInfo describes one workflow template step.
+type PluginTemplateStepInfo struct {
+	Method  string
+	Config  map[string]interface{}
+	Enabled *bool
+}
+
 // Service handles plugin management operations
 type Service struct {
 	db     *sqlc.Queries
 	config *config.Config
 
 	// In-memory plugin registry (in production, would use database)
-	mu      sync.RWMutex
-	plugins map[string]*PluginInfo
+	mu        sync.RWMutex
+	plugins   map[string]*PluginInfo
+	methods   []PluginMethodInfo
+	templates []PluginTemplateInfo
 
 	// Metrics
 	pluginCounter     metric.Int64UpDownCounter
@@ -112,6 +166,7 @@ func NewService(queries *sqlc.Queries, cfg *config.Config) (*Service, error) {
 
 	// Initialize with built-in plugins
 	s.initializeBuiltinPlugins()
+	s.initializeBuiltinWorkflowPlugins()
 
 	return s, nil
 }
@@ -269,6 +324,52 @@ func (s *Service) initializeBuiltinPlugins() {
 	}
 }
 
+func (s *Service) initializeBuiltinWorkflowPlugins() {
+	enabled := true
+	methodKey := "thumbnail-processor#generate-thumbnail"
+	s.methods = []PluginMethodInfo{
+		{
+			ID:            "11111111-1111-4111-8111-111111111111",
+			PluginName:    "thumbnail-processor",
+			PluginVersion: "1.0.0",
+			Name:          "generate-thumbnail",
+			Title:         "Generate thumbnail",
+			Description:   "Generate thumbnails for an asset",
+			Types:         []string{WorkflowTypeAssetV1},
+			UIHints:       []string{"asset"},
+			Schema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"force": map[string]interface{}{
+						"type":        "boolean",
+						"description": "Regenerate thumbnails even when they already exist",
+					},
+				},
+			},
+			HostFunctions: false,
+		},
+	}
+	s.templates = []PluginTemplateInfo{
+		{
+			PluginName:  "thumbnail-processor",
+			Name:        "generate-thumbnail-on-upload",
+			Title:       "Generate thumbnail on upload",
+			Description: "Generate thumbnails when a new asset is uploaded",
+			Trigger:     WorkflowTriggerAssetCreate,
+			Steps: []PluginTemplateStepInfo{
+				{
+					Method: methodKey,
+					Config: map[string]interface{}{
+						"force": false,
+					},
+					Enabled: &enabled,
+				},
+			},
+			UIHints: []string{"asset"},
+		},
+	}
+}
+
 // ListPlugins returns all installed plugins
 func (s *Service) ListPlugins(ctx context.Context) ([]*PluginInfo, error) {
 	ctx, span := tracer.Start(ctx, "plugin.list_plugins")
@@ -291,6 +392,132 @@ func (s *Service) ListPlugins(ctx context.Context) ([]*PluginInfo, error) {
 	}
 
 	return plugins, nil
+}
+
+func (s *Service) SearchPluginMethods(ctx context.Context, filter PluginMethodSearchFilter) ([]PluginMethodInfo, error) {
+	ctx, span := tracer.Start(ctx, "plugin.search_plugin_methods")
+	defer span.End()
+
+	start := time.Now()
+	defer func() {
+		s.operationDuration.Record(ctx, time.Since(start).Seconds(),
+			metric.WithAttributes(attribute.String("operation", "search_plugin_methods")))
+		s.operationCounter.Add(ctx, 1,
+			metric.WithAttributes(attribute.String("operation", "search_plugin_methods")))
+	}()
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	methods := make([]PluginMethodInfo, 0, len(s.methods))
+	for _, method := range s.methods {
+		if !s.matchesMethodFilter(method, filter) {
+			continue
+		}
+		method.Schema = cloneMap(method.Schema)
+		method.Types = append([]string(nil), method.Types...)
+		method.UIHints = append([]string(nil), method.UIHints...)
+		methods = append(methods, method)
+	}
+
+	return methods, nil
+}
+
+func (s *Service) SearchPluginTemplates(ctx context.Context) ([]PluginTemplateInfo, error) {
+	ctx, span := tracer.Start(ctx, "plugin.search_plugin_templates")
+	defer span.End()
+
+	start := time.Now()
+	defer func() {
+		s.operationDuration.Record(ctx, time.Since(start).Seconds(),
+			metric.WithAttributes(attribute.String("operation", "search_plugin_templates")))
+		s.operationCounter.Add(ctx, 1,
+			metric.WithAttributes(attribute.String("operation", "search_plugin_templates")))
+	}()
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	templates := make([]PluginTemplateInfo, 0, len(s.templates))
+	for _, template := range s.templates {
+		template.Steps = cloneTemplateSteps(template.Steps)
+		template.UIHints = append([]string(nil), template.UIHints...)
+		templates = append(templates, template)
+	}
+
+	return templates, nil
+}
+
+func (s *Service) matchesMethodFilter(method PluginMethodInfo, filter PluginMethodSearchFilter) bool {
+	if filter.ID != nil && method.ID != *filter.ID {
+		return false
+	}
+	if filter.Name != nil && method.Name != *filter.Name {
+		return false
+	}
+	if filter.Title != nil && method.Title != *filter.Title {
+		return false
+	}
+	if filter.Description != nil && method.Description != *filter.Description {
+		return false
+	}
+	if filter.PluginName != nil && method.PluginName != *filter.PluginName {
+		return false
+	}
+	if filter.PluginVersion != nil && method.PluginVersion != *filter.PluginVersion {
+		return false
+	}
+	if filter.Type != nil && !containsString(method.Types, *filter.Type) {
+		return false
+	}
+	if filter.Trigger != nil && !isMethodCompatible(method.Types, *filter.Trigger) {
+		return false
+	}
+	if filter.Enabled != nil {
+		plugin, ok := s.plugins[method.PluginName]
+		if ok && plugin.Enabled != *filter.Enabled {
+			return false
+		}
+	}
+	return true
+}
+
+func isMethodCompatible(types []string, trigger string) bool {
+	switch trigger {
+	case WorkflowTriggerAssetCreate, WorkflowTriggerAssetMetadataExtraction:
+		return containsString(types, WorkflowTypeAssetV1)
+	default:
+		return false
+	}
+}
+
+func containsString(values []string, needle string) bool {
+	for _, value := range values {
+		if value == needle {
+			return true
+		}
+	}
+	return false
+}
+
+func cloneTemplateSteps(steps []PluginTemplateStepInfo) []PluginTemplateStepInfo {
+	cloned := make([]PluginTemplateStepInfo, len(steps))
+	for i, step := range steps {
+		cloned[i] = step
+		cloned[i].Config = cloneMap(step.Config)
+	}
+	return cloned
+}
+
+func cloneMap(value map[string]interface{}) map[string]interface{} {
+	if value == nil {
+		return nil
+	}
+	cloned := make(map[string]interface{}, len(value))
+	for key, item := range value {
+		cloned[key] = item
+	}
+	return cloned
 }
 
 // GetPlugin returns a specific plugin by ID
