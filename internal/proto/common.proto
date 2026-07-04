@@ -96,12 +96,12 @@ message PageInfo {
 
 message CalendarHeatmapSeriesItem {
   string date = 1;
-  int64 count = 2;
+  int32 count = 2;
 }
 
 message CalendarHeatmapResponseDto {
   string from = 1;
   repeated CalendarHeatmapSeriesItem series = 2;
   string to = 3;
-  int64 total_count = 4;
+  int32 total_count = 4;
 }

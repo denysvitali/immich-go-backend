@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -68,12 +69,15 @@ func Get(ctx context.Context, queries *sqlc.Queries, ownerID pgtype.UUID, fromVa
 		return nil, fmt.Errorf("get calendar heatmap: %w", err)
 	}
 
-	counts := make(map[string]int64, len(rows))
+	counts := make(map[string]int32, len(rows))
 	for _, row := range rows {
 		if !row.ActivityDate.Valid {
 			continue
 		}
-		counts[row.ActivityDate.Time.Format(dateLayout)] = row.Count
+		if row.Count > math.MaxInt32 {
+			return nil, fmt.Errorf("calendar heatmap count exceeds int32 limit")
+		}
+		counts[row.ActivityDate.Time.Format(dateLayout)] = int32(row.Count)
 	}
 
 	series := make([]*immichv1.CalendarHeatmapSeriesItem, 0, int(toDate.Sub(fromDate).Hours()/24)+1)
@@ -81,18 +85,21 @@ func Get(ctx context.Context, queries *sqlc.Queries, ownerID pgtype.UUID, fromVa
 	for date := fromDate; !date.After(toDate); date = date.AddDate(0, 0, 1) {
 		key := date.Format(dateLayout)
 		count := counts[key]
-		total += count
+		total += int64(count)
 		series = append(series, &immichv1.CalendarHeatmapSeriesItem{
 			Date:  key,
 			Count: count,
 		})
+	}
+	if total > math.MaxInt32 {
+		return nil, fmt.Errorf("calendar heatmap total exceeds int32 limit")
 	}
 
 	return &immichv1.CalendarHeatmapResponseDto{
 		From:       fromDate.Format(dateLayout),
 		Series:     series,
 		To:         toDate.Format(dateLayout),
-		TotalCount: total,
+		TotalCount: int32(total),
 	}, nil
 }
 
