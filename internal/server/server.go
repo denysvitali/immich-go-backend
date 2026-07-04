@@ -1,17 +1,21 @@
 package server
 
 import (
+	"bufio"
 	"context"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -454,7 +458,8 @@ func (s *Server) HTTPHandler() http.Handler {
 				EmitDefaultValues: true,
 			},
 		}),
-		runtime.WithMiddlewares(loggingMiddleware, s.authContextMiddleware),
+		runtime.WithMiddlewares(s.authContextMiddleware),
+		runtime.WithErrorHandler(loggingHTTPErrorHandler),
 		runtime.WithForwardResponseOption(httpResponseModifier),
 	)
 
@@ -564,7 +569,7 @@ func (s *Server) HTTPHandler() http.Handler {
 	// from s.config.WebUIDir. Unmatched requests fall through to the API mux
 	// so REST/gRPC routes keep working. Empty WebUIDir is a transparent
 	// passthrough — the API is reachable directly.
-	return webui.Handler(s.config.WebUIDir, s.handleWs(mux))
+	return webui.Handler(s.config.WebUIDir, httpLoggingHandler(s.handleWs(mux)))
 }
 
 func (s *Server) handleWs(mux *runtime.ServeMux) http.Handler {
@@ -618,15 +623,127 @@ func writeProtoJSON(w http.ResponseWriter, marshaler runtime.Marshaler, msg prot
 	_, _ = w.Write(data)
 }
 
-func loggingMiddleware(handlerFunc runtime.HandlerFunc) runtime.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request, pathParams map[string]string) {
-		logrus.WithFields(logrus.Fields{
-			"method": r.Method,
-			"path":   r.URL.Path,
-			"query":  r.URL.RawQuery,
-		}).Info("Handling request")
-		handlerFunc(w, r, pathParams)
+func loggingHTTPErrorHandler(ctx context.Context, mux *runtime.ServeMux, marshaler runtime.Marshaler, w http.ResponseWriter, r *http.Request, err error) {
+	code := status.Code(err)
+	statusCode := runtime.HTTPStatusFromCode(code)
+	entry := logrus.WithError(err).WithFields(logrus.Fields{
+		"grpcCode": code.String(),
+		"method":   r.Method,
+		"path":     r.URL.Path,
+		"query":    r.URL.RawQuery,
+		"status":   statusCode,
+	})
+	if statusCode >= http.StatusInternalServerError {
+		entry.Error("Gateway request failed")
+	} else {
+		entry.Warn("Gateway request failed")
 	}
+	runtime.DefaultHTTPErrorHandler(ctx, mux, marshaler, w, r, err)
+}
+
+func httpLoggingHandler(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec := &responseStatusRecorder{ResponseWriter: w}
+		start := time.Now()
+
+		next.ServeHTTP(rec, r)
+
+		statusCode := rec.status
+		if statusCode == 0 {
+			statusCode = http.StatusOK
+		}
+
+		entry := logrus.WithFields(logrus.Fields{
+			"bytes":       rec.bytes,
+			"durationMs":  time.Since(start).Milliseconds(),
+			"method":      r.Method,
+			"path":        r.URL.Path,
+			"query":       r.URL.RawQuery,
+			"status":      statusCode,
+			"userAgent":   r.UserAgent(),
+			"requestHost": r.Host,
+		})
+		switch {
+		case statusCode >= http.StatusInternalServerError:
+			entry.Error("Handled request")
+		case statusCode >= http.StatusBadRequest:
+			entry.Warn("Handled request")
+		default:
+			entry.Info("Handled request")
+		}
+	})
+}
+
+type responseStatusRecorder struct {
+	http.ResponseWriter
+	status int
+	bytes  int64
+}
+
+func (r *responseStatusRecorder) WriteHeader(statusCode int) {
+	if r.status != 0 {
+		return
+	}
+	r.status = statusCode
+	r.ResponseWriter.WriteHeader(statusCode)
+}
+
+func (r *responseStatusRecorder) Write(data []byte) (int, error) {
+	if r.status == 0 {
+		r.status = http.StatusOK
+	}
+	n, err := r.ResponseWriter.Write(data)
+	r.bytes += int64(n)
+	return n, err
+}
+
+func (r *responseStatusRecorder) Flush() {
+	if r.status == 0 {
+		r.status = http.StatusOK
+	}
+	if flusher, ok := r.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
+func (r *responseStatusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hijacker, ok := r.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, http.ErrNotSupported
+	}
+	return hijacker.Hijack()
+}
+
+func (r *responseStatusRecorder) Push(target string, opts *http.PushOptions) error {
+	pusher, ok := r.ResponseWriter.(http.Pusher)
+	if !ok {
+		return http.ErrNotSupported
+	}
+	return pusher.Push(target, opts)
+}
+
+func (r *responseStatusRecorder) ReadFrom(src io.Reader) (int64, error) {
+	if r.status == 0 {
+		r.status = http.StatusOK
+	}
+	if readerFrom, ok := r.ResponseWriter.(io.ReaderFrom); ok {
+		n, err := readerFrom.ReadFrom(src)
+		r.bytes += n
+		return n, err
+	}
+	return io.Copy(responseRecorderWriter{r}, src)
+}
+
+func (r *responseStatusRecorder) Unwrap() http.ResponseWriter {
+	return r.ResponseWriter
+}
+
+type responseRecorderWriter struct {
+	rec *responseStatusRecorder
+}
+
+func (w responseRecorderWriter) Write(data []byte) (int, error) {
+	return w.rec.Write(data)
 }
 
 func (s *Server) authContextMiddleware(handlerFunc runtime.HandlerFunc) runtime.HandlerFunc {

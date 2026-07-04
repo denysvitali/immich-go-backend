@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -10,7 +11,15 @@ import (
 	"github.com/denysvitali/immich-go-backend/internal/auth"
 	"github.com/denysvitali/immich-go-backend/internal/db/pgutil"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
+	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 	"github.com/denysvitali/immich-go-backend/internal/timeline"
+	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"github.com/sirupsen/logrus"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/emptypb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // frontendShapeHandlers intercepts a small set of REST endpoints whose default
@@ -32,6 +41,21 @@ func (s *Server) handleFrontendShape(w http.ResponseWriter, r *http.Request) (ha
 			return true
 		case "/api/albums":
 			s.handleAlbums(w, r)
+			return true
+		case "/api/admin/users":
+			s.handleAdminUsers(w, r)
+			return true
+		case "/api/libraries":
+			s.handleLibraries(w, r)
+			return true
+		case "/api/memories":
+			s.handleMemories(w, r)
+			return true
+		case "/api/notifications":
+			s.handleNotifications(w, r)
+			return true
+		case "/api/server/version-history":
+			s.handleServerVersionHistory(w, r)
 			return true
 		case "/api/plugins/triggers":
 			s.handlePluginTriggers(w, r)
@@ -131,10 +155,178 @@ func writeJSON(w http.ResponseWriter, status int, data any) {
 	_ = json.NewEncoder(w).Encode(data)
 }
 
+func frontendProtoMarshaler() runtime.Marshaler {
+	return &runtime.JSONPb{
+		MarshalOptions: protojson.MarshalOptions{
+			EmitDefaultValues: true,
+		},
+	}
+}
+
+func writeProtoJSONArray[T proto.Message](w http.ResponseWriter, marshaler runtime.Marshaler, messages []T) {
+	items := make([]json.RawMessage, len(messages))
+	for i, msg := range messages {
+		data, err := marshaler.Marshal(msg)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to marshal response"})
+			return
+		}
+		items[i] = json.RawMessage(data)
+	}
+	writeJSON(w, http.StatusOK, items)
+}
+
+func writeGRPCErrorJSON(w http.ResponseWriter, r *http.Request, err error) {
+	st, ok := status.FromError(err)
+	statusCode := http.StatusInternalServerError
+	message := "internal server error"
+	if ok {
+		statusCode = runtime.HTTPStatusFromCode(st.Code())
+		message = st.Message()
+	}
+
+	entry := logrus.WithError(err).WithFields(logrus.Fields{
+		"method": r.Method,
+		"path":   r.URL.Path,
+		"query":  r.URL.RawQuery,
+		"status": statusCode,
+	})
+	if statusCode >= http.StatusInternalServerError {
+		entry.Error("Frontend compatibility request failed")
+	} else {
+		entry.Warn("Frontend compatibility request failed")
+	}
+
+	writeJSON(w, statusCode, map[string]any{
+		"error":      message,
+		"message":    message,
+		"statusCode": statusCode,
+	})
+}
+
+func (s *Server) frontendGatewayContext(w http.ResponseWriter, r *http.Request) (context.Context, bool) {
+	claims, ok := s.requireAuth(w, r)
+	if !ok {
+		return nil, false
+	}
+
+	ctx := auth.WithClaims(gatewayIncomingContext(r), claims)
+	if userInfo, err := s.authService.LoadUserInfo(ctx, claims); err == nil {
+		ctx = auth.WithUser(ctx, *userInfo)
+	}
+	return ctx, true
+}
+
 func parseBoolQuery(r *http.Request, key string) bool {
 	v := r.URL.Query().Get(key)
 	b, _ := strconv.ParseBool(v)
 	return b
+}
+
+func optionalBoolQuery(r *http.Request, key string) *bool {
+	v := r.URL.Query().Get(key)
+	if v == "" {
+		return nil
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return nil
+	}
+	return &b
+}
+
+func optionalStringQuery(r *http.Request, key string) *string {
+	v := r.URL.Query().Get(key)
+	if v == "" {
+		return nil
+	}
+	return &v
+}
+
+func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
+	ctx, ok := s.frontendGatewayContext(w, r)
+	if !ok {
+		return
+	}
+
+	req := &immichv1.SearchUsersAdminRequest{
+		Email:       optionalStringQuery(r, "email"),
+		Name:        optionalStringQuery(r, "name"),
+		WithDeleted: optionalBoolQuery(r, "withDeleted"),
+	}
+	resp, err := s.adminServer.SearchUsersAdmin(ctx, req)
+	if err != nil {
+		writeGRPCErrorJSON(w, r, err)
+		return
+	}
+
+	writeProtoJSONArray(w, frontendProtoMarshaler(), resp.Users)
+}
+
+func (s *Server) handleLibraries(w http.ResponseWriter, r *http.Request) {
+	ctx, ok := s.frontendGatewayContext(w, r)
+	if !ok {
+		return
+	}
+
+	resp, err := s.librariesServer.GetAllLibraries(ctx, &immichv1.GetAllLibrariesRequest{})
+	if err != nil {
+		writeGRPCErrorJSON(w, r, err)
+		return
+	}
+
+	writeProtoJSONArray(w, frontendProtoMarshaler(), resp.Libraries)
+}
+
+func (s *Server) handleMemories(w http.ResponseWriter, r *http.Request) {
+	ctx, ok := s.frontendGatewayContext(w, r)
+	if !ok {
+		return
+	}
+
+	req := &immichv1.SearchMemoriesRequest{
+		IsSaved: optionalBoolQuery(r, "isSaved"),
+	}
+	if forDate := r.URL.Query().Get("for"); forDate != "" {
+		if t, err := time.Parse(time.RFC3339, forDate); err == nil {
+			req.ForDate = timestamppb.New(t)
+		}
+	}
+
+	resp, err := s.memoriesServer.SearchMemories(ctx, req)
+	if err != nil {
+		writeGRPCErrorJSON(w, r, err)
+		return
+	}
+
+	writeProtoJSONArray(w, frontendProtoMarshaler(), resp.Memories)
+}
+
+func (s *Server) handleNotifications(w http.ResponseWriter, r *http.Request) {
+	ctx, ok := s.frontendGatewayContext(w, r)
+	if !ok {
+		return
+	}
+
+	resp, err := s.notificationsServer.GetNotifications(ctx, &immichv1.GetNotificationsRequest{
+		Unread: optionalBoolQuery(r, "unread"),
+	})
+	if err != nil {
+		writeGRPCErrorJSON(w, r, err)
+		return
+	}
+
+	writeProtoJSONArray(w, frontendProtoMarshaler(), resp.Notifications)
+}
+
+func (s *Server) handleServerVersionHistory(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.GetVersionHistory(r.Context(), &emptypb.Empty{})
+	if err != nil {
+		writeGRPCErrorJSON(w, r, err)
+		return
+	}
+
+	writeProtoJSONArray(w, frontendProtoMarshaler(), resp.Items)
 }
 
 func (s *Server) handleTimelineBuckets(w http.ResponseWriter, r *http.Request) {
