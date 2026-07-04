@@ -2640,7 +2640,7 @@ CREATE INDEX idx_asset_views_viewed_at ON public.asset_views USING btree (viewed
 --
 
 CREATE TABLE public.job_failures (
-    id uuid DEFAULT public.gen_random_uuid() NOT NULL,
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
     queue text NOT NULL,
     job_type text NOT NULL,
     payload jsonb NOT NULL,

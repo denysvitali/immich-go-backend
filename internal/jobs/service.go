@@ -229,7 +229,8 @@ func (s *Service) RetryDeadLetterJob(ctx context.Context, id string) error {
 	}
 
 	task := asynq.NewTask(row.JobType, row.Payload)
-	_, err = s.client.EnqueueContext(ctx, task,
+	_, err = s.client.EnqueueContext(
+		ctx, task,
 		asynq.Queue(row.Queue),
 		asynq.MaxRetry(s.maxRetries),
 		asynq.Timeout(defaultTimeout),
