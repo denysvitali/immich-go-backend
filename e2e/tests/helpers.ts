@@ -3,6 +3,7 @@ import { expect, type APIRequestContext, type APIResponse, type Page } from '@pl
 export const password = 'E2ePassword123!';
 
 let userCounter = 0;
+let rootAdmin: TestUser | undefined;
 
 export const png1x1 = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
@@ -74,13 +75,38 @@ export async function signUpAdmin(
   expect(signupBody.userId).toBeTruthy();
   expect(typeof signupBody.isAdmin).toBe('boolean');
 
-  return {
+  const user = {
     email,
     password,
     userId: signupBody.userId,
     isAdmin: signupBody.isAdmin,
     accessToken: signupBody.accessToken,
     headers: authHeaders(signupBody.accessToken),
+  };
+
+  if (user.isAdmin) {
+    rootAdmin ??= user;
+    return user;
+  }
+
+  if (!rootAdmin) {
+    throw new Error('admin sign-up returned a non-admin user before an admin session was available');
+  }
+
+  const promoted = await request.put(`/api/admin/users/${user.userId}`, {
+    headers: rootAdmin.headers,
+    data: { isAdmin: true },
+  });
+  await expectOk(promoted);
+
+  const session = await login(request, user);
+  expect(session.body.isAdmin).toBe(true);
+
+  return {
+    ...user,
+    isAdmin: true,
+    accessToken: session.accessToken,
+    headers: session.headers,
   };
 }
 

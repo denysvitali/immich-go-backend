@@ -831,15 +831,15 @@ WHERE "tagsId" = $1 AND "assetsId" = $2;
 
 -- name: GetSharedLink :one
 SELECT * FROM shared_links
-WHERE id = $1 AND "deletedAt" IS NULL;
+WHERE id = $1;
 
 -- name: GetSharedLinkByKey :one
 SELECT * FROM shared_links
-WHERE key = $1 AND "deletedAt" IS NULL;
+WHERE key = $1;
 
 -- name: GetSharedLinks :many
 SELECT * FROM shared_links
-WHERE "userId" = $1 AND "deletedAt" IS NULL
+WHERE "userId" = $1
 ORDER BY "createdAt" DESC;
 
 -- name: CreateSharedLink :one

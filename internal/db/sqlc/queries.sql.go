@@ -4745,7 +4745,7 @@ func (q *Queries) GetSessionByToken(ctx context.Context, token string) (Session,
 const getSharedLink = `-- name: GetSharedLink :one
 
 SELECT id, description, "userId", key, type, "createdAt", "expiresAt", "allowUpload", "albumId", "allowDownload", "showExif", password FROM shared_links
-WHERE id = $1 AND "deletedAt" IS NULL
+WHERE id = $1
 `
 
 // ============================================================================
@@ -4829,7 +4829,7 @@ func (q *Queries) GetSharedLinkAssets(ctx context.Context, sharedlinksid pgtype.
 
 const getSharedLinkByKey = `-- name: GetSharedLinkByKey :one
 SELECT id, description, "userId", key, type, "createdAt", "expiresAt", "allowUpload", "albumId", "allowDownload", "showExif", password FROM shared_links
-WHERE key = $1 AND "deletedAt" IS NULL
+WHERE key = $1
 `
 
 func (q *Queries) GetSharedLinkByKey(ctx context.Context, key []byte) (SharedLink, error) {
@@ -4854,7 +4854,7 @@ func (q *Queries) GetSharedLinkByKey(ctx context.Context, key []byte) (SharedLin
 
 const getSharedLinks = `-- name: GetSharedLinks :many
 SELECT id, description, "userId", key, type, "createdAt", "expiresAt", "allowUpload", "albumId", "allowDownload", "showExif", password FROM shared_links
-WHERE "userId" = $1 AND "deletedAt" IS NULL
+WHERE "userId" = $1
 ORDER BY "createdAt" DESC
 `
 

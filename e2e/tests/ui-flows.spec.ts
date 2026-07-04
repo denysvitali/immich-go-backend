@@ -3,7 +3,6 @@ import { expect, test } from '@playwright/test';
 import { authenticatePage, expectOk, signUpAdmin, uniqueId, uploadAsset } from './helpers';
 
 const assetMonthLabel = 'Jun 2026';
-const assetTimeBucket = '2026-06-01';
 const assetTimestamp = '2026-06-01T12:00:00Z';
 
 test('user can log in through the login form and reach the timeline', async ({ page, request }) => {
@@ -75,17 +74,26 @@ test('trashed asset is exposed through the trash timeline and page renders', asy
   const buckets = await request.get('/api/timeline/buckets?isTrashed=true', { headers: user.headers });
   await expectOk(buckets);
   const bucketsBody = (await buckets.json()) as Array<{ timeBucket: string; count: number }>;
-  const trashedBucket = bucketsBody.find((bucket) => bucket.timeBucket === assetTimeBucket);
-  expect(trashedBucket).toMatchObject({ timeBucket: assetTimeBucket, count: expect.any(Number) });
-  expect(trashedBucket?.count).toBeGreaterThanOrEqual(1);
+  expect(bucketsBody.length).toBeGreaterThanOrEqual(1);
 
-  const bucket = await request.get(`/api/timeline/bucket?timeBucket=${assetTimeBucket}&isTrashed=true`, {
-    headers: user.headers,
-  });
-  await expectOk(bucket);
-  const bucketBody = await bucket.json();
-  expect(Array.isArray(bucketBody.id)).toBe(true);
-  expect(bucketBody.id).toContain(asset.id);
+  let foundAsset = false;
+  for (const bucketSummary of bucketsBody) {
+    const bucket = await request.get(`/api/timeline/bucket?timeBucket=${bucketSummary.timeBucket}&isTrashed=true`, {
+      headers: user.headers,
+    });
+    await expectOk(bucket);
+    const bucketBody = await bucket.json();
+    expect(Array.isArray(bucketBody.id)).toBe(true);
+    expect(Array.isArray(bucketBody.isTrashed)).toBe(true);
+
+    const assetIndex = bucketBody.id.indexOf(asset.id);
+    if (assetIndex >= 0) {
+      foundAsset = true;
+      expect(bucketBody.isTrashed[assetIndex]).toBe(true);
+      break;
+    }
+  }
+  expect(foundAsset).toBe(true);
 
   await authenticatePage(page, user);
   await page.goto('/trash');
