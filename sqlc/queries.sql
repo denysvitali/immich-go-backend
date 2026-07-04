@@ -1990,3 +1990,11 @@ LEFT JOIN exif e ON e."assetId" = a.id
 WHERE u."deletedAt" IS NULL
 GROUP BY u.id, u.name, u."quotaSizeInBytes"
 ORDER BY u."createdAt";
+
+-- name: UpdateAssetEncodedVideoPath :one
+UPDATE assets
+SET "encodedVideoPath" = $2,
+    "updatedAt" = now(),
+    "updateId" = immich_uuid_v7()
+WHERE id = $1 AND "deletedAt" IS NULL
+RETURNING *;

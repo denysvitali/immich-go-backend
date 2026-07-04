@@ -217,6 +217,14 @@ func (s *Server) UploadAsset(ctx context.Context, request *immichv1.UploadAssetR
 		if enqErr := s.jobService.EnqueueJobWithPriority(ctx, jobs.JobTypeMetadataExtraction, metaPayload, jobs.PriorityHigh); enqErr != nil {
 			logrus.WithError(enqErr).Warn("UploadAsset: failed to enqueue metadata extraction job")
 		}
+
+		// For video assets, also enqueue a transcode job
+		if assetType == "VIDEO" {
+			transcodePayload := &jobs.VideoTranscodePayload{AssetID: assetIDStr, Quality: "medium", Format: "mp4"}
+			if enqErr := s.jobService.EnqueueJobWithPriority(ctx, jobs.JobTypeVideoTranscode, transcodePayload, jobs.PriorityNormal); enqErr != nil {
+				logrus.WithError(enqErr).Warn("UploadAsset: failed to enqueue video transcode job")
+			}
+		}
 	} else if len(fileContent) > 0 {
 		// No job queue configured — trigger in-process background processing.
 		// Only runs when the file was actually stored so processAsset can read it.
@@ -546,7 +554,9 @@ func (s *Server) RunAssetJobs(ctx context.Context, request *immichv1.RunAssetJob
 			return nil, SanitizedInternal(ctx, "failed to enqueue duplicate detection job", err)
 		}
 	case immichv1.AssetJobName_ASSET_JOB_NAME_VIDEO_CONVERSION:
-		return nil, status.Error(codes.Unimplemented, "video conversion jobs require a transcoding pipeline, which is not configured")
+		if err := s.enqueueAssetJobsForAssets(ctx, userID, request.GetAssetIds(), jobs.JobTypeVideoTranscode, jobs.PriorityHigh); err != nil {
+			return nil, err
+		}
 	default:
 		return nil, status.Errorf(codes.InvalidArgument, "unknown asset job name: %v", request.GetName())
 	}
@@ -586,6 +596,8 @@ func (s *Server) enqueueAssetJobsForAssets(
 			payload = jobs.ThumbnailGenerationPayload{AssetID: assetUUID.String()}
 		case jobs.JobTypeMetadataExtraction:
 			payload = jobs.MetadataExtractionPayload{AssetID: assetUUID.String()}
+		case jobs.JobTypeVideoTranscode:
+			payload = jobs.VideoTranscodePayload{AssetID: assetUUID.String(), Quality: "medium", Format: "mp4"}
 		default:
 			return status.Errorf(codes.InvalidArgument, "unsupported asset job type: %s", jobType)
 		}
@@ -800,10 +812,13 @@ func (s *Server) PlayAssetVideo(ctx context.Context, request *immichv1.PlayAsset
 	// Get storage service
 	storageService := s.assetService.GetStorageService()
 
-	// For now, we'll stream the video data directly
-	// In production, you'd want to implement proper video streaming with range support
+	// Prefer encoded H.264 copy if available, otherwise fall back to original
+	videoPath := asset.OriginalPath
+	if asset.EncodedVideoPath.Valid && asset.EncodedVideoPath.String != "" {
+		videoPath = asset.EncodedVideoPath.String
+	}
 
-	videoStream, err := storageService.Download(ctx, asset.OriginalPath)
+	videoStream, err := storageService.Download(ctx, videoPath)
 	if err != nil {
 		return nil, SanitizedInternal(ctx, "failed to retrieve video", err)
 	}

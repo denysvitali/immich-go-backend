@@ -8586,6 +8586,56 @@ func (q *Queries) UpdateAsset(ctx context.Context, arg UpdateAssetParams) (Asset
 	return i, err
 }
 
+const updateAssetEncodedVideoPath = `-- name: UpdateAssetEncodedVideoPath :one
+UPDATE assets
+SET "encodedVideoPath" = $2,
+    "updatedAt" = now(),
+    "updateId" = immich_uuid_v7()
+WHERE id = $1 AND "deletedAt" IS NULL
+RETURNING id, "deviceAssetId", "ownerId", "deviceId", type, "originalPath", "fileCreatedAt", "fileModifiedAt", "isFavorite", duration, "encodedVideoPath", checksum, "livePhotoVideoId", "updatedAt", "createdAt", "originalFileName", "sidecarPath", thumbhash, "isOffline", "libraryId", "isExternal", "deletedAt", "localDateTime", "stackId", "duplicateId", status, "updateId", visibility
+`
+
+type UpdateAssetEncodedVideoPathParams struct {
+	ID               pgtype.UUID
+	EncodedVideoPath pgtype.Text
+}
+
+func (q *Queries) UpdateAssetEncodedVideoPath(ctx context.Context, arg UpdateAssetEncodedVideoPathParams) (Asset, error) {
+	row := q.db.QueryRow(ctx, updateAssetEncodedVideoPath, arg.ID, arg.EncodedVideoPath)
+	var i Asset
+	err := row.Scan(
+		&i.ID,
+		&i.DeviceAssetId,
+		&i.OwnerId,
+		&i.DeviceId,
+		&i.Type,
+		&i.OriginalPath,
+		&i.FileCreatedAt,
+		&i.FileModifiedAt,
+		&i.IsFavorite,
+		&i.Duration,
+		&i.EncodedVideoPath,
+		&i.Checksum,
+		&i.LivePhotoVideoId,
+		&i.UpdatedAt,
+		&i.CreatedAt,
+		&i.OriginalFileName,
+		&i.SidecarPath,
+		&i.Thumbhash,
+		&i.IsOffline,
+		&i.LibraryId,
+		&i.IsExternal,
+		&i.DeletedAt,
+		&i.LocalDateTime,
+		&i.StackId,
+		&i.DuplicateId,
+		&i.Status,
+		&i.UpdateId,
+		&i.Visibility,
+	)
+	return i, err
+}
+
 const updateAssetFace = `-- name: UpdateAssetFace :one
 UPDATE asset_faces
 SET "personId" = COALESCE($2, "personId"),

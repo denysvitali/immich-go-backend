@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/denysvitali/immich-go-backend/internal/config"
 	"github.com/denysvitali/immich-go-backend/internal/db/pgutil"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
+	"github.com/denysvitali/immich-go-backend/internal/ffmpeg"
 	"github.com/denysvitali/immich-go-backend/internal/storage"
 	"github.com/denysvitali/immich-go-backend/internal/telemetry"
 	"github.com/google/uuid"
@@ -319,12 +321,28 @@ func (s *Service) processAsset(ctx context.Context, assetID uuid.UUID) {
 		}
 	}
 
-	// Generate thumbnails for images
+	// Generate thumbnails for images and videos (when ffmpeg available)
 	if s.thumbnailGen.CanGenerateThumbnail(mimeType) {
-		err = s.generateAndStoreThumbnails(ctx, assetUUID, asset.OriginalPath, asset.OriginalFileName)
+		if strings.HasPrefix(mimeType, "video/") {
+			// For videos, extract a frame and generate thumbnails from it
+			err = s.generateAndStoreVideoThumbnails(ctx, assetUUID, asset.OriginalPath, asset.OriginalFileName)
+		} else {
+			err = s.generateAndStoreThumbnails(ctx, assetUUID, asset.OriginalPath, asset.OriginalFileName)
+		}
 		if err != nil {
 			span.RecordError(err)
 			// Continue processing even if thumbnail generation fails
+		}
+	}
+
+	// For video assets, enqueue a transcode job if ffmpeg is available
+	if asset.Type == string(AssetTypeVideo) && ffmpeg.IsAvailable() {
+		if s.config.Features.VideoTranscodingEnabled {
+			// The actual job enqueueing is done by the caller (UploadAsset in server)
+			// which has access to the job service. We just log here.
+			s.logger.Info("Video asset uploaded; transcode job should be enqueued",
+				zap.String("asset_id", assetID.String()),
+			)
 		}
 	}
 
@@ -338,6 +356,77 @@ func (s *Service) processAsset(ctx context.Context, assetID uuid.UUID) {
 	}
 
 	span.SetAttributes(attribute.String("status", "completed"))
+}
+
+// generateAndStoreVideoThumbnails extracts a frame from a video and generates
+// the standard thumbnail set (preview/webp/thumb), storing each in asset_files.
+func (s *Service) generateAndStoreVideoThumbnails(ctx context.Context, assetID pgtype.UUID, originalPath, filename string) error {
+	ctx, span := tracer.Start(ctx, "assets.generate_video_thumbnails",
+		trace.WithAttributes(
+			attribute.String("asset_id", pgutil.UUIDToString(assetID)),
+		))
+	defer span.End()
+
+	if !ffmpeg.IsAvailable() {
+		span.SetAttributes(attribute.String("error", "ffmpeg_not_found"))
+		return fmt.Errorf("ffmpeg not available")
+	}
+
+	// Download original video to a temp file for ffmpeg processing
+	reader, err := s.storage.Download(ctx, originalPath)
+	if err != nil {
+		span.RecordError(err)
+		return fmt.Errorf("failed to download original video: %w", err)
+	}
+	defer reader.Close()
+
+	tmpFile, err := os.CreateTemp("", "video-thumb-*.tmp")
+	if err != nil {
+		span.RecordError(err)
+		return fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	defer os.Remove(tmpPath)
+
+	if _, err := io.Copy(tmpFile, reader); err != nil {
+		tmpFile.Close()
+		span.RecordError(err)
+		return fmt.Errorf("failed to write video to temp file: %w", err)
+	}
+	tmpFile.Close()
+
+	// Generate thumbnails from the video frame
+	generator := NewThumbnailGenerator()
+	thumbnails, err := generator.GenerateVideoThumbnails(ctx, tmpPath, filename)
+	if err != nil {
+		span.RecordError(err)
+		return fmt.Errorf("failed to generate video thumbnails: %w", err)
+	}
+
+	// Store each thumbnail
+	for thumbType, data := range thumbnails {
+		thumbPath := generator.GetThumbnailPath(originalPath, thumbType)
+
+		err = s.storage.UploadBytes(ctx, thumbPath, data, "image/jpeg")
+		if err != nil {
+			span.RecordError(err)
+			continue // Continue with other thumbnails
+		}
+
+		// Store thumbnail record in database
+		_, err = s.db.CreateAssetFile(ctx, sqlc.CreateAssetFileParams{
+			AssetId: assetID,
+			Type:    string(thumbType),
+			Path:    thumbPath,
+		})
+		if err != nil {
+			span.RecordError(err)
+			// Continue with other thumbnails
+		}
+	}
+
+	span.SetAttributes(attribute.Int("thumbnails_created", len(thumbnails)))
+	return nil
 }
 
 // generateAndStoreThumbnails generates and stores thumbnails for an asset

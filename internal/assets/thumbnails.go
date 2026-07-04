@@ -8,9 +8,11 @@ import (
 	"image/jpeg"
 	"image/png"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/denysvitali/immich-go-backend/internal/ffmpeg"
 	"github.com/disintegration/imaging"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -210,7 +212,69 @@ func (g *ThumbnailGenerator) CanGenerateThumbnail(contentType string) bool {
 		// Add more supported types as needed
 	}
 
-	return supportedTypes[contentType]
+	if supportedTypes[contentType] {
+		return true
+	}
+
+	// Videos can have thumbnails if ffmpeg is available
+	if strings.HasPrefix(contentType, "video/") && ffmpeg.IsAvailable() {
+		return true
+	}
+
+	return false
+}
+
+// GenerateVideoThumbnails extracts a frame from a video using ffmpeg and then
+// generates the standard thumbnail set (preview/webp/thumb) from that frame.
+// The frame is extracted to a temp JPEG, then passed to GenerateThumbnails.
+// Returns a map of thumbnail paths by type.
+func (g *ThumbnailGenerator) GenerateVideoThumbnails(ctx context.Context, originalPath, filename string) (map[ThumbnailType][]byte, error) {
+	ctx, span := tracer.Start(ctx, "thumbnails.generate_video",
+		trace.WithAttributes(
+			attribute.String("original_path", originalPath),
+			attribute.String("filename", filename),
+		))
+	defer span.End()
+
+	if !ffmpeg.IsAvailable() {
+		span.SetAttributes(attribute.String("error", "ffmpeg_not_found"))
+		return nil, fmt.Errorf("ffmpeg not available, cannot generate video thumbnails")
+	}
+
+	// Create a temp file for the extracted frame
+	tmpFile, err := os.CreateTemp("", "video-frame-*.jpg")
+	if err != nil {
+		span.RecordError(err)
+		return nil, fmt.Errorf("failed to create temp file for video frame: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	tmpFile.Close()
+	defer os.Remove(tmpPath)
+
+	// Extract a frame from the video
+	opts := ffmpeg.DefaultExtractFrameOptions()
+	if err := ffmpeg.ExtractVideoFrame(ctx, originalPath, tmpPath, opts); err != nil {
+		span.RecordError(err)
+		return nil, fmt.Errorf("failed to extract video frame: %w", err)
+	}
+
+	// Open the extracted frame
+	frameFile, err := os.Open(tmpPath)
+	if err != nil {
+		span.RecordError(err)
+		return nil, fmt.Errorf("failed to open extracted frame: %w", err)
+	}
+	defer frameFile.Close()
+
+	// Generate thumbnails from the frame (same as image thumbnails)
+	thumbnails, err := g.GenerateThumbnails(ctx, frameFile, filename)
+	if err != nil {
+		span.RecordError(err)
+		return nil, fmt.Errorf("failed to generate thumbnails from video frame: %w", err)
+	}
+
+	span.SetAttributes(attribute.Int("thumbnails_generated", len(thumbnails)))
+	return thumbnails, nil
 }
 
 // GetThumbnailInfo returns information about a generated thumbnail

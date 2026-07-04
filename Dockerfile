@@ -71,10 +71,9 @@ RUN if [ -d "internal/proto/gen" ] && \
 # ---------- Stage 2: minimal runtime ----------
 FROM alpine:3.20
 
-# ca-certificates for outbound HTTPS. Non-root user keeps the runtime
-# unprivileged by default — override the UID/GID at build time if your
-# orchestrator requires different ones.
-RUN apk add --no-cache ca-certificates \
+# ca-certificates for outbound HTTPS. ffmpeg for video transcoding.
+# Non-root user keeps the runtime unprivileged by default.
+RUN apk add --no-cache ca-certificates ffmpeg \
  && adduser -D -s /bin/sh -u 1001 appuser \
  && mkdir -p /app /data \
  && chown -R appuser:appuser /app /data

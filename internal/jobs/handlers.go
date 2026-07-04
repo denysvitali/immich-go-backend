@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"mime"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -17,6 +19,7 @@ import (
 
 	"github.com/denysvitali/immich-go-backend/internal/assets"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
+	"github.com/denysvitali/immich-go-backend/internal/ffmpeg"
 	"github.com/denysvitali/immich-go-backend/internal/libraries"
 	"github.com/denysvitali/immich-go-backend/internal/storage"
 )
@@ -368,7 +371,125 @@ func (h *Handlers) HandleVideoTranscode(ctx context.Context, task *asynq.Task) e
 		return nil
 	}
 
-	return unsupportedJobError("video transcoding requires an ffmpeg pipeline, which is not configured")
+	// If ffmpeg is not available, skip gracefully (no infinite retry)
+	if !ffmpeg.IsAvailable() {
+		h.logger.WithField("asset_id", assetID).Warn("ffmpeg not available, skipping video transcode")
+		return nil
+	}
+
+	// 1. Download original video to a temp file
+	tmpFile, err := os.CreateTemp("", "video-transcode-*.tmp")
+	if err != nil {
+		return fmt.Errorf("failed to create temp file for transcode: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	defer os.Remove(tmpPath)
+
+	reader, err := h.storageService.Download(ctx, asset.OriginalPath)
+	if err != nil {
+		return fmt.Errorf("failed to download original video for transcode: %w", err)
+	}
+	defer reader.Close()
+
+	if _, err := io.Copy(tmpFile, reader); err != nil {
+		tmpFile.Close()
+		return fmt.Errorf("failed to write video to temp file: %w", err)
+	}
+	tmpFile.Close()
+
+	// 2. Determine output path: encoded-videos/<assetID>.mp4 under the same storage root
+	// We derive the path from the asset's original path to keep it deterministic
+	encodedPath := h.encodedVideoPath(asset.OriginalPath, assetID.String())
+
+	// 3. Run ffmpeg transcode to H.264 MP4
+	tmpOutput, err := os.CreateTemp("", "video-output-*.mp4")
+	if err != nil {
+		return fmt.Errorf("failed to create temp output file: %w", err)
+	}
+	tmpOutputPath := tmpOutput.Name()
+	tmpOutput.Close()
+	defer os.Remove(tmpOutputPath)
+
+	opts := ffmpeg.DefaultTranscodeOptions()
+	if payload.Quality != "" {
+		// Map quality string to CRF (lower = better)
+		switch payload.Quality {
+		case "original":
+			opts.CRF = 18
+		case "high":
+			opts.CRF = 21
+		case "medium":
+			opts.CRF = 23
+		case "low":
+			opts.CRF = 28
+		}
+	}
+
+	if err := ffmpeg.TranscodeToH264(ctx, tmpPath, tmpOutputPath, opts); err != nil {
+		return fmt.Errorf("failed to transcode video %s: %w", assetID, err)
+	}
+
+	// 4. Upload output to storage
+	outputFile, err := os.Open(tmpOutputPath)
+	if err != nil {
+		return fmt.Errorf("failed to open transcoded output: %w", err)
+	}
+	defer outputFile.Close()
+
+	if err := h.storageService.Upload(ctx, encodedPath, outputFile, "video/mp4"); err != nil {
+		return fmt.Errorf("failed to upload transcoded video: %w", err)
+	}
+
+	// 5. Update asset encodedVideoPath in database
+	pgAssetID := pgtype.UUID{Bytes: assetID, Valid: true}
+	_, err = h.db.UpdateAssetEncodedVideoPath(ctx, sqlc.UpdateAssetEncodedVideoPathParams{
+		ID:               pgAssetID,
+		EncodedVideoPath: pgtype.Text{String: encodedPath, Valid: true},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to update asset encoded video path: %w", err)
+	}
+
+	// 6. Record asset file of type 'encoded_video'
+	_, err = h.db.CreateAssetFile(ctx, sqlc.CreateAssetFileParams{
+		AssetId: pgAssetID,
+		Type:    "encoded-video",
+		Path:    encodedPath,
+	})
+	if err != nil {
+		h.logger.WithError(err).WithFields(logrus.Fields{
+			"asset_id": assetID,
+			"path":     encodedPath,
+		}).Warn("Failed to record encoded video asset file")
+		// Non-fatal: the asset already has the encodedVideoPath set
+	}
+
+	// 7. Update asset job status to record that video conversion finished
+	now := time.Now()
+	if err := h.markAssetJobStatus(ctx, sqlc.UpdateAssetJobStatusParams{
+		AssetId:   pgAssetID,
+		PreviewAt: pgtype.Timestamptz{Time: now, Valid: true},
+	}); err != nil {
+		h.logger.WithError(err).Warn("Failed to update asset job status after video transcode")
+	}
+
+	h.logger.WithFields(logrus.Fields{
+		"asset_id":     assetID,
+		"encoded_path": encodedPath,
+	}).Info("Video transcode complete")
+
+	return nil
+}
+
+// encodedVideoPath derives a deterministic storage path for the encoded video.
+// It places the encoded file in an "encoded-videos" directory at the same level
+// as the original asset's directory.
+func (h *Handlers) encodedVideoPath(originalPath, assetID string) string {
+	// Get the directory of the original asset
+	dir := filepath.Dir(originalPath)
+	// Place encoded video in a sibling directory
+	encodedDir := filepath.Join(filepath.Dir(dir), "encoded-videos")
+	return filepath.Join(encodedDir, assetID+".mp4")
 }
 
 // FaceDetectionPayload contains data for face detection
