@@ -7181,7 +7181,7 @@ func (q *Queries) SetSessionPinElevation(ctx context.Context, arg SetSessionPinE
 const setSystemMetadata = `-- name: SetSystemMetadata :one
 INSERT INTO system_metadata (key, value)
 VALUES ($1, $2)
-ON CONFLICT (key) DO UPDATE SET value = $2, "updatedAt" = now()
+ON CONFLICT (key) DO UPDATE SET value = $2
 RETURNING key, value
 `
 

@@ -937,7 +937,7 @@ WHERE key = $1;
 -- name: SetSystemMetadata :one
 INSERT INTO system_metadata (key, value)
 VALUES ($1, $2)
-ON CONFLICT (key) DO UPDATE SET value = $2, "updatedAt" = now()
+ON CONFLICT (key) DO UPDATE SET value = $2
 RETURNING *;
 
 -- name: GetUserMetadata :one

@@ -1,6 +1,7 @@
 import { expect, type APIRequestContext, type APIResponse, type Page } from '@playwright/test';
 
 export const password = 'E2ePassword123!';
+const rootAdminEmail = 'e2e-root-admin@example.com';
 
 let userCounter = 0;
 let rootAdmin: TestUser | undefined;
@@ -22,6 +23,8 @@ export type TestUser = {
 export type AuthResponse = {
   accessToken: string;
   isAdmin: boolean;
+  userEmail?: string;
+  userId?: string;
   [key: string]: unknown;
 };
 
@@ -58,11 +61,76 @@ function authHeaders(accessToken: string) {
   return { Authorization: `Bearer ${accessToken}` };
 }
 
+function userFromAuthResponse(email: string, body: AuthResponse): TestUser {
+  expect(body.accessToken).toBeTruthy();
+  expect(body.userId).toBeTruthy();
+  expect(typeof body.isAdmin).toBe('boolean');
+
+  return {
+    email,
+    password,
+    userId: String(body.userId),
+    isAdmin: body.isAdmin,
+    accessToken: body.accessToken,
+    headers: authHeaders(body.accessToken),
+  };
+}
+
+async function tryLoginRootAdmin(request: APIRequestContext): Promise<TestUser | undefined> {
+  const response = await request.post('/api/auth/login', {
+    data: { email: rootAdminEmail, password },
+  });
+  if (!response.ok()) {
+    return undefined;
+  }
+
+  const user = userFromAuthResponse(rootAdminEmail, (await response.json()) as AuthResponse);
+  if (!user.isAdmin) {
+    throw new Error('e2e root admin account exists but is not an admin');
+  }
+  rootAdmin = user;
+  return user;
+}
+
+async function ensureRootAdmin(request: APIRequestContext): Promise<TestUser> {
+  if (rootAdmin) {
+    return rootAdmin;
+  }
+
+  const existing = await tryLoginRootAdmin(request);
+  if (existing) {
+    return existing;
+  }
+
+  const signup = await request.post('/api/auth/admin-sign-up', {
+    data: { email: rootAdminEmail, password, name: 'E2E Root Admin' },
+  });
+
+  if (!signup.ok()) {
+    const retry = await tryLoginRootAdmin(request);
+    if (retry) {
+      return retry;
+    }
+    throw new Error(`${signup.url()} returned ${signup.status()}: ${await signup.text()}`);
+  }
+
+  const body = (await signup.json()) as AuthResponse;
+  expect(body.userEmail).toBe(rootAdminEmail);
+  const user = userFromAuthResponse(rootAdminEmail, body);
+  if (!user.isAdmin) {
+    throw new Error('e2e root admin sign-up returned a non-admin user');
+  }
+
+  rootAdmin = user;
+  return user;
+}
+
 export async function signUpAdmin(
   request: APIRequestContext,
   prefix = 'e2e',
   name = 'E2E User',
 ): Promise<TestUser> {
+  const admin = await ensureRootAdmin(request);
   const email = uniqueEmail(prefix);
   const signup = await request.post('/api/auth/admin-sign-up', {
     data: { email, password, name },
@@ -75,26 +143,15 @@ export async function signUpAdmin(
   expect(signupBody.userId).toBeTruthy();
   expect(typeof signupBody.isAdmin).toBe('boolean');
 
-  const user = {
-    email,
-    password,
-    userId: signupBody.userId,
-    isAdmin: signupBody.isAdmin,
-    accessToken: signupBody.accessToken,
-    headers: authHeaders(signupBody.accessToken),
-  };
+  const user = userFromAuthResponse(email, signupBody);
 
   if (user.isAdmin) {
     rootAdmin ??= user;
     return user;
   }
 
-  if (!rootAdmin) {
-    throw new Error('admin sign-up returned a non-admin user before an admin session was available');
-  }
-
   const promoted = await request.put(`/api/admin/users/${user.userId}`, {
-    headers: rootAdmin.headers,
+    headers: admin.headers,
     data: { isAdmin: true },
   });
   await expectOk(promoted);
