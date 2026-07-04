@@ -284,6 +284,16 @@ func (s *Server) UpdateAssets(ctx context.Context, request *immichv1.UpdateAsset
 }
 
 func (s *Server) DeleteAssets(ctx context.Context, request *immichv1.DeleteAssetsRequest) (*emptypb.Empty, error) {
+	claims, err := s.claimsFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	userID, err := pgutil.ParseUserID(claims.UserID)
+	if err != nil {
+		return nil, SanitizedInternal(ctx, "invalid user ID", err)
+	}
+
 	// Convert string IDs to UUIDs
 	assetUUIDs := make([]pgtype.UUID, 0, len(request.Ids))
 	for _, assetID := range request.Ids {
@@ -298,11 +308,34 @@ func (s *Server) DeleteAssets(ctx context.Context, request *immichv1.DeleteAsset
 		return &emptypb.Empty{}, nil
 	}
 
-	if err := s.db.DeleteAssets(ctx, sqlc.DeleteAssetsParams{
-		Column1: assetUUIDs,
-		Column2: request.Force,
-	}); err != nil {
-		return nil, SanitizedInternal(ctx, "failed to delete assets", err)
+	for _, assetUUID := range assetUUIDs {
+		asset, err := s.db.GetAsset(ctx, assetUUID)
+		if err != nil {
+			continue
+		}
+		if asset.OwnerId != userID {
+			continue
+		}
+
+		if request.Force {
+			if _, err := s.db.UpdateAssetStatus(ctx, sqlc.UpdateAssetStatusParams{
+				ID:     assetUUID,
+				Status: sqlc.AssetsStatusEnumDeleted,
+			}); err != nil {
+				return nil, SanitizedInternal(ctx, "failed to delete assets", err)
+			}
+			if err := s.db.PermanentlyDeleteAsset(ctx, assetUUID); err != nil {
+				return nil, SanitizedInternal(ctx, "failed to delete assets", err)
+			}
+			continue
+		}
+
+		if _, err := s.db.UpdateAssetStatus(ctx, sqlc.UpdateAssetStatusParams{
+			ID:     assetUUID,
+			Status: sqlc.AssetsStatusEnumTrashed,
+		}); err != nil {
+			return nil, SanitizedInternal(ctx, "failed to delete assets", err)
+		}
 	}
 
 	return &emptypb.Empty{}, nil
