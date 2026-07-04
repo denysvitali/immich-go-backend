@@ -33,6 +33,9 @@ func (s *Server) handleFrontendShape(w http.ResponseWriter, r *http.Request) (ha
 		case "/api/albums":
 			s.handleAlbums(w, r)
 			return true
+		case "/api/plugins/triggers":
+			s.handlePluginTriggers(w, r)
+			return true
 		case "/api/system-config":
 			s.handleSystemConfigGet(w, r)
 			return true

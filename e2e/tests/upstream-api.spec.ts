@@ -122,6 +122,22 @@ test.describe('system metadata', () => {
   });
 });
 
+test.describe('plugins', () => {
+  test('plugin triggers require auth and expose upstream enum values', async ({ request }) => {
+    const unauthenticated = await request.get('/api/plugins/triggers');
+    expect(unauthenticated.status()).toBe(401);
+
+    const admin = await signUpAdmin(request, 'plugin-triggers');
+    const response = await request.get('/api/plugins/triggers', { headers: admin.headers });
+    await expectOk(response);
+
+    expect(await response.json()).toEqual([
+      { contextType: 'asset', type: 'AssetCreate' },
+      { contextType: 'person', type: 'PersonRecognized' },
+    ]);
+  });
+});
+
 test.describe('multipart upload', () => {
   test('POST /api/assets multipart creates an asset and detects duplicates', async ({
     request,
