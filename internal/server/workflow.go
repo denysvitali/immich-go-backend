@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"maps"
 
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 	"github.com/denysvitali/immich-go-backend/internal/workflow"
@@ -11,6 +12,17 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+const (
+	workflowTriggerAssetCreate             = "AssetCreate"
+	workflowTriggerAssetMetadataExtraction = "AssetMetadataExtraction"
+	workflowTypeAssetV1                    = "AssetV1"
+)
+
+var workflowTriggerResponses = []*immichv1.WorkflowTriggerResponseDto{
+	{Trigger: workflowTriggerAssetCreate, Types: []string{workflowTypeAssetV1}},
+	{Trigger: workflowTriggerAssetMetadataExtraction, Types: []string{workflowTypeAssetV1}},
+}
 
 // ListWorkflows returns all workflows
 func (s *Server) ListWorkflows(ctx context.Context, _ *emptypb.Empty) (*immichv1.ListWorkflowsResponse, error) {
@@ -33,6 +45,22 @@ func (s *Server) ListWorkflows(ctx context.Context, _ *emptypb.Empty) (*immichv1
 	}, nil
 }
 
+func (s *Server) GetWorkflowTriggers(ctx context.Context, _ *emptypb.Empty) (*immichv1.GetWorkflowTriggersResponse, error) {
+	if _, err := s.getUserFromContext(ctx); err != nil {
+		return nil, status.Error(codes.Unauthenticated, "authentication required")
+	}
+
+	triggers := make([]*immichv1.WorkflowTriggerResponseDto, 0, len(workflowTriggerResponses))
+	for _, trigger := range workflowTriggerResponses {
+		triggers = append(triggers, &immichv1.WorkflowTriggerResponseDto{
+			Trigger: trigger.Trigger,
+			Types:   append([]string(nil), trigger.Types...),
+		})
+	}
+
+	return &immichv1.GetWorkflowTriggersResponse{Triggers: triggers}, nil
+}
+
 // GetWorkflow returns a specific workflow by ID
 func (s *Server) GetWorkflow(ctx context.Context, req *immichv1.GetWorkflowRequest) (*immichv1.WorkflowInfo, error) {
 	if _, err := s.requireAdmin(ctx); err != nil {
@@ -45,6 +73,23 @@ func (s *Server) GetWorkflow(ctx context.Context, req *immichv1.GetWorkflowReque
 	}
 
 	return workflowToProto(w), nil
+}
+
+func (s *Server) GetWorkflowForShare(ctx context.Context, req *immichv1.GetWorkflowForShareRequest) (*immichv1.WorkflowShareResponseDto, error) {
+	if _, err := s.requireAdmin(ctx); err != nil {
+		return nil, err
+	}
+
+	w, err := s.workflowService.GetWorkflow(ctx, req.Id)
+	if err != nil {
+		return nil, status.Errorf(codes.NotFound, "workflow not found: %v", err)
+	}
+
+	resp, err := workflowShareToProto(w)
+	if err != nil {
+		return nil, SanitizedInternal(ctx, "failed to convert workflow share response", err)
+	}
+	return resp, nil
 }
 
 // CreateWorkflow creates a new workflow
@@ -222,6 +267,24 @@ func workflowToProto(w *workflow.WorkflowInfo) *immichv1.WorkflowInfo {
 	return proto
 }
 
+func workflowShareToProto(w *workflow.WorkflowInfo) (*immichv1.WorkflowShareResponseDto, error) {
+	steps := make([]*immichv1.WorkflowShareStepDto, 0, len(w.Actions))
+	for _, action := range w.Actions {
+		step, err := actionToShareStepProto(action)
+		if err != nil {
+			return nil, err
+		}
+		steps = append(steps, step)
+	}
+
+	return &immichv1.WorkflowShareResponseDto{
+		Description: w.Description,
+		Name:        w.Name,
+		Steps:       steps,
+		Trigger:     workflowTriggerToV3(w.Trigger.Type),
+	}, nil
+}
+
 func triggerToProto(t workflow.Trigger) *immichv1.WorkflowTrigger {
 	proto := &immichv1.WorkflowTrigger{
 		Type: triggerTypeToProto(t.Type),
@@ -235,6 +298,32 @@ func triggerToProto(t workflow.Trigger) *immichv1.WorkflowTrigger {
 	}
 
 	return proto
+}
+
+func actionToShareStepProto(a workflow.Action) (*immichv1.WorkflowShareStepDto, error) {
+	method, config := actionShareMethodAndConfig(a)
+	configStruct, err := structpb.NewStruct(config)
+	if err != nil {
+		return nil, err
+	}
+	return &immichv1.WorkflowShareStepDto{
+		Method: method,
+		Config: configStruct,
+	}, nil
+}
+
+func actionShareMethodAndConfig(a workflow.Action) (string, map[string]interface{}) {
+	config := maps.Clone(a.Params)
+	if config == nil {
+		config = map[string]interface{}{}
+	}
+	if a.Type == workflow.ActionTypeRunPlugin {
+		if method, ok := config["method"].(string); ok && method != "" {
+			delete(config, "method")
+			return method, config
+		}
+	}
+	return string(a.Type), config
 }
 
 func actionToProto(a workflow.Action) *immichv1.WorkflowAction {
@@ -324,6 +413,12 @@ var workflowStatusProtoValues = map[workflow.WorkflowStatus]immichv1.WorkflowSta
 
 func triggerTypeToProto(t workflow.TriggerType) immichv1.WorkflowTriggerType {
 	return lookupWorkflowMapping(triggerTypeProtoValues, t, immichv1.WorkflowTriggerType_WORKFLOW_TRIGGER_TYPE_UNSPECIFIED)
+}
+
+func workflowTriggerToV3(workflow.TriggerType) string {
+	// The legacy workflow model has no metadata-extraction trigger; AssetCreate
+	// is the closest v3 export trigger for existing workflows.
+	return workflowTriggerAssetCreate
 }
 
 var triggerTypeProtoValues = map[workflow.TriggerType]immichv1.WorkflowTriggerType{

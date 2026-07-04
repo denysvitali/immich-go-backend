@@ -190,6 +190,63 @@ test.describe('plugins', () => {
   });
 });
 
+test.describe('workflows', () => {
+  test('workflow triggers and share export use upstream v3 shapes', async ({ request }) => {
+    expect((await request.get('/api/workflows/triggers')).status()).toBe(401);
+
+    const admin = await signUpAdmin(request, 'workflow-share');
+    const triggers = await request.get('/api/workflows/triggers', { headers: admin.headers });
+    await expectOk(triggers);
+    expect(await triggers.json()).toEqual([
+      { trigger: 'AssetCreate', types: ['AssetV1'] },
+      { trigger: 'AssetMetadataExtraction', types: ['AssetV1'] },
+    ]);
+
+    const create = await request.post('/api/workflows', {
+      headers: admin.headers,
+      data: {
+        name: 'E2E thumbnail workflow',
+        description: 'Share export coverage',
+        enabled: true,
+        trigger: { type: 'WORKFLOW_TRIGGER_TYPE_ASSET_UPLOADED' },
+        actions: [
+          {
+            type: 'WORKFLOW_ACTION_TYPE_RUN_PLUGIN',
+            params: {
+              method: 'thumbnail-processor#generate-thumbnail',
+              force: false,
+            },
+            order: 1,
+          },
+        ],
+      },
+    });
+    await expectOk(create);
+    const workflow = await create.json();
+    expect(workflow.id).toBeTruthy();
+
+    const share = await request.get(`/api/workflows/${workflow.id}/share`, {
+      headers: admin.headers,
+    });
+    await expectOk(share);
+    const shareBody = await share.json();
+    expect(shareBody).toMatchObject({
+      name: 'E2E thumbnail workflow',
+      description: 'Share export coverage',
+      trigger: 'AssetCreate',
+      steps: [
+        {
+          method: 'thumbnail-processor#generate-thumbnail',
+          config: { force: false },
+        },
+      ],
+    });
+    expect(shareBody.id).toBeUndefined();
+    expect(shareBody.createdAt).toBeUndefined();
+    expect(shareBody.updatedAt).toBeUndefined();
+  });
+});
+
 test.describe('multipart upload', () => {
   test('POST /api/assets multipart creates an asset and detects duplicates', async ({
     request,

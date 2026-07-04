@@ -18,10 +18,24 @@ service WorkflowService {
     };
   }
 
+  // List all available workflow triggers
+  rpc GetWorkflowTriggers(google.protobuf.Empty) returns (GetWorkflowTriggersResponse) {
+    option (google.api.http) = {
+      get: "/api/workflows/triggers"
+    };
+  }
+
   // Get workflow details
   rpc GetWorkflow(GetWorkflowRequest) returns (WorkflowInfo) {
     option (google.api.http) = {
       get: "/api/workflows/{workflow_id}"
+    };
+  }
+
+  // Get workflow details in shareable upstream v3 shape
+  rpc GetWorkflowForShare(GetWorkflowForShareRequest) returns (WorkflowShareResponseDto) {
+    option (google.api.http) = {
+      get: "/api/workflows/{id}/share"
     };
   }
 
@@ -174,9 +188,35 @@ message ListWorkflowsResponse {
   repeated WorkflowInfo workflows = 1;
 }
 
+message WorkflowTriggerResponseDto {
+  string trigger = 1;
+  repeated string types = 2;
+}
+
+message GetWorkflowTriggersResponse {
+  repeated WorkflowTriggerResponseDto triggers = 1;
+}
+
 // Get workflow request
 message GetWorkflowRequest {
   string workflow_id = 1;
+}
+
+message GetWorkflowForShareRequest {
+  string id = 1;
+}
+
+message WorkflowShareStepDto {
+  string method = 1;
+  google.protobuf.Struct config = 2;
+  optional bool enabled = 3;
+}
+
+message WorkflowShareResponseDto {
+  string description = 1;
+  string name = 2;
+  repeated WorkflowShareStepDto steps = 3;
+  string trigger = 4;
 }
 
 // Create workflow request
