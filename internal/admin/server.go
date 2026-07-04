@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/denysvitali/immich-go-backend/internal/auth"
+	"github.com/denysvitali/immich-go-backend/internal/calendarheatmap"
 	"github.com/denysvitali/immich-go-backend/internal/db/pgutil"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/denysvitali/immich-go-backend/internal/grpcutil"
@@ -310,6 +311,35 @@ func (s *Server) GetUserStatisticsAdmin(ctx context.Context, request *immichv1.G
 		Usage:  response.Usage,
 		Videos: response.Videos,
 	}, nil
+}
+
+func (s *Server) GetUserCalendarHeatmapAdmin(ctx context.Context, request *immichv1.GetUserCalendarHeatmapAdminRequest) (*immichv1.CalendarHeatmapResponseDto, error) {
+	_, err := auth.RequireAdmin(ctx)
+	if err != nil {
+		return nil, status.Error(codes.PermissionDenied, "admin privileges required")
+	}
+
+	userID, err := uuid.Parse(request.GetId())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid user ID: %v", err)
+	}
+
+	response, err := calendarheatmap.Get(
+		ctx,
+		s.service.db,
+		pgtype.UUID{Bytes: userID, Valid: true},
+		request.GetFrom(),
+		request.GetTo(),
+		request.GetType(),
+	)
+	if err != nil {
+		if calendarheatmap.IsInvalidArgument(err) {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to get user calendar heatmap", err)
+	}
+
+	return response, nil
 }
 
 // GetUserPreferencesAdmin gets user preferences (admin function)

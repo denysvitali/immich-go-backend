@@ -20,6 +20,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/denysvitali/immich-go-backend/internal/auth"
+	"github.com/denysvitali/immich-go-backend/internal/calendarheatmap"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 	"github.com/denysvitali/immich-go-backend/internal/users"
@@ -234,6 +235,23 @@ func (s *Server) UpdateMyPreferences(ctx context.Context, request *immichv1.User
 		SharedLinks:        &immichv1.SharedLinksResponse{},
 		Tags:               &immichv1.TagsResponse{},
 	}, nil
+}
+
+func (s *Server) GetMyCalendarHeatmap(ctx context.Context, request *immichv1.GetMyCalendarHeatmapRequest) (*immichv1.CalendarHeatmapResponseDto, error) {
+	userUUID, err := s.userUUIDFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	response, err := calendarheatmap.Get(ctx, s.db.Queries, userUUID, request.GetFrom(), request.GetTo(), request.GetType())
+	if err != nil {
+		if calendarheatmap.IsInvalidArgument(err) {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		return nil, SanitizedInternal(ctx, "failed to get calendar heatmap", err)
+	}
+
+	return response, nil
 }
 
 func (s *Server) CreateProfileImage(ctx context.Context, request *immichv1.CreateProfileImageRequest) (*immichv1.CreateProfileImageResponse, error) {

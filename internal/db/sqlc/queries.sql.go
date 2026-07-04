@@ -4220,6 +4220,64 @@ func (q *Queries) GetAssetsNeedingThumbnails(ctx context.Context, limit int32) (
 	return items, nil
 }
 
+const getCalendarHeatmap = `-- name: GetCalendarHeatmap :many
+WITH scoped_assets AS (
+    SELECT
+        CASE
+            WHEN $3::text = 'Taken' THEN "localDateTime"
+            ELSE "createdAt"
+        END AS activity_at
+    FROM assets
+    WHERE "ownerId" = $4
+    AND "deletedAt" IS NULL
+)
+SELECT
+    date_trunc('day', activity_at AT TIME ZONE 'UTC')::date AS activity_date,
+    COUNT(*) AS count
+FROM scoped_assets
+WHERE activity_at >= $1::timestamptz
+AND activity_at < $2::timestamptz
+GROUP BY activity_date
+ORDER BY activity_date ASC
+`
+
+type GetCalendarHeatmapParams struct {
+	FromAt      pgtype.Timestamptz
+	ToAt        pgtype.Timestamptz
+	HeatmapType string
+	OwnerID     pgtype.UUID
+}
+
+type GetCalendarHeatmapRow struct {
+	ActivityDate pgtype.Date
+	Count        int64
+}
+
+func (q *Queries) GetCalendarHeatmap(ctx context.Context, arg GetCalendarHeatmapParams) ([]GetCalendarHeatmapRow, error) {
+	rows, err := q.db.Query(ctx, getCalendarHeatmap,
+		arg.FromAt,
+		arg.ToAt,
+		arg.HeatmapType,
+		arg.OwnerID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetCalendarHeatmapRow
+	for rows.Next() {
+		var i GetCalendarHeatmapRow
+		if err := rows.Scan(&i.ActivityDate, &i.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getDatabaseBackup = `-- name: GetDatabaseBackup :one
 SELECT filename, path, filesize, timezone, "createdAt", "updatedAt" FROM database_backups
 WHERE filename = $1

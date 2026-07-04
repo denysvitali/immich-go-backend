@@ -1039,6 +1039,26 @@ AND ($3::bool = false OR "isFavorite" = true)
 GROUP BY time_bucket
 ORDER BY time_bucket DESC;
 
+-- name: GetCalendarHeatmap :many
+WITH scoped_assets AS (
+    SELECT
+        CASE
+            WHEN sqlc.arg(heatmap_type)::text = 'Taken' THEN "localDateTime"
+            ELSE "createdAt"
+        END AS activity_at
+    FROM assets
+    WHERE "ownerId" = sqlc.arg(owner_id)
+    AND "deletedAt" IS NULL
+)
+SELECT
+    date_trunc('day', activity_at AT TIME ZONE 'UTC')::date AS activity_date,
+    COUNT(*) AS count
+FROM scoped_assets
+WHERE activity_at >= sqlc.arg(from_at)::timestamptz
+AND activity_at < sqlc.arg(to_at)::timestamptz
+GROUP BY activity_date
+ORDER BY activity_date ASC;
+
 -- name: GetTimelineBucketAssets :many
 SELECT
     a.id,

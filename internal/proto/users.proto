@@ -94,6 +94,13 @@ service UsersService {
     };
   }
 
+  // Get current user's calendar heatmap
+  rpc GetMyCalendarHeatmap(GetMyCalendarHeatmapRequest) returns (CalendarHeatmapResponseDto) {
+    option (google.api.http) = {
+      get: "/api/users/me/calendar-heatmap"
+    };
+  }
+
   // Create profile image
   rpc CreateProfileImage(CreateProfileImageRequest) returns (CreateProfileImageResponse) {
     option (google.api.http) = {
@@ -216,6 +223,12 @@ message UserPreferencesUpdateRequest {
   optional RatingsUpdate ratings = 8;
   optional SharedLinksUpdate shared_links = 9;
   optional TagsUpdate tags = 10;
+}
+
+message GetMyCalendarHeatmapRequest {
+  string from = 1;
+  string to = 2;
+  string type = 3;
 }
 
 // Preference sub-messages (unique to users)

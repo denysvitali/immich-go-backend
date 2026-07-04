@@ -103,6 +103,13 @@ service AdminService {
     };
   }
 
+  // Get user calendar heatmap (admin)
+  rpc GetUserCalendarHeatmapAdmin(GetUserCalendarHeatmapAdminRequest) returns (CalendarHeatmapResponseDto) {
+    option (google.api.http) = {
+      get: "/api/admin/users/{id}/calendar-heatmap"
+    };
+  }
+
   // Get user sessions (admin)
   rpc GetUserSessionsAdmin(GetUserSessionsAdminRequest) returns (GetUserSessionsAdminResponse) {
     option (google.api.http) = {
@@ -319,6 +326,14 @@ message RestoreUserAdminRequest {
 // Get user statistics admin request
 message GetUserStatisticsAdminRequest {
   string id = 1;
+}
+
+// Get user calendar heatmap admin request
+message GetUserCalendarHeatmapAdminRequest {
+  string id = 1;
+  string from = 2;
+  string to = 3;
+  string type = 4;
 }
 
 message DatabaseBackupDto {
