@@ -30,10 +30,10 @@ flowchart LR
 - [x] Profile image upload and management.
 - [x] User license management.
 - [ ] Review shared-link asset removal permissions.
-- [ ] Implement real version-check RPC (currently a stub in `internal/server/maintenance.go` that just echoes the current version).
+- [x] Implement real version-check RPC.
 - [ ] Verify original filename hiding when metadata is disabled.
 - [ ] Verify people search behaviour for short queries.
-- [ ] Streaming support for large gRPC operations.
+- [x] Streaming support for large gRPC operations.
 - [x] Configurable worker pools for background jobs (`JOBS_WORKERS`, default 4).
 - [ ] Advanced retry logic for background jobs.
 
@@ -70,9 +70,9 @@ flowchart LR
 
 ### Video processing
 
-- [ ] Video transcoding (job type `video_transcode` is registered, but the handler in `internal/jobs/handlers.go` is a placeholder — needs ffmpeg integration).
-- [ ] Video thumbnail generation.
-- [ ] Video metadata extraction (ffprobe is wired in `internal/assets/metadata.go`).
+- [x] Video transcoding.
+- [x] Video thumbnail generation.
+- [x] Video metadata extraction (ffprobe is wired in `internal/assets/metadata.go`).
 
 ### Operations
 
