@@ -95,22 +95,30 @@ test.describe('system config', () => {
 
 test.describe('system metadata', () => {
   test('version check state is admin-only and keeps upstream nullable shape', async ({
+    playwright,
     request,
   }) => {
-    const unauthenticated = await request.get('/system-metadata/version-check-state');
-    expect(unauthenticated.status()).toBe(401);
-
     const admin = await signUpAdmin(request, 'version-check-state');
-    const response = await request.get('/system-metadata/version-check-state', {
-      headers: admin.headers,
+    const backend = await playwright.request.newContext({
+      baseURL: process.env.IMMICH_SERVER_URL ?? 'http://127.0.0.1:3001',
     });
-    await expectOk(response);
+    try {
+      const unauthenticated = await backend.get('/system-metadata/version-check-state');
+      expect(unauthenticated.status()).toBe(401);
 
-    const body = await response.json();
-    expect(body).toHaveProperty('checkedAt');
-    expect(body).toHaveProperty('releaseVersion');
-    expect(body.checkedAt === null || typeof body.checkedAt === 'string').toBe(true);
-    expect(body.releaseVersion === null || typeof body.releaseVersion === 'string').toBe(true);
+      const response = await backend.get('/system-metadata/version-check-state', {
+        headers: admin.headers,
+      });
+      await expectOk(response);
+
+      const body = await response.json();
+      expect(body).toHaveProperty('checkedAt');
+      expect(body).toHaveProperty('releaseVersion');
+      expect(body.checkedAt === null || typeof body.checkedAt === 'string').toBe(true);
+      expect(body.releaseVersion === null || typeof body.releaseVersion === 'string').toBe(true);
+    } finally {
+      await backend.dispose();
+    }
   });
 });
 

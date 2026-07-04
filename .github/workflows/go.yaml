@@ -575,6 +575,7 @@ jobs:
 
     - name: Run frontend E2E tests
       env:
+        IMMICH_SERVER_URL: http://127.0.0.1:3001
         IMMICH_WEB_URL: http://127.0.0.1:3000
       run: pnpm --dir e2e test
 
