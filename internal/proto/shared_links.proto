@@ -5,6 +5,7 @@ package immich.v1;
 import "google/api/annotations.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
+import "asset.proto";
 
 option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
 
@@ -181,5 +182,5 @@ message SharedLinkResponse {
   optional string token = 13;
   repeated string asset_ids = 14;
   optional string album_id = 15;
-  int32 assets = 16;
+  repeated Asset assets = 16;
 }

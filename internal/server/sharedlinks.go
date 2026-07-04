@@ -72,11 +72,16 @@ func (s *Server) GetMySharedLink(ctx context.Context, request *immichv1.GetMySha
 		return nil, sharedLinkError(ctx, err)
 	}
 	assetIDs := make([]string, len(assets))
+	protoAssets := make([]*immichv1.Asset, len(assets))
 	for i, asset := range assets {
 		assetIDs[i] = uuid.UUID(asset.ID.Bytes).String()
+		protoAssets[i] = s.convertAssetToProto(asset)
+		if !response.ShowMetadata {
+			protoAssets[i] = redactSharedLinkAsset(protoAssets[i])
+		}
 	}
 	response.AssetIds = assetIDs
-	response.Assets = int32(len(assetIDs)) //nolint:gosec // asset count fits in int32
+	response.Assets = protoAssets
 
 	return response, nil
 }
@@ -264,11 +269,7 @@ func (s *Server) AddSharedLinkAssets(ctx context.Context, request *immichv1.AddS
 		return nil, status.Error(codes.InvalidArgument, "asset_ids must not be empty")
 	}
 
-	if err := s.sharedLinksService.AddAssetsToSharedLink(ctx, userID, linkID, request.GetAssetIds()); err != nil {
-		return nil, sharedLinkError(ctx, err)
-	}
-
-	link, err := s.sharedLinksService.GetSharedLink(ctx, userID, linkID)
+	link, err := s.sharedLinksService.AddAssetsToSharedLink(ctx, userID, linkID, request.GetAssetIds())
 	if err != nil {
 		return nil, sharedLinkError(ctx, err)
 	}
@@ -297,11 +298,7 @@ func (s *Server) RemoveSharedLinkAssets(ctx context.Context, request *immichv1.R
 		return nil, status.Error(codes.InvalidArgument, "asset_ids must not be empty")
 	}
 
-	if err := s.sharedLinksService.RemoveAssetsFromSharedLink(ctx, userID, linkID, request.GetAssetIds()); err != nil {
-		return nil, sharedLinkError(ctx, err)
-	}
-
-	link, err := s.sharedLinksService.GetSharedLink(ctx, userID, linkID)
+	link, err := s.sharedLinksService.RemoveAssetsFromSharedLink(ctx, userID, linkID, request.GetAssetIds())
 	if err != nil {
 		return nil, sharedLinkError(ctx, err)
 	}
@@ -322,7 +319,6 @@ func convertSharedLinkToProto(link *sharedlinks.SharedLink) *immichv1.SharedLink
 		AllowDownload: link.AllowDownload,
 		ShowMetadata:  link.ShowExif,
 		Password:      link.Password != "",
-		Assets:        int32(link.AssetCount), //nolint:gosec // asset count fits in int32
 	}
 
 	if link.Description != "" {
@@ -338,7 +334,24 @@ func convertSharedLinkToProto(link *sharedlinks.SharedLink) *immichv1.SharedLink
 		response.AlbumId = &albumID
 	}
 
+	if len(link.AssetIDs) > 0 {
+		assetIDs := make([]string, len(link.AssetIDs))
+		for i, id := range link.AssetIDs {
+			assetIDs[i] = id.String()
+		}
+		response.AssetIds = assetIDs
+	}
+
 	return response
+}
+
+// redactSharedLinkAsset strips metadata from an asset that is being returned
+// through a shared link whose showMetadata flag is false.
+func redactSharedLinkAsset(asset *immichv1.Asset) *immichv1.Asset {
+	asset.OriginalFileName = ""
+	asset.OriginalPath = ""
+	asset.ExifInfo = nil
+	return asset
 }
 
 // sharedLinkTypeToProto maps the database type string to the proto enum.
@@ -367,6 +380,8 @@ func sharedLinkError(ctx context.Context, err error) error {
 		return status.Error(codes.Unauthenticated, "invalid password")
 	case strings.Contains(msg, "invalid album ID"):
 		return status.Error(codes.InvalidArgument, "invalid album ID")
+	case strings.Contains(msg, "asset modification is only supported for individual shared links"):
+		return status.Error(codes.InvalidArgument, "asset modification is only supported for individual shared links")
 	default:
 		return SanitizedInternal(ctx, "shared link operation failed", err)
 	}
@@ -398,11 +413,16 @@ func (s *Server) SharedLinkLogin(ctx context.Context, request *immichv1.SharedLi
 		return nil, sharedLinkError(ctx, err)
 	}
 	assetIDs := make([]string, len(assets))
+	protoAssets := make([]*immichv1.Asset, len(assets))
 	for i, asset := range assets {
 		assetIDs[i] = uuid.UUID(asset.ID.Bytes).String()
+		protoAssets[i] = s.convertAssetToProto(asset)
+		if !response.ShowMetadata {
+			protoAssets[i] = redactSharedLinkAsset(protoAssets[i])
+		}
 	}
 	response.AssetIds = assetIDs
-	response.Assets = int32(len(assetIDs)) //nolint:gosec // asset count fits in int32
+	response.Assets = protoAssets
 
 	// Upstream returns 201 and sets a cookie proving shared link access.
 	_ = grpc.SetHeader(ctx, metadata.Pairs("x-http-code", "201"))

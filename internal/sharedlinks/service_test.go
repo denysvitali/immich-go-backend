@@ -8,8 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/denysvitali/immich-go-backend/internal/db/testdb"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -431,8 +433,12 @@ func TestIntegration_AddAssetsToSharedLink(t *testing.T) {
 	assert.Equal(t, 1, createLink.AssetCount)
 
 	// Add another asset
-	err = service.AddAssetsToSharedLink(ctx, userID, createLink.ID, []string{asset2ID.String()})
+	updatedLink, err := service.AddAssetsToSharedLink(ctx, userID, createLink.ID, []string{asset2ID.String()})
 	require.NoError(t, err)
+	assert.Equal(t, 2, updatedLink.AssetCount)
+	assert.Len(t, updatedLink.AssetIDs, 2)
+	assert.Contains(t, updatedLink.AssetIDs, asset1ID)
+	assert.Contains(t, updatedLink.AssetIDs, asset2ID)
 
 	// Verify asset count
 	getLink, err := service.GetSharedLink(ctx, userID, createLink.ID)
@@ -462,8 +468,11 @@ func TestIntegration_RemoveAssetsFromSharedLink(t *testing.T) {
 	assert.Equal(t, 2, createLink.AssetCount)
 
 	// Remove one asset
-	err = service.RemoveAssetsFromSharedLink(ctx, userID, createLink.ID, []string{asset2ID.String()})
+	updatedLink, err := service.RemoveAssetsFromSharedLink(ctx, userID, createLink.ID, []string{asset2ID.String()})
 	require.NoError(t, err)
+	assert.Equal(t, 1, updatedLink.AssetCount)
+	assert.Len(t, updatedLink.AssetIDs, 1)
+	assert.Contains(t, updatedLink.AssetIDs, asset1ID)
 
 	// Verify asset count
 	getLink, err := service.GetSharedLink(ctx, userID, createLink.ID)
@@ -534,4 +543,125 @@ func TestIntegration_MultipleLinksPerAsset(t *testing.T) {
 	getLink2, err := service.GetSharedLinkByKey(ctx, link2.Key, "")
 	require.NoError(t, err)
 	assert.Equal(t, "Link 2", getLink2.Description)
+}
+
+func TestIntegration_AddAssetsToSharedLinkAccessDenied(t *testing.T) {
+	testdb.SkipIfNoDocker(t)
+
+	tdb := testdb.SetupTestDB(t)
+	ctx := context.Background()
+
+	service := NewService(tdb.Queries)
+
+	// Create two users and an asset owned by user2
+	user1ID := createTestUser(t, tdb, "adddenied1@test.com")
+	user2ID := createTestUser(t, tdb, "adddenied2@test.com")
+	assetID := createTestAsset(t, tdb, user1ID, "adddeniedasset")
+	otherAssetID := createTestAsset(t, tdb, user2ID, "adddeniedotherasset")
+
+	// Create a shared link as user1
+	link, err := service.CreateSharedLink(ctx, user1ID, &CreateSharedLinkRequest{
+		Type:     "INDIVIDUAL",
+		AssetIDs: []string{assetID.String()},
+	})
+	require.NoError(t, err)
+
+	// Try to add an asset as user2
+	_, err = service.AddAssetsToSharedLink(ctx, user2ID, link.ID, []string{otherAssetID.String()})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "access denied")
+}
+
+func TestIntegration_RemoveAssetsFromSharedLinkAccessDenied(t *testing.T) {
+	testdb.SkipIfNoDocker(t)
+
+	tdb := testdb.SetupTestDB(t)
+	ctx := context.Background()
+
+	service := NewService(tdb.Queries)
+
+	// Create two users and assets
+	user1ID := createTestUser(t, tdb, "removedenied1@test.com")
+	user2ID := createTestUser(t, tdb, "removedenied2@test.com")
+	asset1ID := createTestAsset(t, tdb, user1ID, "removedeniedasset1")
+	asset2ID := createTestAsset(t, tdb, user1ID, "removedeniedasset2")
+
+	// Create a shared link as user1
+	link, err := service.CreateSharedLink(ctx, user1ID, &CreateSharedLinkRequest{
+		Type:     "INDIVIDUAL",
+		AssetIDs: []string{asset1ID.String(), asset2ID.String()},
+	})
+	require.NoError(t, err)
+
+	// Try to remove an asset as user2
+	_, err = service.RemoveAssetsFromSharedLink(ctx, user2ID, link.ID, []string{asset1ID.String()})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "access denied")
+}
+
+func TestIntegration_AddAssetsToAlbumSharedLinkRejected(t *testing.T) {
+	testdb.SkipIfNoDocker(t)
+
+	tdb := testdb.SetupTestDB(t)
+	ctx := context.Background()
+
+	service := NewService(tdb.Queries)
+
+	// Create test user, asset, and album
+	userID := createTestUser(t, tdb, "albumadd@test.com")
+	assetID := createTestAsset(t, tdb, userID, "albumaddasset")
+	album, err := tdb.Queries.CreateAlbum(ctx, sqlc.CreateAlbumParams{
+		OwnerId:     pgtype.UUID{Bytes: userID, Valid: true},
+		AlbumName:   "Test Album",
+		Description: "",
+	})
+	require.NoError(t, err)
+
+	albumID := uuid.UUID(album.ID.Bytes)
+	link, err := service.CreateSharedLink(ctx, userID, &CreateSharedLinkRequest{
+		Type:    "ALBUM",
+		AlbumID: ptr(albumID.String()),
+	})
+	require.NoError(t, err)
+
+	// Adding assets to an album shared link is not supported
+	_, err = service.AddAssetsToSharedLink(ctx, userID, link.ID, []string{assetID.String()})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "asset modification is only supported for individual shared links")
+}
+
+func TestIntegration_RemoveAssetsFromAlbumSharedLinkRejected(t *testing.T) {
+	testdb.SkipIfNoDocker(t)
+
+	tdb := testdb.SetupTestDB(t)
+	ctx := context.Background()
+
+	service := NewService(tdb.Queries)
+
+	// Create test user and album
+	userID := createTestUser(t, tdb, "albumremove@test.com")
+	album, err := tdb.Queries.CreateAlbum(ctx, sqlc.CreateAlbumParams{
+		OwnerId:     pgtype.UUID{Bytes: userID, Valid: true},
+		AlbumName:   "Test Album",
+		Description: "",
+	})
+	require.NoError(t, err)
+
+	albumID := uuid.UUID(album.ID.Bytes)
+	link, err := service.CreateSharedLink(ctx, userID, &CreateSharedLinkRequest{
+		Type:    "ALBUM",
+		AlbumID: ptr(albumID.String()),
+	})
+	require.NoError(t, err)
+
+	assetID := uuid.New()
+
+	// Removing assets from an album shared link is not supported
+	_, err = service.RemoveAssetsFromSharedLink(ctx, userID, link.ID, []string{assetID.String()})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "asset modification is only supported for individual shared links")
+}
+
+func ptr(s string) *string {
+	return &s
 }

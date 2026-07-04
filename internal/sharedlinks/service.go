@@ -19,6 +19,12 @@ type Service struct {
 	db *sqlc.Queries
 }
 
+// Shared link type strings as stored in the database (upstream Immich values).
+const (
+	SharedLinkTypeAlbum      = "ALBUM"
+	SharedLinkTypeIndividual = "INDIVIDUAL"
+)
+
 // NewService creates a new shared links service
 func NewService(db *sqlc.Queries) *Service {
 	return &Service{db: db}
@@ -26,20 +32,21 @@ func NewService(db *sqlc.Queries) *Service {
 
 // SharedLink represents a shared link
 type SharedLink struct {
-	ID            uuid.UUID  `json:"id"`
-	UserID        uuid.UUID  `json:"userId"`
-	Key           string     `json:"key"`
-	Type          string     `json:"type"`
-	Description   string     `json:"description,omitempty"`
-	Password      string     `json:"-"`
-	ExpiresAt     *time.Time `json:"expiresAt,omitempty"`
-	AllowDownload bool       `json:"allowDownload"`
-	AllowUpload   bool       `json:"allowUpload"`
-	ShowExif      bool       `json:"showExif"`
-	AssetCount    int        `json:"assetCount"`
-	AlbumID       *uuid.UUID `json:"albumId,omitempty"`
-	CreatedAt     time.Time  `json:"createdAt"`
-	UpdatedAt     time.Time  `json:"updatedAt"`
+	ID            uuid.UUID   `json:"id"`
+	UserID        uuid.UUID   `json:"userId"`
+	Key           string      `json:"key"`
+	Type          string      `json:"type"`
+	Description   string      `json:"description,omitempty"`
+	Password      string      `json:"-"`
+	ExpiresAt     *time.Time  `json:"expiresAt,omitempty"`
+	AllowDownload bool        `json:"allowDownload"`
+	AllowUpload   bool        `json:"allowUpload"`
+	ShowExif      bool        `json:"showExif"`
+	AssetCount    int         `json:"assetCount"`
+	AssetIDs      []uuid.UUID `json:"assetIds,omitempty"`
+	AlbumID       *uuid.UUID  `json:"albumId,omitempty"`
+	CreatedAt     time.Time   `json:"createdAt"`
+	UpdatedAt     time.Time   `json:"updatedAt"`
 }
 
 // CreateSharedLinkRequest represents a request to create a shared link
@@ -311,16 +318,35 @@ func (s *Service) DeleteSharedLink(ctx context.Context, userID uuid.UUID, linkID
 	return nil
 }
 
-// AddAssetsToSharedLink adds assets to a shared link
-func (s *Service) AddAssetsToSharedLink(ctx context.Context, userID uuid.UUID, linkID uuid.UUID, assetIDs []string) error {
+// getSharedLinkWithAssets retrieves a shared link with its asset IDs populated.
+func (s *Service) getSharedLinkWithAssets(ctx context.Context, link sqlc.SharedLink) (*SharedLink, error) {
+	assets, err := s.db.GetSharedLinkAssets(ctx, link.ID)
+	if err != nil {
+		assets = []sqlc.Asset{}
+	}
+
+	result := convertSharedLink(&link, len(assets))
+	result.AssetIDs = make([]uuid.UUID, len(assets))
+	for i, asset := range assets {
+		result.AssetIDs[i] = uuid.UUID(asset.ID.Bytes)
+	}
+	return result, nil
+}
+
+// AddAssetsToSharedLink adds assets to a shared link and returns the updated link.
+func (s *Service) AddAssetsToSharedLink(ctx context.Context, userID uuid.UUID, linkID uuid.UUID, assetIDs []string) (*SharedLink, error) {
 	// Get existing link to verify ownership
 	existing, err := s.db.GetSharedLink(ctx, pgtype.UUID{Bytes: linkID, Valid: true})
 	if err != nil {
-		return fmt.Errorf("shared link not found: %w", err)
+		return nil, fmt.Errorf("shared link not found: %w", err)
 	}
 
 	if existing.UserId.Bytes != userID {
-		return fmt.Errorf("access denied")
+		return nil, fmt.Errorf("access denied")
+	}
+
+	if existing.Type != SharedLinkTypeIndividual {
+		return nil, fmt.Errorf("asset modification is only supported for individual shared links")
 	}
 
 	// Add each asset
@@ -340,19 +366,23 @@ func (s *Service) AddAssetsToSharedLink(ctx context.Context, userID uuid.UUID, l
 		}
 	}
 
-	return nil
+	return s.getSharedLinkWithAssets(ctx, existing)
 }
 
-// RemoveAssetsFromSharedLink removes assets from a shared link
-func (s *Service) RemoveAssetsFromSharedLink(ctx context.Context, userID uuid.UUID, linkID uuid.UUID, assetIDs []string) error {
+// RemoveAssetsFromSharedLink removes assets from a shared link and returns the updated link.
+func (s *Service) RemoveAssetsFromSharedLink(ctx context.Context, userID uuid.UUID, linkID uuid.UUID, assetIDs []string) (*SharedLink, error) {
 	// Get existing link to verify ownership
 	existing, err := s.db.GetSharedLink(ctx, pgtype.UUID{Bytes: linkID, Valid: true})
 	if err != nil {
-		return fmt.Errorf("shared link not found: %w", err)
+		return nil, fmt.Errorf("shared link not found: %w", err)
 	}
 
 	if existing.UserId.Bytes != userID {
-		return fmt.Errorf("access denied")
+		return nil, fmt.Errorf("access denied")
+	}
+
+	if existing.Type != SharedLinkTypeIndividual {
+		return nil, fmt.Errorf("asset modification is only supported for individual shared links")
 	}
 
 	// Remove each asset
@@ -372,7 +402,7 @@ func (s *Service) RemoveAssetsFromSharedLink(ctx context.Context, userID uuid.UU
 		}
 	}
 
-	return nil
+	return s.getSharedLinkWithAssets(ctx, existing)
 }
 
 // GetSharedLinkAssets retrieves assets from a shared link
