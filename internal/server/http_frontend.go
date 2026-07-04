@@ -14,27 +14,60 @@ import (
 )
 
 // frontendShapeHandlers intercepts a small set of REST endpoints whose default
-// grpc-gateway response shape differs from the upstream Immich SDK/web UI.
+// grpc-gateway handling differs from the upstream Immich SDK/web UI — either
+// because the response shape doesn't match, or because the gateway can't
+// carry the payload at all (multipart uploads, zip streaming).
 func (s *Server) handleFrontendShape(w http.ResponseWriter, r *http.Request) (handled bool) {
-	if r.Method != http.MethodGet {
-		return false
-	}
+	switch r.Method {
+	case http.MethodGet:
+		switch r.URL.Path {
+		case "/api/timeline/buckets":
+			s.handleTimelineBuckets(w, r)
+			return true
+		case "/api/timeline/bucket":
+			s.handleTimelineBucket(w, r)
+			return true
+		case "/api/albums":
+			s.handleAlbums(w, r)
+			return true
+		case "/api/system-config":
+			s.handleSystemConfigGet(w, r)
+			return true
+		case "/api/system-config/defaults":
+			s.handleSystemConfigDefaults(w, r)
+			return true
+		case "/api/system-config/storage-template-options":
+			s.handleStorageTemplateOptions(w, r)
+			return true
+		}
 
-	switch r.URL.Path {
-	case "/api/timeline/buckets":
-		s.handleTimelineBuckets(w, r)
-		return true
-	case "/api/timeline/bucket":
-		s.handleTimelineBucket(w, r)
-		return true
-	case "/api/albums":
-		s.handleAlbums(w, r)
-		return true
-	}
+		if albumID, ok := albumIDFromPath(r.URL.Path); ok {
+			s.handleAlbum(w, r, albumID)
+			return true
+		}
 
-	if albumID, ok := albumIDFromPath(r.URL.Path); ok {
-		s.handleAlbum(w, r, albumID)
-		return true
+	case http.MethodPut:
+		if r.URL.Path == "/api/system-config" {
+			s.handleSystemConfigPut(w, r)
+			return true
+		}
+
+	case http.MethodPost:
+		switch r.URL.Path {
+		case "/api/assets":
+			// Only the multipart upload flow; JSON creation stays on the
+			// gateway route.
+			if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/") {
+				s.handleAssetUpload(w, r)
+				return true
+			}
+		case "/api/download/info":
+			s.handleDownloadInfo(w, r)
+			return true
+		case "/api/download/archive":
+			s.handleDownloadArchive(w, r)
+			return true
+		}
 	}
 
 	return false
