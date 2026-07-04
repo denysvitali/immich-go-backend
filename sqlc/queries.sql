@@ -195,6 +195,15 @@ SET status = $2,
 WHERE id = $1 AND "deletedAt" IS NULL
 RETURNING *;
 
+-- name: MarkAssetProcessed :execrows
+-- Sets an asset back to 'active' after background processing, but never
+-- resurrects an asset the user trashed or deleted while processing ran.
+UPDATE assets
+SET status = 'active',
+    "updatedAt" = now(),
+    "updateId" = immich_uuid_v7()
+WHERE id = $1 AND "deletedAt" IS NULL AND status NOT IN ('trashed', 'deleted');
+
 -- name: GetAssetByID :one
 SELECT * FROM assets
 WHERE id = $1 AND "deletedAt" IS NULL;

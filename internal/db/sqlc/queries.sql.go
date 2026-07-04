@@ -6324,6 +6324,24 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, e
 	return items, nil
 }
 
+const markAssetProcessed = `-- name: MarkAssetProcessed :execrows
+UPDATE assets
+SET status = 'active',
+    "updatedAt" = now(),
+    "updateId" = immich_uuid_v7()
+WHERE id = $1 AND "deletedAt" IS NULL AND status NOT IN ('trashed', 'deleted')
+`
+
+// Sets an asset back to 'active' after background processing, but never
+// resurrects an asset the user trashed or deleted while processing ran.
+func (q *Queries) MarkAssetProcessed(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, markAssetProcessed, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const markNotificationAsRead = `-- name: MarkNotificationAsRead :one
 UPDATE notifications
 SET "readAt" = now(),

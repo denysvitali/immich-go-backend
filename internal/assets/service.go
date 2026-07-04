@@ -328,12 +328,10 @@ func (s *Service) processAsset(ctx context.Context, assetID uuid.UUID) {
 		}
 	}
 
-	// Mark asset as active
-	_, err = s.db.UpdateAssetStatus(ctx, sqlc.UpdateAssetStatusParams{
-		ID:     assetUUID,
-		Status: sqlc.AssetsStatusEnumActive,
-	})
-	if err != nil {
+	// Mark asset as active. MarkAssetProcessed is a no-op when the user
+	// trashed or deleted the asset while processing ran — an unconditional
+	// status write here would resurrect trashed assets.
+	if _, err = s.db.MarkAssetProcessed(ctx, assetUUID); err != nil {
 		span.RecordError(err)
 		s.markAssetFailed(ctx, assetUUID, fmt.Sprintf("failed to mark as active: %v", err))
 		return
