@@ -3,6 +3,7 @@ package server
 import (
 	"bufio"
 	"context"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"github.com/jackc/pgx/v5"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -399,7 +401,31 @@ func NewServer(cfg *config.Config, db *db.Conn) (*Server, error) {
 	immichv1.RegisterPluginServiceServer(s.grpcServer, s)
 	immichv1.RegisterWorkflowServiceServer(s.grpcServer, s)
 
+	s.recordVersionHistory(context.Background())
+
 	return s, nil
+}
+
+// recordVersionHistory appends the running server version to the
+// version_history table when it differs from the most recent entry.
+func (s *Server) recordVersionHistory(ctx context.Context) {
+	current := Version
+	if current == "" {
+		current = "dev"
+	}
+
+	latest, err := s.queries.GetLatestVersionHistory(ctx)
+	if err == nil && latest.Version == current {
+		return
+	}
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		logrus.WithError(err).Warn("failed to read version history")
+		return
+	}
+
+	if _, err := s.queries.CreateVersionHistory(ctx, current); err != nil {
+		logrus.WithError(err).Warn("failed to record version history")
+	}
 }
 
 func (s *Server) ServeGRPC(listener net.Listener) error {

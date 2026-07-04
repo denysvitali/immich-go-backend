@@ -1,7 +1,6 @@
 package server
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -10,21 +9,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestHandleFrontendShape_ServerVersionHistoryReturnsArray(t *testing.T) {
-	srv := &Server{}
-	req := httptest.NewRequest(http.MethodGet, "/api/server/version-history", nil)
-	rec := httptest.NewRecorder()
-
-	handled := srv.handleFrontendShape(rec, req)
-
-	require.True(t, handled)
-	require.Equal(t, http.StatusOK, rec.Code)
-
-	var body []map[string]any
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
-	require.Len(t, body, 2)
-	assert.Equal(t, "foo-1", body[0]["id"])
-	assert.Equal(t, "v1.0.0", body[0]["version"])
+func TestHumanReadableBytes(t *testing.T) {
+	assert.Equal(t, "512 B", humanReadableBytes(512))
+	assert.Equal(t, "1.0 KiB", humanReadableBytes(1024))
+	assert.Equal(t, "500.0 GiB", humanReadableBytes(500*1024*1024*1024))
 }
 
 func TestResponseStatusRecorderCapturesImplicitStatusAndBytes(t *testing.T) {

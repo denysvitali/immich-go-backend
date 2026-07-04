@@ -2,8 +2,12 @@ package server
 
 import (
 	"context"
-	"time"
+	"fmt"
 
+	"github.com/google/uuid"
+	"golang.org/x/sys/unix"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -132,26 +136,89 @@ func (s *Server) PingServer(ctx context.Context, empty *emptypb.Empty) (*immichv
 }
 
 func (s *Server) GetServerStatistics(ctx context.Context, empty *emptypb.Empty) (*immichv1.ServerStatsResponse, error) {
-	// Get statistics from database
-	// For now, return some basic stats
+	stats, err := s.queries.GetServerAssetStatistics(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get server statistics: %v", err)
+	}
+
+	userRows, err := s.queries.GetServerUsageByUser(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get per-user usage: %v", err)
+	}
+
+	usageByUser := make([]*immichv1.UsageByUser, 0, len(userRows))
+	for _, row := range userRows {
+		entry := &immichv1.UsageByUser{
+			Photos:      int32(row.Photos),
+			Videos:      int32(row.Videos),
+			Usage:       row.Usage,
+			UsagePhotos: row.UsagePhotos,
+			UsageVideos: row.UsageVideos,
+			UserId:      uuid.UUID(row.UserID.Bytes).String(),
+			UserName:    row.UserName,
+		}
+		if row.QuotaSizeInBytes.Valid {
+			entry.QuotaSizeInBytes = &row.QuotaSizeInBytes.Int64
+		}
+		usageByUser = append(usageByUser, entry)
+	}
+
 	return &immichv1.ServerStatsResponse{
-		Photos:      100,
-		Videos:      50,
-		Usage:       1073741824, // 1GB in bytes
-		UsageByUser: []*immichv1.UsageByUser{},
+		Photos:      int32(stats.Photos),
+		Videos:      int32(stats.Videos),
+		Usage:       stats.Usage,
+		UsagePhotos: stats.UsagePhotos,
+		UsageVideos: stats.UsageVideos,
+		UsageByUser: usageByUser,
 	}, nil
 }
 
 func (s *Server) GetStorage(ctx context.Context, empty *emptypb.Empty) (*immichv1.ServerStorageResponse, error) {
+	path := s.config.Storage.Local.RootPath
+	if path == "" {
+		path = "."
+	}
+
+	var fs unix.Statfs_t
+	if err := unix.Statfs(path, &fs); err != nil {
+		// Fall back to the working directory (e.g. RootPath not created yet).
+		if err := unix.Statfs(".", &fs); err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to stat filesystem: %v", err)
+		}
+	}
+
+	blockSize := uint64(fs.Bsize) //nolint:gosec // Bsize is never negative
+	total := fs.Blocks * blockSize
+	available := fs.Bavail * blockSize
+	used := total - fs.Bfree*blockSize
+
+	var usagePercentage float64
+	if total > 0 {
+		usagePercentage = float64(used) / float64(total) * 100
+	}
+
 	return &immichv1.ServerStorageResponse{
-		DiskAvailable:       "500GB",
-		DiskAvailableRaw:    500000000000,
-		DiskSize:            "1TB",
-		DiskSizeRaw:         1000000000000,
-		DiskUsagePercentage: 50,
-		DiskUse:             "500GB",
-		DiskUseRaw:          500000000000,
+		DiskAvailable:       humanReadableBytes(available),
+		DiskAvailableRaw:    int64(available), //nolint:gosec // disk sizes fit in int64
+		DiskSize:            humanReadableBytes(total),
+		DiskSizeRaw:         int64(total), //nolint:gosec // disk sizes fit in int64
+		DiskUsagePercentage: usagePercentage,
+		DiskUse:             humanReadableBytes(used),
+		DiskUseRaw:          int64(used), //nolint:gosec // disk sizes fit in int64
 	}, nil
+}
+
+func humanReadableBytes(b uint64) string {
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%d B", b)
+	}
+	div, exp := uint64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(b)/float64(div), "KMGTPE"[exp])
 }
 
 func (s *Server) GetTheme(ctx context.Context, empty *emptypb.Empty) (*immichv1.ServerThemeResponse, error) {
@@ -169,18 +236,19 @@ func (s *Server) GetServerVersion(ctx context.Context, empty *emptypb.Empty) (*i
 }
 
 func (s *Server) GetVersionHistory(ctx context.Context, empty *emptypb.Empty) (*immichv1.ServerVersionHistoryResponse, error) {
-	return &immichv1.ServerVersionHistoryResponse{
-		Items: []*immichv1.ServerVersionHistoryItem{
-			{
-				CreatedAt: timestamppb.New(time.Date(2025, 1, 1, 1, 0, 0, 0, time.UTC)),
-				Id:        "foo-1",
-				Version:   "v1.0.0",
-			},
-			{
-				CreatedAt: timestamppb.New(time.Date(2025, 1, 2, 1, 0, 0, 0, time.UTC)),
-				Id:        "foo-2",
-				Version:   "v1.1.0",
-			},
-		},
-	}, nil
+	rows, err := s.queries.ListVersionHistory(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to list version history: %v", err)
+	}
+
+	items := make([]*immichv1.ServerVersionHistoryItem, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, &immichv1.ServerVersionHistoryItem{
+			CreatedAt: timestamppb.New(row.CreatedAt.Time),
+			Id:        uuid.UUID(row.ID.Bytes).String(),
+			Version:   row.Version,
+		})
+	}
+
+	return &immichv1.ServerVersionHistoryResponse{Items: items}, nil
 }

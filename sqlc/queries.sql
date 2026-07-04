@@ -1951,3 +1951,38 @@ AND (sqlc.narg('primary_asset_id')::uuid IS NULL OR s."primaryAssetId" = sqlc.na
 GROUP BY s.id
 ORDER BY s.id DESC
 LIMIT $2 OFFSET $3;
+
+-- name: ListVersionHistory :many
+SELECT * FROM version_history ORDER BY "createdAt" DESC;
+
+-- name: GetLatestVersionHistory :one
+SELECT * FROM version_history ORDER BY "createdAt" DESC LIMIT 1;
+
+-- name: CreateVersionHistory :one
+INSERT INTO version_history (version) VALUES ($1) RETURNING *;
+
+-- name: GetServerAssetStatistics :one
+SELECT
+    COUNT(CASE WHEN type = 'IMAGE' THEN 1 END)::bigint AS photos,
+    COUNT(CASE WHEN type = 'VIDEO' THEN 1 END)::bigint AS videos,
+    COALESCE(SUM("originalFileSize"), 0)::bigint AS usage,
+    COALESCE(SUM(CASE WHEN type = 'IMAGE' THEN "originalFileSize" ELSE 0 END), 0)::bigint AS usage_photos,
+    COALESCE(SUM(CASE WHEN type = 'VIDEO' THEN "originalFileSize" ELSE 0 END), 0)::bigint AS usage_videos
+FROM assets
+WHERE "deletedAt" IS NULL;
+
+-- name: GetServerUsageByUser :many
+SELECT
+    u.id AS user_id,
+    u.name AS user_name,
+    u."quotaSizeInBytes" AS quota_size_in_bytes,
+    COUNT(CASE WHEN a.type = 'IMAGE' THEN 1 END)::bigint AS photos,
+    COUNT(CASE WHEN a.type = 'VIDEO' THEN 1 END)::bigint AS videos,
+    COALESCE(SUM(a."originalFileSize"), 0)::bigint AS usage,
+    COALESCE(SUM(CASE WHEN a.type = 'IMAGE' THEN a."originalFileSize" ELSE 0 END), 0)::bigint AS usage_photos,
+    COALESCE(SUM(CASE WHEN a.type = 'VIDEO' THEN a."originalFileSize" ELSE 0 END), 0)::bigint AS usage_videos
+FROM users u
+LEFT JOIN assets a ON a."ownerId" = u.id AND a."deletedAt" IS NULL
+WHERE u."deletedAt" IS NULL
+GROUP BY u.id, u.name, u."quotaSizeInBytes"
+ORDER BY u."createdAt";

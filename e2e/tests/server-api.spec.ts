@@ -76,8 +76,9 @@ test('server media, version, theme, and storage endpoints stay JSON compatible',
   const versionHistory = await request.get('/api/server/version-history');
   await expectOk(versionHistory);
   const versionHistoryBody = await versionHistory.json();
-  expect(Array.isArray(versionHistoryBody.items)).toBe(true);
-  expect(versionHistoryBody.items[0]).toMatchObject({
+  expect(Array.isArray(versionHistoryBody)).toBe(true);
+  expect(versionHistoryBody.length).toBeGreaterThan(0);
+  expect(versionHistoryBody[0]).toMatchObject({
     id: expect.any(String),
     version: expect.any(String),
     createdAt: expect.any(String),

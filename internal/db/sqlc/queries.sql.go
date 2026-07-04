@@ -1802,6 +1802,17 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 	return i, err
 }
 
+const createVersionHistory = `-- name: CreateVersionHistory :one
+INSERT INTO version_history (version) VALUES ($1) RETURNING id, "createdAt", version
+`
+
+func (q *Queries) CreateVersionHistory(ctx context.Context, version string) (VersionHistory, error) {
+	row := q.db.QueryRow(ctx, createVersionHistory, version)
+	var i VersionHistory
+	err := row.Scan(&i.ID, &i.CreatedAt, &i.Version)
+	return i, err
+}
+
 const deleteActivity = `-- name: DeleteActivity :exec
 DELETE FROM activity
 WHERE id = $1
@@ -4539,6 +4550,17 @@ func (q *Queries) GetFavoriteAssets(ctx context.Context, arg GetFavoriteAssetsPa
 	return items, nil
 }
 
+const getLatestVersionHistory = `-- name: GetLatestVersionHistory :one
+SELECT id, "createdAt", version FROM version_history ORDER BY "createdAt" DESC LIMIT 1
+`
+
+func (q *Queries) GetLatestVersionHistory(ctx context.Context) (VersionHistory, error) {
+	row := q.db.QueryRow(ctx, getLatestVersionHistory)
+	var i VersionHistory
+	err := row.Scan(&i.ID, &i.CreatedAt, &i.Version)
+	return i, err
+}
+
 const getLibraries = `-- name: GetLibraries :many
 SELECT id, name, "ownerId", "importPaths", "exclusionPatterns", "createdAt", "updatedAt", "deletedAt", "refreshedAt", "updateId" FROM libraries
 WHERE "ownerId" = $1 AND "deletedAt" IS NULL
@@ -5270,6 +5292,95 @@ func (q *Queries) GetRefreshToken(ctx context.Context, token string) (Session, e
 		&i.AppVersion,
 	)
 	return i, err
+}
+
+const getServerAssetStatistics = `-- name: GetServerAssetStatistics :one
+SELECT
+    COUNT(CASE WHEN type = 'IMAGE' THEN 1 END)::bigint AS photos,
+    COUNT(CASE WHEN type = 'VIDEO' THEN 1 END)::bigint AS videos,
+    COALESCE(SUM("originalFileSize"), 0)::bigint AS usage,
+    COALESCE(SUM(CASE WHEN type = 'IMAGE' THEN "originalFileSize" ELSE 0 END), 0)::bigint AS usage_photos,
+    COALESCE(SUM(CASE WHEN type = 'VIDEO' THEN "originalFileSize" ELSE 0 END), 0)::bigint AS usage_videos
+FROM assets
+WHERE "deletedAt" IS NULL
+`
+
+type GetServerAssetStatisticsRow struct {
+	Photos      int64
+	Videos      int64
+	Usage       int64
+	UsagePhotos int64
+	UsageVideos int64
+}
+
+func (q *Queries) GetServerAssetStatistics(ctx context.Context) (GetServerAssetStatisticsRow, error) {
+	row := q.db.QueryRow(ctx, getServerAssetStatistics)
+	var i GetServerAssetStatisticsRow
+	err := row.Scan(
+		&i.Photos,
+		&i.Videos,
+		&i.Usage,
+		&i.UsagePhotos,
+		&i.UsageVideos,
+	)
+	return i, err
+}
+
+const getServerUsageByUser = `-- name: GetServerUsageByUser :many
+SELECT
+    u.id AS user_id,
+    u.name AS user_name,
+    u."quotaSizeInBytes" AS quota_size_in_bytes,
+    COUNT(CASE WHEN a.type = 'IMAGE' THEN 1 END)::bigint AS photos,
+    COUNT(CASE WHEN a.type = 'VIDEO' THEN 1 END)::bigint AS videos,
+    COALESCE(SUM(a."originalFileSize"), 0)::bigint AS usage,
+    COALESCE(SUM(CASE WHEN a.type = 'IMAGE' THEN a."originalFileSize" ELSE 0 END), 0)::bigint AS usage_photos,
+    COALESCE(SUM(CASE WHEN a.type = 'VIDEO' THEN a."originalFileSize" ELSE 0 END), 0)::bigint AS usage_videos
+FROM users u
+LEFT JOIN assets a ON a."ownerId" = u.id AND a."deletedAt" IS NULL
+WHERE u."deletedAt" IS NULL
+GROUP BY u.id, u.name, u."quotaSizeInBytes"
+ORDER BY u."createdAt"
+`
+
+type GetServerUsageByUserRow struct {
+	UserID           pgtype.UUID
+	UserName         string
+	QuotaSizeInBytes pgtype.Int8
+	Photos           int64
+	Videos           int64
+	Usage            int64
+	UsagePhotos      int64
+	UsageVideos      int64
+}
+
+func (q *Queries) GetServerUsageByUser(ctx context.Context) ([]GetServerUsageByUserRow, error) {
+	rows, err := q.db.Query(ctx, getServerUsageByUser)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetServerUsageByUserRow
+	for rows.Next() {
+		var i GetServerUsageByUserRow
+		if err := rows.Scan(
+			&i.UserID,
+			&i.UserName,
+			&i.QuotaSizeInBytes,
+			&i.Photos,
+			&i.Videos,
+			&i.Usage,
+			&i.UsagePhotos,
+			&i.UsageVideos,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getSession = `-- name: GetSession :one
@@ -6970,6 +7081,30 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, e
 			&i.PinCode,
 			&i.IsOnboarded,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listVersionHistory = `-- name: ListVersionHistory :many
+SELECT id, "createdAt", version FROM version_history ORDER BY "createdAt" DESC
+`
+
+func (q *Queries) ListVersionHistory(ctx context.Context) ([]VersionHistory, error) {
+	rows, err := q.db.Query(ctx, listVersionHistory)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []VersionHistory
+	for rows.Next() {
+		var i VersionHistory
+		if err := rows.Scan(&i.ID, &i.CreatedAt, &i.Version); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
