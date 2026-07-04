@@ -169,6 +169,21 @@ service AdminService {
       get: "/api/admin/maintenance/detect-install"
     };
   }
+
+  // List dead-letter jobs
+  rpc ListDeadLetterJobs(google.protobuf.Empty) returns (DeadLetterJobListResponseDto) {
+    option (google.api.http) = {
+      get: "/api/admin/jobs/dead-letter"
+    };
+  }
+
+  // Retry a dead-letter job
+  rpc RetryDeadLetterJob(RetryDeadLetterJobRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/api/admin/jobs/dead-letter/{id}/retry"
+      body: "*"
+    };
+  }
 }
 
 // Template response DTO
@@ -380,4 +395,27 @@ message SessionResponseDto {
 message DeleteUserSessionAdminRequest {
   string user_id = 1;
   string session_id = 2;
+}
+
+// Dead-letter job representation
+message DeadLetterJobDto {
+  string id = 1;
+  string queue = 2;
+  string job_type = 3;
+  bytes payload = 4;
+  string error = 5;
+  int32 max_retries = 6;
+  int32 retried_count = 7;
+  google.protobuf.Timestamp failed_at = 8;
+  google.protobuf.Timestamp last_failed_at = 9;
+}
+
+// List dead-letter jobs response
+message DeadLetterJobListResponseDto {
+  repeated DeadLetterJobDto jobs = 1;
+}
+
+// Retry dead-letter job request
+message RetryDeadLetterJobRequest {
+  string id = 1;
 }

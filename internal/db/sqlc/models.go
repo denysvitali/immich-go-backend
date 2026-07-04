@@ -397,6 +397,18 @@ type GeodataPlace struct {
 	AlternateNames   pgtype.Text
 }
 
+type JobFailure struct {
+	ID           pgtype.UUID
+	Queue        string
+	JobType      string
+	Payload      []byte
+	Error        string
+	MaxRetries   int32
+	RetriedCount int32
+	FailedAt     pgtype.Timestamptz
+	LastFailedAt pgtype.Timestamptz
+}
+
 type KyselyMigration struct {
 	Name      string
 	Timestamp string

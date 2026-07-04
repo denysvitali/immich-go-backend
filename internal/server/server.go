@@ -204,13 +204,6 @@ func NewServer(cfg *config.Config, db *db.Conn) (*Server, error) {
 	partnersService := partners.NewServer(db.Queries)
 	activityService := activity.NewServer(db.Queries)
 
-	// Initialize new services
-	adminService, err := admin.NewService(db.Queries, cfg, storageService)
-	if err != nil {
-		return nil, err
-	}
-	adminServer := admin.NewServer(adminService)
-
 	duplicatesService, err := duplicates.NewService(db.Queries, cfg)
 	if err != nil {
 		return nil, err
@@ -299,6 +292,8 @@ func NewServer(cfg *config.Config, db *db.Conn) (*Server, error) {
 			RedisDB:       redisDB,
 			Concurrency:   cfg.Jobs.Workers,
 			QueueName:     "immich",
+			MaxRetries:    cfg.Jobs.RetryMaxRetries,
+			DB:            db.Queries,
 		}
 		var err error
 		jobService, err = jobs.NewService(jobCfg)
@@ -312,6 +307,13 @@ func NewServer(cfg *config.Config, db *db.Conn) (*Server, error) {
 	} else {
 		logrus.Warn("Job service not configured, background processing disabled")
 	}
+
+	// Initialize admin service (depends on job service for dead-letter ops)
+	adminService, err := admin.NewService(db.Queries, cfg, storageService)
+	if err != nil {
+		return nil, err
+	}
+	adminServer := admin.NewServer(adminService, jobService)
 
 	s := &Server{
 		config:                cfg,

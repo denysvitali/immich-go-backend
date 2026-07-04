@@ -2634,3 +2634,23 @@ CREATE TABLE public.asset_views (
 CREATE INDEX idx_asset_views_asset_id ON public.asset_views USING btree (asset_id);
 CREATE INDEX idx_asset_views_user_id ON public.asset_views USING btree (user_id);
 CREATE INDEX idx_asset_views_viewed_at ON public.asset_views USING btree (viewed_at DESC);
+
+--
+-- Name: job_failures; Type: TABLE; Schema: public; Owner: immich
+--
+
+CREATE TABLE public.job_failures (
+    id uuid DEFAULT public.gen_random_uuid() NOT NULL,
+    queue text NOT NULL,
+    job_type text NOT NULL,
+    payload jsonb NOT NULL,
+    error text NOT NULL,
+    max_retries integer NOT NULL,
+    retried_count integer NOT NULL DEFAULT 0,
+    failed_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_failed_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT job_failures_pkey PRIMARY KEY (id)
+);
+
+CREATE INDEX idx_job_failures_failed_at ON public.job_failures USING btree (failed_at DESC);
+CREATE INDEX idx_job_failures_job_type ON public.job_failures USING btree (job_type);

@@ -473,6 +473,17 @@ func (q *Queries) CountAssetsByOriginalPathPrefix(ctx context.Context, arg Count
 	return count, err
 }
 
+const countJobFailures = `-- name: CountJobFailures :one
+SELECT COUNT(*) FROM job_failures
+`
+
+func (q *Queries) CountJobFailures(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countJobFailures)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countLibraryAssets = `-- name: CountLibraryAssets :one
 SELECT COUNT(*) FROM assets
 WHERE "libraryId" = $1 AND "deletedAt" IS NULL
@@ -1199,6 +1210,50 @@ func (q *Queries) CreateFaceSearch(ctx context.Context, arg CreateFaceSearchPara
 	row := q.db.QueryRow(ctx, createFaceSearch, arg.FaceId, arg.Embedding)
 	var i FaceSearch
 	err := row.Scan(&i.FaceId, &i.Embedding)
+	return i, err
+}
+
+const createJobFailure = `-- name: CreateJobFailure :one
+INSERT INTO job_failures (queue, job_type, payload, error, max_retries, retried_count, failed_at, last_failed_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, queue, job_type, payload, error, max_retries, retried_count, failed_at, last_failed_at
+`
+
+type CreateJobFailureParams struct {
+	Queue        string
+	JobType      string
+	Payload      []byte
+	Error        string
+	MaxRetries   int32
+	RetriedCount int32
+	FailedAt     pgtype.Timestamptz
+	LastFailedAt pgtype.Timestamptz
+}
+
+// Job failure (dead-letter) queries
+func (q *Queries) CreateJobFailure(ctx context.Context, arg CreateJobFailureParams) (JobFailure, error) {
+	row := q.db.QueryRow(ctx, createJobFailure,
+		arg.Queue,
+		arg.JobType,
+		arg.Payload,
+		arg.Error,
+		arg.MaxRetries,
+		arg.RetriedCount,
+		arg.FailedAt,
+		arg.LastFailedAt,
+	)
+	var i JobFailure
+	err := row.Scan(
+		&i.ID,
+		&i.Queue,
+		&i.JobType,
+		&i.Payload,
+		&i.Error,
+		&i.MaxRetries,
+		&i.RetriedCount,
+		&i.FailedAt,
+		&i.LastFailedAt,
+	)
 	return i, err
 }
 
@@ -1988,6 +2043,16 @@ WHERE id = $1
 
 func (q *Queries) DeleteFace(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deleteFace, id)
+	return err
+}
+
+const deleteJobFailure = `-- name: DeleteJobFailure :exec
+DELETE FROM job_failures
+WHERE id = $1
+`
+
+func (q *Queries) DeleteJobFailure(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteJobFailure, id)
 	return err
 }
 
@@ -4551,6 +4616,28 @@ func (q *Queries) GetFavoriteAssets(ctx context.Context, arg GetFavoriteAssetsPa
 	return items, nil
 }
 
+const getJobFailure = `-- name: GetJobFailure :one
+SELECT id, queue, job_type, payload, error, max_retries, retried_count, failed_at, last_failed_at FROM job_failures
+WHERE id = $1
+`
+
+func (q *Queries) GetJobFailure(ctx context.Context, id pgtype.UUID) (JobFailure, error) {
+	row := q.db.QueryRow(ctx, getJobFailure, id)
+	var i JobFailure
+	err := row.Scan(
+		&i.ID,
+		&i.Queue,
+		&i.JobType,
+		&i.Payload,
+		&i.Error,
+		&i.MaxRetries,
+		&i.RetriedCount,
+		&i.FailedAt,
+		&i.LastFailedAt,
+	)
+	return i, err
+}
+
 const getLatestVersionHistory = `-- name: GetLatestVersionHistory :one
 SELECT id, "createdAt", version FROM version_history ORDER BY "createdAt" DESC LIMIT 1
 `
@@ -7039,6 +7126,47 @@ func (q *Queries) ListDatabaseBackups(ctx context.Context) ([]DatabaseBackup, er
 	return items, nil
 }
 
+const listJobFailures = `-- name: ListJobFailures :many
+SELECT id, queue, job_type, payload, error, max_retries, retried_count, failed_at, last_failed_at FROM job_failures
+ORDER BY failed_at DESC
+LIMIT $1 OFFSET $2
+`
+
+type ListJobFailuresParams struct {
+	Limit  int32
+	Offset int32
+}
+
+func (q *Queries) ListJobFailures(ctx context.Context, arg ListJobFailuresParams) ([]JobFailure, error) {
+	rows, err := q.db.Query(ctx, listJobFailures, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []JobFailure
+	for rows.Next() {
+		var i JobFailure
+		if err := rows.Scan(
+			&i.ID,
+			&i.Queue,
+			&i.JobType,
+			&i.Payload,
+			&i.Error,
+			&i.MaxRetries,
+			&i.RetriedCount,
+			&i.FailedAt,
+			&i.LastFailedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUsers = `-- name: ListUsers :many
 SELECT id, email, password, "createdAt", "profileImagePath", "isAdmin", "shouldChangePassword", "deletedAt", "oauthId", "updatedAt", "storageLabel", name, "quotaSizeInBytes", "quotaUsageInBytes", status, "profileChangedAt", "updateId", "avatarColor", "pinCode", "isOnboarded" FROM users
 WHERE "deletedAt" IS NULL
@@ -7942,13 +8070,15 @@ const searchPeople = `-- name: SearchPeople :many
 SELECT id, "createdAt", "updatedAt", "ownerId", name, "thumbnailPath", "isHidden", "birthDate", "faceAssetId", "isFavorite", color, "updateId" FROM person
 WHERE "ownerId" = $1
   AND name ILIKE '%' || $2 || '%'
+  AND ($3::boolean OR "isHidden" = false)
 ORDER BY name
-LIMIT $3 OFFSET $4
+LIMIT $4 OFFSET $5
 `
 
 type SearchPeopleParams struct {
 	OwnerId pgtype.UUID
 	Column2 pgtype.Text
+	Column3 bool
 	Limit   int32
 	Offset  int32
 }
@@ -7957,6 +8087,7 @@ func (q *Queries) SearchPeople(ctx context.Context, arg SearchPeopleParams) ([]P
 	rows, err := q.db.Query(ctx, searchPeople,
 		arg.OwnerId,
 		arg.Column2,
+		arg.Column3,
 		arg.Limit,
 		arg.Offset,
 	)

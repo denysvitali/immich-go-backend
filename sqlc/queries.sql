@@ -1565,8 +1565,9 @@ WHERE "ownerId" = $1
 SELECT * FROM person
 WHERE "ownerId" = $1
   AND name ILIKE '%' || $2 || '%'
+  AND ($3::boolean OR "isHidden" = false)
 ORDER BY name
-LIMIT $3 OFFSET $4;
+LIMIT $4 OFFSET $5;
 
 -- name: SearchPlaces :many
 SELECT DISTINCT city, state, country FROM exif
@@ -1998,3 +1999,25 @@ SET "encodedVideoPath" = $2,
     "updateId" = immich_uuid_v7()
 WHERE id = $1 AND "deletedAt" IS NULL
 RETURNING *;
+
+-- Job failure (dead-letter) queries
+-- name: CreateJobFailure :one
+INSERT INTO job_failures (queue, job_type, payload, error, max_retries, retried_count, failed_at, last_failed_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING *;
+
+-- name: ListJobFailures :many
+SELECT * FROM job_failures
+ORDER BY failed_at DESC
+LIMIT $1 OFFSET $2;
+
+-- name: GetJobFailure :one
+SELECT * FROM job_failures
+WHERE id = $1;
+
+-- name: DeleteJobFailure :exec
+DELETE FROM job_failures
+WHERE id = $1;
+
+-- name: CountJobFailures :one
+SELECT COUNT(*) FROM job_failures;

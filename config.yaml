@@ -60,6 +60,7 @@ jobs:
   workers: 4
   concurrency: 10
   queue_name: "immich"
+  retry_max_retries: 10
   
 redis:
   host: "localhost"

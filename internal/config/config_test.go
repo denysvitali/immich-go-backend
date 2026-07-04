@@ -293,17 +293,17 @@ func TestOAuthConfig(t *testing.T) {
 
 func TestJobsConfig(t *testing.T) {
 	cfg := JobsConfig{
-		Enabled:    true,
-		RedisURL:   "redis://localhost:6379",
-		Workers:    10,
-		MaxRetries: 3,
-		JobTimeout: 30 * time.Minute,
+		Enabled:         true,
+		RedisURL:        "redis://localhost:6379",
+		Workers:         10,
+		RetryMaxRetries: 10,
+		JobTimeout:      30 * time.Minute,
 	}
 
 	assert.True(t, cfg.Enabled)
 	assert.Equal(t, "redis://localhost:6379", cfg.RedisURL)
 	assert.Equal(t, 10, cfg.Workers)
-	assert.Equal(t, 3, cfg.MaxRetries)
+	assert.Equal(t, 10, cfg.RetryMaxRetries)
 	assert.Equal(t, 30*time.Minute, cfg.JobTimeout)
 }
 
@@ -424,4 +424,16 @@ func TestTLSConfig(t *testing.T) {
 		assert.True(t, cfg.Enabled)
 		assert.True(t, cfg.AutoGenerate)
 	})
+}
+
+func TestLoadConfigFromEnv_JobsRetryMaxRetries(t *testing.T) {
+	t.Setenv("AUTH_JWT_SECRET", "test-secret-for-env")
+	t.Setenv("DATABASE_URL", "postgres://user:pass@localhost:5432/db")
+	t.Setenv("SERVER_ADDRESS", "0.0.0.0:8080")
+	t.Setenv("SERVER_GRPC_ADDRESS", "0.0.0.0:9090")
+	t.Setenv("IMMICH_JOBS_RETRY_MAX_RETRIES", "25")
+
+	cfg, err := LoadConfig("")
+	require.NoError(t, err)
+	assert.Equal(t, 25, cfg.Jobs.RetryMaxRetries)
 }

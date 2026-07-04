@@ -3,10 +3,14 @@ package jobs
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
+	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/sirupsen/logrus"
 )
 
@@ -39,7 +43,7 @@ const (
 )
 
 const (
-	defaultMaxRetry = 3
+	defaultMaxRetry = 10
 	defaultTimeout  = 30 * time.Minute
 )
 
@@ -53,13 +57,22 @@ const (
 	PriorityCritical JobPriority = 20
 )
 
+// taskEnqueuer is the subset of asynq.Client used by Service. It is satisfied
+// by *asynq.Client and allows tests to inject a fake queue client.
+type taskEnqueuer interface {
+	EnqueueContext(ctx context.Context, task *asynq.Task, opts ...asynq.Option) (*asynq.TaskInfo, error)
+	Close() error
+}
+
 // Service handles job queue management
 type Service struct {
-	client    *asynq.Client
-	server    *asynq.Server
-	inspector *asynq.Inspector
-	logger    *logrus.Logger
-	handlers  map[string]func(context.Context, *asynq.Task) error
+	client     taskEnqueuer
+	server     *asynq.Server
+	inspector  *asynq.Inspector
+	logger     *logrus.Logger
+	handlers   map[string]func(context.Context, *asynq.Task) error
+	db         *sqlc.Queries
+	maxRetries int
 }
 
 // Config holds job queue configuration
@@ -69,10 +82,21 @@ type Config struct {
 	RedisDB       int
 	Concurrency   int
 	QueueName     string
+	MaxRetries    int
+	DB            *sqlc.Queries
 }
 
 // NewService creates a new job queue service
 func NewService(cfg *Config) (*Service, error) {
+	if cfg.DB == nil {
+		return nil, fmt.Errorf("jobs service requires a database connection")
+	}
+
+	maxRetries := cfg.MaxRetries
+	if maxRetries <= 0 {
+		maxRetries = defaultMaxRetry
+	}
+
 	redisOpt := asynq.RedisClientOpt{
 		Addr:     cfg.RedisAddr,
 		Password: cfg.RedisPassword,
@@ -80,6 +104,15 @@ func NewService(cfg *Config) (*Service, error) {
 	}
 
 	client := asynq.NewClient(redisOpt)
+
+	s := &Service{
+		client:     client,
+		inspector:  asynq.NewInspector(redisOpt),
+		logger:     logrus.StandardLogger(),
+		handlers:   make(map[string]func(context.Context, *asynq.Task) error),
+		db:         cfg.DB,
+		maxRetries: maxRetries,
+	}
 
 	serverCfg := asynq.Config{
 		Concurrency: cfg.Concurrency,
@@ -89,25 +122,146 @@ func NewService(cfg *Config) (*Service, error) {
 			"normal":   2,
 			"low":      1,
 		},
-		ErrorHandler: asynq.ErrorHandlerFunc(func(ctx context.Context, task *asynq.Task, err error) {
-			logrus.WithFields(logrus.Fields{
-				"type":    task.Type(),
-				"payload": string(task.Payload()),
-				"error":   err,
-			}).Error("Job processing failed")
-		}),
+		ErrorHandler: asynq.ErrorHandlerFunc(s.handleTaskError),
 	}
 
-	server := asynq.NewServer(redisOpt, serverCfg)
-	inspector := asynq.NewInspector(redisOpt)
+	s.server = asynq.NewServer(redisOpt, serverCfg)
 
-	return &Service{
-		client:    client,
-		server:    server,
-		inspector: inspector,
-		logger:    logrus.StandardLogger(),
-		handlers:  make(map[string]func(context.Context, *asynq.Task) error),
-	}, nil
+	return s, nil
+}
+
+// handleTaskError is invoked by asynq whenever a task fails. When the failure
+// is non-retryable (asynq.SkipRetry) or the task has exhausted its retry
+// budget, the failure is persisted to the job_failures dead-letter table.
+func (s *Service) handleTaskError(ctx context.Context, task *asynq.Task, err error) {
+	logrus.WithFields(logrus.Fields{
+		"type":    task.Type(),
+		"payload": string(task.Payload()),
+		"error":   err,
+	}).Error("Job processing failed")
+
+	retryCount, _ := asynq.GetRetryCount(ctx)
+	maxRetry, maxOK := asynq.GetMaxRetry(ctx)
+	queue, _ := asynq.GetQueueName(ctx)
+	if !maxOK || maxRetry < 0 {
+		maxRetry = s.maxRetries
+	}
+
+	isFinal := errors.Is(err, asynq.SkipRetry) || retryCount >= maxRetry
+	if !isFinal {
+		return
+	}
+
+	if dbErr := s.recordJobFailure(ctx, task, queue, retryCount, maxRetry, err); dbErr != nil {
+		logrus.WithError(dbErr).WithFields(logrus.Fields{
+			"task_type": task.Type(),
+			"queue":     queue,
+		}).Error("Failed to record job failure to dead-letter table")
+	}
+}
+
+// recordJobFailure persists a terminally failed task to the job_failures table.
+func (s *Service) recordJobFailure(ctx context.Context, task *asynq.Task, queue string, retryCount, maxRetry int, err error) error {
+	payload := task.Payload()
+	if len(payload) == 0 {
+		payload = []byte("{}")
+	}
+
+	now := time.Now()
+	_, dbErr := s.db.CreateJobFailure(ctx, sqlc.CreateJobFailureParams{
+		Queue:        queue,
+		JobType:      task.Type(),
+		Payload:      payload,
+		Error:        err.Error(),
+		MaxRetries:   int32(maxRetry),
+		RetriedCount: int32(retryCount),
+		FailedAt:     pgtype.Timestamptz{Time: now, Valid: true},
+		LastFailedAt: pgtype.Timestamptz{Time: now, Valid: true},
+	})
+	return dbErr
+}
+
+// DeadLetterJob represents a failed job stored for administrative review.
+type DeadLetterJob struct {
+	ID           string
+	Queue        string
+	JobType      string
+	Payload      []byte
+	Error        string
+	MaxRetries   int
+	RetriedCount int
+	FailedAt     time.Time
+	LastFailedAt time.Time
+}
+
+// ListDeadLetterJobs returns failed jobs ordered by failure time (newest first).
+func (s *Service) ListDeadLetterJobs(ctx context.Context, limit, offset int) ([]DeadLetterJob, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+
+	rows, err := s.db.ListJobFailures(ctx, sqlc.ListJobFailuresParams{
+		Limit:  int32(limit),
+		Offset: int32(offset),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list dead-letter jobs: %w", err)
+	}
+
+	jobs := make([]DeadLetterJob, len(rows))
+	for i, row := range rows {
+		jobs[i] = deadLetterJobFromRow(row)
+	}
+	return jobs, nil
+}
+
+// RetryDeadLetterJob re-enqueues a dead-letter job and removes it from the
+// dead-letter table.
+func (s *Service) RetryDeadLetterJob(ctx context.Context, id string) error {
+	jobID, err := uuid.Parse(id)
+	if err != nil {
+		return fmt.Errorf("invalid job failure id: %w", err)
+	}
+
+	row, err := s.db.GetJobFailure(ctx, pgtype.UUID{Bytes: jobID, Valid: true})
+	if err != nil {
+		return fmt.Errorf("failed to get dead-letter job: %w", err)
+	}
+
+	task := asynq.NewTask(row.JobType, row.Payload)
+	_, err = s.client.EnqueueContext(ctx, task,
+		asynq.Queue(row.Queue),
+		asynq.MaxRetry(s.maxRetries),
+		asynq.Timeout(defaultTimeout),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to re-enqueue dead-letter job: %w", err)
+	}
+
+	if err := s.db.DeleteJobFailure(ctx, pgtype.UUID{Bytes: jobID, Valid: true}); err != nil {
+		return fmt.Errorf("failed to delete dead-letter job after retry: %w", err)
+	}
+
+	return nil
+}
+
+func deadLetterJobFromRow(row sqlc.JobFailure) DeadLetterJob {
+	job := DeadLetterJob{
+		ID:           uuid.UUID(row.ID.Bytes).String(),
+		Queue:        row.Queue,
+		JobType:      row.JobType,
+		Payload:      row.Payload,
+		Error:        row.Error,
+		MaxRetries:   int(row.MaxRetries),
+		RetriedCount: int(row.RetriedCount),
+	}
+	if row.FailedAt.Valid {
+		job.FailedAt = row.FailedAt.Time
+	}
+	if row.LastFailedAt.Valid {
+		job.LastFailedAt = row.LastFailedAt.Time
+	}
+	return job
 }
 
 // JobPayload represents the data for a job.
@@ -149,7 +303,7 @@ func (s *Service) EnqueueJobWithPriority(ctx context.Context, jobType JobType, p
 	queue := s.getQueueByPriority(priority)
 	opts := []asynq.Option{
 		asynq.Queue(queue),
-		asynq.MaxRetry(defaultMaxRetry),
+		asynq.MaxRetry(s.maxRetries),
 		asynq.Timeout(defaultTimeout),
 	}
 
@@ -160,7 +314,7 @@ func (s *Service) EnqueueJobWithPriority(ctx context.Context, jobType JobType, p
 func (s *Service) ScheduleJob(ctx context.Context, jobType JobType, payload any, processAt time.Time) error {
 	opts := []asynq.Option{
 		asynq.ProcessAt(processAt),
-		asynq.MaxRetry(defaultMaxRetry),
+		asynq.MaxRetry(s.maxRetries),
 	}
 
 	return s.EnqueueJob(ctx, jobType, payload, opts...)

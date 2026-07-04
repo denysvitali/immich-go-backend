@@ -8,6 +8,7 @@ import (
 	"github.com/denysvitali/immich-go-backend/internal/db/pgutil"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/denysvitali/immich-go-backend/internal/grpcutil"
+	"github.com/denysvitali/immich-go-backend/internal/jobs"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -20,13 +21,15 @@ import (
 // Server implements the AdminService
 type Server struct {
 	immichv1.UnimplementedAdminServiceServer
-	service *Service
+	service    *Service
+	jobService *jobs.Service
 }
 
 // NewServer creates a new admin server
-func NewServer(service *Service) *Server {
+func NewServer(service *Service, jobService *jobs.Service) *Server {
 	return &Server{
-		service: service,
+		service:    service,
+		jobService: jobService,
 	}
 }
 
@@ -489,6 +492,59 @@ func (s *Server) UnlinkAllOAuthAccounts(ctx context.Context, _ *emptypb.Empty) (
 	err = s.service.db.ClearAllOAuthIds(ctx)
 	if err != nil {
 		return nil, grpcutil.SanitizedInternal(ctx, "failed to unlink OAuth accounts", err)
+	}
+
+	return &emptypb.Empty{}, nil
+}
+
+// ListDeadLetterJobs returns failed jobs that exhausted retries or were
+// marked non-retryable.
+func (s *Server) ListDeadLetterJobs(ctx context.Context, _ *emptypb.Empty) (*immichv1.DeadLetterJobListResponseDto, error) {
+	// Require admin privileges
+	if _, err := auth.RequireAdmin(ctx); err != nil {
+		return nil, status.Error(codes.PermissionDenied, "admin privileges required")
+	}
+
+	if s.jobService == nil {
+		return nil, status.Error(codes.Unavailable, "job service is not available")
+	}
+
+	jobs, err := s.jobService.ListDeadLetterJobs(ctx, 1000, 0)
+	if err != nil {
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to list dead-letter jobs", err)
+	}
+
+	protoJobs := make([]*immichv1.DeadLetterJobDto, len(jobs))
+	for i, job := range jobs {
+		protoJobs[i] = &immichv1.DeadLetterJobDto{
+			Id:           job.ID,
+			Queue:        job.Queue,
+			JobType:      job.JobType,
+			Payload:      job.Payload,
+			Error:        job.Error,
+			MaxRetries:   int32(job.MaxRetries),
+			RetriedCount: int32(job.RetriedCount),
+			FailedAt:     timestamppb.New(job.FailedAt),
+			LastFailedAt: timestamppb.New(job.LastFailedAt),
+		}
+	}
+
+	return &immichv1.DeadLetterJobListResponseDto{Jobs: protoJobs}, nil
+}
+
+// RetryDeadLetterJob re-enqueues a single dead-letter job.
+func (s *Server) RetryDeadLetterJob(ctx context.Context, request *immichv1.RetryDeadLetterJobRequest) (*emptypb.Empty, error) {
+	// Require admin privileges
+	if _, err := auth.RequireAdmin(ctx); err != nil {
+		return nil, status.Error(codes.PermissionDenied, "admin privileges required")
+	}
+
+	if s.jobService == nil {
+		return nil, status.Error(codes.Unavailable, "job service is not available")
+	}
+
+	if err := s.jobService.RetryDeadLetterJob(ctx, request.GetId()); err != nil {
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to retry dead-letter job", err)
 	}
 
 	return &emptypb.Empty{}, nil

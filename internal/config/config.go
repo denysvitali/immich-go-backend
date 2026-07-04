@@ -217,7 +217,7 @@ type JobsConfig struct {
 	Workers int `yaml:"workers" env:"JOBS_WORKERS" default:"4"`
 
 	// Job retry attempts
-	MaxRetries int `yaml:"max_retries" env:"JOBS_MAX_RETRIES" default:"3"`
+	RetryMaxRetries int `yaml:"retry_max_retries" env:"IMMICH_JOBS_RETRY_MAX_RETRIES" default:"10"`
 
 	// Job timeout
 	JobTimeout time.Duration `yaml:"job_timeout" env:"JOBS_JOB_TIMEOUT" default:"30m"`
@@ -370,7 +370,7 @@ func setDefaults(config *Config) {
 		Enabled:         true,
 		RedisURL:        "redis://localhost:6379/0",
 		Workers:         4,
-		MaxRetries:      3,
+		RetryMaxRetries: 10,
 		JobTimeout:      30 * time.Minute,
 		CleanupEnabled:  true,
 		CleanupInterval: time.Hour,
@@ -458,6 +458,12 @@ func loadFromEnv(config *Config) error {
 
 	if val := os.Getenv("IMMICH_WEBUI_DIR"); val != "" {
 		config.WebUIDir = val
+	}
+
+	if val := os.Getenv("IMMICH_JOBS_RETRY_MAX_RETRIES"); val != "" {
+		if n, err := strconv.Atoi(val); err == nil {
+			config.Jobs.RetryMaxRetries = n
+		}
 	}
 
 	// Add more environment variable mappings as needed
