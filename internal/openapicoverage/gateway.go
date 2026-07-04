@@ -83,10 +83,11 @@ func ParseGatewayDir(dir string) ([]GatewayRoute, error) {
 		return nil, fmt.Errorf("no *.pb.gw.go files found in %q", dir)
 	}
 
-	// Build a global map of "Service_Method" -> GatewayRoute.
+	// Build a global map of logical HTTP route -> GatewayRoute.
 	// The handler registers each logical route twice in the same file
 	// (once in RegisterXxxHandlerServer, once in RegisterXxxHandlerClient),
-	// with the same HTTP verb and path template. We dedupe by RPC.
+	// with the same HTTP verb and path template. We dedupe those exact
+	// duplicates while preserving additional bindings for the same RPC.
 	type key = string
 	seen := make(map[key]GatewayRoute)
 
@@ -104,7 +105,7 @@ func ParseGatewayDir(dir string) ([]GatewayRoute, error) {
 			return nil, err
 		}
 		for _, r := range routes {
-			k := r.RPC() + "|" + r.HTTPMethod
+			k := routeIdentity(r)
 			if _, ok := seen[k]; ok {
 				continue
 			}
@@ -117,6 +118,10 @@ func ParseGatewayDir(dir string) ([]GatewayRoute, error) {
 		out = append(out, r)
 	}
 	return out, nil
+}
+
+func routeIdentity(r GatewayRoute) string {
+	return r.RPC() + "|" + r.HTTPMethod + "|" + NormalizePath(r.Path)
 }
 
 // parseGatewayFile reads a single .pb.gw.go file and returns the routes

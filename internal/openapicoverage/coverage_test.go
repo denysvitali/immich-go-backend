@@ -154,6 +154,11 @@ func RegisterAssetServiceHandlerServer(ctx context.Context, mux *runtime.ServeMu
 		_ = annotatedContext
 		_ = err
 	})
+	mux.Handle(http.MethodGet, pattern_AssetService_GetRandom_1, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/immich.v1.AssetService/GetRandom", runtime.WithHTTPPathPattern("/api/assets/random-legacy"))
+		_ = annotatedContext
+		_ = err
+	})
 	return nil
 }
 `
@@ -163,17 +168,18 @@ func RegisterAssetServiceHandlerServer(ctx context.Context, mux *runtime.ServeMu
 	if err != nil {
 		t.Fatalf("ParseGatewayDir: %v", err)
 	}
-	if got, want := len(routes), 3; got != want {
+	if got, want := len(routes), 4; got != want {
 		t.Fatalf("got %d routes, want %d (routes=%+v)", got, want, routes)
 	}
 
-	wantRPCs := map[string]bool{
-		"ActivityService.GetActivities":  true,
-		"ActivityService.CreateActivity": true,
-		"AssetService.GetRandom":         true,
+	wantRoutes := map[string]bool{
+		"GET /api/activities":           true,
+		"POST /api/activities":          true,
+		"GET /api/assets/random":        true,
+		"GET /api/assets/random-legacy": true,
 	}
 	for _, r := range routes {
-		if !wantRPCs[r.RPC()] {
+		if !wantRoutes[r.HTTPMethod+" "+r.Path] {
 			t.Errorf("unexpected route %+v", r)
 		}
 	}
