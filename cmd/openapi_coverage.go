@@ -14,6 +14,7 @@ import (
 var (
 	ocSpecFlag    string
 	ocGenDirFlag  string
+	ocManualDir   string
 	ocMDFlag      string
 	ocJSONFlag    string
 	ocFailUnder   float64
@@ -26,7 +27,7 @@ var openapiCoverageCmd = &cobra.Command{
 	Short: "Compute OpenAPI vs gRPC-implementation coverage",
 	Long: `openapi-coverage compares the routes declared in the upstream Immich
 OpenAPI spec against the HTTP routes exposed by this Go backend via
-its generated grpc-gateway files.
+its generated grpc-gateway files and hand-written compatibility handlers.
 
 It exits with a non-zero status if the coverage falls below the
 threshold passed via --fail-under (default: never).`,
@@ -38,11 +39,14 @@ func init() {
 	// generated gateway files live under internal/proto/gen.
 	defaultSpec := defaultOpenAPISpecPath()
 	defaultGen := defaultOpenAPIGenDir()
+	defaultManual := defaultOpenAPIManualDir()
 
 	openapiCoverageCmd.Flags().StringVar(&ocSpecFlag, "spec", defaultSpec,
 		"path to immich-openapi-specs.json")
 	openapiCoverageCmd.Flags().StringVar(&ocGenDirFlag, "gen-dir", defaultGen,
 		"path to the generated proto directory (containing *.pb.gw.go files)")
+	openapiCoverageCmd.Flags().StringVar(&ocManualDir, "manual-dir", defaultManual,
+		"path to Go source directory containing manual HTTP compatibility handlers (empty disables)")
 	openapiCoverageCmd.Flags().StringVar(&ocMDFlag, "md", "",
 		"if set, write a markdown report to this path")
 	openapiCoverageCmd.Flags().StringVar(&ocJSONFlag, "json", "",
@@ -91,6 +95,21 @@ func defaultOpenAPIGenDir() string {
 	return "internal/proto/gen/immich/v1"
 }
 
+func defaultOpenAPIManualDir() string {
+	candidates := []string{
+		"internal/server",
+		"../../internal/server",
+		"../internal/server",
+	}
+	for _, c := range candidates {
+		if info, err := os.Stat(c); err == nil && info.IsDir() {
+			abs, _ := filepath.Abs(c)
+			return abs
+		}
+	}
+	return "internal/server"
+}
+
 func runOpenAPICoverage(cmd *cobra.Command, args []string) error {
 	log := logrus.WithField("cmd", "openapi-coverage")
 
@@ -111,6 +130,16 @@ func runOpenAPICoverage(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("parse gateway dir: %w", err)
 	}
 	log.WithField("count", len(gateway)).Debug("gateway routes")
+
+	if ocManualDir != "" {
+		log.WithField("dir", ocManualDir).Info("parsing manual HTTP routes")
+		manual, err := openapicoverage.ParseManualRouteDir(ocManualDir)
+		if err != nil {
+			return fmt.Errorf("parse manual route dir: %w", err)
+		}
+		log.WithField("count", len(manual)).Debug("manual HTTP routes")
+		gateway = append(gateway, manual...)
+	}
 
 	report := openapicoverage.Diff(upstream, gateway, ocIgnore)
 
