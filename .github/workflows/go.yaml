@@ -14,6 +14,8 @@ permissions:
 env:
   GO_VERSION: '1.24'
   BUF_VERSION: '1.49.0'
+  IMMICH_UPSTREAM_REF: 'v2.7.5'
+  OPENAPI_COVERAGE_FAIL_UNDER: '84.9'
 
 # Cancel in-progress runs for the same ref when a new commit is pushed.
 concurrency:
@@ -32,6 +34,14 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+
+    - name: Checkout upstream Immich OpenAPI spec
+      uses: actions/checkout@v4
+      with:
+        repository: immich-app/immich
+        ref: ${{ env.IMMICH_UPSTREAM_REF }}
+        path: immich-upstream
+        sparse-checkout: open-api
 
     - name: Setup Go
       uses: actions/setup-go@v5
@@ -80,6 +90,25 @@ jobs:
 
     - name: Build application
       run: go build -o bin/immich-go-backend ./cmd
+
+    - name: Check OpenAPI parity
+      run: |
+        go run ./cmd openapi-coverage \
+          --spec immich-upstream/open-api/immich-openapi-specs.json \
+          --gen-dir internal/proto/gen/immich/v1 \
+          --fail-under "${OPENAPI_COVERAGE_FAIL_UNDER}" \
+          --json openapi-coverage.json \
+          --md openapi-coverage.md
+
+    - name: Upload OpenAPI parity report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: openapi-coverage
+        path: |
+          openapi-coverage.json
+          openapi-coverage.md
+        if-no-files-found: warn
 
     - name: Run unit tests
       # Race + integration build tag live in the integration-tests job
@@ -308,7 +337,7 @@ jobs:
       uses: actions/checkout@v4
       with:
         repository: immich-app/immich
-        ref: v2.7.5
+        ref: ${{ env.IMMICH_UPSTREAM_REF }}
         path: immich-upstream
 
     - name: Setup Go
