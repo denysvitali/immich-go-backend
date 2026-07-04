@@ -168,9 +168,10 @@ func (s *Server) SearchPerson(ctx context.Context, req *immichv1.SearchPersonReq
 	}
 
 	searchReq := PeopleSearchRequest{
-		Query: req.Name,
-		Page:  0,
-		Size:  30,
+		Query:      req.Name,
+		Page:       0,
+		Size:       30,
+		WithHidden: req.GetWithHidden(),
 	}
 
 	result, err := s.service.SearchPeople(ctx, userID, searchReq)
@@ -184,8 +185,9 @@ func (s *Server) SearchPerson(ctx context.Context, req *immichv1.SearchPersonReq
 		people[i] = &immichv1.PersonResponseDto{
 			Id:            person.ID,
 			Name:          person.Name,
-			ThumbnailPath: person.Thumbnail,
-			IsHidden:      false,
+			BirthDate:     stringValue(person.BirthDate),
+			ThumbnailPath: person.ThumbnailPath,
+			IsHidden:      person.IsHidden,
 		}
 	}
 

@@ -112,12 +112,22 @@ func (s *Service) SearchMetadata(ctx context.Context, userID uuid.UUID, req Meta
 	}, nil
 }
 
-// SearchPeople searches for people/faces
+// SearchPeople searches for people/faces by name. The search is a
+// case-insensitive substring match and works for queries of any length,
+// including single-character queries. Hidden people are excluded unless
+// req.WithHidden is true.
 func (s *Service) SearchPeople(ctx context.Context, userID uuid.UUID, req PeopleSearchRequest) (*PeopleSearchResult, error) {
-	// Search for people
+	if req.Size <= 0 {
+		req.Size = 30
+	}
+	if req.Page < 0 {
+		req.Page = 0
+	}
+
 	people, err := s.db.SearchPeople(ctx, sqlc.SearchPeopleParams{
 		OwnerId: pgutil.UUIDToPgtype(userID),
 		Column2: pgtype.Text{String: req.Query, Valid: true},
+		Column3: req.WithHidden,
 		Limit:   int32(req.Size),
 		Offset:  int32(req.Page * req.Size),
 	})
@@ -125,14 +135,18 @@ func (s *Service) SearchPeople(ctx context.Context, userID uuid.UUID, req People
 		return nil, fmt.Errorf("failed to search people: %w", err)
 	}
 
-	// Convert to search results
 	items := make([]*PersonResult, len(people))
 	for i, person := range people {
 		items[i] = &PersonResult{
-			ID:         pgutil.PgtypeToUUID(person.ID).String(),
-			Name:       person.Name,
-			AssetCount: 0,  // Not returned by basic query
-			Thumbnail:  "", // Not returned by basic query
+			ID:            pgutil.PgtypeToUUID(person.ID).String(),
+			Name:          person.Name,
+			ThumbnailPath: person.ThumbnailPath,
+			IsHidden:      person.IsHidden,
+			AssetCount:    0,
+		}
+		if person.BirthDate.Valid {
+			bd := person.BirthDate.Time.Format("2006-01-02")
+			items[i].BirthDate = &bd
 		}
 	}
 
@@ -417,9 +431,10 @@ type SearchResultItem struct {
 }
 
 type PeopleSearchRequest struct {
-	Query string `json:"query"`
-	Page  int    `json:"page"`
-	Size  int    `json:"size"`
+	Query      string `json:"query"`
+	Page       int    `json:"page"`
+	Size       int    `json:"size"`
+	WithHidden bool   `json:"withHidden"`
 }
 
 type PeopleSearchResult struct {
@@ -428,10 +443,12 @@ type PeopleSearchResult struct {
 }
 
 type PersonResult struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	AssetCount int    `json:"assetCount"`
-	Thumbnail  string `json:"thumbnail"`
+	ID            string  `json:"id"`
+	Name          string  `json:"name"`
+	BirthDate     *string `json:"birthDate,omitempty"`
+	ThumbnailPath string  `json:"thumbnailPath"`
+	IsHidden      bool    `json:"isHidden"`
+	AssetCount    int     `json:"assetCount"`
 }
 
 type PlacesSearchRequest struct {
