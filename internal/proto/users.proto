@@ -57,6 +57,13 @@ service UsersService {
     };
   }
 
+  // Delete user onboarding status
+  rpc DeleteOnboarding(google.protobuf.Empty) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/api/users/me/onboarding"
+    };
+  }
+
   // Set user license
   rpc SetUserLicense(UserLicenseKeyRequest) returns (UserLicenseResponse) {
     option (google.api.http) = {

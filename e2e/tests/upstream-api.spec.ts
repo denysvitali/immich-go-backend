@@ -195,6 +195,27 @@ test.describe('jobs', () => {
   });
 });
 
+test.describe('users', () => {
+  test('delete current user onboarding status', async ({ request }) => {
+    const user = await signUpAdmin(request, 'user-onboarding');
+
+    const update = await request.put('/api/users/me/onboarding', {
+      headers: user.headers,
+      data: { isOnboarded: true },
+    });
+    await expectOk(update);
+    expect((await update.json()).isOnboarded).toBe(true);
+
+    const deleted = await request.delete('/api/users/me/onboarding', { headers: user.headers });
+    expect(deleted.status()).toBe(204);
+    expect(await deleted.text()).toBe('');
+
+    const current = await request.get('/api/users/me/onboarding', { headers: user.headers });
+    await expectOk(current);
+    expect((await current.json()).isOnboarded).toBe(false);
+  });
+});
+
 test.describe('partners', () => {
   test('create partners with stable and deprecated upstream routes', async ({ request }) => {
     const owner = await signUpAdmin(request, 'partners-owner');

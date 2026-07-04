@@ -32,15 +32,9 @@ type userLicenseMetadata struct {
 }
 
 func (s *Server) GetMyUser(ctx context.Context, empty *emptypb.Empty) (*immichv1.UserAdminResponse, error) {
-	// Get user ID from context/auth
-	claims, err := s.claimsFromContext(ctx)
+	userID, err := s.userIDFromContext(ctx)
 	if err != nil {
 		return nil, err
-	}
-
-	userID, err := uuid.Parse(claims.UserID)
-	if err != nil {
-		return nil, SanitizedInternal(ctx, "invalid user ID", err)
 	}
 
 	user, err := s.userService.GetUser(ctx, userID)
@@ -55,15 +49,9 @@ func (s *Server) GetMyUser(ctx context.Context, empty *emptypb.Empty) (*immichv1
 }
 
 func (s *Server) UpdateMyUser(ctx context.Context, request *immichv1.UserUpdateMeRequest) (*immichv1.UserAdminResponse, error) {
-	// Get user ID from context/auth
-	claims, err := s.claimsFromContext(ctx)
+	userID, err := s.userIDFromContext(ctx)
 	if err != nil {
 		return nil, err
-	}
-
-	userID, err := uuid.Parse(claims.UserID)
-	if err != nil {
-		return nil, SanitizedInternal(ctx, "invalid user ID", err)
 	}
 
 	// Build update request
@@ -165,17 +153,25 @@ func (s *Server) claimsFromContext(ctx context.Context) (*auth.Claims, error) {
 	return auth.ClaimsFromContext(ctx, s.authService.ValidateToken)
 }
 
-func (s *Server) userUUIDFromContext(ctx context.Context) (pgtype.UUID, error) {
+func (s *Server) userIDFromContext(ctx context.Context) (uuid.UUID, error) {
 	claims, err := s.claimsFromContext(ctx)
 	if err != nil {
-		return pgtype.UUID{}, err
+		return uuid.Nil, err
 	}
 
 	userID, err := uuid.Parse(claims.UserID)
 	if err != nil {
-		return pgtype.UUID{}, status.Error(codes.Internal, "invalid user ID")
+		return uuid.Nil, SanitizedInternal(ctx, "invalid user ID", err)
 	}
 
+	return userID, nil
+}
+
+func (s *Server) userUUIDFromContext(ctx context.Context) (pgtype.UUID, error) {
+	userID, err := s.userIDFromContext(ctx)
+	if err != nil {
+		return pgtype.UUID{}, err
+	}
 	return pgtype.UUID{Bytes: userID, Valid: true}, nil
 }
 
@@ -512,15 +508,9 @@ func (s *Server) ListUsers(ctx context.Context, _ *emptypb.Empty) (*immichv1.Lis
 
 // GetOnboarding returns the user's onboarding status
 func (s *Server) GetOnboarding(ctx context.Context, _ *emptypb.Empty) (*immichv1.OnboardingResponse, error) {
-	// Get user ID from context
-	claims, err := s.claimsFromContext(ctx)
+	userID, err := s.userIDFromContext(ctx)
 	if err != nil {
 		return nil, err
-	}
-
-	userID, err := uuid.Parse(claims.UserID)
-	if err != nil {
-		return nil, SanitizedInternal(ctx, "invalid user ID", err)
 	}
 
 	onboarding, err := s.userService.GetUserOnboarding(ctx, userID)
@@ -535,15 +525,9 @@ func (s *Server) GetOnboarding(ctx context.Context, _ *emptypb.Empty) (*immichv1
 
 // UpdateOnboarding updates the user's onboarding status
 func (s *Server) UpdateOnboarding(ctx context.Context, req *immichv1.OnboardingUpdateRequest) (*immichv1.OnboardingResponse, error) {
-	// Get user ID from context
-	claims, err := s.claimsFromContext(ctx)
+	userID, err := s.userIDFromContext(ctx)
 	if err != nil {
 		return nil, err
-	}
-
-	userID, err := uuid.Parse(claims.UserID)
-	if err != nil {
-		return nil, SanitizedInternal(ctx, "invalid user ID", err)
 	}
 
 	onboarding, err := s.userService.UpdateUserOnboarding(ctx, userID, req.IsOnboarded)
@@ -554,4 +538,18 @@ func (s *Server) UpdateOnboarding(ctx context.Context, req *immichv1.OnboardingU
 	return &immichv1.OnboardingResponse{
 		IsOnboarded: onboarding.IsOnboarded,
 	}, nil
+}
+
+// DeleteOnboarding clears the user's onboarding status.
+func (s *Server) DeleteOnboarding(ctx context.Context, _ *emptypb.Empty) (*emptypb.Empty, error) {
+	userID, err := s.userIDFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := s.userService.UpdateUserOnboarding(ctx, userID, false); err != nil {
+		return nil, SanitizedInternal(ctx, "failed to delete onboarding status", err)
+	}
+
+	return &emptypb.Empty{}, nil
 }

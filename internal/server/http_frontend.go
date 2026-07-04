@@ -52,6 +52,12 @@ func (s *Server) handleFrontendShape(w http.ResponseWriter, r *http.Request) (ha
 			return true
 		}
 
+	case http.MethodDelete:
+		if r.URL.Path == "/api/users/me/onboarding" {
+			s.handleUserOnboardingDelete(w, r)
+			return true
+		}
+
 	case http.MethodPost:
 		switch r.URL.Path {
 		case "/api/assets":
