@@ -1083,25 +1083,27 @@ LIMIT $4 OFFSET 0;
 -- name: GetAssetStatsByUser :one
 SELECT 
     COUNT(*) as total,
-    COUNT(CASE WHEN type = 'IMAGE' THEN 1 END) as images,
-    COUNT(CASE WHEN type = 'VIDEO' THEN 1 END) as videos,
-    COUNT(CASE WHEN "isFavorite" = true THEN 1 END) as favorites,
-    COUNT(CASE WHEN visibility = 'archive' THEN 1 END) as archived,
-    COUNT(CASE WHEN status = 'trashed' THEN 1 END) as trashed,
-    SUM("originalFileSize") as total_size
-FROM assets
-WHERE "ownerId" = $1 AND "deletedAt" IS NULL;
+    COUNT(CASE WHEN a.type = 'IMAGE' THEN 1 END) as images,
+    COUNT(CASE WHEN a.type = 'VIDEO' THEN 1 END) as videos,
+    COUNT(CASE WHEN a."isFavorite" = true THEN 1 END) as favorites,
+    COUNT(CASE WHEN a.visibility = 'archive' THEN 1 END) as archived,
+    COUNT(CASE WHEN a.status = 'trashed' THEN 1 END) as trashed,
+    COALESCE(SUM(e."fileSizeInByte"), 0)::bigint as total_size
+FROM assets a
+LEFT JOIN exif e ON e."assetId" = a.id
+WHERE a."ownerId" = $1 AND a."deletedAt" IS NULL;
 
 -- name: GetStorageUsageByUser :one
 SELECT 
-    "ownerId",
+    a."ownerId",
     COUNT(*) as asset_count,
-    SUM("originalFileSize") as total_size,
-    SUM(CASE WHEN type = 'IMAGE' THEN "originalFileSize" ELSE 0 END) as image_size,
-    SUM(CASE WHEN type = 'VIDEO' THEN "originalFileSize" ELSE 0 END) as video_size
-FROM assets
-WHERE "ownerId" = $1 AND "deletedAt" IS NULL
-GROUP BY "ownerId";
+    COALESCE(SUM(e."fileSizeInByte"), 0)::bigint as total_size,
+    COALESCE(SUM(CASE WHEN a.type = 'IMAGE' THEN e."fileSizeInByte" ELSE 0 END), 0)::bigint as image_size,
+    COALESCE(SUM(CASE WHEN a.type = 'VIDEO' THEN e."fileSizeInByte" ELSE 0 END), 0)::bigint as video_size
+FROM assets a
+LEFT JOIN exif e ON e."assetId" = a.id
+WHERE a."ownerId" = $1 AND a."deletedAt" IS NULL
+GROUP BY a."ownerId";
 
 -- ============================================================================
 -- ADVANCED ASSET QUERIES
@@ -1963,13 +1965,14 @@ INSERT INTO version_history (version) VALUES ($1) RETURNING *;
 
 -- name: GetServerAssetStatistics :one
 SELECT
-    COUNT(CASE WHEN type = 'IMAGE' THEN 1 END)::bigint AS photos,
-    COUNT(CASE WHEN type = 'VIDEO' THEN 1 END)::bigint AS videos,
-    COALESCE(SUM("originalFileSize"), 0)::bigint AS usage,
-    COALESCE(SUM(CASE WHEN type = 'IMAGE' THEN "originalFileSize" ELSE 0 END), 0)::bigint AS usage_photos,
-    COALESCE(SUM(CASE WHEN type = 'VIDEO' THEN "originalFileSize" ELSE 0 END), 0)::bigint AS usage_videos
-FROM assets
-WHERE "deletedAt" IS NULL;
+    COUNT(CASE WHEN a.type = 'IMAGE' THEN 1 END)::bigint AS photos,
+    COUNT(CASE WHEN a.type = 'VIDEO' THEN 1 END)::bigint AS videos,
+    COALESCE(SUM(e."fileSizeInByte"), 0)::bigint AS usage,
+    COALESCE(SUM(CASE WHEN a.type = 'IMAGE' THEN e."fileSizeInByte" ELSE 0 END), 0)::bigint AS usage_photos,
+    COALESCE(SUM(CASE WHEN a.type = 'VIDEO' THEN e."fileSizeInByte" ELSE 0 END), 0)::bigint AS usage_videos
+FROM assets a
+LEFT JOIN exif e ON e."assetId" = a.id
+WHERE a."deletedAt" IS NULL;
 
 -- name: GetServerUsageByUser :many
 SELECT
@@ -1978,11 +1981,12 @@ SELECT
     u."quotaSizeInBytes" AS quota_size_in_bytes,
     COUNT(CASE WHEN a.type = 'IMAGE' THEN 1 END)::bigint AS photos,
     COUNT(CASE WHEN a.type = 'VIDEO' THEN 1 END)::bigint AS videos,
-    COALESCE(SUM(a."originalFileSize"), 0)::bigint AS usage,
-    COALESCE(SUM(CASE WHEN a.type = 'IMAGE' THEN a."originalFileSize" ELSE 0 END), 0)::bigint AS usage_photos,
-    COALESCE(SUM(CASE WHEN a.type = 'VIDEO' THEN a."originalFileSize" ELSE 0 END), 0)::bigint AS usage_videos
+    COALESCE(SUM(e."fileSizeInByte"), 0)::bigint AS usage,
+    COALESCE(SUM(CASE WHEN a.type = 'IMAGE' THEN e."fileSizeInByte" ELSE 0 END), 0)::bigint AS usage_photos,
+    COALESCE(SUM(CASE WHEN a.type = 'VIDEO' THEN e."fileSizeInByte" ELSE 0 END), 0)::bigint AS usage_videos
 FROM users u
 LEFT JOIN assets a ON a."ownerId" = u.id AND a."deletedAt" IS NULL
+LEFT JOIN exif e ON e."assetId" = a.id
 WHERE u."deletedAt" IS NULL
 GROUP BY u.id, u.name, u."quotaSizeInBytes"
 ORDER BY u."createdAt";
