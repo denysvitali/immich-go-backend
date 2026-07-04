@@ -61,11 +61,19 @@ func (s *Server) handleFrontendShape(w http.ResponseWriter, r *http.Request) (ha
 				s.handleAssetUpload(w, r)
 				return true
 			}
+		case "/api/partners":
+			s.handlePartnerCreate(w, r, "")
+			return true
 		case "/api/download/info":
 			s.handleDownloadInfo(w, r)
 			return true
 		case "/api/download/archive":
 			s.handleDownloadArchive(w, r)
+			return true
+		}
+
+		if partnerID, ok := partnerIDFromPath(r.URL.Path); ok {
+			s.handlePartnerCreate(w, r, partnerID)
 			return true
 		}
 	}
@@ -79,6 +87,14 @@ func albumIDFromPath(path string) (string, bool) {
 		return "", false
 	}
 	return albumID, true
+}
+
+func partnerIDFromPath(path string) (string, bool) {
+	partnerID, ok := strings.CutPrefix(path, "/api/partners/")
+	if !ok || partnerID == "" || strings.Contains(partnerID, "/") {
+		return "", false
+	}
+	return partnerID, true
 }
 
 func (s *Server) requireAuth(w http.ResponseWriter, r *http.Request) (*auth.Claims, bool) {

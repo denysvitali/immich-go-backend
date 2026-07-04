@@ -28,8 +28,11 @@ service PartnersService {
   // Create partner
   rpc CreatePartner(CreatePartnerRequest) returns (PartnerResponse) {
     option (google.api.http) = {
-      post: "/api/partners/{id}"
+      post: "/api/partners"
       body: "*"
+      additional_bindings {
+        post: "/api/partners/{shared_with_id}"
+      }
     };
   }
 
@@ -66,7 +69,7 @@ message RemovePartnerRequest {
 
 // Request to create partner
 message CreatePartnerRequest {
-  string id = 1;
+  string shared_with_id = 1;
 }
 
 // Request to update partner

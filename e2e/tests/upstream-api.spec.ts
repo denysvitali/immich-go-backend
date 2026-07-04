@@ -195,6 +195,39 @@ test.describe('jobs', () => {
   });
 });
 
+test.describe('partners', () => {
+  test('create partners with stable and deprecated upstream routes', async ({ request }) => {
+    const owner = await signUpAdmin(request, 'partners-owner');
+    const stablePartner = await signUpAdmin(request, 'partners-stable');
+    const deprecatedPartner = await signUpAdmin(request, 'partners-deprecated');
+
+    const stable = await request.post('/api/partners', {
+      headers: owner.headers,
+      data: { sharedWithId: stablePartner.userId },
+    });
+    expect(stable.status()).toBe(201);
+    const stableBody = await stable.json();
+    expect(stableBody).toMatchObject({
+      id: stablePartner.userId,
+      email: stablePartner.email,
+      name: expect.any(String),
+      inTimeline: expect.any(Boolean),
+      avatarColor: expect.any(String),
+      profileChangedAt: expect.any(String),
+      profileImagePath: expect.any(String),
+    });
+    expect(stableBody.user).toBeUndefined();
+
+    const deprecated = await request.post(`/api/partners/${deprecatedPartner.userId}`, {
+      headers: owner.headers,
+    });
+    expect(deprecated.status()).toBe(201);
+    const deprecatedBody = await deprecated.json();
+    expect(deprecatedBody.id).toBe(deprecatedPartner.userId);
+    expect(deprecatedBody.user).toBeUndefined();
+  });
+});
+
 test.describe('shared links', () => {
   test('create, list and delete an individual shared link', async ({ request }) => {
     const admin = await signUpAdmin(request, 'sharedlinks');

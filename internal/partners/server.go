@@ -123,7 +123,7 @@ func (s *Server) CreatePartner(ctx context.Context, request *immichv1.CreatePart
 	}
 
 	// Parse partner ID from request
-	partnerID, err := uuid.Parse(request.GetId())
+	partnerID, err := uuid.Parse(request.GetSharedWithId())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid partner ID")
 	}
