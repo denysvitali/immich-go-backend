@@ -32,10 +32,10 @@ flowchart LR
 - [ ] Review shared-link asset removal permissions.
 - [x] Implement real version-check RPC.
 - [ ] Verify original filename hiding when metadata is disabled.
-- [ ] Verify people search behaviour for short queries.
+- [x] Verify people search behaviour for short queries.
 - [x] Streaming support for large gRPC operations.
 - [x] Configurable worker pools for background jobs (`JOBS_WORKERS`, default 4).
-- [ ] Advanced retry logic for background jobs.
+- [x] Advanced retry logic for background jobs.
 
 ### v3 RC parity
 
@@ -59,7 +59,7 @@ flowchart LR
 - [ ] Database performance tests.
 - [ ] Memory usage optimisation.
 - [ ] Configurable worker pools.
-- [ ] Advanced retry / dead-letter handling for background jobs.
+- [x] Advanced retry / dead-letter handling for background jobs.
 
 ### ML integration (optional, off by default)
 
