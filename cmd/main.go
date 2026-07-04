@@ -12,6 +12,9 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
+	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/denysvitali/immich-go-backend/internal/config"
 	"github.com/denysvitali/immich-go-backend/internal/db"
@@ -156,6 +159,31 @@ func runServer(cmd *cobra.Command, args []string) error {
 			logrus.WithError(err).Error("gRPC server failed")
 		}
 	}()
+
+	// Dial the local gRPC server so the HTTP gateway can forward streaming
+	// SyncService RPCs over a real gRPC connection.
+	grpcClientConn, err := grpc.NewClient(grpcAddr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create gRPC client for %s: %w", grpcAddr, err)
+	}
+
+	readyCtx, readyCancel := context.WithTimeout(ctx, 10*time.Second)
+	defer readyCancel()
+	grpcClientConn.Connect()
+	for {
+		state := grpcClientConn.GetState()
+		if state == connectivity.Ready {
+			break
+		}
+		if !grpcClientConn.WaitForStateChange(readyCtx, state) {
+			_ = grpcClientConn.Close()
+			return fmt.Errorf("gRPC client for %s did not become ready in time", grpcAddr)
+		}
+	}
+
+	srv.SetGRPCConn(grpcClientConn)
 
 	// Start HTTP server
 	httpAddr := cfg.Server.Address

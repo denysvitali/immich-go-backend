@@ -124,6 +124,7 @@ type Server struct {
 	pluginService         *plugin.Service
 	workflowService       *workflow.Service
 	queries               *sqlc.Queries
+	grpcClientConn        *grpc.ClientConn
 
 	immichv1.UnimplementedAlbumServiceServer
 	immichv1.UnimplementedApiKeyServiceServer
@@ -593,8 +594,14 @@ func (s *Server) HTTPHandler() http.Handler {
 	if err := immichv1.RegisterSessionsServiceHandlerServer(ctx, mux, s.sessionsServer); err != nil {
 		logrus.WithError(err).Error("Failed to register SessionsService handler")
 	}
-	if err := immichv1.RegisterSyncServiceHandlerServer(ctx, mux, s.syncServer); err != nil {
-		logrus.WithError(err).Error("Failed to register SyncService handler")
+	if s.grpcClientConn != nil {
+		if err := immichv1.RegisterSyncServiceHandler(ctx, mux, s.grpcClientConn); err != nil {
+			logrus.WithError(err).Error("Failed to register SyncService handler")
+		}
+	} else {
+		if err := immichv1.RegisterSyncServiceHandlerServer(ctx, mux, s.syncServer); err != nil {
+			logrus.WithError(err).Error("Failed to register SyncService handler")
+		}
 	}
 	if err := immichv1.RegisterPluginServiceHandlerServer(ctx, mux, s); err != nil {
 		logrus.WithError(err).Error("Failed to register PluginService handler")
@@ -834,9 +841,18 @@ func requestWithAuthorization(r *http.Request, authorization string) *http.Reque
 	return clone
 }
 
+func (s *Server) SetGRPCConn(conn *grpc.ClientConn) {
+	s.grpcClientConn = conn
+}
+
 func (s *Server) Stop() {
 	logrus.Info("Stopping gRPC server...")
 	s.grpcServer.GracefulStop()
+	if s.grpcClientConn != nil {
+		if err := s.grpcClientConn.Close(); err != nil {
+			logrus.WithError(err).Error("Failed to close gRPC client connection")
+		}
+	}
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
