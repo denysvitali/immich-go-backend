@@ -233,6 +233,7 @@ func (s *Service) GetQueueStats(ctx context.Context) (*QueueStats, error) {
 			Retry:     info.Retry,
 			Archived:  info.Archived,
 			Completed: info.Completed,
+			Paused:    info.Paused,
 		}
 	}
 
@@ -254,6 +255,7 @@ type QueueInfo struct {
 	Retry     int    `json:"retry"`
 	Archived  int    `json:"archived"`
 	Completed int    `json:"completed"`
+	Paused    bool   `json:"paused"`
 }
 
 // PauseQueue pauses processing of a specific queue
@@ -264,6 +266,14 @@ func (s *Service) PauseQueue(ctx context.Context, queue string) error {
 // ResumeQueue resumes processing of a paused queue
 func (s *Service) ResumeQueue(ctx context.Context, queue string) error {
 	return s.inspector.UnpauseQueue(queue)
+}
+
+// ClearFailed removes all failed (archived) jobs from a queue
+func (s *Service) ClearFailed(ctx context.Context, queue string) error {
+	if _, err := s.inspector.DeleteAllArchivedTasks(queue); err != nil {
+		return fmt.Errorf("failed to clear failed tasks: %w", err)
+	}
+	return nil
 }
 
 // ClearQueue removes all jobs from a queue

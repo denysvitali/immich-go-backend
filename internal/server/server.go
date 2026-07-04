@@ -508,10 +508,8 @@ func (s *Server) HTTPHandler() http.Handler {
 	if err := immichv1.RegisterSystemConfigServiceHandlerServer(ctx, mux, s); err != nil {
 		logrus.WithError(err).Error("Failed to register SystemConfigService handler")
 	}
-	if s.jobService != nil {
-		if err := immichv1.RegisterJobServiceHandlerServer(ctx, mux, s); err != nil {
-			logrus.WithError(err).Error("Failed to register JobService handler")
-		}
+	if err := immichv1.RegisterJobServiceHandlerServer(ctx, mux, s); err != nil {
+		logrus.WithError(err).Error("Failed to register JobService handler")
 	}
 	// Register new services
 	if err := immichv1.RegisterTrashServiceHandlerServer(ctx, mux, s.trashService); err != nil {
