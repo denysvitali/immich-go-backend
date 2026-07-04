@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -304,6 +305,67 @@ func (s *Server) GetPerson(ctx context.Context, request *immichv1.GetPersonReque
 		UpdatedAt:     timestamppb.New(person.UpdatedAt.Time),
 		IsHidden:      person.IsHidden,
 	}, nil
+}
+
+// DeletePeople deletes multiple people owned by the current user.
+func (s *Server) DeletePeople(ctx context.Context, request *immichv1.DeletePeopleRequest) (*emptypb.Empty, error) {
+	claims, ok := auth.GetClaimsFromStdContext(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	}
+
+	userID, err := uuid.Parse(claims.UserID)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "invalid user ID")
+	}
+
+	for _, id := range request.GetIds() {
+		if err := s.deletePersonByID(ctx, userID, id); err != nil {
+			return nil, err
+		}
+	}
+
+	return &emptypb.Empty{}, nil
+}
+
+// DeletePerson deletes one person owned by the current user.
+func (s *Server) DeletePerson(ctx context.Context, request *immichv1.DeletePersonRequest) (*emptypb.Empty, error) {
+	claims, ok := auth.GetClaimsFromStdContext(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	}
+
+	userID, err := uuid.Parse(claims.UserID)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "invalid user ID")
+	}
+
+	if err := s.deletePersonByID(ctx, userID, request.GetId()); err != nil {
+		return nil, err
+	}
+
+	return &emptypb.Empty{}, nil
+}
+
+func (s *Server) deletePersonByID(ctx context.Context, userID uuid.UUID, id string) error {
+	personID, err := uuid.Parse(id)
+	if err != nil {
+		return status.Error(codes.InvalidArgument, "invalid person ID")
+	}
+
+	personUUID := pgtype.UUID{Bytes: personID, Valid: true}
+	person, err := s.queries.GetPerson(ctx, personUUID)
+	if err != nil {
+		return status.Error(codes.NotFound, "person not found")
+	}
+	if person.OwnerId.Bytes != userID {
+		return status.Error(codes.PermissionDenied, "access denied")
+	}
+
+	if err := s.queries.DeletePerson(ctx, personUUID); err != nil {
+		return status.Error(codes.Internal, "failed to delete person")
+	}
+	return nil
 }
 
 // UpdatePerson updates a person

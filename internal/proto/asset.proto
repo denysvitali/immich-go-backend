@@ -6,6 +6,7 @@ import "common.proto";
 import "google/api/annotations.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/field_mask.proto";
+import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
@@ -30,6 +31,30 @@ service AssetService {
   rpc UploadAsset(UploadAssetRequest) returns (Asset) {
     option (google.api.http) = {
       post: "/api/assets"
+      body: "*"
+    };
+  }
+
+  // Copy asset associations and metadata from one asset to another
+  rpc CopyAsset(CopyAssetRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      put: "/api/assets/copy"
+      body: "*"
+    };
+  }
+
+  // Delete metadata for multiple assets
+  rpc DeleteBulkAssetMetadata(DeleteBulkAssetMetadataRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/api/assets/metadata"
+      body: "*"
+    };
+  }
+
+  // Update metadata for multiple assets
+  rpc UpdateBulkAssetMetadata(UpdateBulkAssetMetadataRequest) returns (UpdateBulkAssetMetadataResponse) {
+    option (google.api.http) = {
+      put: "/api/assets/metadata"
       body: "*"
     };
   }
@@ -137,6 +162,67 @@ service AssetService {
   rpc GetRecentlyAddedAssets(GetRecentlyAddedAssetsRequest) returns (GetRecentlyAddedAssetsResponse) {
     option (google.api.http) = {
       get: "/api/assets/recently-added"
+    };
+  }
+
+
+
+
+  // Get asset edits
+  rpc GetAssetEdits(GetAssetEditsRequest) returns (AssetEditsResponse) {
+    option (google.api.http) = {
+      get: "/api/assets/{id}/edits"
+    };
+  }
+
+  // Update asset edits
+  rpc EditAsset(EditAssetRequest) returns (AssetEditsResponse) {
+    option (google.api.http) = {
+      put: "/api/assets/{id}/edits"
+      body: "*"
+    };
+  }
+
+  // Remove asset edits
+  rpc RemoveAssetEdits(RemoveAssetEditsRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/api/assets/{id}/edits"
+    };
+  }
+
+  // Get all metadata for an asset
+  rpc GetAssetMetadata(GetAssetMetadataRequest) returns (GetAssetMetadataResponse) {
+    option (google.api.http) = {
+      get: "/api/assets/{id}/metadata"
+    };
+  }
+
+  // Upsert metadata for an asset
+  rpc UpdateAssetMetadata(UpdateAssetMetadataRequest) returns (GetAssetMetadataResponse) {
+    option (google.api.http) = {
+      put: "/api/assets/{id}/metadata"
+      body: "*"
+    };
+  }
+
+  // Get one metadata item by key
+  rpc GetAssetMetadataByKey(GetAssetMetadataByKeyRequest) returns (AssetMetadataResponse) {
+    option (google.api.http) = {
+      get: "/api/assets/{id}/metadata/{key}"
+    };
+  }
+
+  // Delete one metadata item by key
+  rpc DeleteAssetMetadata(DeleteAssetMetadataRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/api/assets/{id}/metadata/{key}"
+    };
+  }
+
+  // Get OCR rows for an asset
+  rpc GetAssetOcr(GetAssetOcrRequest) returns (GetAssetOcrResponse) {
+    option (google.api.http) = {
+      get: "/api/assets/{id}/ocr"
     };
   }
 }
@@ -376,4 +462,131 @@ message GetRecentlyAddedAssetsRequest {
 // Get recently added assets response
 message GetRecentlyAddedAssetsResponse {
   repeated Asset assets = 1;
+}
+
+message CopyAssetRequest {
+  string source_id = 1;
+  string target_id = 2;
+  optional bool albums = 3;
+  optional bool favorite = 4;
+  optional bool shared_links = 5;
+  optional bool sidecar = 6;
+  optional bool stack = 7;
+}
+
+message AssetMetadataBulkDeleteItem {
+  string asset_id = 1;
+  string key = 2;
+}
+
+message DeleteBulkAssetMetadataRequest {
+  repeated AssetMetadataBulkDeleteItem items = 1;
+}
+
+message AssetMetadataBulkUpsertItem {
+  string asset_id = 1;
+  string key = 2;
+  google.protobuf.Struct value = 3;
+}
+
+message UpdateBulkAssetMetadataRequest {
+  repeated AssetMetadataBulkUpsertItem items = 1;
+}
+
+message UpdateBulkAssetMetadataResponse {
+  repeated AssetMetadataBulkResponse items = 1;
+}
+
+message AssetMetadataBulkResponse {
+  string asset_id = 1;
+  string key = 2;
+  google.protobuf.Struct value = 3;
+  google.protobuf.Timestamp updated_at = 4;
+}
+
+message AssetMetadataUpsertItem {
+  string key = 1;
+  google.protobuf.Struct value = 2;
+}
+
+message UpdateAssetMetadataRequest {
+  string id = 1;
+  repeated AssetMetadataUpsertItem items = 2;
+}
+
+message GetAssetMetadataRequest {
+  string id = 1;
+}
+
+message GetAssetMetadataResponse {
+  repeated AssetMetadataResponse items = 1;
+}
+
+message GetAssetMetadataByKeyRequest {
+  string id = 1;
+  string key = 2;
+}
+
+message DeleteAssetMetadataRequest {
+  string id = 1;
+  string key = 2;
+}
+
+message AssetMetadataResponse {
+  string key = 1;
+  google.protobuf.Struct value = 2;
+  google.protobuf.Timestamp updated_at = 3;
+}
+
+message AssetEditActionItem {
+  string action = 1;
+  google.protobuf.Struct parameters = 2;
+}
+
+message AssetEditActionItemResponse {
+  string id = 1;
+  string action = 2;
+  google.protobuf.Struct parameters = 3;
+}
+
+message AssetEditsResponse {
+  string asset_id = 1;
+  repeated AssetEditActionItemResponse edits = 2;
+}
+
+message GetAssetEditsRequest {
+  string id = 1;
+}
+
+message EditAssetRequest {
+  string id = 1;
+  repeated AssetEditActionItem edits = 2;
+}
+
+message RemoveAssetEditsRequest {
+  string id = 1;
+}
+
+message AssetOcrResponse {
+  string id = 1;
+  string asset_id = 2;
+  string text = 3;
+  double text_score = 4;
+  double box_score = 5;
+  double x1 = 6;
+  double y1 = 7;
+  double x2 = 8;
+  double y2 = 9;
+  double x3 = 10;
+  double y3 = 11;
+  double x4 = 12;
+  double y4 = 13;
+}
+
+message GetAssetOcrRequest {
+  string id = 1;
+}
+
+message GetAssetOcrResponse {
+  repeated AssetOcrResponse items = 1;
 }

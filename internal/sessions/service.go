@@ -10,6 +10,7 @@ import (
 	"github.com/denysvitali/immich-go-backend/internal/db/pgutil"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/sirupsen/logrus"
 )
 
@@ -29,14 +30,16 @@ func NewService(queries *sqlc.Queries, authService *auth.Service, logger *logrus
 
 // Session represents a user session
 type Session struct {
-	ID         string
-	UserID     string
-	DeviceType string
-	DeviceOS   string
-	Token      string
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
-	ExpiresAt  time.Time
+	ID                 string
+	UserID             string
+	DeviceType         string
+	DeviceOS           string
+	Token              string
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+	ExpiresAt          time.Time
+	IsPendingSyncReset bool
+	AppVersion         string
 }
 
 // CreateSession creates a new session for a user
@@ -262,13 +265,43 @@ func (s *Service) CleanupExpiredSessions(ctx context.Context) error {
 
 func sessionFromDB(dbSession sqlc.Session) *Session {
 	return &Session{
-		ID:         pgutil.UUIDToString(dbSession.ID),
-		UserID:     pgutil.UUIDToString(dbSession.UserId),
-		DeviceType: dbSession.DeviceType,
-		DeviceOS:   dbSession.DeviceOS,
-		Token:      dbSession.Token,
-		CreatedAt:  pgutil.TimestamptzToTime(dbSession.CreatedAt),
-		UpdatedAt:  pgutil.TimestamptzToTime(dbSession.UpdatedAt),
-		ExpiresAt:  pgutil.TimestamptzToTime(dbSession.ExpiresAt),
+		ID:                 pgutil.UUIDToString(dbSession.ID),
+		UserID:             pgutil.UUIDToString(dbSession.UserId),
+		DeviceType:         dbSession.DeviceType,
+		DeviceOS:           dbSession.DeviceOS,
+		Token:              dbSession.Token,
+		CreatedAt:          pgutil.TimestamptzToTime(dbSession.CreatedAt),
+		UpdatedAt:          pgutil.TimestamptzToTime(dbSession.UpdatedAt),
+		ExpiresAt:          pgutil.TimestamptzToTime(dbSession.ExpiresAt),
+		IsPendingSyncReset: dbSession.IsPendingSyncReset,
+		AppVersion:         dbSession.AppVersion.String,
 	}
+}
+
+// UpdateSession updates mutable session fields (currently the pending sync
+// reset flag) for a session owned by the given user.
+func (s *Service) UpdateSession(ctx context.Context, userID, sessionID string, isPendingSyncReset *bool) (*Session, error) {
+	sessionUUID, err := pgutil.StringToUUID(sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid session ID: %w", err)
+	}
+	userUUID, err := pgutil.StringToUUID(userID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid user ID: %w", err)
+	}
+
+	params := sqlc.UpdateSessionParams{
+		ID:     sessionUUID,
+		UserId: userUUID,
+	}
+	if isPendingSyncReset != nil {
+		params.IsPendingSyncReset = pgtype.Bool{Bool: *isPendingSyncReset, Valid: true}
+	}
+
+	dbSession, err := s.queries.UpdateSession(ctx, params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update session: %w", err)
+	}
+
+	return sessionFromDB(dbSession), nil
 }

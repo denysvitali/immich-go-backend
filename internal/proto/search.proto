@@ -69,6 +69,30 @@ service SearchService {
       get: "/api/search"
     };
   }
+
+  // Search random assets
+  rpc SearchRandom(SearchRandomRequest) returns (SearchRandomResponse) {
+    option (google.api.http) = {
+      post: "/api/search/random"
+      body: "*"
+    };
+  }
+
+  // Search large assets
+  rpc SearchLargeAssets(SearchLargeAssetsRequest) returns (SearchLargeAssetsResponse) {
+    option (google.api.http) = {
+      post: "/api/search/large-assets"
+      body: "*"
+    };
+  }
+
+  // Search asset statistics
+  rpc SearchAssetStatistics(SearchAssetStatisticsRequest) returns (SearchAssetStatisticsResponse) {
+    option (google.api.http) = {
+      post: "/api/search/statistics"
+      body: "*"
+    };
+  }
 }
 
 // Search response DTO
@@ -342,4 +366,52 @@ message SearchResponse {
   repeated AssetResponseDto assets = 1;
   repeated AlbumResponseDto albums = 2;
   int32 total = 3;
+}
+
+message SearchRandomRequest {
+  optional int32 size = 1;
+  optional AssetType type = 2;
+  optional bool is_favorite = 3;
+  optional string city = 4;
+  optional string state = 5;
+  optional string country = 6;
+  optional string make = 7;
+  optional string model = 8;
+  optional string lens_model = 9;
+  optional string library_id = 10;
+  optional string device_id = 11;
+  optional google.protobuf.Timestamp taken_after = 12;
+  optional google.protobuf.Timestamp taken_before = 13;
+  optional bool with_deleted = 14;
+}
+
+message SearchRandomResponse {
+  repeated AssetResponseDto assets = 1;
+}
+
+message SearchLargeAssetsRequest {
+  optional int32 size = 1;
+}
+
+message SearchLargeAssetsResponse {
+  repeated AssetResponseDto assets = 1;
+}
+
+message SearchAssetStatisticsRequest {
+  optional AssetType type = 1;
+  optional bool is_favorite = 2;
+  optional string city = 3;
+  optional string state = 4;
+  optional string country = 5;
+  optional string make = 6;
+  optional string model = 7;
+  optional string lens_model = 8;
+  optional string library_id = 9;
+  optional string device_id = 10;
+  optional google.protobuf.Timestamp taken_after = 11;
+  optional google.protobuf.Timestamp taken_before = 12;
+}
+
+message SearchAssetStatisticsResponse {
+  int64 total = 1;
 }

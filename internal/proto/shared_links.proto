@@ -25,6 +25,14 @@ service SharedLinksService {
     };
   }
 
+  // Login to a shared link with password
+  rpc SharedLinkLogin(SharedLinkLoginRequest) returns (SharedLinkResponse) {
+    option (google.api.http) = {
+      post: "/api/shared-links/login"
+      body: "credentials"
+    };
+  }
+
   // Get my shared link
   rpc GetMySharedLink(GetMySharedLinkRequest) returns (SharedLinkResponse) {
     option (google.api.http) = {
@@ -99,6 +107,20 @@ message CreateSharedLinkRequest {
   optional bool allow_download = 7;
   optional bool show_metadata = 8;
   optional string password = 9;
+}
+
+message SharedLinkLoginRequest {
+  // Request body carrying the shared link password.
+  SharedLinkLoginDto credentials = 1;
+  // Shared link key, passed as a query parameter.
+  optional string key = 2;
+  // Shared link slug, passed as a query parameter.
+  optional string slug = 3;
+}
+
+// Body of the shared link login request.
+message SharedLinkLoginDto {
+  string password = 1;
 }
 
 // Request to get my shared link

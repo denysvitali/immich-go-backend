@@ -140,6 +140,102 @@ func (s *Service) GetAssetDuplicates(ctx context.Context, userID string) (*GetAs
 	}, nil
 }
 
+// DeleteDuplicate clears a duplicate group for the user.
+func (s *Service) DeleteDuplicate(ctx context.Context, userID string, duplicateID string) error {
+	userUUID, err := parseUserUUID(userID)
+	if err != nil {
+		return err
+	}
+	return s.clearDuplicateGroup(ctx, userUUID, duplicateID)
+}
+
+// DeleteDuplicates clears the supplied duplicate groups. If no IDs are supplied,
+// all currently detected duplicate groups for the user are cleared.
+func (s *Service) DeleteDuplicates(ctx context.Context, userID string, duplicateIDs []string) error {
+	if len(duplicateIDs) == 0 {
+		groups, err := s.GetAssetDuplicates(ctx, userID)
+		if err != nil {
+			return err
+		}
+		for _, group := range groups.Duplicates {
+			duplicateIDs = append(duplicateIDs, group.DuplicateID)
+		}
+	}
+
+	userUUID, err := parseUserUUID(userID)
+	if err != nil {
+		return err
+	}
+	for _, duplicateID := range duplicateIDs {
+		if err := s.clearDuplicateGroup(ctx, userUUID, duplicateID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ResolveDuplicates trashes selected assets and clears the associated duplicate groups.
+func (s *Service) ResolveDuplicates(ctx context.Context, userID string, groups []*ResolveDuplicateGroup) ([]*DuplicateBulkIDResponse, error) {
+	userUUID, err := parseUserUUID(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	results := make([]*DuplicateBulkIDResponse, 0, len(groups))
+	for _, group := range groups {
+		result := &DuplicateBulkIDResponse{ID: group.DuplicateID, Success: true}
+
+		assetIDs, err := parseAssetUUIDs(group.TrashAssetIDs)
+		if err != nil {
+			result.Success = false
+			result.Error = "invalid_asset_id"
+			result.ErrorMessage = err.Error()
+			results = append(results, result)
+			continue
+		}
+
+		if len(assetIDs) > 0 {
+			if err := s.db.TrashAssetsByIDsAndOwner(ctx, sqlc.TrashAssetsByIDsAndOwnerParams{
+				OwnerId: userUUID,
+				Column2: assetIDs,
+			}); err != nil {
+				result.Success = false
+				result.Error = "trash_failed"
+				result.ErrorMessage = "failed to trash duplicate assets"
+				results = append(results, result)
+				continue
+			}
+		}
+
+		if err := s.clearDuplicateGroup(ctx, userUUID, group.DuplicateID); err != nil {
+			result.Success = false
+			result.Error = "clear_failed"
+			result.ErrorMessage = "failed to clear duplicate group"
+		}
+		results = append(results, result)
+	}
+
+	return results, nil
+}
+
+func (s *Service) clearDuplicateGroup(ctx context.Context, userUUID pgtype.UUID, duplicateID string) error {
+	if parsed, err := uuid.Parse(duplicateID); err == nil {
+		return s.db.ClearDuplicateGroupByID(ctx, sqlc.ClearDuplicateGroupByIDParams{
+			OwnerId:     userUUID,
+			DuplicateId: pgtype.UUID{Bytes: parsed, Valid: true},
+		})
+	}
+
+	checksum, err := hex.DecodeString(duplicateID)
+	if err != nil {
+		return fmt.Errorf("invalid duplicate ID: %w", err)
+	}
+	return s.db.ClearDuplicateGroupByChecksum(ctx, sqlc.ClearDuplicateGroupByChecksumParams{
+		OwnerId:  userUUID,
+		Checksum: checksum,
+	})
+}
+
 // FindDuplicatesByChecksum finds assets with identical checksums
 func (s *Service) FindDuplicatesByChecksum(ctx context.Context, userID string, checksum string) ([]*DuplicateAsset, error) {
 	ctx, span := tracer.Start(ctx, "duplicates.find_duplicates_by_checksum",
@@ -259,6 +355,19 @@ type GetAssetDuplicatesResponse struct {
 	Duplicates []*DuplicateGroup
 }
 
+type ResolveDuplicateGroup struct {
+	DuplicateID   string
+	KeepAssetIDs  []string
+	TrashAssetIDs []string
+}
+
+type DuplicateBulkIDResponse struct {
+	ID           string
+	Success      bool
+	Error        string
+	ErrorMessage string
+}
+
 type DuplicateGroup struct {
 	DuplicateID string
 	Assets      []*DuplicateAsset
@@ -277,10 +386,11 @@ type DuplicateAsset struct {
 type AssetType int32
 
 const (
-	AssetType_IMAGE AssetType = 0
-	AssetType_VIDEO AssetType = 1
-	AssetType_AUDIO AssetType = 2
-	AssetType_OTHER AssetType = 3
+	AssetType_UNSPECIFIED AssetType = 0
+	AssetType_IMAGE       AssetType = 1
+	AssetType_VIDEO       AssetType = 2
+	AssetType_AUDIO       AssetType = 3
+	AssetType_OTHER       AssetType = 4
 )
 
 // convertAssetType converts database asset type string to AssetType enum
@@ -295,4 +405,24 @@ func (s *Service) convertAssetType(assetType string) AssetType {
 	default:
 		return AssetType_OTHER
 	}
+}
+
+func parseUserUUID(userID string) (pgtype.UUID, error) {
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("invalid user ID: %w", err)
+	}
+	return pgtype.UUID{Bytes: uid, Valid: true}, nil
+}
+
+func parseAssetUUIDs(assetIDs []string) ([]pgtype.UUID, error) {
+	ids := make([]pgtype.UUID, 0, len(assetIDs))
+	for _, assetID := range assetIDs {
+		parsed, err := uuid.Parse(assetID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid asset ID %q: %w", assetID, err)
+		}
+		ids = append(ids, pgtype.UUID{Bytes: parsed, Valid: true})
+	}
+	return ids, nil
 }

@@ -2,6 +2,11 @@ package server
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
 
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 	"google.golang.org/grpc/codes"
@@ -119,18 +124,88 @@ func (s *Server) GetApkLinks(ctx context.Context, _ *emptypb.Empty) (*immichv1.S
 
 // CheckVersion checks for available version updates
 func (s *Server) CheckVersion(ctx context.Context, _ *emptypb.Empty) (*immichv1.ServerVersionCheckResponse, error) {
-	// In production, this would check against an external version API
-	// For now, return current version info without checking for updates
 	currentVersion := Version
 	if currentVersion == "" {
-		currentVersion = "1.0.0"
+		currentVersion = "dev"
+	}
+
+	checkCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(checkCtx, http.MethodGet, "https://api.github.com/repos/immich-app/immich/releases/latest", nil)
+	if err != nil {
+		return nil, SanitizedInternal(ctx, "failed to create version check request", err)
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("User-Agent", "immich-go-backend/"+currentVersion)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, status.Error(codes.Unavailable, "version check unavailable")
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, status.Errorf(codes.Unavailable, "version check failed with status %d", resp.StatusCode)
+	}
+
+	var latest struct {
+		TagName string `json:"tag_name"`
+		HTMLURL string `json:"html_url"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&latest); err != nil {
+		return nil, SanitizedInternal(ctx, "failed to decode version check response", err)
+	}
+	if latest.TagName == "" {
+		return nil, status.Error(codes.Unavailable, "version check response did not include a release tag")
+	}
+	if latest.HTMLURL == "" {
+		latest.HTMLURL = "https://github.com/immich-app/immich/releases/latest"
 	}
 
 	return &immichv1.ServerVersionCheckResponse{
 		CurrentVersion:    currentVersion,
-		LatestVersion:     currentVersion, // Would be fetched from GitHub releases
-		IsUpdateAvailable: false,
-		ReleaseNotesUrl:   "https://github.com/immich-app/immich/releases",
+		LatestVersion:     latest.TagName,
+		IsUpdateAvailable: isVersionNewer(latest.TagName, currentVersion),
+		ReleaseNotesUrl:   latest.HTMLURL,
 		CheckedAt:         timestamppb.Now(),
 	}, nil
+}
+
+func isVersionNewer(latest, current string) bool {
+	latestParts, latestOK := parseVersionParts(latest)
+	currentParts, currentOK := parseVersionParts(current)
+	if !latestOK || !currentOK {
+		return false
+	}
+
+	for i := 0; i < len(latestParts) && i < len(currentParts); i++ {
+		if latestParts[i] > currentParts[i] {
+			return true
+		}
+		if latestParts[i] < currentParts[i] {
+			return false
+		}
+	}
+	return false
+}
+
+func parseVersionParts(version string) ([3]int, bool) {
+	var parts [3]int
+	v := strings.TrimPrefix(strings.TrimSpace(version), "v")
+	if idx := strings.IndexAny(v, "-+"); idx >= 0 {
+		v = v[:idx]
+	}
+	fields := strings.Split(v, ".")
+	if len(fields) < 2 {
+		return parts, false
+	}
+	for i := 0; i < len(parts) && i < len(fields); i++ {
+		n, err := strconv.Atoi(fields[i])
+		if err != nil {
+			return parts, false
+		}
+		parts[i] = n
+	}
+	return parts, true
 }

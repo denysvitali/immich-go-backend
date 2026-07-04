@@ -39,6 +39,14 @@ service SessionsService {
     };
   }
 
+  // Update session
+  rpc UpdateSession(UpdateSessionRequest) returns (SessionResponse) {
+    option (google.api.http) = {
+      put: "/api/sessions/{id}"
+      body: "*"
+    };
+  }
+
   // Lock session
   rpc LockSession(LockSessionRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {
@@ -75,6 +83,11 @@ message LockSessionRequest {
   string id = 1;
 }
 
+message UpdateSessionRequest {
+  string id = 1;
+  optional bool is_pending_sync_reset = 2;
+}
+
 // Session response
 message SessionResponse {
   string id = 1;
@@ -84,4 +97,7 @@ message SessionResponse {
   google.protobuf.Timestamp created_at = 5;
   google.protobuf.Timestamp updated_at = 6;
   bool current = 7;
+  optional string app_version = 8;
+  optional google.protobuf.Timestamp expires_at = 9;
+  bool is_pending_sync_reset = 10;
 }

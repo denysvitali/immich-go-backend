@@ -43,15 +43,7 @@ func (s *Server) GetSessions(ctx context.Context, _ *emptypb.Empty) (*immichv1.G
 	}
 
 	for i, session := range sessions {
-		response.Sessions[i] = &immichv1.SessionResponse{
-			Id:         session.ID,
-			UserId:     session.UserID,
-			DeviceType: session.DeviceType,
-			DeviceOs:   session.DeviceOS,
-			CreatedAt:  timestamppb.New(session.CreatedAt),
-			UpdatedAt:  timestamppb.New(session.UpdatedAt),
-			Current:    currentSession != nil && currentSession.ID == session.ID,
-		}
+		response.Sessions[i] = sessionToProto(session, currentSession != nil && currentSession.ID == session.ID)
 	}
 
 	return response, nil
@@ -112,6 +104,54 @@ func (s *Server) DeleteAllSessions(ctx context.Context, _ *emptypb.Empty) (*empt
 	}
 
 	return &emptypb.Empty{}, nil
+}
+
+// UpdateSession updates a session owned by the current user (e.g. the
+// isPendingSyncReset flag used by the mobile sync protocol).
+func (s *Server) UpdateSession(ctx context.Context, req *immichv1.UpdateSessionRequest) (*immichv1.SessionResponse, error) {
+	userID, err := auth.GetUserIDFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	session, err := s.service.GetSessionByID(ctx, req.Id)
+	if err != nil {
+		return nil, err
+	}
+
+	if session.UserID != userID.String() {
+		return nil, auth.NewAuthError(auth.ErrUnauthorized, "User does not own this session", nil)
+	}
+
+	updated, err := s.service.UpdateSession(ctx, userID.String(), req.Id, req.IsPendingSyncReset)
+	if err != nil {
+		return nil, err
+	}
+
+	currentSession, _ := s.service.GetCurrentSession(ctx)
+
+	return sessionToProto(updated, currentSession != nil && currentSession.ID == updated.ID), nil
+}
+
+// sessionToProto converts a service session to its proto representation.
+func sessionToProto(session *Session, current bool) *immichv1.SessionResponse {
+	response := &immichv1.SessionResponse{
+		Id:                 session.ID,
+		UserId:             session.UserID,
+		DeviceType:         session.DeviceType,
+		DeviceOs:           session.DeviceOS,
+		CreatedAt:          timestamppb.New(session.CreatedAt),
+		UpdatedAt:          timestamppb.New(session.UpdatedAt),
+		Current:            current,
+		IsPendingSyncReset: session.IsPendingSyncReset,
+	}
+	if session.AppVersion != "" {
+		response.AppVersion = &session.AppVersion
+	}
+	if !session.ExpiresAt.IsZero() {
+		response.ExpiresAt = timestamppb.New(session.ExpiresAt)
+	}
+	return response
 }
 
 // LockSession locks a specific session

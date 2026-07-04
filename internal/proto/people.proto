@@ -40,6 +40,21 @@ service PeopleService {
     };
   }
 
+  // Delete people
+  rpc DeletePeople(DeletePeopleRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/api/people"
+      body: "*"
+    };
+  }
+
+  // Delete person
+  rpc DeletePerson(DeletePersonRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/api/people/{id}"
+    };
+  }
+
   // Update person
   rpc UpdatePerson(UpdatePersonRequest) returns (PersonResponse) {
     option (google.api.http) = {
@@ -110,6 +125,14 @@ message UpdatePeopleResponse {
 
 // Request to get person
 message GetPersonRequest {
+  string id = 1;
+}
+
+message DeletePeopleRequest {
+  repeated string ids = 1;
+}
+
+message DeletePersonRequest {
   string id = 1;
 }
 

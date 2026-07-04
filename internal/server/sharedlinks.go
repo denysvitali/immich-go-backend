@@ -2,11 +2,14 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -367,4 +370,44 @@ func sharedLinkError(ctx context.Context, err error) error {
 	default:
 		return SanitizedInternal(ctx, "shared link operation failed", err)
 	}
+}
+
+// SharedLinkLogin authenticates against a password-protected shared link.
+// On success it returns the shared link (with its assets) and sets a cookie
+// so subsequent requests can reuse the proven access.
+func (s *Server) SharedLinkLogin(ctx context.Context, request *immichv1.SharedLinkLoginRequest) (*immichv1.SharedLinkResponse, error) {
+	key := request.GetKey()
+	if key == "" {
+		key = request.GetSlug()
+	}
+	if key == "" {
+		return nil, status.Error(codes.InvalidArgument, "shared link key is required")
+	}
+
+	password := request.GetCredentials().GetPassword()
+
+	link, err := s.sharedLinksService.GetSharedLinkByKey(ctx, key, password)
+	if err != nil {
+		return nil, sharedLinkError(ctx, err)
+	}
+
+	response := convertSharedLinkToProto(link)
+
+	assets, err := s.sharedLinksService.GetSharedLinkAssets(ctx, key, password)
+	if err != nil {
+		return nil, sharedLinkError(ctx, err)
+	}
+	assetIDs := make([]string, len(assets))
+	for i, asset := range assets {
+		assetIDs[i] = uuid.UUID(asset.ID.Bytes).String()
+	}
+	response.AssetIds = assetIDs
+	response.Assets = int32(len(assetIDs)) //nolint:gosec // asset count fits in int32
+
+	// Upstream returns 201 and sets a cookie proving shared link access.
+	_ = grpc.SetHeader(ctx, metadata.Pairs("x-http-code", "201"))
+	_ = grpc.SetHeader(ctx, metadata.Pairs("Set-Cookie", fmt.Sprintf(
+		"immich_shared_link_token=%s; Path=/; HttpOnly; SameSite=Lax; Max-Age=%d", link.Key, int(24*time.Hour/time.Second))))
+
+	return response, nil
 }

@@ -322,3 +322,67 @@ func (s *Server) convertAlbumToProto(album sqlc.Album) *immichv1.Album {
 
 	return protoAlbum
 }
+
+// AddAssetsToAlbums adds a set of assets to multiple albums owned by the
+// current user in one call (upstream PUT /albums/assets).
+func (s *Server) AddAssetsToAlbums(ctx context.Context, request *immichv1.AddAssetsToAlbumsRequest) (*immichv1.AlbumsAddAssetsResponseDto, error) {
+	claims, err := s.claimsFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	userID, err := pgutil.StringToUUID(claims.UserID)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid user ID: %v", err)
+	}
+
+	if len(request.GetAlbumIds()) == 0 || len(request.GetAssetIds()) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "albumIds and assetIds must not be empty")
+	}
+
+	failure := func(reason string) (*immichv1.AlbumsAddAssetsResponseDto, error) {
+		return &immichv1.AlbumsAddAssetsResponseDto{
+			Success: false,
+			Error:   util.Ptr(reason),
+		}, nil
+	}
+
+	albumUUIDs := make([]pgtype.UUID, 0, len(request.GetAlbumIds()))
+	for _, albumID := range request.GetAlbumIds() {
+		albumUUID, err := pgutil.StringToUUID(albumID)
+		if err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid album ID: %v", err)
+		}
+
+		// Verify the album exists and is owned by the current user.
+		album, err := s.db.GetAlbum(ctx, albumUUID)
+		if err != nil {
+			return failure("not_found")
+		}
+		if album.OwnerId != userID {
+			return failure("no_permission")
+		}
+		albumUUIDs = append(albumUUIDs, albumUUID)
+	}
+
+	assetUUIDs := make([]pgtype.UUID, 0, len(request.GetAssetIds()))
+	for _, assetID := range request.GetAssetIds() {
+		assetUUID, err := pgutil.StringToUUID(assetID)
+		if err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid asset ID: %v", err)
+		}
+		assetUUIDs = append(assetUUIDs, assetUUID)
+	}
+
+	for _, albumUUID := range albumUUIDs {
+		for _, assetUUID := range assetUUIDs {
+			if err := s.db.AddAssetToAlbum(ctx, sqlc.AddAssetToAlbumParams{
+				AlbumsId: albumUUID,
+				AssetsId: assetUUID,
+			}); err != nil {
+				return failure("unknown")
+			}
+		}
+	}
+
+	return &immichv1.AlbumsAddAssetsResponseDto{Success: true}, nil
+}

@@ -4,6 +4,7 @@ package immich.v1;
 
 import "common.proto";
 import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
 
 option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
 
@@ -13,6 +14,29 @@ service DuplicatesService {
   rpc GetAssetDuplicates(GetAssetDuplicatesRequest) returns (GetAssetDuplicatesResponse) {
     option (google.api.http) = {
       get: "/api/duplicates"
+    };
+  }
+
+  // Delete duplicate groups
+  rpc DeleteDuplicates(DeleteDuplicatesRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/api/duplicates"
+      body: "*"
+    };
+  }
+
+  // Resolve duplicate groups
+  rpc ResolveDuplicates(ResolveDuplicatesRequest) returns (ResolveDuplicatesResponse) {
+    option (google.api.http) = {
+      post: "/api/duplicates/resolve"
+      body: "*"
+    };
+  }
+
+  // Delete one duplicate group
+  rpc DeleteDuplicate(DeleteDuplicateRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/api/duplicates/{id}"
     };
   }
 }
@@ -42,4 +66,33 @@ message DuplicateAsset {
   AssetType type = 5;
   string original_path = 6;
   int64 file_size_in_byte = 7;
+}
+
+message DeleteDuplicatesRequest {
+  repeated string ids = 1;
+}
+
+message DeleteDuplicateRequest {
+  string id = 1;
+}
+
+message DuplicateResolveGroup {
+  string duplicate_id = 1;
+  repeated string keep_asset_ids = 2;
+  repeated string trash_asset_ids = 3;
+}
+
+message ResolveDuplicatesRequest {
+  repeated DuplicateResolveGroup groups = 1;
+}
+
+message DuplicateBulkIdResponse {
+  string id = 1;
+  bool success = 2;
+  optional string error = 3;
+  optional string error_message = 4;
+}
+
+message ResolveDuplicatesResponse {
+  repeated DuplicateBulkIdResponse results = 1;
 }

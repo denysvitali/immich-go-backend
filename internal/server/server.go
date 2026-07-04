@@ -202,7 +202,7 @@ func NewServer(cfg *config.Config, db *db.Conn) (*Server, error) {
 	activityService := activity.NewServer(db.Queries)
 
 	// Initialize new services
-	adminService, err := admin.NewService(db.Queries, cfg)
+	adminService, err := admin.NewService(db.Queries, cfg, storageService)
 	if err != nil {
 		return nil, err
 	}
@@ -407,6 +407,16 @@ func (s *Server) ServeGRPC(listener net.Listener) error {
 	return s.grpcServer.Serve(listener)
 }
 
+// incomingHeaderMatcher forwards the default grpc-gateway headers plus the
+// Immich-specific x-api-key header so API-key-authenticated endpoints (e.g.
+// GET /api-keys/me) can inspect the key used for the current request.
+func incomingHeaderMatcher(key string) (string, bool) {
+	if strings.EqualFold(key, "x-api-key") {
+		return "x-api-key", true
+	}
+	return runtime.DefaultHeaderMatcher(key)
+}
+
 func httpResponseModifier(ctx context.Context, w http.ResponseWriter, p proto.Message) error {
 	md, ok := runtime.ServerMetadataFromContext(ctx)
 	if !ok {
@@ -459,6 +469,7 @@ func (s *Server) HTTPHandler() http.Handler {
 			},
 		}),
 		runtime.WithMiddlewares(s.authContextMiddleware),
+		runtime.WithIncomingHeaderMatcher(incomingHeaderMatcher),
 		runtime.WithErrorHandler(loggingHTTPErrorHandler),
 		runtime.WithForwardResponseOption(httpResponseModifier),
 	)

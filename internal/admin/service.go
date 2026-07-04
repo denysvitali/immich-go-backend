@@ -7,6 +7,7 @@ import (
 
 	"github.com/denysvitali/immich-go-backend/internal/config"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
+	"github.com/denysvitali/immich-go-backend/internal/storage"
 	"github.com/denysvitali/immich-go-backend/internal/telemetry"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -20,8 +21,9 @@ var tracer = telemetry.GetTracer("admin")
 
 // Service handles administrative operations
 type Service struct {
-	db     *sqlc.Queries
-	config *config.Config
+	db      *sqlc.Queries
+	config  *config.Config
+	storage *storage.Service
 
 	// Metrics
 	operationCounter  metric.Int64Counter
@@ -29,7 +31,7 @@ type Service struct {
 }
 
 // NewService creates a new admin service
-func NewService(queries *sqlc.Queries, cfg *config.Config) (*Service, error) {
+func NewService(queries *sqlc.Queries, cfg *config.Config, storageSvc *storage.Service) (*Service, error) {
 	meter := telemetry.GetMeter()
 
 	operationCounter, err := meter.Int64Counter(
@@ -51,6 +53,7 @@ func NewService(queries *sqlc.Queries, cfg *config.Config) (*Service, error) {
 	return &Service{
 		db:                queries,
 		config:            cfg,
+		storage:           storageSvc,
 		operationCounter:  operationCounter,
 		operationDuration: operationDuration,
 	}, nil

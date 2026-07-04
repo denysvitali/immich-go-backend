@@ -25,29 +25,56 @@ func NewService(db *sqlc.Queries) *Service {
 
 // SearchMetadata searches assets by metadata
 func (s *Service) SearchMetadata(ctx context.Context, userID uuid.UUID, req MetadataSearchRequest) (*SearchResult, error) {
-	// Build query parameters
-	params := sqlc.SearchAssetsParams{
-		OwnerId: pgutil.UUIDToPgtype(userID),
-		Column2: pgtype.Text{String: req.Query, Valid: true},
-		Limit:   int32(req.Size),
-		Offset:  int32(req.Page * req.Size),
+	if req.Size <= 0 {
+		req.Size = 30
+	}
+	if req.Page < 0 {
+		req.Page = 0
 	}
 
-	// Note: Our basic search only supports text search for now
-	// TODO: Add support for other metadata filters
-
 	// Execute search
-	assets, err := s.db.SearchAssets(ctx, params)
+	params := sqlc.SearchAssetsFilteredParams{
+		OwnerID:     pgutil.UUIDToPgtype(userID),
+		Query:       optionalText(req.Query),
+		Type:        optionalText(req.Type),
+		IsFavorite:  optionalBool(req.IsFavorite),
+		IsArchived:  optionalBool(req.IsArchived),
+		City:        optionalText(req.City),
+		State:       optionalText(req.State),
+		Country:     optionalText(req.Country),
+		Make:        optionalText(req.Make),
+		Model:       optionalText(req.Model),
+		LensModel:   optionalText(req.LensModel),
+		LibraryID:   optionalUUID(req.LibraryID),
+		DeviceID:    optionalText(req.DeviceID),
+		TakenAfter:  optionalTime(req.TakenAfter),
+		TakenBefore: optionalTime(req.TakenBefore),
+		Limit:       int32(req.Size),
+		Offset:      int32(req.Page * req.Size),
+	}
+	assets, err := s.db.SearchAssetsFiltered(ctx, params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search assets: %w", err)
 	}
 
 	// Get total count
-	countParams := sqlc.CountSearchAssetsParams{
-		OwnerId: params.OwnerId,
-		Column2: params.Column2,
-	}
-	count, err := s.db.CountSearchAssets(ctx, countParams)
+	count, err := s.db.CountSearchAssetsFilteredForPage(ctx, sqlc.CountSearchAssetsFilteredForPageParams{
+		OwnerID:     params.OwnerID,
+		Query:       params.Query,
+		Type:        params.Type,
+		IsFavorite:  params.IsFavorite,
+		IsArchived:  params.IsArchived,
+		City:        params.City,
+		State:       params.State,
+		Country:     params.Country,
+		Make:        params.Make,
+		Model:       params.Model,
+		LensModel:   params.LensModel,
+		LibraryID:   params.LibraryID,
+		DeviceID:    params.DeviceID,
+		TakenAfter:  params.TakenAfter,
+		TakenBefore: params.TakenBefore,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to count search results: %w", err)
 	}
@@ -348,6 +375,9 @@ type MetadataSearchRequest struct {
 	Country     string    `json:"country,omitempty"`
 	Make        string    `json:"make,omitempty"`
 	Model       string    `json:"model,omitempty"`
+	LensModel   string    `json:"lensModel,omitempty"`
+	LibraryID   string    `json:"libraryId,omitempty"`
+	DeviceID    string    `json:"deviceId,omitempty"`
 	TakenAfter  time.Time `json:"takenAfter,omitempty"`
 	TakenBefore time.Time `json:"takenBefore,omitempty"`
 	PersonIDs   []string  `json:"personIds,omitempty"`
@@ -452,4 +482,36 @@ type ExploreCategory struct {
 	Name      string   `json:"name"`
 	AssetIDs  []string `json:"assetIds"`
 	Thumbnail string   `json:"thumbnail"`
+}
+
+func optionalText(value string) pgtype.Text {
+	if value == "" {
+		return pgtype.Text{}
+	}
+	return pgtype.Text{String: value, Valid: true}
+}
+
+func optionalBool(value *bool) pgtype.Bool {
+	if value == nil {
+		return pgtype.Bool{}
+	}
+	return pgtype.Bool{Bool: *value, Valid: true}
+}
+
+func optionalTime(value time.Time) pgtype.Timestamptz {
+	if value.IsZero() {
+		return pgtype.Timestamptz{}
+	}
+	return pgtype.Timestamptz{Time: value, Valid: true}
+}
+
+func optionalUUID(value string) pgtype.UUID {
+	if value == "" {
+		return pgtype.UUID{}
+	}
+	id, err := uuid.Parse(value)
+	if err != nil {
+		return pgtype.UUID{}
+	}
+	return pgtype.UUID{Bytes: id, Valid: true}
 }

@@ -124,6 +124,51 @@ service AdminService {
       body: "*"
     };
   }
+
+  // List database backups
+  rpc ListDatabaseBackups(google.protobuf.Empty) returns (DatabaseBackupListResponseDto) {
+    option (google.api.http) = {
+      get: "/api/admin/database-backups"
+    };
+  }
+
+  // Delete database backups
+  rpc DeleteDatabaseBackup(DatabaseBackupDeleteDto) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/api/admin/database-backups"
+      body: "*"
+    };
+  }
+
+  // Start database restore flow
+  rpc StartDatabaseRestoreFlow(google.protobuf.Empty) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/api/admin/database-backups/start-restore"
+      body: "*"
+    };
+  }
+
+  // Upload a database backup
+  rpc UploadDatabaseBackup(DatabaseBackupUploadDto) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/api/admin/database-backups/upload"
+      body: "*"
+    };
+  }
+
+  // Download a database backup
+  rpc DownloadDatabaseBackup(DownloadDatabaseBackupRequest) returns (DownloadDatabaseBackupResponse) {
+    option (google.api.http) = {
+      get: "/api/admin/database-backups/{filename}"
+    };
+  }
+
+  // Detect prior install artifacts in storage folders
+  rpc DetectPriorInstall(google.protobuf.Empty) returns (MaintenanceDetectInstallResponseDto) {
+    option (google.api.http) = {
+      get: "/api/admin/maintenance/detect-install"
+    };
+  }
 }
 
 // Template response DTO
@@ -259,6 +304,56 @@ message RestoreUserAdminRequest {
 // Get user statistics admin request
 message GetUserStatisticsAdminRequest {
   string id = 1;
+}
+
+message DatabaseBackupDto {
+  string filename = 1;
+  int64 filesize = 2;
+  string timezone = 3;
+}
+
+message DatabaseBackupListResponseDto {
+  repeated DatabaseBackupDto backups = 1;
+}
+
+message DatabaseBackupDeleteDto {
+  repeated string backups = 1;
+}
+
+message DatabaseBackupUploadDto {
+  string filename = 1;
+  bytes data = 2;
+}
+
+message DownloadDatabaseBackupRequest {
+  string filename = 1;
+}
+
+message DownloadDatabaseBackupResponse {
+  bytes data = 1;
+  string content_type = 2;
+  string filename = 3;
+}
+
+enum StorageFolder {
+  STORAGE_FOLDER_UNSPECIFIED = 0;
+  STORAGE_FOLDER_ENCODED_VIDEO = 1;
+  STORAGE_FOLDER_LIBRARY = 2;
+  STORAGE_FOLDER_UPLOAD = 3;
+  STORAGE_FOLDER_PROFILE = 4;
+  STORAGE_FOLDER_THUMBS = 5;
+  STORAGE_FOLDER_BACKUPS = 6;
+}
+
+message MaintenanceDetectInstallStorageFolderDto {
+  StorageFolder folder = 1;
+  int64 files = 2;
+  bool readable = 3;
+  bool writable = 4;
+}
+
+message MaintenanceDetectInstallResponseDto {
+  repeated MaintenanceDetectInstallStorageFolderDto storage = 1;
 }
 
 // Get user sessions admin request

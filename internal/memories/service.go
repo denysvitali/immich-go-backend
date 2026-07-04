@@ -417,3 +417,14 @@ func (s *Service) GenerateMemories(ctx context.Context, userID string) error {
 	// Implementation requires job queue system (not yet available)
 	return fmt.Errorf("memory generation requires job queue system implementation")
 }
+
+// CountMemories returns the total number of (non-deleted) memories owned by
+// the given user.
+func (s *Service) CountMemories(ctx context.Context, userID string) (int64, error) {
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		return 0, err
+	}
+
+	return s.queries.CountMemories(ctx, pgtype.UUID{Bytes: uid, Valid: true})
+}

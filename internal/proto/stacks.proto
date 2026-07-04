@@ -54,6 +54,13 @@ service StacksService {
       body: "*"
     };
   }
+
+  // Remove asset from stack
+  rpc RemoveAssetFromStack(RemoveAssetFromStackRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/stacks/{id}/assets/{asset_id}"
+    };
+  }
 }
 
 // Request to delete stacks
@@ -91,6 +98,11 @@ message GetStackRequest {
 message UpdateStackRequest {
   string id = 1;
   optional string primary_asset_id = 2;
+}
+
+message RemoveAssetFromStackRequest {
+  string id = 1;
+  string asset_id = 2;
 }
 
 // Stack response

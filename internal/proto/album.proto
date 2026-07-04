@@ -58,6 +58,14 @@ service AlbumService {
     };
   }
 
+  // Add assets to multiple albums
+  rpc AddAssetsToAlbums(AddAssetsToAlbumsRequest) returns (AlbumsAddAssetsResponseDto) {
+    option (google.api.http) = {
+      put: "/api/albums/assets"
+      body: "*"
+    };
+  }
+
   // Remove asset from album
   rpc RemoveAssetFromAlbum(RemoveAssetFromAlbumRequest) returns (RemoveAssetFromAlbumResponse) {
     option (google.api.http) = {
@@ -181,6 +189,16 @@ message BulkIdResponse {
   string id = 1;
   bool success = 2;
   optional string error = 3;
+}
+
+message AddAssetsToAlbumsRequest {
+  repeated string album_ids = 1;
+  repeated string asset_ids = 2;
+}
+
+message AlbumsAddAssetsResponseDto {
+  bool success = 1;
+  optional string error = 2;
 }
 
 // Add assets to album request

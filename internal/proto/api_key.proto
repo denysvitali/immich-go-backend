@@ -25,6 +25,13 @@ service ApiKeyService {
     };
   }
 
+  // Get the API key used for the current request
+  rpc GetMyApiKey(google.protobuf.Empty) returns (ApiKeyResponseDto) {
+    option (google.api.http) = {
+      get: "/api/api-keys/me"
+    };
+  }
+
   // Delete API key
   rpc DeleteApiKey(DeleteApiKeyRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {
@@ -46,6 +53,7 @@ service ApiKeyService {
       get: "/api/api-keys/{id}"
     };
   }
+
 }
 
 // API Key response DTO

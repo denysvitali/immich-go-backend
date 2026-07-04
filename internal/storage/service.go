@@ -361,6 +361,27 @@ func (s *Service) Download(ctx context.Context, path string) (io.ReadCloser, err
 	return s.backend.Download(ctx, path)
 }
 
+// Delete deletes data from the specified path.
+func (s *Service) Delete(ctx context.Context, path string) error {
+	ctx, span := tracer.Start(ctx, "storage.Delete",
+		trace.WithAttributes(attribute.String("storage.path", path)))
+	defer span.End()
+
+	return s.backend.Delete(ctx, path)
+}
+
+// List lists storage entries beneath the specified prefix.
+func (s *Service) List(ctx context.Context, prefix string, recursive bool) ([]FileInfo, error) {
+	ctx, span := tracer.Start(ctx, "storage.List",
+		trace.WithAttributes(
+			attribute.String("storage.prefix", prefix),
+			attribute.Bool("storage.recursive", recursive),
+		))
+	defer span.End()
+
+	return s.backend.List(ctx, prefix, recursive)
+}
+
 // UploadBytes uploads byte data to the specified path
 func (s *Service) UploadBytes(ctx context.Context, path string, data []byte, contentType string) error {
 	ctx, span := tracer.Start(ctx, "storage.UploadBytes",

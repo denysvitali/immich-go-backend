@@ -543,3 +543,67 @@ type StackResponse struct {
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 }
+
+// RemoveAssetFromStack removes a single asset from a stack after verifying
+// that the stack exists, is owned by the given user, and actually contains
+// the asset.
+func (s *Service) RemoveAssetFromStack(ctx context.Context, userID, stackID, assetID string) error {
+	ctx, span := tracer.Start(ctx, "stacks.remove_asset_from_stack",
+		trace.WithAttributes(
+			attribute.String("stack_id", stackID),
+			attribute.String("asset_id", assetID),
+		))
+	defer span.End()
+
+	start := time.Now()
+	defer func() {
+		s.operationDuration.Record(ctx, time.Since(start).Seconds(),
+			metric.WithAttributes(attribute.String("operation", "remove_asset_from_stack")))
+		s.operationCounter.Add(ctx, 1,
+			metric.WithAttributes(attribute.String("operation", "remove_asset_from_stack")))
+	}()
+
+	stackUUID, err := pgutil.StringToUUID(stackID)
+	if err != nil {
+		return fmt.Errorf("invalid stack ID: %w", err)
+	}
+	assetUUID, err := pgutil.StringToUUID(assetID)
+	if err != nil {
+		return fmt.Errorf("invalid asset ID: %w", err)
+	}
+	userUUID, err := pgutil.StringToUUID(userID)
+	if err != nil {
+		return fmt.Errorf("invalid user ID: %w", err)
+	}
+
+	// Verify the stack exists and is owned by the user.
+	stack, err := s.db.GetStack(ctx, stackUUID)
+	if err != nil {
+		return fmt.Errorf("stack not found: %w", err)
+	}
+	if stack.OwnerId != userUUID {
+		return fmt.Errorf("access denied: stack is not owned by the user")
+	}
+
+	// Verify the asset is actually part of this stack.
+	assets, err := s.db.GetStackAssets(ctx, stackUUID)
+	if err != nil {
+		return fmt.Errorf("failed to load stack assets: %w", err)
+	}
+	found := false
+	for _, asset := range assets {
+		if asset.ID == assetUUID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("asset not found: asset is not part of this stack")
+	}
+
+	if err := s.db.RemoveAssetsFromStack(ctx, []pgtype.UUID{assetUUID}); err != nil {
+		return fmt.Errorf("failed to remove asset from stack: %w", err)
+	}
+
+	return nil
+}

@@ -2,13 +2,18 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/denysvitali/immich-go-backend/internal/apikeys"
+	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -122,35 +127,67 @@ func (s *Server) UpdateApiKey(ctx context.Context, req *immichv1.UpdateApiKeyReq
 		return nil, status.Errorf(codes.InvalidArgument, "invalid user ID: %v", err)
 	}
 
-	// For now, return a successful response with the new name
-	// In a full implementation, this would update the database
-	pgUserID := pgtype.UUID{Bytes: userID, Valid: true}
-
-	// Get all API keys for the user to verify the key exists
-	keys, err := s.queries.GetApiKeysByUser(ctx, pgUserID)
+	keyID, err := uuid.Parse(req.Id)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to get API keys", err)
+		return nil, status.Error(codes.InvalidArgument, "invalid API key ID")
 	}
 
-	// Check if the key ID exists for this user
-	found := false
-	for _, key := range keys {
-		if uuid.UUID(key.ID.Bytes).String() == req.Id {
-			found = true
-			break
+	pgUserID := pgtype.UUID{Bytes: userID, Valid: true}
+	updated, err := s.queries.UpdateApiKeyName(ctx, sqlc.UpdateApiKeyNameParams{
+		ID:     pgtype.UUID{Bytes: keyID, Valid: true},
+		UserId: pgUserID,
+		Name:   req.GetName(),
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, status.Error(codes.NotFound, "API key not found")
+		}
+		return nil, SanitizedInternal(ctx, "failed to update API key", err)
+	}
+
+	return &immichv1.ApiKeyResponseDto{
+		Id:        uuid.UUID(updated.ID.Bytes).String(),
+		Name:      updated.Name,
+		CreatedAt: timestamppb.New(updated.CreatedAt.Time),
+		UpdatedAt: timestamppb.New(updated.UpdatedAt.Time),
+	}, nil
+}
+
+// GetMyApiKey returns the API key record used to authenticate the current
+// request. The raw key is taken from the x-api-key header (forwarded from the
+// HTTP gateway) and looked up by its hash, then verified to belong to the
+// authenticated user when claims are present.
+func (s *Server) GetMyApiKey(ctx context.Context, _ *emptypb.Empty) (*immichv1.ApiKeyResponseDto, error) {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "missing request metadata")
+	}
+
+	values := md.Get("x-api-key")
+	if len(values) == 0 || values[0] == "" {
+		return nil, status.Error(codes.InvalidArgument, "current request is not authenticated with an API key")
+	}
+	rawKey := strings.TrimPrefix(values[0], "immich_")
+
+	apiKeyService := apikeys.NewService(s.db.Queries)
+	apiKey, err := apiKeyService.ValidateAPIKey(ctx, rawKey)
+	if err != nil {
+		return nil, status.Error(codes.Unauthenticated, "invalid API key")
+	}
+
+	// When the request also carries user claims, make sure the key belongs
+	// to the same user.
+	if userID, err := s.getUserIDFromContext(ctx); err == nil {
+		if uuid.UUID(apiKey.UserId.Bytes) != userID {
+			return nil, status.Error(codes.PermissionDenied, "API key does not belong to the current user")
 		}
 	}
 
-	if !found {
-		return nil, status.Error(codes.NotFound, "API key not found")
-	}
-
-	// Return the "updated" API key
 	return &immichv1.ApiKeyResponseDto{
-		Id:        req.Id,
-		Name:      req.Name,
-		CreatedAt: timestamppb.Now(),
-		UpdatedAt: timestamppb.Now(),
+		Id:        uuid.UUID(apiKey.ID.Bytes).String(),
+		Name:      apiKey.Name,
+		CreatedAt: timestamppb.New(apiKey.CreatedAt.Time),
+		UpdatedAt: timestamppb.New(apiKey.UpdatedAt.Time),
 	}, nil
 }
 

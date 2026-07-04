@@ -355,3 +355,18 @@ func (s *Server) RemoveMemoryAssets(ctx context.Context, req *immichv1.RemoveMem
 		Responses: responses,
 	}, nil
 }
+
+// MemoriesStatistics returns aggregate statistics about the current user's memories.
+func (s *Server) MemoriesStatistics(ctx context.Context, _ *emptypb.Empty) (*immichv1.MemoryStatisticsResponse, error) {
+	claims, ok := auth.GetClaimsFromStdContext(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	}
+
+	total, err := s.service.CountMemories(ctx, claims.UserID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to count memories: %v", err)
+	}
+
+	return &immichv1.MemoryStatisticsResponse{Total: total}, nil
+}

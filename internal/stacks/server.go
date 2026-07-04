@@ -2,6 +2,7 @@ package stacks
 
 import (
 	"context"
+	"strings"
 
 	"github.com/denysvitali/immich-go-backend/internal/auth"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
@@ -186,4 +187,30 @@ func (s *Server) SearchStacks(ctx context.Context, request *immichv1.SearchStack
 	return &immichv1.SearchStacksResponse{
 		Stacks: stacks,
 	}, nil
+}
+
+// RemoveAssetFromStack removes a single asset from a stack owned by the
+// current user.
+func (s *Server) RemoveAssetFromStack(ctx context.Context, request *immichv1.RemoveAssetFromStackRequest) (*emptypb.Empty, error) {
+	claims, ok := auth.GetClaimsFromStdContext(ctx)
+	if !ok || claims == nil {
+		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	}
+
+	err := s.service.RemoveAssetFromStack(ctx, claims.UserID, request.GetId(), request.GetAssetId())
+	if err != nil {
+		msg := err.Error()
+		switch {
+		case strings.Contains(msg, "invalid "):
+			return nil, status.Error(codes.InvalidArgument, msg)
+		case strings.Contains(msg, "not found"):
+			return nil, status.Error(codes.NotFound, msg)
+		case strings.Contains(msg, "access denied"):
+			return nil, status.Error(codes.PermissionDenied, "access denied")
+		default:
+			return nil, status.Errorf(codes.Internal, "failed to remove asset from stack: %v", err)
+		}
+	}
+
+	return &emptypb.Empty{}, nil
 }

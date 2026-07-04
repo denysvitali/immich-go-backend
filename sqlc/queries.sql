@@ -512,6 +512,18 @@ RETURNING *;
 DELETE FROM api_keys
 WHERE id = $1 AND "userId" = $2;
 
+-- name: GetApiKeyByIDAndUser :one
+SELECT * FROM api_keys
+WHERE id = $1 AND "userId" = $2;
+
+-- name: UpdateApiKeyName :one
+UPDATE api_keys
+SET name = $3,
+    "updatedAt" = now(),
+    "updateId" = immich_uuid_v7()
+WHERE id = $1 AND "userId" = $2
+RETURNING *;
+
 -- Memory queries
 -- name: GetMemories :many
 SELECT * FROM memories
@@ -561,6 +573,10 @@ JOIN memories_assets_assets ma ON a.id = ma."assetsId"
 WHERE ma."memoriesId" = $1
 AND a."deletedAt" IS NULL
 ORDER BY a."fileCreatedAt" DESC;
+
+-- name: CountMemories :one
+SELECT COUNT(*) FROM memories
+WHERE "ownerId" = $1 AND "deletedAt" IS NULL;
 
 -- ============================================================================
 -- PEOPLE & FACES QUERIES
@@ -956,7 +972,7 @@ WHERE "userId" = $1 AND key = $2;
 -- name: SetUserMetadata :one
 INSERT INTO user_metadata ("userId", key, value)
 VALUES ($1, $2, $3)
-ON CONFLICT ("userId", key) DO UPDATE SET value = $3, "updatedAt" = now()
+ON CONFLICT ("userId", key) DO UPDATE SET value = $3
 RETURNING *;
 
 -- name: GetUserPreferences :many
@@ -1121,6 +1137,31 @@ ORDER BY a1."localDateTime" DESC;
 SELECT * FROM assets
 WHERE checksum = $1 AND "deletedAt" IS NULL;
 
+-- name: TrashAssetsByIDsAndOwner :exec
+UPDATE assets
+SET status = 'trashed',
+    "updatedAt" = now(),
+    "updateId" = immich_uuid_v7()
+WHERE "ownerId" = $1
+AND id = ANY($2::uuid[])
+AND "deletedAt" IS NULL;
+
+-- name: ClearDuplicateGroupByID :exec
+UPDATE assets
+SET "duplicateId" = NULL,
+    "updatedAt" = now(),
+    "updateId" = immich_uuid_v7()
+WHERE "ownerId" = $1 AND "duplicateId" = $2;
+
+-- name: ClearDuplicateGroupByChecksum :exec
+UPDATE assets
+SET "duplicateId" = NULL,
+    "updatedAt" = now(),
+    "updateId" = immich_uuid_v7()
+WHERE "ownerId" = $1
+AND checksum = $2
+AND "deletedAt" IS NULL;
+
 -- name: GetAssetsByFileSizeAndUser :many
 SELECT a.* FROM assets a
 JOIN exif e ON a.id = e."assetId"
@@ -1141,6 +1182,227 @@ AND status = 'active'
 AND visibility = 'timeline'
 ORDER BY "createdAt" DESC
 LIMIT $2;
+
+-- ============================================================================
+-- ASSET METADATA, EDITS, OCR, AND COPY HELPERS
+-- ============================================================================
+
+-- name: ListAssetMetadata :many
+SELECT * FROM asset_metadata
+WHERE "assetId" = $1
+ORDER BY key ASC;
+
+-- name: GetAssetMetadataByKey :one
+SELECT * FROM asset_metadata
+WHERE "assetId" = $1 AND key = $2;
+
+-- name: UpsertAssetMetadata :one
+INSERT INTO asset_metadata ("assetId", key, value)
+VALUES ($1, $2, $3)
+ON CONFLICT ("assetId", key) DO UPDATE
+SET value = EXCLUDED.value,
+    "updatedAt" = now()
+RETURNING *;
+
+-- name: DeleteAssetMetadata :exec
+DELETE FROM asset_metadata
+WHERE "assetId" = $1 AND key = $2;
+
+-- name: DeleteAllAssetMetadata :exec
+DELETE FROM asset_metadata
+WHERE "assetId" = $1;
+
+-- name: CopyAssetMetadata :exec
+INSERT INTO asset_metadata ("assetId", key, value)
+SELECT $2, asset_metadata.key, asset_metadata.value
+FROM asset_metadata
+WHERE asset_metadata."assetId" = $1
+ON CONFLICT ("assetId", key) DO UPDATE
+SET value = EXCLUDED.value,
+    "updatedAt" = now();
+
+-- name: GetAssetEdits :many
+SELECT * FROM asset_edits
+WHERE "assetId" = $1
+ORDER BY position ASC, "createdAt" ASC;
+
+-- name: CreateAssetEdit :one
+INSERT INTO asset_edits ("assetId", action, parameters, position)
+VALUES ($1, $2, $3, $4)
+RETURNING *;
+
+-- name: DeleteAssetEdits :exec
+DELETE FROM asset_edits
+WHERE "assetId" = $1;
+
+-- name: GetAssetOcr :many
+SELECT * FROM asset_ocr
+WHERE "assetId" = $1
+ORDER BY "createdAt" ASC;
+
+-- name: CopyAssetAlbums :exec
+INSERT INTO albums_assets_assets ("albumsId", "assetsId")
+SELECT albums_assets_assets."albumsId", $2
+FROM albums_assets_assets
+WHERE albums_assets_assets."assetsId" = $1
+ON CONFLICT DO NOTHING;
+
+-- name: CopyAssetSharedLinks :exec
+INSERT INTO shared_link__asset ("sharedLinksId", "assetsId")
+SELECT shared_link__asset."sharedLinksId", $2
+FROM shared_link__asset
+WHERE shared_link__asset."assetsId" = $1
+ON CONFLICT DO NOTHING;
+
+-- name: CopyAssetFavorite :exec
+UPDATE assets target
+SET "isFavorite" = source."isFavorite",
+    "updatedAt" = now(),
+    "updateId" = immich_uuid_v7()
+FROM assets source
+WHERE source.id = $1 AND target.id = $2;
+
+-- name: CopyAssetSidecar :exec
+UPDATE assets target
+SET "sidecarPath" = source."sidecarPath",
+    "updatedAt" = now(),
+    "updateId" = immich_uuid_v7()
+FROM assets source
+WHERE source.id = $1 AND target.id = $2;
+
+-- name: CopyAssetStack :exec
+UPDATE assets target
+SET "stackId" = source."stackId",
+    "updatedAt" = now(),
+    "updateId" = immich_uuid_v7()
+FROM assets source
+WHERE source.id = $1 AND target.id = $2;
+
+-- name: SearchRandomAssets :many
+SELECT a.* FROM assets a
+LEFT JOIN exif e ON e."assetId" = a.id
+WHERE a."ownerId" = sqlc.arg(owner_id)
+AND (sqlc.narg('with_deleted')::boolean = true OR a."deletedAt" IS NULL)
+AND (sqlc.narg('type')::text IS NULL OR a.type = sqlc.narg('type')::text)
+AND (sqlc.narg('is_favorite')::boolean IS NULL OR a."isFavorite" = sqlc.narg('is_favorite')::boolean)
+AND (sqlc.narg('city')::text IS NULL OR e.city = sqlc.narg('city')::text)
+AND (sqlc.narg('state')::text IS NULL OR e.state = sqlc.narg('state')::text)
+AND (sqlc.narg('country')::text IS NULL OR e.country = sqlc.narg('country')::text)
+AND (sqlc.narg('make')::text IS NULL OR e.make = sqlc.narg('make')::text)
+AND (sqlc.narg('model')::text IS NULL OR e.model = sqlc.narg('model')::text)
+AND (sqlc.narg('lens_model')::text IS NULL OR e."lensModel" = sqlc.narg('lens_model')::text)
+AND (sqlc.narg('library_id')::uuid IS NULL OR a."libraryId" = sqlc.narg('library_id')::uuid)
+AND (sqlc.narg('device_id')::text IS NULL OR a."deviceId" = sqlc.narg('device_id')::text)
+AND (sqlc.narg('taken_after')::timestamptz IS NULL OR a."localDateTime" >= sqlc.narg('taken_after')::timestamptz)
+AND (sqlc.narg('taken_before')::timestamptz IS NULL OR a."localDateTime" <= sqlc.narg('taken_before')::timestamptz)
+ORDER BY random()
+LIMIT COALESCE(sqlc.narg('limit')::integer, 100);
+
+-- name: SearchAssetsFiltered :many
+SELECT DISTINCT a.* FROM assets a
+LEFT JOIN exif e ON e."assetId" = a.id
+WHERE a."ownerId" = sqlc.arg(owner_id)
+AND a."deletedAt" IS NULL
+AND (
+    sqlc.narg('query')::text IS NULL
+    OR a."originalFileName" ILIKE '%' || sqlc.narg('query')::text || '%'
+    OR a."originalPath" ILIKE '%' || sqlc.narg('query')::text || '%'
+    OR e.description ILIKE '%' || sqlc.narg('query')::text || '%'
+    OR e."imageName" ILIKE '%' || sqlc.narg('query')::text || '%'
+)
+AND (sqlc.narg('type')::text IS NULL OR a.type = sqlc.narg('type')::text)
+AND (sqlc.narg('is_favorite')::boolean IS NULL OR a."isFavorite" = sqlc.narg('is_favorite')::boolean)
+AND (sqlc.narg('is_archived')::boolean IS NULL OR a.visibility = CASE WHEN sqlc.narg('is_archived')::boolean THEN 'archive'::asset_visibility_enum ELSE 'timeline'::asset_visibility_enum END)
+AND (sqlc.narg('city')::text IS NULL OR e.city ILIKE sqlc.narg('city')::text)
+AND (sqlc.narg('state')::text IS NULL OR e.state ILIKE sqlc.narg('state')::text)
+AND (sqlc.narg('country')::text IS NULL OR e.country ILIKE sqlc.narg('country')::text)
+AND (sqlc.narg('make')::text IS NULL OR e.make ILIKE sqlc.narg('make')::text)
+AND (sqlc.narg('model')::text IS NULL OR e.model ILIKE sqlc.narg('model')::text)
+AND (sqlc.narg('lens_model')::text IS NULL OR e."lensModel" ILIKE sqlc.narg('lens_model')::text)
+AND (sqlc.narg('library_id')::uuid IS NULL OR a."libraryId" = sqlc.narg('library_id')::uuid)
+AND (sqlc.narg('device_id')::text IS NULL OR a."deviceId" = sqlc.narg('device_id')::text)
+AND (sqlc.narg('taken_after')::timestamptz IS NULL OR a."localDateTime" >= sqlc.narg('taken_after')::timestamptz)
+AND (sqlc.narg('taken_before')::timestamptz IS NULL OR a."localDateTime" <= sqlc.narg('taken_before')::timestamptz)
+ORDER BY a."localDateTime" DESC
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
+-- name: CountSearchAssetsFilteredForPage :one
+SELECT COUNT(DISTINCT a.id) FROM assets a
+LEFT JOIN exif e ON e."assetId" = a.id
+WHERE a."ownerId" = sqlc.arg(owner_id)
+AND a."deletedAt" IS NULL
+AND (
+    sqlc.narg('query')::text IS NULL
+    OR a."originalFileName" ILIKE '%' || sqlc.narg('query')::text || '%'
+    OR a."originalPath" ILIKE '%' || sqlc.narg('query')::text || '%'
+    OR e.description ILIKE '%' || sqlc.narg('query')::text || '%'
+    OR e."imageName" ILIKE '%' || sqlc.narg('query')::text || '%'
+)
+AND (sqlc.narg('type')::text IS NULL OR a.type = sqlc.narg('type')::text)
+AND (sqlc.narg('is_favorite')::boolean IS NULL OR a."isFavorite" = sqlc.narg('is_favorite')::boolean)
+AND (sqlc.narg('is_archived')::boolean IS NULL OR a.visibility = CASE WHEN sqlc.narg('is_archived')::boolean THEN 'archive'::asset_visibility_enum ELSE 'timeline'::asset_visibility_enum END)
+AND (sqlc.narg('city')::text IS NULL OR e.city ILIKE sqlc.narg('city')::text)
+AND (sqlc.narg('state')::text IS NULL OR e.state ILIKE sqlc.narg('state')::text)
+AND (sqlc.narg('country')::text IS NULL OR e.country ILIKE sqlc.narg('country')::text)
+AND (sqlc.narg('make')::text IS NULL OR e.make ILIKE sqlc.narg('make')::text)
+AND (sqlc.narg('model')::text IS NULL OR e.model ILIKE sqlc.narg('model')::text)
+AND (sqlc.narg('lens_model')::text IS NULL OR e."lensModel" ILIKE sqlc.narg('lens_model')::text)
+AND (sqlc.narg('library_id')::uuid IS NULL OR a."libraryId" = sqlc.narg('library_id')::uuid)
+AND (sqlc.narg('device_id')::text IS NULL OR a."deviceId" = sqlc.narg('device_id')::text)
+AND (sqlc.narg('taken_after')::timestamptz IS NULL OR a."localDateTime" >= sqlc.narg('taken_after')::timestamptz)
+AND (sqlc.narg('taken_before')::timestamptz IS NULL OR a."localDateTime" <= sqlc.narg('taken_before')::timestamptz);
+
+-- name: SearchLargeAssets :many
+SELECT a.* FROM assets a
+LEFT JOIN exif e ON e."assetId" = a.id
+WHERE a."ownerId" = $1
+AND a."deletedAt" IS NULL
+ORDER BY COALESCE(e."fileSizeInByte", 0) DESC, a."createdAt" DESC
+LIMIT $2;
+
+-- name: CountSearchAssetsFiltered :one
+SELECT COUNT(*) FROM assets a
+LEFT JOIN exif e ON e."assetId" = a.id
+WHERE a."ownerId" = sqlc.arg(owner_id)
+AND a."deletedAt" IS NULL
+AND (sqlc.narg('type')::text IS NULL OR a.type = sqlc.narg('type')::text)
+AND (sqlc.narg('is_favorite')::boolean IS NULL OR a."isFavorite" = sqlc.narg('is_favorite')::boolean)
+AND (sqlc.narg('city')::text IS NULL OR e.city = sqlc.narg('city')::text)
+AND (sqlc.narg('state')::text IS NULL OR e.state = sqlc.narg('state')::text)
+AND (sqlc.narg('country')::text IS NULL OR e.country = sqlc.narg('country')::text)
+AND (sqlc.narg('make')::text IS NULL OR e.make = sqlc.narg('make')::text)
+AND (sqlc.narg('model')::text IS NULL OR e.model = sqlc.narg('model')::text)
+AND (sqlc.narg('lens_model')::text IS NULL OR e."lensModel" = sqlc.narg('lens_model')::text)
+AND (sqlc.narg('library_id')::uuid IS NULL OR a."libraryId" = sqlc.narg('library_id')::uuid)
+AND (sqlc.narg('device_id')::text IS NULL OR a."deviceId" = sqlc.narg('device_id')::text)
+AND (sqlc.narg('taken_after')::timestamptz IS NULL OR a."localDateTime" >= sqlc.narg('taken_after')::timestamptz)
+AND (sqlc.narg('taken_before')::timestamptz IS NULL OR a."localDateTime" <= sqlc.narg('taken_before')::timestamptz);
+
+-- ============================================================================
+-- DATABASE BACKUP QUERIES
+-- ============================================================================
+
+-- name: ListDatabaseBackups :many
+SELECT * FROM database_backups
+ORDER BY "createdAt" DESC;
+
+-- name: GetDatabaseBackup :one
+SELECT * FROM database_backups
+WHERE filename = $1;
+
+-- name: UpsertDatabaseBackup :one
+INSERT INTO database_backups (filename, path, filesize, timezone)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (filename) DO UPDATE
+SET path = EXCLUDED.path,
+    filesize = EXCLUDED.filesize,
+    timezone = EXCLUDED.timezone,
+    "updatedAt" = now()
+RETURNING *;
+
+-- name: DeleteDatabaseBackup :exec
+DELETE FROM database_backups
+WHERE filename = $1;
 
 -- ============================================================================
 -- TRASH QUERIES
@@ -1480,6 +1742,14 @@ ORDER BY "createdAt" DESC;
 UPDATE sessions
 SET "updatedAt" = NOW()
 WHERE id = $1;
+
+-- name: UpdateSession :one
+UPDATE sessions
+SET "isPendingSyncReset" = COALESCE(sqlc.narg('is_pending_sync_reset'), "isPendingSyncReset"),
+    "updatedAt" = NOW(),
+    "updateId" = immich_uuid_v7()
+WHERE id = $1 AND "userId" = $2
+RETURNING *;
 
 -- name: DeleteSession :exec
 DELETE FROM sessions

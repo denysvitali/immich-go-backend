@@ -2168,6 +2168,88 @@ CREATE TRIGGER users_delete_audit AFTER DELETE ON public.users REFERENCING OLD T
 
 CREATE TRIGGER users_updated_at BEFORE UPDATE ON public.users FOR EACH ROW EXECUTE FUNCTION public.updated_at();
 
+--
+-- Parity additions: asset metadata, edits, OCR, backups, and session sync reset state.
+--
+
+ALTER TABLE public.sessions
+    ADD COLUMN "isPendingSyncReset" boolean DEFAULT false NOT NULL,
+    ADD COLUMN "appVersion" character varying;
+
+CREATE TABLE public.asset_metadata (
+    "assetId" uuid NOT NULL,
+    key character varying NOT NULL,
+    value jsonb NOT NULL,
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL,
+    "updatedAt" timestamp with time zone DEFAULT now() NOT NULL
+);
+
+CREATE TABLE public.asset_edits (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    "assetId" uuid NOT NULL,
+    action character varying NOT NULL,
+    parameters jsonb NOT NULL,
+    position integer DEFAULT 0 NOT NULL,
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL,
+    "updatedAt" timestamp with time zone DEFAULT now() NOT NULL
+);
+
+CREATE TABLE public.asset_ocr (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    "assetId" uuid NOT NULL,
+    text text NOT NULL,
+    "textScore" double precision DEFAULT 0 NOT NULL,
+    "boxScore" double precision DEFAULT 0 NOT NULL,
+    x1 double precision DEFAULT 0 NOT NULL,
+    y1 double precision DEFAULT 0 NOT NULL,
+    x2 double precision DEFAULT 0 NOT NULL,
+    y2 double precision DEFAULT 0 NOT NULL,
+    x3 double precision DEFAULT 0 NOT NULL,
+    y3 double precision DEFAULT 0 NOT NULL,
+    x4 double precision DEFAULT 0 NOT NULL,
+    y4 double precision DEFAULT 0 NOT NULL,
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL,
+    "updatedAt" timestamp with time zone DEFAULT now() NOT NULL
+);
+
+CREATE TABLE public.database_backups (
+    filename character varying NOT NULL,
+    path character varying NOT NULL,
+    filesize bigint DEFAULT 0 NOT NULL,
+    timezone character varying DEFAULT 'UTC'::character varying NOT NULL,
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL,
+    "updatedAt" timestamp with time zone DEFAULT now() NOT NULL
+);
+
+ALTER TABLE ONLY public.asset_metadata
+    ADD CONSTRAINT asset_metadata_pkey PRIMARY KEY ("assetId", key);
+
+ALTER TABLE ONLY public.asset_edits
+    ADD CONSTRAINT asset_edits_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.asset_ocr
+    ADD CONSTRAINT asset_ocr_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.database_backups
+    ADD CONSTRAINT database_backups_pkey PRIMARY KEY (filename);
+
+CREATE INDEX asset_edits_asset_id_idx ON public.asset_edits USING btree ("assetId", position);
+CREATE INDEX asset_ocr_asset_id_idx ON public.asset_ocr USING btree ("assetId");
+
+CREATE TRIGGER asset_metadata_updated_at BEFORE UPDATE ON public.asset_metadata FOR EACH ROW EXECUTE FUNCTION public.updated_at();
+CREATE TRIGGER asset_edits_updated_at BEFORE UPDATE ON public.asset_edits FOR EACH ROW EXECUTE FUNCTION public.updated_at();
+CREATE TRIGGER asset_ocr_updated_at BEFORE UPDATE ON public.asset_ocr FOR EACH ROW EXECUTE FUNCTION public.updated_at();
+CREATE TRIGGER database_backups_updated_at BEFORE UPDATE ON public.database_backups FOR EACH ROW EXECUTE FUNCTION public.updated_at();
+
+ALTER TABLE ONLY public.asset_metadata
+    ADD CONSTRAINT asset_metadata_asset_fkey FOREIGN KEY ("assetId") REFERENCES public.assets(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.asset_edits
+    ADD CONSTRAINT asset_edits_asset_fkey FOREIGN KEY ("assetId") REFERENCES public.assets(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.asset_ocr
+    ADD CONSTRAINT asset_ocr_asset_fkey FOREIGN KEY ("assetId") REFERENCES public.assets(id) ON DELETE CASCADE;
+
 
 --
 -- Name: asset_faces FK_02a43fd0b3c50fb6d7f0cb7282c; Type: FK CONSTRAINT; Schema: public; Owner: immich

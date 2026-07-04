@@ -2,6 +2,7 @@ package search
 
 import (
 	"context"
+	"encoding/hex"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -15,7 +16,6 @@ import (
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/denysvitali/immich-go-backend/internal/grpcutil"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
-	"github.com/denysvitali/immich-go-backend/internal/util"
 )
 
 // Server implements the SearchServiceServer interface
@@ -38,34 +38,40 @@ func (s *Server) SearchMetadata(ctx context.Context, req *immichv1.SearchMetadat
 		return nil, status.Error(codes.Unauthenticated, "unauthorized")
 	}
 
-	var isFavorite, isArchived *bool
-	if req.Filter.IsFavorite != nil {
-		f := util.OptionalBool(req.Filter.IsFavorite).Bool
-		isFavorite = &f
-	}
-	if req.Filter.IsArchived != nil {
-		a := util.OptionalBool(req.Filter.IsArchived).Bool
-		isArchived = &a
-	}
-
 	searchReq := MetadataSearchRequest{
-		City:       stringValue(req.Filter.City),
-		State:      stringValue(req.Filter.State),
-		Country:    stringValue(req.Filter.Country),
-		Make:       stringValue(req.Filter.Make),
-		Model:      stringValue(req.Filter.Model),
-		IsFavorite: isFavorite,
-		IsArchived: isArchived,
-		Page:       0,  // default page
-		Size:       30, // default page size
+		Page: 0,
+		Size: 30,
 	}
 
-	// Parse date filters
-	if req.Filter.TakenBefore != nil {
-		searchReq.TakenBefore = req.Filter.TakenBefore.AsTime()
-	}
-	if req.Filter.TakenAfter != nil {
-		searchReq.TakenAfter = req.Filter.TakenAfter.AsTime()
+	if filter := req.GetFilter(); filter != nil {
+		searchReq.Query = stringValue(filter.OriginalFileName)
+		if searchReq.Query == "" {
+			searchReq.Query = stringValue(filter.OriginalPath)
+		}
+		searchReq.City = stringValue(filter.City)
+		searchReq.State = stringValue(filter.State)
+		searchReq.Country = stringValue(filter.Country)
+		searchReq.Make = stringValue(filter.Make)
+		searchReq.Model = stringValue(filter.Model)
+		searchReq.LensModel = stringValue(filter.LensModel)
+		searchReq.LibraryID = stringValue(filter.LibraryId)
+		searchReq.IsFavorite = filter.IsFavorite
+		searchReq.IsArchived = filter.IsArchived
+		if filter.Type != nil {
+			searchReq.Type = assetTypeFilter(*filter.Type)
+		}
+		if filter.TakenBefore != nil {
+			searchReq.TakenBefore = filter.TakenBefore.AsTime()
+		}
+		if filter.TakenAfter != nil {
+			searchReq.TakenAfter = filter.TakenAfter.AsTime()
+		}
+		if filter.Size != nil && filter.GetSize() > 0 {
+			searchReq.Size = int(filter.GetSize())
+		}
+		if filter.Page != nil && filter.GetPage() > 0 {
+			searchReq.Page = int(filter.GetPage())
+		}
 	}
 
 	result, err := s.service.SearchMetadata(ctx, userID, searchReq)
@@ -87,18 +93,7 @@ func (s *Server) SearchMetadata(ctx context.Context, req *immichv1.SearchMetadat
 			continue // Skip assets that can't be loaded
 		}
 
-		assets = append(assets, &immichv1.AssetResponseDto{
-			Id:               item.ID,
-			DeviceAssetId:    asset.DeviceAssetId,
-			DeviceId:         asset.DeviceId,
-			Type:             assetdomain.AssetTypeFromString(asset.Type),
-			OriginalPath:     asset.OriginalPath,
-			OriginalFileName: asset.OriginalFileName,
-			IsFavorite:       asset.IsFavorite,
-			IsArchived:       asset.Visibility == "archive",
-			CreatedAt:        timestamppb.New(asset.CreatedAt.Time),
-			UpdatedAt:        timestamppb.New(asset.UpdatedAt.Time),
-		})
+		assets = append(assets, assetToSearchResponseDto(asset))
 	}
 
 	return &immichv1.SearchResponseDto{
@@ -397,10 +392,182 @@ func (s *Server) Search(ctx context.Context, req *immichv1.SearchRequest) (*immi
 	}, nil
 }
 
+// SearchRandom returns a randomized page of assets matching optional metadata filters.
+func (s *Server) SearchRandom(ctx context.Context, req *immichv1.SearchRandomRequest) (*immichv1.SearchRandomResponse, error) {
+	userID, err := auth.GetUserIDFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	}
+
+	params := sqlc.SearchRandomAssetsParams{
+		OwnerID:     pgtype.UUID{Bytes: userID, Valid: true},
+		Type:        optionalAssetType(req.Type),
+		IsFavorite:  optionalBool(req.IsFavorite),
+		City:        optionalText(req.GetCity()),
+		State:       optionalText(req.GetState()),
+		Country:     optionalText(req.GetCountry()),
+		Make:        optionalText(req.GetMake()),
+		Model:       optionalText(req.GetModel()),
+		LensModel:   optionalText(req.GetLensModel()),
+		LibraryID:   optionalUUID(req.GetLibraryId()),
+		DeviceID:    optionalText(req.GetDeviceId()),
+		Limit:       optionalLimit(req.GetSize(), 100),
+		TakenAfter:  timestampToPg(req.GetTakenAfter()),
+		TakenBefore: timestampToPg(req.GetTakenBefore()),
+	}
+	if req.WithDeleted != nil {
+		params.WithDeleted = pgtype.Bool{Bool: req.GetWithDeleted(), Valid: true}
+	}
+
+	assets, err := s.service.db.SearchRandomAssets(ctx, params)
+	if err != nil {
+		return nil, grpcutil.SanitizedInternal(ctx, "random search failed", err)
+	}
+
+	return &immichv1.SearchRandomResponse{Assets: assetsToSearchResponseDtos(assets)}, nil
+}
+
+// SearchLargeAssets returns the largest assets for the current user.
+func (s *Server) SearchLargeAssets(ctx context.Context, req *immichv1.SearchLargeAssetsRequest) (*immichv1.SearchLargeAssetsResponse, error) {
+	userID, err := auth.GetUserIDFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	}
+
+	size := req.GetSize()
+	if size <= 0 {
+		size = 100
+	}
+
+	assets, err := s.service.db.SearchLargeAssets(ctx, sqlc.SearchLargeAssetsParams{
+		OwnerId: pgtype.UUID{Bytes: userID, Valid: true},
+		Limit:   size,
+	})
+	if err != nil {
+		return nil, grpcutil.SanitizedInternal(ctx, "large asset search failed", err)
+	}
+
+	return &immichv1.SearchLargeAssetsResponse{Assets: assetsToSearchResponseDtos(assets)}, nil
+}
+
+// SearchAssetStatistics returns an asset count for the supplied metadata filters.
+func (s *Server) SearchAssetStatistics(ctx context.Context, req *immichv1.SearchAssetStatisticsRequest) (*immichv1.SearchAssetStatisticsResponse, error) {
+	userID, err := auth.GetUserIDFromContext(ctx)
+	if err != nil {
+		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	}
+
+	total, err := s.service.db.CountSearchAssetsFiltered(ctx, sqlc.CountSearchAssetsFilteredParams{
+		OwnerID:     pgtype.UUID{Bytes: userID, Valid: true},
+		Type:        optionalAssetType(req.Type),
+		IsFavorite:  optionalBool(req.IsFavorite),
+		City:        optionalText(req.GetCity()),
+		State:       optionalText(req.GetState()),
+		Country:     optionalText(req.GetCountry()),
+		Make:        optionalText(req.GetMake()),
+		Model:       optionalText(req.GetModel()),
+		LensModel:   optionalText(req.GetLensModel()),
+		LibraryID:   optionalUUID(req.GetLibraryId()),
+		DeviceID:    optionalText(req.GetDeviceId()),
+		TakenAfter:  timestampToPg(req.GetTakenAfter()),
+		TakenBefore: timestampToPg(req.GetTakenBefore()),
+	})
+	if err != nil {
+		return nil, grpcutil.SanitizedInternal(ctx, "asset statistics search failed", err)
+	}
+
+	return &immichv1.SearchAssetStatisticsResponse{Total: total}, nil
+}
+
 // Helper functions
 func stringValue(s *string) string {
 	if s == nil {
 		return ""
 	}
 	return *s
+}
+
+func assetsToSearchResponseDtos(assets []sqlc.Asset) []*immichv1.AssetResponseDto {
+	dtos := make([]*immichv1.AssetResponseDto, len(assets))
+	for i, asset := range assets {
+		dtos[i] = assetToSearchResponseDto(asset)
+	}
+	return dtos
+}
+
+func assetToSearchResponseDto(asset sqlc.Asset) *immichv1.AssetResponseDto {
+	dto := &immichv1.AssetResponseDto{
+		Id:               uuid.UUID(asset.ID.Bytes).String(),
+		DeviceAssetId:    asset.DeviceAssetId,
+		DeviceId:         asset.DeviceId,
+		Type:             assetdomain.AssetTypeFromString(asset.Type),
+		OriginalPath:     asset.OriginalPath,
+		OriginalFileName: asset.OriginalFileName,
+		IsFavorite:       asset.IsFavorite,
+		IsArchived:       asset.Visibility == "archive",
+		IsTrashed:        asset.DeletedAt.Valid || asset.Status == "trashed",
+		CreatedAt:        timestamppb.New(asset.CreatedAt.Time),
+		UpdatedAt:        timestamppb.New(asset.UpdatedAt.Time),
+		FileCreatedAt:    timestamppb.New(asset.FileCreatedAt.Time),
+		FileModifiedAt:   timestamppb.New(asset.FileModifiedAt.Time),
+		Checksum:         hex.EncodeToString(asset.Checksum),
+		IsExternal:       asset.IsExternal,
+		IsOffline:        asset.IsOffline,
+		Owner: &immichv1.User{
+			Id: uuid.UUID(asset.OwnerId.Bytes).String(),
+		},
+	}
+	if asset.Duration.Valid {
+		dto.Duration = asset.Duration.String
+	}
+	if asset.LibraryId.Valid {
+		dto.LibraryId = uuid.UUID(asset.LibraryId.Bytes).String()
+	}
+	if asset.StackId.Valid {
+		dto.StackId = uuid.UUID(asset.StackId.Bytes).String()
+	}
+	if asset.DuplicateId.Valid {
+		duplicateID := uuid.UUID(asset.DuplicateId.Bytes).String()
+		dto.DuplicateId = &duplicateID
+	}
+	if len(asset.Thumbhash) > 0 {
+		dto.Thumbhash = string(asset.Thumbhash)
+	}
+	return dto
+}
+
+func optionalAssetType(value *immichv1.AssetType) pgtype.Text {
+	if value == nil {
+		return pgtype.Text{}
+	}
+	return optionalText(assetTypeFilter(*value))
+}
+
+func assetTypeFilter(value immichv1.AssetType) string {
+	switch value {
+	case immichv1.AssetType_ASSET_TYPE_IMAGE:
+		return "IMAGE"
+	case immichv1.AssetType_ASSET_TYPE_VIDEO:
+		return "VIDEO"
+	case immichv1.AssetType_ASSET_TYPE_AUDIO:
+		return "AUDIO"
+	case immichv1.AssetType_ASSET_TYPE_OTHER:
+		return "OTHER"
+	default:
+		return ""
+	}
+}
+
+func optionalLimit(size int32, fallback int32) pgtype.Int4 {
+	if size <= 0 {
+		size = fallback
+	}
+	return pgtype.Int4{Int32: size, Valid: true}
+}
+
+func timestampToPg(ts *timestamppb.Timestamp) pgtype.Timestamptz {
+	if ts == nil {
+		return pgtype.Timestamptz{}
+	}
+	return pgtype.Timestamptz{Time: ts.AsTime(), Valid: true}
 }
