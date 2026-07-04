@@ -35,6 +35,17 @@ type TimelineBucket = {
   count: number;
 };
 
+type CalendarHeatmap = {
+  from: string;
+  to: string;
+  totalCount: number;
+  series: Array<{ date: string; count: number }>;
+};
+
+function countForDate(body: CalendarHeatmap, date: string) {
+  return body.series.find((item) => item.date === date)?.count ?? 0;
+}
+
 test('timeline frontend endpoints expose bucket summaries and columnar assets', async ({ request }) => {
   const user = await signUpAdmin(request, 'timeline-api', 'E2E Timeline User');
   const asset = await uploadAsset(request, user, '2026-06-15T08:30:00Z');
@@ -71,4 +82,31 @@ test('timeline frontend endpoints expose bucket summaries and columnar assets', 
   expect(bucketBody.ratio[assetIndex]).toBeGreaterThan(0);
   expect(bucketBody.thumbhash[assetIndex]).toBeNull();
   expect(bucketBody.type[assetIndex]).toBe('IMAGE');
+});
+
+test('calendar heatmap endpoints expose taken-date activity for users and admins', async ({ request }) => {
+  const user = await signUpAdmin(request, 'calendar-heatmap', 'E2E Calendar User');
+  await uploadAsset(request, user, '2026-06-15T08:30:00Z');
+  await uploadAsset(request, user, '2026-06-16T12:00:00Z');
+
+  const query = 'from=2026-06-15&to=2026-06-17&type=Taken';
+  const mine = await request.get(`/api/users/me/calendar-heatmap?${query}`, {
+    headers: user.headers,
+  });
+  await expectOk(mine);
+  const mineBody = (await mine.json()) as CalendarHeatmap;
+
+  expect(mineBody.from).toBe('2026-06-15');
+  expect(mineBody.to).toBe('2026-06-17');
+  expect(mineBody.series).toHaveLength(3);
+  expect(mineBody.totalCount).toBe(2);
+  expect(countForDate(mineBody, '2026-06-15')).toBe(1);
+  expect(countForDate(mineBody, '2026-06-16')).toBe(1);
+  expect(countForDate(mineBody, '2026-06-17')).toBe(0);
+
+  const admin = await request.get(`/api/admin/users/${user.userId}/calendar-heatmap?${query}`, {
+    headers: user.headers,
+  });
+  await expectOk(admin);
+  expect(await admin.json()).toEqual(mineBody);
 });
