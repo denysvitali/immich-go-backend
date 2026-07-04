@@ -46,7 +46,7 @@ flowchart LR
 - [ ] OAuth backchannel logout.
 - [ ] Full-path search.
 - [ ] Album map markers.
-- [ ] User upload heatmap.
+- [x] User upload heatmap.
 - [ ] Assess `pgvecto.rs` removal — vector search is currently on `vector` / `vchord`; check upstream's chosen replacement.
 - [ ] Assess duration-in-milliseconds response changes.
 
