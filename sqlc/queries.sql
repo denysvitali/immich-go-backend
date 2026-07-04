@@ -740,7 +740,7 @@ RETURNING *;
 SELECT a.* FROM assets a
 LEFT JOIN asset_job_status ajs ON a.id = ajs."assetId"
 WHERE a."deletedAt" IS NULL 
-AND (ajs."thumbnailGeneratedAt" IS NULL OR ajs."thumbnailGeneratedAt" < a."updatedAt")
+AND (ajs."thumbnailAt" IS NULL OR ajs."thumbnailAt" < a."updatedAt")
 ORDER BY a."createdAt" DESC
 LIMIT $1;
 
@@ -1108,16 +1108,20 @@ GROUP BY "ownerId";
 -- ============================================================================
 
 -- name: GetAssetsByLocation :many
-SELECT a.* FROM assets a
+SELECT a.*, e.latitude AS exif_latitude, e.longitude AS exif_longitude, e.city, e.state, e.country FROM assets a
 JOIN exif e ON a.id = e."assetId"
-WHERE a."ownerId" = $1 
+WHERE a."ownerId" = sqlc.arg(owner_id)
 AND a."deletedAt" IS NULL
-AND e.latitude IS NOT NULL 
+AND e.latitude IS NOT NULL
 AND e.longitude IS NOT NULL
-AND e.latitude BETWEEN $2 AND $3
-AND e.longitude BETWEEN $4 AND $5
+AND e.latitude BETWEEN sqlc.arg(min_lat) AND sqlc.arg(max_lat)
+AND e.longitude BETWEEN sqlc.arg(min_lon) AND sqlc.arg(max_lon)
+AND (sqlc.narg('is_favorite')::boolean IS NULL OR a."isFavorite" = sqlc.narg('is_favorite')::boolean)
+AND (sqlc.narg('is_archived')::boolean IS NULL OR (a.visibility = 'archive'::asset_visibility_enum) = sqlc.narg('is_archived')::boolean)
+AND (sqlc.narg('created_after')::timestamptz IS NULL OR a."fileCreatedAt" >= sqlc.narg('created_after')::timestamptz)
+AND (sqlc.narg('created_before')::timestamptz IS NULL OR a."fileCreatedAt" <= sqlc.narg('created_before')::timestamptz)
 ORDER BY a."localDateTime" DESC
-LIMIT $6 OFFSET $7;
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
 -- name: GetAssetsByDateRange :many
 SELECT * FROM assets
@@ -1129,7 +1133,7 @@ LIMIT $4 OFFSET $5;
 
 -- name: GetDuplicateAssets :many
 SELECT a1.*, a2.id as duplicate_id FROM assets a1
-JOIN assets a2 ON a1.checksum = a2.checksum AND a1.id < a2.id
+JOIN assets a2 ON a1.checksum = a2.checksum AND a2."ownerId" = a1."ownerId" AND a1.id < a2.id
 WHERE a1."ownerId" = $1 AND a1."deletedAt" IS NULL AND a2."deletedAt" IS NULL
 ORDER BY a1."localDateTime" DESC;
 
@@ -1323,6 +1327,10 @@ AND (sqlc.narg('library_id')::uuid IS NULL OR a."libraryId" = sqlc.narg('library
 AND (sqlc.narg('device_id')::text IS NULL OR a."deviceId" = sqlc.narg('device_id')::text)
 AND (sqlc.narg('taken_after')::timestamptz IS NULL OR a."localDateTime" >= sqlc.narg('taken_after')::timestamptz)
 AND (sqlc.narg('taken_before')::timestamptz IS NULL OR a."localDateTime" <= sqlc.narg('taken_before')::timestamptz)
+AND (sqlc.narg('is_encoded')::boolean IS NULL OR (a."encodedVideoPath" IS NOT NULL AND a."encodedVideoPath" <> '') = sqlc.narg('is_encoded')::boolean)
+AND (sqlc.narg('is_motion')::boolean IS NULL OR (a."livePhotoVideoId" IS NOT NULL) = sqlc.narg('is_motion')::boolean)
+AND (sqlc.narg('is_offline')::boolean IS NULL OR a."isOffline" = sqlc.narg('is_offline')::boolean)
+AND (sqlc.narg('is_external')::boolean IS NULL OR a."isExternal" = sqlc.narg('is_external')::boolean)
 ORDER BY a."localDateTime" DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
@@ -1350,7 +1358,11 @@ AND (sqlc.narg('lens_model')::text IS NULL OR e."lensModel" ILIKE sqlc.narg('len
 AND (sqlc.narg('library_id')::uuid IS NULL OR a."libraryId" = sqlc.narg('library_id')::uuid)
 AND (sqlc.narg('device_id')::text IS NULL OR a."deviceId" = sqlc.narg('device_id')::text)
 AND (sqlc.narg('taken_after')::timestamptz IS NULL OR a."localDateTime" >= sqlc.narg('taken_after')::timestamptz)
-AND (sqlc.narg('taken_before')::timestamptz IS NULL OR a."localDateTime" <= sqlc.narg('taken_before')::timestamptz);
+AND (sqlc.narg('taken_before')::timestamptz IS NULL OR a."localDateTime" <= sqlc.narg('taken_before')::timestamptz)
+AND (sqlc.narg('is_encoded')::boolean IS NULL OR (a."encodedVideoPath" IS NOT NULL AND a."encodedVideoPath" <> '') = sqlc.narg('is_encoded')::boolean)
+AND (sqlc.narg('is_motion')::boolean IS NULL OR (a."livePhotoVideoId" IS NOT NULL) = sqlc.narg('is_motion')::boolean)
+AND (sqlc.narg('is_offline')::boolean IS NULL OR a."isOffline" = sqlc.narg('is_offline')::boolean)
+AND (sqlc.narg('is_external')::boolean IS NULL OR a."isExternal" = sqlc.narg('is_external')::boolean);
 
 -- name: SearchLargeAssets :many
 SELECT a.* FROM assets a

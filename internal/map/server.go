@@ -2,6 +2,7 @@ package mapservice
 
 import (
 	"context"
+	"time"
 
 	"github.com/denysvitali/immich-go-backend/internal/auth"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
@@ -40,24 +41,53 @@ func (s *Server) GetMapMarkers(ctx context.Context, request *immichv1.GetMapMark
 	}
 	userUUID := pgtype.UUID{Bytes: userID, Valid: true}
 
-	// Use default bounding box for now since request doesn't have these fields
-	// TODO: Add these fields to the protobuf definition
 	minLat := -90.0
+	if request.MinLatitude != nil {
+		minLat = request.GetMinLatitude()
+	}
 	maxLat := 90.0
+	if request.MaxLatitude != nil {
+		maxLat = request.GetMaxLatitude()
+	}
 	minLon := -180.0
+	if request.MinLongitude != nil {
+		minLon = request.GetMinLongitude()
+	}
 	maxLon := 180.0
+	if request.MaxLongitude != nil {
+		maxLon = request.GetMaxLongitude()
+	}
 	var limit int32 = 1000
+	if request.Limit != nil && request.GetLimit() > 0 {
+		limit = request.GetLimit()
+	}
 	var offset int32 = 0
+	if request.Offset != nil && request.GetOffset() > 0 {
+		offset = request.GetOffset()
+	}
+
+	createdAfter, err := optionalMapTimestamp(request.FileCreatedAfter)
+	if err != nil {
+		return nil, err
+	}
+	createdBefore, err := optionalMapTimestamp(request.FileCreatedBefore)
+	if err != nil {
+		return nil, err
+	}
 
 	// Get assets within the bounding box
 	assets, err := s.queries.GetAssetsByLocation(ctx, sqlc.GetAssetsByLocationParams{
-		OwnerId:     userUUID,
-		Latitude:    pgtype.Float8{Float64: minLat, Valid: true},
-		Latitude_2:  pgtype.Float8{Float64: maxLat, Valid: true},
-		Longitude:   pgtype.Float8{Float64: minLon, Valid: true},
-		Longitude_2: pgtype.Float8{Float64: maxLon, Valid: true},
-		Limit:       limit,
-		Offset:      offset,
+		OwnerID:       userUUID,
+		MinLat:        pgtype.Float8{Float64: minLat, Valid: true},
+		MaxLat:        pgtype.Float8{Float64: maxLat, Valid: true},
+		MinLon:        pgtype.Float8{Float64: minLon, Valid: true},
+		MaxLon:        pgtype.Float8{Float64: maxLon, Valid: true},
+		IsFavorite:    optionalMapBool(request.IsFavorite),
+		IsArchived:    optionalMapBool(request.IsArchived),
+		CreatedAfter:  createdAfter,
+		CreatedBefore: createdBefore,
+		Limit:         limit,
+		Offset:        offset,
 	})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get assets with location: %v", err)
@@ -66,28 +96,28 @@ func (s *Server) GetMapMarkers(ctx context.Context, request *immichv1.GetMapMark
 	// Convert assets to map markers
 	markers := make([]*immichv1.MapMarker, 0, len(assets))
 	for _, asset := range assets {
-		// Get exif data for location
-		exif, err := s.queries.GetExifByAssetId(ctx, asset.ID)
-		if err != nil || !exif.Latitude.Valid || !exif.Longitude.Valid {
+		if !asset.ExifLatitude.Valid || !asset.ExifLongitude.Valid {
 			continue // Skip assets without location data
 		}
 
 		marker := &immichv1.MapMarker{
 			Id:        uuid.UUID(asset.ID.Bytes).String(),
-			Latitude:  exif.Latitude.Float64,
-			Longitude: exif.Longitude.Float64,
+			Lat:       asset.ExifLatitude.Float64,
+			Lon:       asset.ExifLongitude.Float64,
+			Latitude:  asset.ExifLatitude.Float64,
+			Longitude: asset.ExifLongitude.Float64,
 			Timestamp: asset.LocalDateTime.Time.Format("2006-01-02T15:04:05Z"),
 		}
 
 		// Add location info if available
-		if exif.City.Valid {
-			marker.City = exif.City.String
+		if asset.City.Valid {
+			marker.City = asset.City.String
 		}
-		if exif.State.Valid {
-			marker.State = exif.State.String
+		if asset.State.Valid {
+			marker.State = asset.State.String
 		}
-		if exif.Country.Valid {
-			marker.Country = exif.Country.String
+		if asset.Country.Valid {
+			marker.Country = asset.Country.String
 		}
 
 		markers = append(markers, marker)
@@ -122,13 +152,13 @@ func (s *Server) ReverseGeocode(ctx context.Context, request *immichv1.ReverseGe
 	// For now, find assets near this location and use their location info
 	delta := 0.1 // Approximately 11km at the equator
 	assets, err := s.queries.GetAssetsByLocation(ctx, sqlc.GetAssetsByLocationParams{
-		OwnerId:     userUUID,
-		Latitude:    pgtype.Float8{Float64: latitude - delta, Valid: true},
-		Latitude_2:  pgtype.Float8{Float64: latitude + delta, Valid: true},
-		Longitude:   pgtype.Float8{Float64: longitude - delta, Valid: true},
-		Longitude_2: pgtype.Float8{Float64: longitude + delta, Valid: true},
-		Limit:       10,
-		Offset:      0,
+		OwnerID: userUUID,
+		MinLat:  pgtype.Float8{Float64: latitude - delta, Valid: true},
+		MaxLat:  pgtype.Float8{Float64: latitude + delta, Valid: true},
+		MinLon:  pgtype.Float8{Float64: longitude - delta, Valid: true},
+		MaxLon:  pgtype.Float8{Float64: longitude + delta, Valid: true},
+		Limit:   10,
+		Offset:  0,
 	})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to find nearby assets: %v", err)
@@ -141,19 +171,14 @@ func (s *Server) ReverseGeocode(ctx context.Context, request *immichv1.ReverseGe
 	countryCount := make(map[string]int)
 
 	for _, asset := range assets {
-		exif, err := s.queries.GetExifByAssetId(ctx, asset.ID)
-		if err != nil {
-			continue
+		if asset.City.Valid && asset.City.String != "" {
+			cityCount[asset.City.String]++
 		}
-
-		if exif.City.Valid && exif.City.String != "" {
-			cityCount[exif.City.String]++
+		if asset.State.Valid && asset.State.String != "" {
+			stateCount[asset.State.String]++
 		}
-		if exif.State.Valid && exif.State.String != "" {
-			stateCount[exif.State.String]++
-		}
-		if exif.Country.Valid && exif.Country.String != "" {
-			countryCount[exif.Country.String]++
+		if asset.Country.Valid && asset.Country.String != "" {
+			countryCount[asset.Country.String]++
 		}
 	}
 
@@ -187,4 +212,22 @@ func (s *Server) ReverseGeocode(ctx context.Context, request *immichv1.ReverseGe
 		State:   state,
 		Country: country,
 	}, nil
+}
+
+func optionalMapBool(value *bool) pgtype.Bool {
+	if value == nil {
+		return pgtype.Bool{}
+	}
+	return pgtype.Bool{Bool: *value, Valid: true}
+}
+
+func optionalMapTimestamp(value *string) (pgtype.Timestamptz, error) {
+	if value == nil || *value == "" {
+		return pgtype.Timestamptz{}, nil
+	}
+	parsed, err := time.Parse(time.RFC3339, *value)
+	if err != nil {
+		return pgtype.Timestamptz{}, status.Errorf(codes.InvalidArgument, "invalid timestamp %q: %v", *value, err)
+	}
+	return pgtype.Timestamptz{Time: parsed, Valid: true}, nil
 }

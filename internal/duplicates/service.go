@@ -93,36 +93,40 @@ func (s *Service) GetAssetDuplicates(ctx context.Context, userID string) (*GetAs
 		return nil, fmt.Errorf("failed to get duplicate assets: %w", err)
 	}
 
-	// Group duplicates by checksum
 	duplicateMap := make(map[string][]*DuplicateAsset)
-	for _, asset := range duplicateAssets {
-		// Convert checksum bytes to string
-		checksumStr := hex.EncodeToString(asset.Checksum)
-
-		// Get exif data for file size
-		exif, err := s.db.GetExifByAssetId(ctx, asset.ID)
-		var fileSize int64
-		if err == nil && exif.FileSizeInByte.Valid {
-			fileSize = exif.FileSizeInByte.Int64
+	duplicateAssetIDs := make(map[string]map[string]struct{})
+	checksumOrder := make([]string, 0)
+	for _, duplicate := range duplicateAssets {
+		checksumStr := hex.EncodeToString(duplicate.Checksum)
+		if _, ok := duplicateAssetIDs[checksumStr]; ok {
+			continue
 		}
 
-		// Create duplicate asset
-		dupAsset := &DuplicateAsset{
-			AssetID:        uuid.UUID(asset.ID.Bytes).String(),
-			DeviceAssetID:  asset.DeviceAssetId,
-			DeviceID:       asset.DeviceId,
-			Checksum:       checksumStr,
-			Type:           s.convertAssetType(asset.Type),
-			OriginalPath:   asset.OriginalPath,
-			FileSizeInByte: fileSize,
-		}
+		duplicateAssetIDs[checksumStr] = make(map[string]struct{})
+		checksumOrder = append(checksumOrder, checksumStr)
 
-		duplicateMap[checksumStr] = append(duplicateMap[checksumStr], dupAsset)
+		assets, err := s.db.GetAssetsByChecksum(ctx, duplicate.Checksum)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get duplicate assets by checksum: %w", err)
+		}
+		for _, asset := range assets {
+			if asset.OwnerId != userUUID || asset.DeletedAt.Valid {
+				continue
+			}
+
+			assetID := uuid.UUID(asset.ID.Bytes).String()
+			if _, ok := duplicateAssetIDs[checksumStr][assetID]; ok {
+				continue
+			}
+			duplicateAssetIDs[checksumStr][assetID] = struct{}{}
+			duplicateMap[checksumStr] = append(duplicateMap[checksumStr], s.duplicateAssetFromDB(ctx, asset, checksumStr))
+		}
 	}
 
 	// Build duplicate groups
 	var duplicateGroups []*DuplicateGroup
-	for checksum, assets := range duplicateMap {
+	for _, checksum := range checksumOrder {
+		assets := duplicateMap[checksum]
 		if len(assets) > 1 { // Only include groups with actual duplicates
 			group := &DuplicateGroup{
 				DuplicateID: checksum,
@@ -138,6 +142,24 @@ func (s *Service) GetAssetDuplicates(ctx context.Context, userID string) (*GetAs
 	return &GetAssetDuplicatesResponse{
 		Duplicates: duplicateGroups,
 	}, nil
+}
+
+func (s *Service) duplicateAssetFromDB(ctx context.Context, asset sqlc.Asset, checksum string) *DuplicateAsset {
+	exif, err := s.db.GetExifByAssetId(ctx, asset.ID)
+	var fileSize int64
+	if err == nil && exif.FileSizeInByte.Valid {
+		fileSize = exif.FileSizeInByte.Int64
+	}
+
+	return &DuplicateAsset{
+		AssetID:        uuid.UUID(asset.ID.Bytes).String(),
+		DeviceAssetID:  asset.DeviceAssetId,
+		DeviceID:       asset.DeviceId,
+		Checksum:       checksum,
+		Type:           s.convertAssetType(asset.Type),
+		OriginalPath:   asset.OriginalPath,
+		FileSizeInByte: fileSize,
+	}
 }
 
 // DeleteDuplicate clears a duplicate group for the user.

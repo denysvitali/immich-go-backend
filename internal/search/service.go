@@ -49,6 +49,10 @@ func (s *Service) SearchMetadata(ctx context.Context, userID uuid.UUID, req Meta
 		DeviceID:    optionalText(req.DeviceID),
 		TakenAfter:  optionalTime(req.TakenAfter),
 		TakenBefore: optionalTime(req.TakenBefore),
+		IsEncoded:   optionalBool(req.IsEncoded),
+		IsMotion:    optionalBool(req.IsMotion),
+		IsOffline:   optionalBool(req.IsOffline),
+		IsExternal:  optionalBool(req.IsExternal),
 		Limit:       int32(req.Size),
 		Offset:      int32(req.Page * req.Size),
 	}
@@ -74,6 +78,10 @@ func (s *Service) SearchMetadata(ctx context.Context, userID uuid.UUID, req Meta
 		DeviceID:    params.DeviceID,
 		TakenAfter:  params.TakenAfter,
 		TakenBefore: params.TakenBefore,
+		IsEncoded:   params.IsEncoded,
+		IsMotion:    params.IsMotion,
+		IsOffline:   params.IsOffline,
+		IsExternal:  params.IsExternal,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to count search results: %w", err)
@@ -370,6 +378,10 @@ type MetadataSearchRequest struct {
 	Size        int       `json:"size"`
 	IsFavorite  *bool     `json:"isFavorite,omitempty"`
 	IsArchived  *bool     `json:"isArchived,omitempty"`
+	IsEncoded   *bool     `json:"isEncoded,omitempty"`
+	IsMotion    *bool     `json:"isMotion,omitempty"`
+	IsOffline   *bool     `json:"isOffline,omitempty"`
+	IsExternal  *bool     `json:"isExternal,omitempty"`
 	City        string    `json:"city,omitempty"`
 	State       string    `json:"state,omitempty"`
 	Country     string    `json:"country,omitempty"`

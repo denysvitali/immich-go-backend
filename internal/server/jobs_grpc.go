@@ -215,7 +215,7 @@ func (s *Server) startJob(ctx context.Context, claims *auth.Claims, jobName immi
 	switch jobName {
 	case immichv1.JobName_JOB_NAME_DUPLICATE_DETECTION:
 		payload := jobs.DuplicateDetectionPayload{UserID: claims.UserID}
-		if err := s.jobService.EnqueueJob(ctx, jobs.JobTypeDuplicateDetect, payload); err != nil {
+		if err := s.jobService.EnqueueJobWithPriority(ctx, jobs.JobTypeDuplicateDetect, payload, jobs.PriorityNormal); err != nil {
 			return SanitizedInternal(ctx, "failed to enqueue duplicate detection job", err)
 		}
 		return nil

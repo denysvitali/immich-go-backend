@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"mime"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/sirupsen/logrus"
 
@@ -278,7 +280,7 @@ func (h *Handlers) HandleMetadataExtraction(ctx context.Context, task *asynq.Tas
 
 	// 7. Update the asset job status to record that metadata extraction finished.
 	now := time.Now()
-	if _, err := h.db.UpdateAssetJobStatus(ctx, sqlc.UpdateAssetJobStatusParams{
+	if err := h.markAssetJobStatus(ctx, sqlc.UpdateAssetJobStatusParams{
 		AssetId:             pgAssetID,
 		MetadataExtractedAt: pgtype.Timestamptz{Time: now, Valid: true},
 	}); err != nil {
@@ -354,10 +356,19 @@ func (h *Handlers) HandleVideoTranscode(ctx context.Context, task *asynq.Task) e
 		"format":   payload.Format,
 	}).Info("Transcoding video")
 
-	// Video transcoding logic would go here
-	// This would typically use ffmpeg or similar tools
+	asset, err := h.db.GetAsset(ctx, pgtype.UUID{Bytes: assetID, Valid: true})
+	if err != nil {
+		return fmt.Errorf("failed to get asset %s: %w", assetID, err)
+	}
+	if !strings.EqualFold(asset.Type, string(assets.AssetTypeVideo)) {
+		h.logger.WithFields(logrus.Fields{
+			"asset_id":   asset.ID,
+			"asset_type": asset.Type,
+		}).Info("Skipping video transcode for non-video asset")
+		return nil
+	}
 
-	return nil
+	return unsupportedJobError("video transcoding requires an ffmpeg pipeline, which is not configured")
 }
 
 // FaceDetectionPayload contains data for face detection
@@ -381,10 +392,19 @@ func (h *Handlers) HandleFaceDetection(ctx context.Context, task *asynq.Task) er
 		"asset_id": assetID,
 	}).Info("Detecting faces")
 
-	// Face detection logic would go here
-	// This would integrate with ML models for face detection
+	asset, err := h.db.GetAsset(ctx, pgtype.UUID{Bytes: assetID, Valid: true})
+	if err != nil {
+		return fmt.Errorf("failed to get asset %s: %w", assetID, err)
+	}
+	if !strings.EqualFold(asset.Type, string(assets.AssetTypeImage)) {
+		h.logger.WithFields(logrus.Fields{
+			"asset_id":   asset.ID,
+			"asset_type": asset.Type,
+		}).Info("Skipping face detection for non-image asset")
+		return nil
+	}
 
-	return nil
+	return unsupportedJobError("face detection requires an ML integration, which is not configured")
 }
 
 // SmartSearchIndexPayload contains data for smart search indexing
@@ -408,10 +428,11 @@ func (h *Handlers) HandleSmartSearchIndex(ctx context.Context, task *asynq.Task)
 		"asset_id": assetID,
 	}).Info("Indexing for smart search")
 
-	// Smart search indexing logic would go here
-	// This would use CLIP or similar models for embeddings
+	if _, err := h.db.GetAsset(ctx, pgtype.UUID{Bytes: assetID, Valid: true}); err != nil {
+		return fmt.Errorf("failed to get asset %s: %w", assetID, err)
+	}
 
-	return nil
+	return unsupportedJobError("smart search indexing requires a CLIP/ML integration, which is not configured")
 }
 
 // DuplicateDetectionPayload contains data for duplicate detection
@@ -435,9 +456,54 @@ func (h *Handlers) HandleDuplicateDetection(ctx context.Context, task *asynq.Tas
 		"user_id": userID,
 	}).Info("Detecting duplicates")
 
-	// Duplicate detection logic would go here
-	// This would use perceptual hashing or similar techniques
+	userUUID := pgtype.UUID{Bytes: userID, Valid: true}
+	duplicates, err := h.db.GetDuplicateAssets(ctx, userUUID)
+	if err != nil {
+		return fmt.Errorf("failed to query duplicate assets: %w", err)
+	}
 
+	now := pgtype.Timestamptz{Time: time.Now(), Valid: true}
+	seen := make(map[pgtype.UUID]struct{}, len(duplicates)*2)
+	for _, duplicate := range duplicates {
+		for _, assetID := range []pgtype.UUID{duplicate.ID, duplicate.DuplicateID} {
+			if !assetID.Valid {
+				continue
+			}
+			if _, ok := seen[assetID]; ok {
+				continue
+			}
+			seen[assetID] = struct{}{}
+			if err := h.markAssetJobStatus(ctx, sqlc.UpdateAssetJobStatusParams{
+				AssetId:              assetID,
+				DuplicatesDetectedAt: now,
+			}); err != nil {
+				return fmt.Errorf("failed to update duplicate job status for asset %s: %w", assetID.String(), err)
+			}
+		}
+	}
+
+	h.logger.WithFields(logrus.Fields{
+		"user_id":          userID,
+		"duplicate_pairs":  len(duplicates),
+		"duplicate_assets": len(seen),
+	}).Info("Duplicate detection complete")
+	return nil
+}
+
+func unsupportedJobError(message string) error {
+	return fmt.Errorf("%s: %w", message, asynq.SkipRetry)
+}
+
+func (h *Handlers) markAssetJobStatus(ctx context.Context, params sqlc.UpdateAssetJobStatusParams) error {
+	if _, err := h.db.UpdateAssetJobStatus(ctx, params); err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		_, createErr := h.db.CreateAssetJobStatus(ctx, sqlc.CreateAssetJobStatusParams(params))
+		if createErr != nil {
+			return createErr
+		}
+	}
 	return nil
 }
 

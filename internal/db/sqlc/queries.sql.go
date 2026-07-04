@@ -613,6 +613,10 @@ AND ($12::uuid IS NULL OR a."libraryId" = $12::uuid)
 AND ($13::text IS NULL OR a."deviceId" = $13::text)
 AND ($14::timestamptz IS NULL OR a."localDateTime" >= $14::timestamptz)
 AND ($15::timestamptz IS NULL OR a."localDateTime" <= $15::timestamptz)
+AND ($16::boolean IS NULL OR (a."encodedVideoPath" IS NOT NULL AND a."encodedVideoPath" <> '') = $16::boolean)
+AND ($17::boolean IS NULL OR (a."livePhotoVideoId" IS NOT NULL) = $17::boolean)
+AND ($18::boolean IS NULL OR a."isOffline" = $18::boolean)
+AND ($19::boolean IS NULL OR a."isExternal" = $19::boolean)
 `
 
 type CountSearchAssetsFilteredForPageParams struct {
@@ -631,6 +635,10 @@ type CountSearchAssetsFilteredForPageParams struct {
 	DeviceID    pgtype.Text
 	TakenAfter  pgtype.Timestamptz
 	TakenBefore pgtype.Timestamptz
+	IsEncoded   pgtype.Bool
+	IsMotion    pgtype.Bool
+	IsOffline   pgtype.Bool
+	IsExternal  pgtype.Bool
 }
 
 func (q *Queries) CountSearchAssetsFilteredForPage(ctx context.Context, arg CountSearchAssetsFilteredForPageParams) (int64, error) {
@@ -650,6 +658,10 @@ func (q *Queries) CountSearchAssetsFilteredForPage(ctx context.Context, arg Coun
 		arg.DeviceID,
 		arg.TakenAfter,
 		arg.TakenBefore,
+		arg.IsEncoded,
+		arg.IsMotion,
+		arg.IsOffline,
+		arg.IsExternal,
 	)
 	var count int64
 	err := row.Scan(&count)
@@ -3686,48 +3698,96 @@ func (q *Queries) GetAssetsByIDs(ctx context.Context, dollar_1 []pgtype.UUID) ([
 
 const getAssetsByLocation = `-- name: GetAssetsByLocation :many
 
-SELECT a.id, a."deviceAssetId", a."ownerId", a."deviceId", a.type, a."originalPath", a."fileCreatedAt", a."fileModifiedAt", a."isFavorite", a.duration, a."encodedVideoPath", a.checksum, a."livePhotoVideoId", a."updatedAt", a."createdAt", a."originalFileName", a."sidecarPath", a.thumbhash, a."isOffline", a."libraryId", a."isExternal", a."deletedAt", a."localDateTime", a."stackId", a."duplicateId", a.status, a."updateId", a.visibility FROM assets a
+SELECT a.id, a."deviceAssetId", a."ownerId", a."deviceId", a.type, a."originalPath", a."fileCreatedAt", a."fileModifiedAt", a."isFavorite", a.duration, a."encodedVideoPath", a.checksum, a."livePhotoVideoId", a."updatedAt", a."createdAt", a."originalFileName", a."sidecarPath", a.thumbhash, a."isOffline", a."libraryId", a."isExternal", a."deletedAt", a."localDateTime", a."stackId", a."duplicateId", a.status, a."updateId", a.visibility, e.latitude AS exif_latitude, e.longitude AS exif_longitude, e.city, e.state, e.country FROM assets a
 JOIN exif e ON a.id = e."assetId"
-WHERE a."ownerId" = $1 
+WHERE a."ownerId" = $1
 AND a."deletedAt" IS NULL
-AND e.latitude IS NOT NULL 
+AND e.latitude IS NOT NULL
 AND e.longitude IS NOT NULL
 AND e.latitude BETWEEN $2 AND $3
 AND e.longitude BETWEEN $4 AND $5
+AND ($6::boolean IS NULL OR a."isFavorite" = $6::boolean)
+AND ($7::boolean IS NULL OR (a.visibility = 'archive'::asset_visibility_enum) = $7::boolean)
+AND ($8::timestamptz IS NULL OR a."fileCreatedAt" >= $8::timestamptz)
+AND ($9::timestamptz IS NULL OR a."fileCreatedAt" <= $9::timestamptz)
 ORDER BY a."localDateTime" DESC
-LIMIT $6 OFFSET $7
+LIMIT $11 OFFSET $10
 `
 
 type GetAssetsByLocationParams struct {
-	OwnerId     pgtype.UUID
-	Latitude    pgtype.Float8
-	Latitude_2  pgtype.Float8
-	Longitude   pgtype.Float8
-	Longitude_2 pgtype.Float8
-	Limit       int32
-	Offset      int32
+	OwnerID       pgtype.UUID
+	MinLat        pgtype.Float8
+	MaxLat        pgtype.Float8
+	MinLon        pgtype.Float8
+	MaxLon        pgtype.Float8
+	IsFavorite    pgtype.Bool
+	IsArchived    pgtype.Bool
+	CreatedAfter  pgtype.Timestamptz
+	CreatedBefore pgtype.Timestamptz
+	Offset        int32
+	Limit         int32
+}
+
+type GetAssetsByLocationRow struct {
+	ID               pgtype.UUID
+	DeviceAssetId    string
+	OwnerId          pgtype.UUID
+	DeviceId         string
+	Type             string
+	OriginalPath     string
+	FileCreatedAt    pgtype.Timestamptz
+	FileModifiedAt   pgtype.Timestamptz
+	IsFavorite       bool
+	Duration         pgtype.Text
+	EncodedVideoPath pgtype.Text
+	Checksum         []byte
+	LivePhotoVideoId pgtype.UUID
+	UpdatedAt        pgtype.Timestamptz
+	CreatedAt        pgtype.Timestamptz
+	OriginalFileName string
+	SidecarPath      pgtype.Text
+	Thumbhash        []byte
+	IsOffline        bool
+	LibraryId        pgtype.UUID
+	IsExternal       bool
+	DeletedAt        pgtype.Timestamptz
+	LocalDateTime    pgtype.Timestamptz
+	StackId          pgtype.UUID
+	DuplicateId      pgtype.UUID
+	Status           AssetsStatusEnum
+	UpdateId         pgtype.UUID
+	Visibility       AssetVisibilityEnum
+	ExifLatitude     pgtype.Float8
+	ExifLongitude    pgtype.Float8
+	City             pgtype.Text
+	State            pgtype.Text
+	Country          pgtype.Text
 }
 
 // ============================================================================
 // ADVANCED ASSET QUERIES
 // ============================================================================
-func (q *Queries) GetAssetsByLocation(ctx context.Context, arg GetAssetsByLocationParams) ([]Asset, error) {
+func (q *Queries) GetAssetsByLocation(ctx context.Context, arg GetAssetsByLocationParams) ([]GetAssetsByLocationRow, error) {
 	rows, err := q.db.Query(ctx, getAssetsByLocation,
-		arg.OwnerId,
-		arg.Latitude,
-		arg.Latitude_2,
-		arg.Longitude,
-		arg.Longitude_2,
-		arg.Limit,
+		arg.OwnerID,
+		arg.MinLat,
+		arg.MaxLat,
+		arg.MinLon,
+		arg.MaxLon,
+		arg.IsFavorite,
+		arg.IsArchived,
+		arg.CreatedAfter,
+		arg.CreatedBefore,
 		arg.Offset,
+		arg.Limit,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Asset
+	var items []GetAssetsByLocationRow
 	for rows.Next() {
-		var i Asset
+		var i GetAssetsByLocationRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.DeviceAssetId,
@@ -3757,6 +3817,11 @@ func (q *Queries) GetAssetsByLocation(ctx context.Context, arg GetAssetsByLocati
 			&i.Status,
 			&i.UpdateId,
 			&i.Visibility,
+			&i.ExifLatitude,
+			&i.ExifLongitude,
+			&i.City,
+			&i.State,
+			&i.Country,
 		); err != nil {
 			return nil, err
 		}
@@ -4024,7 +4089,7 @@ const getAssetsNeedingThumbnails = `-- name: GetAssetsNeedingThumbnails :many
 SELECT a.id, a."deviceAssetId", a."ownerId", a."deviceId", a.type, a."originalPath", a."fileCreatedAt", a."fileModifiedAt", a."isFavorite", a.duration, a."encodedVideoPath", a.checksum, a."livePhotoVideoId", a."updatedAt", a."createdAt", a."originalFileName", a."sidecarPath", a.thumbhash, a."isOffline", a."libraryId", a."isExternal", a."deletedAt", a."localDateTime", a."stackId", a."duplicateId", a.status, a."updateId", a.visibility FROM assets a
 LEFT JOIN asset_job_status ajs ON a.id = ajs."assetId"
 WHERE a."deletedAt" IS NULL 
-AND (ajs."thumbnailGeneratedAt" IS NULL OR ajs."thumbnailGeneratedAt" < a."updatedAt")
+AND (ajs."thumbnailAt" IS NULL OR ajs."thumbnailAt" < a."updatedAt")
 ORDER BY a."createdAt" DESC
 LIMIT $1
 `
@@ -4178,7 +4243,7 @@ func (q *Queries) GetDistinctCities(ctx context.Context, arg GetDistinctCitiesPa
 
 const getDuplicateAssets = `-- name: GetDuplicateAssets :many
 SELECT a1.id, a1."deviceAssetId", a1."ownerId", a1."deviceId", a1.type, a1."originalPath", a1."fileCreatedAt", a1."fileModifiedAt", a1."isFavorite", a1.duration, a1."encodedVideoPath", a1.checksum, a1."livePhotoVideoId", a1."updatedAt", a1."createdAt", a1."originalFileName", a1."sidecarPath", a1.thumbhash, a1."isOffline", a1."libraryId", a1."isExternal", a1."deletedAt", a1."localDateTime", a1."stackId", a1."duplicateId", a1.status, a1."updateId", a1.visibility, a2.id as duplicate_id FROM assets a1
-JOIN assets a2 ON a1.checksum = a2.checksum AND a1.id < a2.id
+JOIN assets a2 ON a1.checksum = a2.checksum AND a2."ownerId" = a1."ownerId" AND a1.id < a2.id
 WHERE a1."ownerId" = $1 AND a1."deletedAt" IS NULL AND a2."deletedAt" IS NULL
 ORDER BY a1."localDateTime" DESC
 `
@@ -7527,8 +7592,12 @@ AND ($12::uuid IS NULL OR a."libraryId" = $12::uuid)
 AND ($13::text IS NULL OR a."deviceId" = $13::text)
 AND ($14::timestamptz IS NULL OR a."localDateTime" >= $14::timestamptz)
 AND ($15::timestamptz IS NULL OR a."localDateTime" <= $15::timestamptz)
+AND ($16::boolean IS NULL OR (a."encodedVideoPath" IS NOT NULL AND a."encodedVideoPath" <> '') = $16::boolean)
+AND ($17::boolean IS NULL OR (a."livePhotoVideoId" IS NOT NULL) = $17::boolean)
+AND ($18::boolean IS NULL OR a."isOffline" = $18::boolean)
+AND ($19::boolean IS NULL OR a."isExternal" = $19::boolean)
 ORDER BY a."localDateTime" DESC
-LIMIT $17 OFFSET $16
+LIMIT $21 OFFSET $20
 `
 
 type SearchAssetsFilteredParams struct {
@@ -7547,6 +7616,10 @@ type SearchAssetsFilteredParams struct {
 	DeviceID    pgtype.Text
 	TakenAfter  pgtype.Timestamptz
 	TakenBefore pgtype.Timestamptz
+	IsEncoded   pgtype.Bool
+	IsMotion    pgtype.Bool
+	IsOffline   pgtype.Bool
+	IsExternal  pgtype.Bool
 	Offset      int32
 	Limit       int32
 }
@@ -7568,6 +7641,10 @@ func (q *Queries) SearchAssetsFiltered(ctx context.Context, arg SearchAssetsFilt
 		arg.DeviceID,
 		arg.TakenAfter,
 		arg.TakenBefore,
+		arg.IsEncoded,
+		arg.IsMotion,
+		arg.IsOffline,
+		arg.IsExternal,
 		arg.Offset,
 		arg.Limit,
 	)

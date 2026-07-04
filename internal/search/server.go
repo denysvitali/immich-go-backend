@@ -57,6 +57,10 @@ func (s *Server) SearchMetadata(ctx context.Context, req *immichv1.SearchMetadat
 		searchReq.LibraryID = stringValue(filter.LibraryId)
 		searchReq.IsFavorite = filter.IsFavorite
 		searchReq.IsArchived = filter.IsArchived
+		searchReq.IsEncoded = filter.IsEncoded
+		searchReq.IsMotion = filter.IsMotion
+		searchReq.IsOffline = filter.IsOffline
+		searchReq.IsExternal = filter.IsExternal
 		if filter.Type != nil {
 			searchReq.Type = assetTypeFilter(*filter.Type)
 		}
@@ -100,8 +104,8 @@ func (s *Server) SearchMetadata(ctx context.Context, req *immichv1.SearchMetadat
 		Assets: assets,
 		Total:  int32(result.Total),
 		Count:  int32(len(result.Items)),
-		Page:   0,
-		Size:   30,
+		Page:   int32(result.Page),
+		Size:   int32(result.Size),
 	}, nil
 }
 

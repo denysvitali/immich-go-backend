@@ -209,12 +209,12 @@ func (s *Server) UploadAsset(ctx context.Context, request *immichv1.UploadAssetR
 
 	if s.jobService != nil {
 		thumbPayload := &jobs.ThumbnailGenerationPayload{AssetID: assetIDStr}
-		if enqErr := s.jobService.EnqueueJob(ctx, jobs.JobTypeThumbnailGeneration, thumbPayload); enqErr != nil {
+		if enqErr := s.jobService.EnqueueJobWithPriority(ctx, jobs.JobTypeThumbnailGeneration, thumbPayload, jobs.PriorityHigh); enqErr != nil {
 			logrus.WithError(enqErr).Warn("UploadAsset: failed to enqueue thumbnail generation job")
 		}
 
 		metaPayload := &jobs.MetadataExtractionPayload{AssetID: assetIDStr}
-		if enqErr := s.jobService.EnqueueJob(ctx, jobs.JobTypeMetadataExtraction, metaPayload); enqErr != nil {
+		if enqErr := s.jobService.EnqueueJobWithPriority(ctx, jobs.JobTypeMetadataExtraction, metaPayload, jobs.PriorityHigh); enqErr != nil {
 			logrus.WithError(enqErr).Warn("UploadAsset: failed to enqueue metadata extraction job")
 		}
 	} else if len(fileContent) > 0 {
@@ -518,9 +518,84 @@ func (s *Server) GetRecentlyAddedAssets(ctx context.Context, request *immichv1.G
 }
 
 func (s *Server) RunAssetJobs(ctx context.Context, request *immichv1.RunAssetJobsRequest) (*emptypb.Empty, error) {
-	// Asset job processing would be implemented here
-	// For now, just return success
+	claims, err := s.claimsFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if s.jobService == nil {
+		return nil, status.Error(codes.Unavailable, "job service not configured")
+	}
+
+	userID, err := pgutil.ParseUserID(claims.UserID)
+	if err != nil {
+		return nil, SanitizedInternal(ctx, "invalid user ID", err)
+	}
+
+	switch request.GetName() {
+	case immichv1.AssetJobName_ASSET_JOB_NAME_THUMBNAIL_GENERATION:
+		if err := s.enqueueAssetJobsForAssets(ctx, userID, request.GetAssetIds(), jobs.JobTypeThumbnailGeneration, jobs.PriorityHigh); err != nil {
+			return nil, err
+		}
+	case immichv1.AssetJobName_ASSET_JOB_NAME_METADATA_EXTRACTION:
+		if err := s.enqueueAssetJobsForAssets(ctx, userID, request.GetAssetIds(), jobs.JobTypeMetadataExtraction, jobs.PriorityHigh); err != nil {
+			return nil, err
+		}
+	case immichv1.AssetJobName_ASSET_JOB_NAME_DUPLICATE_DETECTION:
+		payload := jobs.DuplicateDetectionPayload{UserID: claims.UserID}
+		if err := s.jobService.EnqueueJobWithPriority(ctx, jobs.JobTypeDuplicateDetect, payload, jobs.PriorityNormal); err != nil {
+			return nil, SanitizedInternal(ctx, "failed to enqueue duplicate detection job", err)
+		}
+	case immichv1.AssetJobName_ASSET_JOB_NAME_VIDEO_CONVERSION:
+		return nil, status.Error(codes.Unimplemented, "video conversion jobs require a transcoding pipeline, which is not configured")
+	default:
+		return nil, status.Errorf(codes.InvalidArgument, "unknown asset job name: %v", request.GetName())
+	}
+
 	return &emptypb.Empty{}, nil
+}
+
+func (s *Server) enqueueAssetJobsForAssets(
+	ctx context.Context,
+	userID pgtype.UUID,
+	assetIDs []string,
+	jobType jobs.JobType,
+	priority jobs.JobPriority,
+) error {
+	if len(assetIDs) == 0 {
+		return status.Error(codes.InvalidArgument, "asset_ids are required for this asset job")
+	}
+
+	for _, assetID := range assetIDs {
+		assetUUID, err := uuid.Parse(assetID)
+		if err != nil {
+			return status.Errorf(codes.InvalidArgument, "invalid asset ID: %v", err)
+		}
+		pgAssetID := pgtype.UUID{Bytes: assetUUID, Valid: true}
+
+		asset, err := s.db.GetAsset(ctx, pgAssetID)
+		if err != nil {
+			return status.Errorf(codes.NotFound, "asset not found: %s", assetUUID.String())
+		}
+		if asset.OwnerId != userID {
+			return status.Error(codes.PermissionDenied, "not authorized to run jobs for this asset")
+		}
+
+		var payload any
+		switch jobType {
+		case jobs.JobTypeThumbnailGeneration:
+			payload = jobs.ThumbnailGenerationPayload{AssetID: assetUUID.String()}
+		case jobs.JobTypeMetadataExtraction:
+			payload = jobs.MetadataExtractionPayload{AssetID: assetUUID.String()}
+		default:
+			return status.Errorf(codes.InvalidArgument, "unsupported asset job type: %s", jobType)
+		}
+
+		if err := s.jobService.EnqueueJobWithPriority(ctx, jobType, payload, priority); err != nil {
+			return SanitizedInternal(ctx, "failed to enqueue asset job", err)
+		}
+	}
+
+	return nil
 }
 
 func (s *Server) DownloadAsset(ctx context.Context, request *immichv1.DownloadAssetRequest) (*immichv1.DownloadAssetResponse, error) {
