@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/denysvitali/immich-go-backend/internal/oauth"
@@ -165,4 +166,18 @@ func (s *Server) UnlinkOAuthAccount(ctx context.Context, _ *emptypb.Empty) (*imm
 	return &immichv1.UnlinkOAuthAccountResponse{
 		Unlinked: true,
 	}, nil
+}
+
+// LogoutOAuth handles OIDC backchannel logout requests. Full upstream session
+// invalidation requires verified logout-token claims and OAuth session IDs,
+// neither of which are represented in the current simplified OAuth model.
+func (s *Server) LogoutOAuth(ctx context.Context, req *immichv1.OAuthBackchannelLogoutRequest) (*emptypb.Empty, error) {
+	if strings.TrimSpace(req.GetLogoutToken()) == "" {
+		return nil, status.Error(codes.InvalidArgument, "logout_token is required")
+	}
+	if !s.config.Auth.OAuth.Enabled {
+		return nil, status.Error(codes.InvalidArgument, "received backchannel logout request but OAuth is not enabled")
+	}
+
+	return nil, status.Error(codes.InvalidArgument, "error backchannel logout: token validation failed")
 }

@@ -133,6 +133,9 @@ func (s *Server) handleFrontendShape(w http.ResponseWriter, r *http.Request) (ha
 		case "/api/download/archive":
 			s.handleDownloadArchive(w, r)
 			return true
+		case "/api/oauth/backchannel-logout":
+			s.handleOAuthBackchannelLogout(w, r)
+			return true
 		}
 
 		if partnerID, ok := partnerIDFromPath(r.URL.Path); ok {

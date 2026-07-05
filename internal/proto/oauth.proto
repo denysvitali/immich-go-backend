@@ -48,6 +48,14 @@ service OAuthService {
       body: "*"
     };
   }
+
+  // Backchannel OAuth logout
+  rpc LogoutOAuth(OAuthBackchannelLogoutRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      post: "/api/oauth/backchannel-logout"
+      body: "*"
+    };
+  }
 }
 
 // Request to authorize OAuth
@@ -108,4 +116,9 @@ message LinkOAuthAccountResponse {
 // Response for unlinking OAuth account
 message UnlinkOAuthAccountResponse {
   bool unlinked = 1;
+}
+
+// Request for OAuth backchannel logout
+message OAuthBackchannelLogoutRequest {
+  string logout_token = 1;
 }

@@ -135,6 +135,20 @@ test.describe('system metadata', () => {
   });
 });
 
+test.describe('oauth', () => {
+  test('backchannel logout accepts upstream form posts without auth', async ({ request }) => {
+    const missingToken = await request.post('/api/oauth/backchannel-logout', { form: {} });
+    expect(missingToken.status()).toBe(400);
+
+    const disabledOAuth = await request.post('/api/oauth/backchannel-logout', {
+      form: { logout_token: 'invalid-token' },
+    });
+    expect(disabledOAuth.status()).toBe(400);
+    const body = await disabledOAuth.json();
+    expect(String(body.message ?? body.error)).toContain('OAuth is not enabled');
+  });
+});
+
 test.describe('admin integrity', () => {
   test('integrity reports expose the upstream empty-report shape', async ({ request }) => {
     const unauthenticated = await request.get('/api/admin/integrity/summary');
