@@ -204,6 +204,83 @@ func TestServer_GetAsset_OK(t *testing.T) {
 	assert.Equal(t, immichv1.AssetType_ASSET_TYPE_IMAGE, resp.GetType())
 }
 
+func TestServer_UpdateAsset_UserIsolation(t *testing.T) {
+	env := newAssetViewerTestEnv(t)
+	ctx := context.Background()
+
+	userA := createAssetViewerTestUser(t, ctx, env.tdb)
+	userB := createAssetViewerTestUser(t, ctx, env.tdb)
+	assetA := seedAsset(t, ctx, env, userA, "update-userA-only.jpg", "image/jpeg", []byte("userA-bytes"))
+	assetAID := uuid.UUID(assetA.ID.Bytes).String()
+
+	favorite := true
+	assertAssetViewerNotFound(t, func() error {
+		_, err := env.srv.UpdateAsset(assetViewerContext(userB), &immichv1.UpdateAssetRequest{
+			AssetId:    assetAID,
+			IsFavorite: &favorite,
+		})
+		return err
+	})
+
+	reloaded, err := env.tdb.Queries.GetAssetByID(ctx, assetA.ID)
+	require.NoError(t, err)
+	assert.False(t, reloaded.IsFavorite)
+
+	resp, err := env.srv.UpdateAsset(assetViewerContext(userA), &immichv1.UpdateAssetRequest{
+		AssetId:    assetAID,
+		IsFavorite: &favorite,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.True(t, resp.GetIsFavorite())
+
+	reloaded, err = env.tdb.Queries.GetAssetByID(ctx, assetA.ID)
+	require.NoError(t, err)
+	assert.True(t, reloaded.IsFavorite)
+}
+
+func TestServer_UpdateAssets_UserIsolation(t *testing.T) {
+	env := newAssetViewerTestEnv(t)
+	ctx := context.Background()
+
+	userA := createAssetViewerTestUser(t, ctx, env.tdb)
+	userB := createAssetViewerTestUser(t, ctx, env.tdb)
+	assetA := seedAsset(t, ctx, env, userA, "bulk-update-userA.jpg", "image/jpeg", []byte("userA-bytes"))
+	assetB := seedAsset(t, ctx, env, userB, "bulk-update-userB.jpg", "image/jpeg", []byte("userB-bytes"))
+	assetAID := uuid.UUID(assetA.ID.Bytes).String()
+	assetBID := uuid.UUID(assetB.ID.Bytes).String()
+
+	favorite := true
+	assertAssetViewerNotFound(t, func() error {
+		_, err := env.srv.UpdateAssets(assetViewerContext(userA), &immichv1.UpdateAssetsRequest{
+			AssetIds:   []string{assetAID, assetBID},
+			IsFavorite: &favorite,
+		})
+		return err
+	})
+
+	reloadedA, err := env.tdb.Queries.GetAssetByID(ctx, assetA.ID)
+	require.NoError(t, err)
+	assert.False(t, reloadedA.IsFavorite, "bulk update should not partially update owned assets before access checks finish")
+	reloadedB, err := env.tdb.Queries.GetAssetByID(ctx, assetB.ID)
+	require.NoError(t, err)
+	assert.False(t, reloadedB.IsFavorite)
+
+	resp, err := env.srv.UpdateAssets(assetViewerContext(userA), &immichv1.UpdateAssetsRequest{
+		AssetIds:   []string{assetAID},
+		IsFavorite: &favorite,
+	})
+	require.NoError(t, err)
+	assert.NotNil(t, resp)
+
+	reloadedA, err = env.tdb.Queries.GetAssetByID(ctx, assetA.ID)
+	require.NoError(t, err)
+	assert.True(t, reloadedA.IsFavorite)
+	reloadedB, err = env.tdb.Queries.GetAssetByID(ctx, assetB.ID)
+	require.NoError(t, err)
+	assert.False(t, reloadedB.IsFavorite)
+}
+
 // TestServer_GetAssetThumbnail_NotFound covers the NotFound path of the
 // thumbnail handler. Because the asset does not exist in the DB, the
 // handler returns codes.NotFound before ever touching storage.

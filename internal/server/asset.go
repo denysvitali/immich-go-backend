@@ -230,9 +230,9 @@ func (s *Server) UploadAsset(ctx context.Context, request *immichv1.UploadAssetR
 }
 
 func (s *Server) UpdateAsset(ctx context.Context, request *immichv1.UpdateAssetRequest) (*immichv1.Asset, error) {
-	assetID := pgtype.UUID{}
-	if err := assetID.Scan(request.AssetId); err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid asset ID: %v", err)
+	existingAsset, err := s.getAuthenticatedAsset(ctx, request.AssetId)
+	if err != nil {
+		return nil, err
 	}
 
 	var isFavorite, isArchived pgtype.Bool
@@ -244,7 +244,7 @@ func (s *Server) UpdateAsset(ctx context.Context, request *immichv1.UpdateAssetR
 	}
 
 	asset, err := s.db.UpdateAsset(ctx, sqlc.UpdateAssetParams{
-		ID:         assetID,
+		ID:         existingAsset.ID,
 		IsFavorite: isFavorite,
 		IsArchived: isArchived,
 	})
@@ -256,8 +256,20 @@ func (s *Server) UpdateAsset(ctx context.Context, request *immichv1.UpdateAssetR
 }
 
 func (s *Server) UpdateAssets(ctx context.Context, request *immichv1.UpdateAssetsRequest) (*emptypb.Empty, error) {
-	// For bulk updates, we would need to implement a bulk update query
-	// For now, update each asset individually
+	userID, err := s.userUUIDFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	assetIDs := make([]pgtype.UUID, 0, len(request.AssetIds))
+	for _, assetID := range request.AssetIds {
+		asset, err := s.getAssetForUser(ctx, userID, assetID)
+		if err != nil {
+			return nil, err
+		}
+		assetIDs = append(assetIDs, asset.ID)
+	}
+
 	var isFavorite, isArchived pgtype.Bool
 	if request.IsFavorite != nil {
 		isFavorite = pgtype.Bool{Bool: *request.IsFavorite, Valid: true}
@@ -266,20 +278,14 @@ func (s *Server) UpdateAssets(ctx context.Context, request *immichv1.UpdateAsset
 		isArchived = pgtype.Bool{Bool: *request.IsArchived, Valid: true}
 	}
 
-	for _, assetID := range request.AssetIds {
-		assetUUID := pgtype.UUID{}
-		if err := assetUUID.Scan(assetID); err != nil {
-			continue // Skip invalid UUIDs
-		}
-
+	for _, assetID := range assetIDs {
 		_, err := s.db.UpdateAsset(ctx, sqlc.UpdateAssetParams{
-			ID:         assetUUID,
+			ID:         assetID,
 			IsFavorite: isFavorite,
 			IsArchived: isArchived,
 		})
 		if err != nil {
-			// Log error but continue with other assets
-			continue
+			return nil, SanitizedInternal(ctx, "failed to update assets", err)
 		}
 	}
 
@@ -828,14 +834,18 @@ func assetDownloadContentType(filename string) string {
 }
 
 func (s *Server) getAuthenticatedAsset(ctx context.Context, assetID string) (sqlc.Asset, error) {
-	parsedAssetID, err := uuid.Parse(assetID)
-	if err != nil {
-		return sqlc.Asset{}, status.Errorf(codes.InvalidArgument, "invalid asset ID: %v", err)
-	}
-
 	userID, err := s.userUUIDFromContext(ctx)
 	if err != nil {
 		return sqlc.Asset{}, err
+	}
+
+	return s.getAssetForUser(ctx, userID, assetID)
+}
+
+func (s *Server) getAssetForUser(ctx context.Context, userID pgtype.UUID, assetID string) (sqlc.Asset, error) {
+	parsedAssetID, err := uuid.Parse(assetID)
+	if err != nil {
+		return sqlc.Asset{}, status.Errorf(codes.InvalidArgument, "invalid asset ID: %v", err)
 	}
 
 	asset, err := s.db.GetAssetByIDAndUser(ctx, sqlc.GetAssetByIDAndUserParams{
