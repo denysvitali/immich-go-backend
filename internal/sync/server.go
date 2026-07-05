@@ -13,25 +13,48 @@ import (
 
 // Server implements the SyncServiceServer interface
 type Server struct {
-	service *Service
+	service syncService
 	immichv1.UnimplementedSyncServiceServer
+}
+
+type syncService interface {
+	GetAcknowledgedAssets(ctx context.Context, userID string) ([]string, error)
+	AcknowledgeSync(ctx context.Context, userID string, assetIDs []string) error
+	DeleteAcknowledgment(ctx context.Context, userID string, assetIDs []string) error
+	GetDeltaSync(ctx context.Context, userID string, updatedAfter time.Time) (*DeltaSyncResult, error)
+	GetFullSync(ctx context.Context, userID string, limit int, updatedUntil *time.Time) ([]string, bool, *time.Time, error)
+	SubscribeToEvents(userID string) chan *SyncEvent
+	UnsubscribeFromEvents(userID string, eventChan chan *SyncEvent)
 }
 
 // NewServer creates a new Sync server
 func NewServer(service *Service) *Server {
+	return newServer(service)
+}
+
+func newServer(service syncService) *Server {
 	return &Server{
 		service: service,
 	}
 }
 
+func currentUserIDFromContext(ctx context.Context) (string, error) {
+	userID, err := auth.GetUserIDFromContext(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	return userID.String(), nil
+}
+
 // GetSyncAck returns acknowledged asset IDs for the current user
 func (s *Server) GetSyncAck(ctx context.Context, _ *immichv1.GetSyncAckRequest) (*immichv1.GetSyncAckResponse, error) {
-	userID, err := auth.GetUserIDFromContext(ctx)
+	userID, err := currentUserIDFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	assetIDs, err := s.service.GetAcknowledgedAssets(ctx, userID.String())
+	assetIDs, err := s.service.GetAcknowledgedAssets(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -43,12 +66,12 @@ func (s *Server) GetSyncAck(ctx context.Context, _ *immichv1.GetSyncAckRequest) 
 
 // SendSyncAck acknowledges sync for specified assets
 func (s *Server) SendSyncAck(ctx context.Context, req *immichv1.SendSyncAckRequest) (*emptypb.Empty, error) {
-	userID, err := auth.GetUserIDFromContext(ctx)
+	userID, err := currentUserIDFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := s.service.AcknowledgeSync(ctx, userID.String(), req.AssetIds); err != nil {
+	if err := s.service.AcknowledgeSync(ctx, userID, req.AssetIds); err != nil {
 		return nil, err
 	}
 
@@ -57,12 +80,12 @@ func (s *Server) SendSyncAck(ctx context.Context, req *immichv1.SendSyncAckReque
 
 // DeleteSyncAck removes acknowledgment for specified assets
 func (s *Server) DeleteSyncAck(ctx context.Context, req *immichv1.DeleteSyncAckRequest) (*emptypb.Empty, error) {
-	userID, err := auth.GetUserIDFromContext(ctx)
+	userID, err := currentUserIDFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := s.service.DeleteAcknowledgment(ctx, userID.String(), req.AssetIds); err != nil {
+	if err := s.service.DeleteAcknowledgment(ctx, userID, req.AssetIds); err != nil {
 		return nil, err
 	}
 
@@ -71,23 +94,17 @@ func (s *Server) DeleteSyncAck(ctx context.Context, req *immichv1.DeleteSyncAckR
 
 // GetDeltaSync returns changes since the specified timestamp
 func (s *Server) GetDeltaSync(ctx context.Context, req *immichv1.GetDeltaSyncRequest) (*immichv1.GetDeltaSyncResponse, error) {
-	userID, err := auth.GetUserIDFromContext(ctx)
+	userID, err := currentUserIDFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	// Override with requesting user if not admin
-	userIDStr := userID.String()
-	// Check if user is admin (would need admin check in real implementation)
-	// For now, only allow users to sync their own data
-	req.UserId = &userIDStr
 
 	updatedAfter := time.Now().Add(-24 * time.Hour) // Default to last 24 hours
 	if req.UpdatedAfter != nil {
 		updatedAfter = req.UpdatedAfter.AsTime()
 	}
 
-	result, err := s.service.GetDeltaSync(ctx, *req.UserId, updatedAfter)
+	result, err := s.service.GetDeltaSync(ctx, userID, updatedAfter)
 	if err != nil {
 		return nil, err
 	}
@@ -101,16 +118,10 @@ func (s *Server) GetDeltaSync(ctx context.Context, req *immichv1.GetDeltaSyncReq
 
 // GetFullSyncForUser returns all assets for a user with pagination
 func (s *Server) GetFullSyncForUser(ctx context.Context, req *immichv1.GetFullSyncForUserRequest) (*immichv1.GetFullSyncForUserResponse, error) {
-	userID, err := auth.GetUserIDFromContext(ctx)
+	userID, err := currentUserIDFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	// Override with requesting user if not admin
-	userIDStr := userID.String()
-	// Check if user is admin (would need admin check in real implementation)
-	// For now, only allow users to sync their own data
-	req.UserId = &userIDStr
 
 	limit := 1000
 	if req.Limit != nil {
@@ -123,7 +134,7 @@ func (s *Server) GetFullSyncForUser(ctx context.Context, req *immichv1.GetFullSy
 		updatedUntil = &t
 	}
 
-	assetIDs, hasMore, lastUpdated, err := s.service.GetFullSync(ctx, *req.UserId, limit, updatedUntil)
+	assetIDs, hasMore, lastUpdated, err := s.service.GetFullSync(ctx, userID, limit, updatedUntil)
 	if err != nil {
 		return nil, err
 	}
@@ -144,20 +155,18 @@ func (s *Server) GetFullSyncForUser(ctx context.Context, req *immichv1.GetFullSy
 func (s *Server) GetSyncStream(req *immichv1.GetSyncStreamRequest, stream immichv1.SyncService_GetSyncStreamServer) error {
 	ctx := stream.Context()
 
-	userID, err := auth.GetUserIDFromContext(ctx)
+	userID, err := currentUserIDFromContext(ctx)
 	if err != nil {
 		return err
 	}
 
-	userIDStr := userID.String()
-
 	// Subscribe to events for this user
-	eventChan := s.service.SubscribeToEvents(userIDStr)
-	defer s.service.UnsubscribeFromEvents(userIDStr, eventChan)
+	eventChan := s.service.SubscribeToEvents(userID)
+	defer s.service.UnsubscribeFromEvents(userID, eventChan)
 
 	// Send initial sync state - get recent changes
 	// This ensures client gets any events they might have missed
-	deltaSyncResult, err := s.service.GetDeltaSync(ctx, userIDStr, time.Now().Add(-1*time.Hour))
+	deltaSyncResult, err := s.service.GetDeltaSync(ctx, userID, time.Now().Add(-1*time.Hour))
 	if err == nil && !deltaSyncResult.NeedsFullSync {
 		// Send initial upserted assets
 		for _, assetID := range deltaSyncResult.UpsertedAssets {
