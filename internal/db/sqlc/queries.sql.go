@@ -1759,8 +1759,8 @@ func (q *Queries) CreateSmartSearch(ctx context.Context, arg CreateSmartSearchPa
 
 const createStack = `-- name: CreateStack :one
 
-INSERT INTO asset_stack (id, "primaryAssetId", "ownerId")
-VALUES (gen_uuid_v7(), $1, $2)
+INSERT INTO asset_stack ("primaryAssetId", "ownerId")
+VALUES ($1, $2)
 RETURNING id, "primaryAssetId", "ownerId"
 `
 
