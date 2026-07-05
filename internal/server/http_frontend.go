@@ -80,6 +80,11 @@ func (s *Server) handleFrontendShape(w http.ResponseWriter, r *http.Request) (ha
 			return true
 		}
 
+		if albumID, ok := albumMapMarkersIDFromPath(r.URL.Path); ok {
+			s.handleAlbumMapMarkers(w, r, albumID)
+			return true
+		}
+
 		if albumID, ok := albumIDFromPath(r.URL.Path); ok {
 			s.handleAlbum(w, r, albumID)
 			return true

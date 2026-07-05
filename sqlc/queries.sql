@@ -42,6 +42,16 @@ JOIN albums_assets_assets aaa ON a.id = aaa."assetsId"
 WHERE aaa."albumsId" = $1 AND a."deletedAt" IS NULL
 ORDER BY aaa."createdAt" DESC;
 
+-- name: GetAlbumMapMarkers :many
+SELECT a.*, e.latitude AS exif_latitude, e.longitude AS exif_longitude, e.city, e.state, e.country FROM assets a
+JOIN albums_assets_assets aaa ON a.id = aaa."assetsId"
+JOIN exif e ON a.id = e."assetId"
+WHERE aaa."albumsId" = $1
+AND a."deletedAt" IS NULL
+AND e.latitude IS NOT NULL
+AND e.longitude IS NOT NULL
+ORDER BY a."localDateTime" DESC;
+
 -- name: AddAssetToAlbum :exec
 INSERT INTO albums_assets_assets ("albumsId", "assetsId")
 VALUES ($1, $2)

@@ -8,6 +8,7 @@ import "google/api/annotations.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/timestamp.proto";
+import "map.proto";
 
 option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
 
@@ -32,6 +33,13 @@ service AlbumService {
   rpc GetAlbumInfo(GetAlbumInfoRequest) returns (Album) {
     option (google.api.http) = {
       get: "/api/albums/{id}"
+    };
+  }
+
+  // Get album map markers
+  rpc GetAlbumMapMarkers(GetAlbumMapMarkersRequest) returns (GetAlbumMapMarkersResponse) {
+    option (google.api.http) = {
+      get: "/api/albums/{id}/map-markers"
     };
   }
 
@@ -162,6 +170,16 @@ message GetAlbumInfoRequest {
   string id = 1;
   optional string key = 2; // For shared albums
   optional bool without_assets = 3;
+}
+
+message GetAlbumMapMarkersRequest {
+  string id = 1;
+  optional string key = 2;
+  optional string slug = 3;
+}
+
+message GetAlbumMapMarkersResponse {
+  repeated MapMarker markers = 1;
 }
 
 // Update album info request

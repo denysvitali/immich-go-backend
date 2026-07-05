@@ -1,9 +1,22 @@
 import { expect, test } from '@playwright/test';
-import { expectOk, png1x1, signUpAdmin, uniqueId } from './helpers';
+import { expectOk, gpsJpeg, png1x1, signUpAdmin, uniqueId } from './helpers';
 
 // Covers the upstream Immich v2.4.0 API surface added for the web UI:
 // system-config CRUD, multipart asset upload, download info/archive and the
 // jobs status endpoint.
+
+type AlbumMapMarker = {
+  id: string;
+  lat: number;
+  lon: number;
+  city: string;
+  state: string;
+  country: string;
+};
+
+function delay(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
 
 test.describe('system config', () => {
   test('GET /api/system-config returns the full upstream shape', async ({ request }) => {
@@ -290,6 +303,71 @@ test.describe('multipart upload', () => {
     const dupBody = await duplicate.json();
     expect(dupBody.status).toBe('duplicate');
     expect(dupBody.id).toBe(created.id);
+  });
+});
+
+test.describe('albums', () => {
+  test('album map markers expose GPS assets as an upstream array', async ({ request }) => {
+    const unauthenticated = await request.get(
+      '/api/albums/00000000-0000-4000-8000-000000000000/map-markers',
+    );
+    expect(unauthenticated.status()).toBe(401);
+
+    const admin = await signUpAdmin(request, 'album-markers');
+    const upload = await request.post('/api/assets', {
+      headers: admin.headers,
+      multipart: {
+        assetData: {
+          name: 'e2e-gps.jpg',
+          mimeType: 'image/jpeg',
+          buffer: gpsJpeg,
+        },
+        deviceAssetId: uniqueId('gps-asset'),
+        deviceId: 'e2e-device',
+        fileCreatedAt: '2026-07-01T12:00:00.000Z',
+        fileModifiedAt: '2026-07-01T12:00:00.000Z',
+      },
+    });
+    expect(upload.status()).toBe(201);
+    const asset = await upload.json();
+
+    const createAlbum = await request.post('/api/albums', {
+      headers: admin.headers,
+      data: {
+        albumName: `GPS Album ${uniqueId('album')}`,
+        description: 'Album map marker E2E coverage',
+        assetIds: [asset.id],
+      },
+    });
+    await expectOk(createAlbum);
+    const album = await createAlbum.json();
+
+    let markers: AlbumMapMarker[] = [];
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      const response = await request.get(`/api/albums/${album.id}/map-markers`, {
+        headers: admin.headers,
+      });
+      await expectOk(response);
+      markers = (await response.json()) as AlbumMapMarker[];
+      if (markers.some((marker) => marker.id === asset.id)) {
+        break;
+      }
+      await delay(250);
+    }
+
+    expect(Array.isArray(markers)).toBe(true);
+    const marker = markers.find((item) => item.id === asset.id);
+    if (!marker) {
+      throw new Error(`album map marker for ${asset.id} was not returned: ${JSON.stringify(markers)}`);
+    }
+    expect(marker).toMatchObject({
+      id: asset.id,
+      city: expect.any(String),
+      state: expect.any(String),
+      country: expect.any(String),
+    });
+    expect(marker.lat).toBeCloseTo(37.7749, 4);
+    expect(marker.lon).toBeCloseTo(-122.4194, 4);
   });
 });
 

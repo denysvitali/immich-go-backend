@@ -90,6 +90,57 @@ func (s *Server) GetAlbumInfo(ctx context.Context, request *immichv1.GetAlbumInf
 	return s.convertAlbumToProto(album), nil
 }
 
+func (s *Server) GetAlbumMapMarkers(ctx context.Context, request *immichv1.GetAlbumMapMarkersRequest) (*immichv1.GetAlbumMapMarkersResponse, error) {
+	claims, err := s.claimsFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	userID, err := pgutil.StringToUUID(claims.UserID)
+	if err != nil {
+		return nil, SanitizedInternal(ctx, "invalid user ID", err)
+	}
+
+	albumID, err := pgutil.StringToUUID(request.Id)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid album ID: %v", err)
+	}
+
+	album, err := s.db.GetAlbum(ctx, albumID)
+	if err != nil {
+		return nil, status.Error(codes.NotFound, "album not found")
+	}
+	if album.OwnerId != userID {
+		sharedUsers, err := s.db.GetAlbumSharedUsers(ctx, albumID)
+		if err != nil {
+			return nil, SanitizedInternal(ctx, "failed to check album access", err)
+		}
+
+		allowed := false
+		for _, sharedUser := range sharedUsers {
+			if sharedUser.ID == userID {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return nil, status.Error(codes.PermissionDenied, "access denied")
+		}
+	}
+
+	rows, err := s.db.GetAlbumMapMarkers(ctx, albumID)
+	if err != nil {
+		return nil, SanitizedInternal(ctx, "failed to get album map markers", err)
+	}
+
+	markers := make([]*immichv1.MapMarker, 0, len(rows))
+	for _, row := range rows {
+		markers = append(markers, albumMapMarkerToProto(row))
+	}
+
+	return &immichv1.GetAlbumMapMarkersResponse{Markers: markers}, nil
+}
+
 func (s *Server) UpdateAlbumInfo(ctx context.Context, request *immichv1.UpdateAlbumInfoRequest) (*immichv1.Album, error) {
 	albumID := pgtype.UUID{}
 	if err := albumID.Scan(request.Id); err != nil {
@@ -321,6 +372,28 @@ func (s *Server) convertAlbumToProto(album sqlc.Album) *immichv1.Album {
 	}
 
 	return protoAlbum
+}
+
+func albumMapMarkerToProto(row sqlc.GetAlbumMapMarkersRow) *immichv1.MapMarker {
+	marker := &immichv1.MapMarker{
+		Id:        row.ID.String(),
+		Lat:       row.ExifLatitude.Float64,
+		Lon:       row.ExifLongitude.Float64,
+		Latitude:  row.ExifLatitude.Float64,
+		Longitude: row.ExifLongitude.Float64,
+	}
+
+	if row.City.Valid {
+		marker.City = row.City.String
+	}
+	if row.State.Valid {
+		marker.State = row.State.String
+	}
+	if row.Country.Valid {
+		marker.Country = row.Country.String
+	}
+
+	return marker
 }
 
 // AddAssetsToAlbums adds a set of assets to multiple albums owned by the

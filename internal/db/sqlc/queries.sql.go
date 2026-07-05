@@ -2386,6 +2386,107 @@ func (q *Queries) GetAlbumAssets(ctx context.Context, albumsid pgtype.UUID) ([]A
 	return items, nil
 }
 
+const getAlbumMapMarkers = `-- name: GetAlbumMapMarkers :many
+SELECT a.id, a."deviceAssetId", a."ownerId", a."deviceId", a.type, a."originalPath", a."fileCreatedAt", a."fileModifiedAt", a."isFavorite", a.duration, a."encodedVideoPath", a.checksum, a."livePhotoVideoId", a."updatedAt", a."createdAt", a."originalFileName", a."sidecarPath", a.thumbhash, a."isOffline", a."libraryId", a."isExternal", a."deletedAt", a."localDateTime", a."stackId", a."duplicateId", a.status, a."updateId", a.visibility, e.latitude AS exif_latitude, e.longitude AS exif_longitude, e.city, e.state, e.country FROM assets a
+JOIN albums_assets_assets aaa ON a.id = aaa."assetsId"
+JOIN exif e ON a.id = e."assetId"
+WHERE aaa."albumsId" = $1
+AND a."deletedAt" IS NULL
+AND e.latitude IS NOT NULL
+AND e.longitude IS NOT NULL
+ORDER BY a."localDateTime" DESC
+`
+
+type GetAlbumMapMarkersRow struct {
+	ID               pgtype.UUID
+	DeviceAssetId    string
+	OwnerId          pgtype.UUID
+	DeviceId         string
+	Type             string
+	OriginalPath     string
+	FileCreatedAt    pgtype.Timestamptz
+	FileModifiedAt   pgtype.Timestamptz
+	IsFavorite       bool
+	Duration         pgtype.Text
+	EncodedVideoPath pgtype.Text
+	Checksum         []byte
+	LivePhotoVideoId pgtype.UUID
+	UpdatedAt        pgtype.Timestamptz
+	CreatedAt        pgtype.Timestamptz
+	OriginalFileName string
+	SidecarPath      pgtype.Text
+	Thumbhash        []byte
+	IsOffline        bool
+	LibraryId        pgtype.UUID
+	IsExternal       bool
+	DeletedAt        pgtype.Timestamptz
+	LocalDateTime    pgtype.Timestamptz
+	StackId          pgtype.UUID
+	DuplicateId      pgtype.UUID
+	Status           AssetsStatusEnum
+	UpdateId         pgtype.UUID
+	Visibility       AssetVisibilityEnum
+	ExifLatitude     pgtype.Float8
+	ExifLongitude    pgtype.Float8
+	City             pgtype.Text
+	State            pgtype.Text
+	Country          pgtype.Text
+}
+
+func (q *Queries) GetAlbumMapMarkers(ctx context.Context, albumsid pgtype.UUID) ([]GetAlbumMapMarkersRow, error) {
+	rows, err := q.db.Query(ctx, getAlbumMapMarkers, albumsid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetAlbumMapMarkersRow
+	for rows.Next() {
+		var i GetAlbumMapMarkersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.DeviceAssetId,
+			&i.OwnerId,
+			&i.DeviceId,
+			&i.Type,
+			&i.OriginalPath,
+			&i.FileCreatedAt,
+			&i.FileModifiedAt,
+			&i.IsFavorite,
+			&i.Duration,
+			&i.EncodedVideoPath,
+			&i.Checksum,
+			&i.LivePhotoVideoId,
+			&i.UpdatedAt,
+			&i.CreatedAt,
+			&i.OriginalFileName,
+			&i.SidecarPath,
+			&i.Thumbhash,
+			&i.IsOffline,
+			&i.LibraryId,
+			&i.IsExternal,
+			&i.DeletedAt,
+			&i.LocalDateTime,
+			&i.StackId,
+			&i.DuplicateId,
+			&i.Status,
+			&i.UpdateId,
+			&i.Visibility,
+			&i.ExifLatitude,
+			&i.ExifLongitude,
+			&i.City,
+			&i.State,
+			&i.Country,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getAlbumSharedUsers = `-- name: GetAlbumSharedUsers :many
 SELECT u.id, u.email, u.password, u."createdAt", u."profileImagePath", u."isAdmin", u."shouldChangePassword", u."deletedAt", u."oauthId", u."updatedAt", u."storageLabel", u.name, u."quotaSizeInBytes", u."quotaUsageInBytes", u.status, u."profileChangedAt", u."updateId", u."avatarColor", u."pinCode", u."isOnboarded", asu.role FROM users u
 JOIN albums_shared_users_users asu ON u.id = asu."usersId"
