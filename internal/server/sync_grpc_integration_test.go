@@ -157,7 +157,7 @@ func TestSyncServiceHandlerUsesClientConn(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL+"/sync/stream", http.NoBody)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL+"/api/sync/stream", http.NoBody)
 	require.NoError(t, err)
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/json")
@@ -190,7 +190,7 @@ func TestSyncServiceHandlerFallsBackToServer(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL+"/sync/stream", http.NoBody)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL+"/api/sync/stream", http.NoBody)
 	require.NoError(t, err)
 
 	resp, err := http.DefaultClient.Do(req)

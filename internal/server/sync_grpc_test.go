@@ -40,7 +40,7 @@ func TestSetGRPCConnChangesSyncRegistration(t *testing.T) {
 	serverWithoutConn := httptest.NewServer(srv.HTTPHandler())
 	defer serverWithoutConn.Close()
 
-	resp, err := http.Post(serverWithoutConn.URL+"/sync/stream", "application/json", nil)
+	resp, err := http.Post(serverWithoutConn.URL+"/api/sync/stream", "application/json", nil)
 	require.NoError(t, err)
 	_ = resp.Body.Close()
 	assert.Equal(t, http.StatusNotImplemented, resp.StatusCode)
@@ -58,7 +58,7 @@ func TestSetGRPCConnChangesSyncRegistration(t *testing.T) {
 	serverWithConn := httptest.NewServer(srv.HTTPHandler())
 	defer serverWithConn.Close()
 
-	resp, err = http.Post(serverWithConn.URL+"/sync/stream", "application/json", nil)
+	resp, err = http.Post(serverWithConn.URL+"/api/sync/stream", "application/json", nil)
 	require.NoError(t, err)
 	_ = resp.Body.Close()
 	assert.NotEqual(t, http.StatusNotImplemented, resp.StatusCode, "sync stream should no longer be in-process unimplemented")

@@ -13,7 +13,7 @@ service SyncService {
   // Delete sync acknowledgment
   rpc DeleteSyncAck(DeleteSyncAckRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {
-      delete: "/sync/ack"
+      delete: "/api/sync/ack"
       body: "*"
     };
   }
@@ -21,14 +21,14 @@ service SyncService {
   // Get sync acknowledgment
   rpc GetSyncAck(GetSyncAckRequest) returns (GetSyncAckResponse) {
     option (google.api.http) = {
-      get: "/sync/ack"
+      get: "/api/sync/ack"
     };
   }
 
   // Send sync acknowledgment
   rpc SendSyncAck(SendSyncAckRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {
-      post: "/sync/ack"
+      post: "/api/sync/ack"
       body: "*"
     };
   }
@@ -36,7 +36,7 @@ service SyncService {
   // Get delta sync
   rpc GetDeltaSync(GetDeltaSyncRequest) returns (GetDeltaSyncResponse) {
     option (google.api.http) = {
-      post: "/sync/delta-sync"
+      post: "/api/sync/delta-sync"
       body: "*"
     };
   }
@@ -44,7 +44,7 @@ service SyncService {
   // Get full sync for user
   rpc GetFullSyncForUser(GetFullSyncForUserRequest) returns (GetFullSyncForUserResponse) {
     option (google.api.http) = {
-      post: "/sync/full-sync"
+      post: "/api/sync/full-sync"
       body: "*"
     };
   }
@@ -52,7 +52,7 @@ service SyncService {
   // Get sync stream
   rpc GetSyncStream(GetSyncStreamRequest) returns (stream SyncStreamResponse) {
     option (google.api.http) = {
-      post: "/sync/stream"
+      post: "/api/sync/stream"
       body: "*"
     };
   }
