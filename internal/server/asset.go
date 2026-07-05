@@ -7,7 +7,6 @@ import (
 	"io"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -641,29 +640,9 @@ func (s *Server) DownloadAsset(ctx context.Context, request *immichv1.DownloadAs
 }
 
 func (s *Server) ReplaceAsset(ctx context.Context, request *immichv1.ReplaceAssetRequest) (*immichv1.Asset, error) {
-	claims, err := s.claimsFromContext(ctx)
+	existingAsset, err := s.getAuthenticatedAsset(ctx, request.AssetId)
 	if err != nil {
 		return nil, err
-	}
-
-	// Parse asset ID
-	assetID, err := uuid.Parse(request.AssetId)
-	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid asset ID: %v", err)
-	}
-
-	// Convert to pgtype.UUID
-	assetUUID := pgtype.UUID{Bytes: assetID, Valid: true}
-
-	// Get existing asset to verify ownership
-	existingAsset, err := s.queries.GetAssetByID(ctx, assetUUID)
-	if err != nil {
-		return nil, status.Errorf(codes.NotFound, "asset not found: %v", err)
-	}
-
-	// Verify ownership
-	if existingAsset.OwnerId.Bytes != uuid.MustParse(claims.UserID) {
-		return nil, status.Error(codes.PermissionDenied, "not authorized to replace this asset")
 	}
 
 	// For now, return the existing asset as if it was replaced
@@ -674,15 +653,7 @@ func (s *Server) ReplaceAsset(ctx context.Context, request *immichv1.ReplaceAsse
 	// 4. Handle thumbnails and metadata extraction
 
 	// Convert to proto asset
-	return &immichv1.Asset{
-		Id:               uuid.UUID(existingAsset.ID.Bytes).String(),
-		OwnerId:          uuid.UUID(existingAsset.OwnerId.Bytes).String(),
-		OriginalFileName: existingAsset.OriginalFileName,
-		OriginalPath:     existingAsset.OriginalPath,
-		Type:             immichv1.AssetType_ASSET_TYPE_IMAGE,
-		CreatedAt:        timestamppb.New(existingAsset.CreatedAt.Time),
-		UpdatedAt:        timestamppb.New(time.Now()),
-	}, nil
+	return s.convertAssetToProto(existingAsset), nil
 }
 
 func (s *Server) GetAssetThumbnail(ctx context.Context, request *immichv1.GetAssetThumbnailRequest) (*immichv1.GetAssetThumbnailResponse, error) {

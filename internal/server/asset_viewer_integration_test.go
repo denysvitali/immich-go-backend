@@ -281,6 +281,32 @@ func TestServer_UpdateAssets_UserIsolation(t *testing.T) {
 	assert.False(t, reloadedB.IsFavorite)
 }
 
+func TestServer_ReplaceAsset_UserIsolation(t *testing.T) {
+	env := newAssetViewerTestEnv(t)
+	ctx := context.Background()
+
+	userA := createAssetViewerTestUser(t, ctx, env.tdb)
+	userB := createAssetViewerTestUser(t, ctx, env.tdb)
+	assetA := seedAsset(t, ctx, env, userA, "replace-userA-only.jpg", "image/jpeg", []byte("userA-bytes"))
+	assetAID := uuid.UUID(assetA.ID.Bytes).String()
+
+	assertAssetViewerNotFound(t, func() error {
+		_, err := env.srv.ReplaceAsset(assetViewerContext(userB), &immichv1.ReplaceAssetRequest{
+			AssetId: assetAID,
+		})
+		return err
+	})
+
+	resp, err := env.srv.ReplaceAsset(assetViewerContext(userA), &immichv1.ReplaceAssetRequest{
+		AssetId: assetAID,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.Equal(t, assetAID, resp.GetId())
+	assert.Equal(t, userA.String(), resp.GetOwnerId())
+	assert.Equal(t, assetA.OriginalFileName, resp.GetOriginalFileName())
+}
+
 // TestServer_GetAssetThumbnail_NotFound covers the NotFound path of the
 // thumbnail handler. Because the asset does not exist in the DB, the
 // handler returns codes.NotFound before ever touching storage.
