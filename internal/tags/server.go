@@ -14,10 +14,20 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+type tagQueries interface {
+	GetTags(ctx context.Context, userid pgtype.UUID) ([]sqlc.Tag, error)
+	CreateTag(ctx context.Context, arg sqlc.CreateTagParams) (sqlc.Tag, error)
+	GetTag(ctx context.Context, id pgtype.UUID) (sqlc.Tag, error)
+	DeleteTag(ctx context.Context, id pgtype.UUID) error
+	UpdateTag(ctx context.Context, arg sqlc.UpdateTagParams) (sqlc.Tag, error)
+	AddTagToAsset(ctx context.Context, arg sqlc.AddTagToAssetParams) error
+	RemoveTagFromAsset(ctx context.Context, arg sqlc.RemoveTagFromAssetParams) error
+}
+
 // Server implements the TagsService with real database operations
 type Server struct {
 	immichv1.UnimplementedTagsServiceServer
-	queries *sqlc.Queries
+	queries tagQueries
 }
 
 // NewServer creates a new tags server
@@ -27,19 +37,89 @@ func NewServer(queries *sqlc.Queries) *Server {
 	}
 }
 
-// GetAllTags returns all tags for the authenticated user
-func (s *Server) GetAllTags(ctx context.Context, request *immichv1.GetAllTagsRequest) (*immichv1.GetAllTagsResponse, error) {
+func currentUserIDFromContext(ctx context.Context) (uuid.UUID, error) {
 	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	if !ok || claims == nil {
+		return uuid.Nil, status.Error(codes.Unauthenticated, "unauthorized")
 	}
 
-	// Parse user ID
 	userID, err := uuid.Parse(claims.UserID)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "invalid user ID: %v", err)
+		return uuid.Nil, status.Errorf(codes.Internal, "invalid user ID: %v", err)
 	}
-	userUUID := pgtype.UUID{Bytes: userID, Valid: true}
+
+	return userID, nil
+}
+
+func currentUserUUIDFromContext(ctx context.Context) (pgtype.UUID, error) {
+	userID, err := currentUserIDFromContext(ctx)
+	if err != nil {
+		return pgtype.UUID{}, err
+	}
+
+	return pgUUID(userID), nil
+}
+
+func parseUUIDParam(value, errMsg string) (pgtype.UUID, error) {
+	id, err := uuid.Parse(value)
+	if err != nil {
+		return pgtype.UUID{}, status.Error(codes.InvalidArgument, errMsg)
+	}
+
+	return pgUUID(id), nil
+}
+
+func pgUUID(id uuid.UUID) pgtype.UUID {
+	return pgtype.UUID{Bytes: id, Valid: true}
+}
+
+func tagResponse(tag sqlc.Tag) *immichv1.TagResponse {
+	response := &immichv1.TagResponse{
+		Id:        uuid.UUID(tag.ID.Bytes).String(),
+		Name:      tag.Value,
+		UserId:    uuid.UUID(tag.UserId.Bytes).String(),
+		CreatedAt: timestamppb.New(tag.CreatedAt.Time),
+		UpdatedAt: timestamppb.New(tag.UpdatedAt.Time),
+	}
+	if tag.Color.Valid {
+		color := tag.Color.String
+		response.Color = &color
+	}
+
+	return response
+}
+
+func tagResponses(tags []sqlc.Tag) []*immichv1.TagResponse {
+	protoTags := make([]*immichv1.TagResponse, len(tags))
+	for i, tag := range tags {
+		protoTags[i] = tagResponse(tag)
+	}
+
+	return protoTags
+}
+
+func tagBelongsToUser(tag sqlc.Tag, userID uuid.UUID) bool {
+	return tag.UserId.Bytes == userID
+}
+
+func (s *Server) getOwnedTag(ctx context.Context, tagUUID pgtype.UUID, userID uuid.UUID) (sqlc.Tag, error) {
+	tag, err := s.queries.GetTag(ctx, tagUUID)
+	if err != nil {
+		return sqlc.Tag{}, status.Error(codes.NotFound, "tag not found")
+	}
+	if !tagBelongsToUser(tag, userID) {
+		return sqlc.Tag{}, status.Error(codes.PermissionDenied, "tag does not belong to user")
+	}
+
+	return tag, nil
+}
+
+// GetAllTags returns all tags for the authenticated user
+func (s *Server) GetAllTags(ctx context.Context, request *immichv1.GetAllTagsRequest) (*immichv1.GetAllTagsResponse, error) {
+	userUUID, err := currentUserUUIDFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	// Get all tags for the user from database
 	tags, err := s.queries.GetTags(ctx, userUUID)
@@ -47,40 +127,17 @@ func (s *Server) GetAllTags(ctx context.Context, request *immichv1.GetAllTagsReq
 		return nil, status.Errorf(codes.Internal, "failed to get tags: %v", err)
 	}
 
-	// Convert to proto response
-	protoTags := make([]*immichv1.TagResponse, len(tags))
-	for i, tag := range tags {
-		protoTags[i] = &immichv1.TagResponse{
-			Id:        uuid.UUID(tag.ID.Bytes).String(),
-			Name:      tag.Value,
-			UserId:    uuid.UUID(tag.UserId.Bytes).String(),
-			CreatedAt: timestamppb.New(tag.CreatedAt.Time),
-			UpdatedAt: timestamppb.New(tag.UpdatedAt.Time),
-		}
-		if tag.Color.Valid {
-			color := tag.Color.String
-			protoTags[i].Color = &color
-		}
-	}
-
 	return &immichv1.GetAllTagsResponse{
-		Tags: protoTags,
+		Tags: tagResponses(tags),
 	}, nil
 }
 
 // CreateTag creates a new tag in the database
 func (s *Server) CreateTag(ctx context.Context, request *immichv1.CreateTagRequest) (*immichv1.TagResponse, error) {
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
-	}
-
-	// Parse user ID
-	userID, err := uuid.Parse(claims.UserID)
+	userUUID, err := currentUserUUIDFromContext(ctx)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "invalid user ID: %v", err)
+		return nil, err
 	}
-	userUUID := pgtype.UUID{Bytes: userID, Valid: true}
 
 	// Prepare tag creation params
 	params := sqlc.CreateTagParams{
@@ -99,81 +156,40 @@ func (s *Server) CreateTag(ctx context.Context, request *immichv1.CreateTagReque
 		return nil, status.Errorf(codes.Internal, "failed to create tag: %v", err)
 	}
 
-	// Convert to proto response
-	response := &immichv1.TagResponse{
-		Id:        uuid.UUID(tag.ID.Bytes).String(),
-		Name:      tag.Value,
-		UserId:    uuid.UUID(tag.UserId.Bytes).String(),
-		CreatedAt: timestamppb.New(tag.CreatedAt.Time),
-		UpdatedAt: timestamppb.New(tag.UpdatedAt.Time),
-	}
-	if tag.Color.Valid {
-		color := tag.Color.String
-		response.Color = &color
-	}
-
-	return response, nil
+	return tagResponse(tag), nil
 }
 
 // UpsertTags creates or updates multiple tags
 func (s *Server) UpsertTags(ctx context.Context, request *immichv1.UpsertTagsRequest) (*immichv1.UpsertTagsResponse, error) {
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
-	}
-
-	// Parse user ID
-	userID, err := uuid.Parse(claims.UserID)
+	userUUID, err := currentUserUUIDFromContext(ctx)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "invalid user ID: %v", err)
+		return nil, err
 	}
-	userUUID := pgtype.UUID{Bytes: userID, Valid: true}
 
 	var tags []*immichv1.TagResponse
+	existingByName := make(map[string]sqlc.Tag)
+	if userTags, err := s.queries.GetTags(ctx, userUUID); err == nil {
+		for _, tag := range userTags {
+			existingByName[tag.Value] = tag
+		}
+	}
 
 	// Process each tag to upsert
-	for _, tagName := range request.GetTags() {
-		// First try to find existing tag
-		userTags, err := s.queries.GetTags(ctx, userUUID)
-		if err == nil {
-			for _, existingTag := range userTags {
-				if existingTag.Value == tagName.GetName() {
-					// Tag exists, add to response
-					response := &immichv1.TagResponse{
-						Id:        uuid.UUID(existingTag.ID.Bytes).String(),
-						Name:      existingTag.Value,
-						UserId:    uuid.UUID(existingTag.UserId.Bytes).String(),
-						CreatedAt: timestamppb.New(existingTag.CreatedAt.Time),
-						UpdatedAt: timestamppb.New(existingTag.UpdatedAt.Time),
-					}
-					if existingTag.Color.Valid {
-						color := existingTag.Color.String
-						response.Color = &color
-					}
-					tags = append(tags, response)
-					continue
-				}
-			}
+	for _, tagUpsert := range request.GetTags() {
+		tagName := tagUpsert.GetName()
+		if existingTag, ok := existingByName[tagName]; ok {
+			tags = append(tags, tagResponse(existingTag))
+			continue
 		}
 
 		// Tag doesn't exist, create it
 		newTag, err := s.queries.CreateTag(ctx, sqlc.CreateTagParams{
 			UserId: userUUID,
-			Value:  tagName.GetName(),
+			Value:  tagName,
 		})
 		if err == nil {
-			response := &immichv1.TagResponse{
-				Id:        uuid.UUID(newTag.ID.Bytes).String(),
-				Name:      newTag.Value,
-				UserId:    uuid.UUID(newTag.UserId.Bytes).String(),
-				CreatedAt: timestamppb.New(newTag.CreatedAt.Time),
-				UpdatedAt: timestamppb.New(newTag.UpdatedAt.Time),
-			}
-			if newTag.Color.Valid {
-				color := newTag.Color.String
-				response.Color = &color
-			}
-			tags = append(tags, response)
+			existingByName[tagName] = newTag
+			tags = append(tags, tagResponse(newTag))
 		}
 	}
 
@@ -184,26 +200,24 @@ func (s *Server) UpsertTags(ctx context.Context, request *immichv1.UpsertTagsReq
 
 // BulkTagAssets performs bulk tagging operations
 func (s *Server) BulkTagAssets(ctx context.Context, request *immichv1.BulkTagAssetsRequest) (*immichv1.BulkTagAssetsResponse, error) {
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	userID, err := currentUserIDFromContext(ctx)
+	if err != nil {
+		return nil, err
 	}
 
-	// Parse user ID for ownership checks
-	userID, _ := uuid.Parse(claims.UserID)
+	count := int32(0)
 
 	// Process bulk operations
 	for _, tagID := range request.GetTagIds() {
 		// Parse tag ID
-		tagUUID, err := uuid.Parse(tagID)
+		tagPgUUID, err := parseUUIDParam(tagID, "invalid tag ID")
 		if err != nil {
 			continue
 		}
-		tagPgUUID := pgtype.UUID{Bytes: tagUUID, Valid: true}
 
 		// Verify tag ownership
 		tag, err := s.queries.GetTag(ctx, tagPgUUID)
-		if err != nil || tag.UserId.Bytes != userID {
+		if err != nil || !tagBelongsToUser(tag, userID) {
 			continue
 		}
 
@@ -214,43 +228,38 @@ func (s *Server) BulkTagAssets(ctx context.Context, request *immichv1.BulkTagAss
 			if err != nil {
 				continue
 			}
-			assetPgUUID := pgtype.UUID{Bytes: assetUUID, Valid: true}
+			assetPgUUID := pgUUID(assetUUID)
 
 			// Add tag to asset (ignore errors for bulk operation)
-			_ = s.queries.AddTagToAsset(ctx, sqlc.AddTagToAssetParams{
+			err = s.queries.AddTagToAsset(ctx, sqlc.AddTagToAssetParams{
 				TagsId:   tagPgUUID,
 				AssetsId: assetPgUUID,
 			})
+			if err == nil {
+				count++
+			}
 		}
 	}
 
-	return &immichv1.BulkTagAssetsResponse{}, nil
+	return &immichv1.BulkTagAssetsResponse{Count: count}, nil
 }
 
 // DeleteTag deletes a tag from the database
 func (s *Server) DeleteTag(ctx context.Context, request *immichv1.DeleteTagRequest) (*emptypb.Empty, error) {
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	userID, err := currentUserIDFromContext(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	// Parse tag ID
-	tagID, err := uuid.Parse(request.GetId())
+	tagUUID, err := parseUUIDParam(request.GetId(), "invalid tag ID")
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, "invalid tag ID")
+		return nil, err
 	}
-	tagUUID := pgtype.UUID{Bytes: tagID, Valid: true}
 
 	// First verify the tag belongs to the user
-	tag, err := s.queries.GetTag(ctx, tagUUID)
-	if err != nil {
-		return nil, status.Error(codes.NotFound, "tag not found")
-	}
-
-	// Check ownership
-	userID, _ := uuid.Parse(claims.UserID)
-	if tag.UserId.Bytes != userID {
-		return nil, status.Error(codes.PermissionDenied, "tag does not belong to user")
+	if _, err := s.getOwnedTag(ctx, tagUUID, userID); err != nil {
+		return nil, err
 	}
 
 	// Delete the tag
@@ -264,70 +273,43 @@ func (s *Server) DeleteTag(ctx context.Context, request *immichv1.DeleteTagReque
 
 // GetTagById retrieves a specific tag by ID
 func (s *Server) GetTagById(ctx context.Context, request *immichv1.GetTagByIdRequest) (*immichv1.TagResponse, error) {
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	userID, err := currentUserIDFromContext(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	// Parse tag ID
-	tagID, err := uuid.Parse(request.GetId())
+	tagUUID, err := parseUUIDParam(request.GetId(), "invalid tag ID")
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, "invalid tag ID")
+		return nil, err
 	}
-	tagUUID := pgtype.UUID{Bytes: tagID, Valid: true}
 
 	// Get tag from database
-	tag, err := s.queries.GetTag(ctx, tagUUID)
+	tag, err := s.getOwnedTag(ctx, tagUUID, userID)
 	if err != nil {
-		return nil, status.Error(codes.NotFound, "tag not found")
+		return nil, err
 	}
 
-	// Verify the tag belongs to the user
-	userID, _ := uuid.Parse(claims.UserID)
-	if tag.UserId.Bytes != userID {
-		return nil, status.Error(codes.PermissionDenied, "tag does not belong to user")
-	}
-
-	// Convert to proto response
-	response := &immichv1.TagResponse{
-		Id:        uuid.UUID(tag.ID.Bytes).String(),
-		Name:      tag.Value,
-		UserId:    uuid.UUID(tag.UserId.Bytes).String(),
-		CreatedAt: timestamppb.New(tag.CreatedAt.Time),
-		UpdatedAt: timestamppb.New(tag.UpdatedAt.Time),
-	}
-	if tag.Color.Valid {
-		color := tag.Color.String
-		response.Color = &color
-	}
-
-	return response, nil
+	return tagResponse(tag), nil
 }
 
 // UpdateTag updates an existing tag
 func (s *Server) UpdateTag(ctx context.Context, request *immichv1.UpdateTagRequest) (*immichv1.TagResponse, error) {
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	userID, err := currentUserIDFromContext(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	// Parse tag ID
-	tagID, err := uuid.Parse(request.GetId())
+	tagUUID, err := parseUUIDParam(request.GetId(), "invalid tag ID")
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, "invalid tag ID")
+		return nil, err
 	}
-	tagUUID := pgtype.UUID{Bytes: tagID, Valid: true}
 
 	// First verify the tag belongs to the user
-	existingTag, err := s.queries.GetTag(ctx, tagUUID)
+	existingTag, err := s.getOwnedTag(ctx, tagUUID, userID)
 	if err != nil {
-		return nil, status.Error(codes.NotFound, "tag not found")
-	}
-
-	// Check ownership
-	userID, _ := uuid.Parse(claims.UserID)
-	if existingTag.UserId.Bytes != userID {
-		return nil, status.Error(codes.PermissionDenied, "tag does not belong to user")
+		return nil, err
 	}
 
 	// Prepare update params
@@ -349,48 +331,27 @@ func (s *Server) UpdateTag(ctx context.Context, request *immichv1.UpdateTagReque
 		return nil, status.Errorf(codes.Internal, "failed to update tag: %v", err)
 	}
 
-	// Convert to proto response
-	response := &immichv1.TagResponse{
-		Id:        uuid.UUID(tag.ID.Bytes).String(),
-		Name:      tag.Value,
-		UserId:    uuid.UUID(tag.UserId.Bytes).String(),
-		CreatedAt: timestamppb.New(tag.CreatedAt.Time),
-		UpdatedAt: timestamppb.New(tag.UpdatedAt.Time),
-	}
-	if tag.Color.Valid {
-		color := tag.Color.String
-		response.Color = &color
-	}
-
-	return response, nil
+	return tagResponse(tag), nil
 }
 
 // UntagAssets removes tags from multiple assets
 func (s *Server) UntagAssets(ctx context.Context, request *immichv1.UntagAssetsRequest) (*immichv1.UntagAssetsResponse, error) {
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	userID, err := currentUserIDFromContext(ctx)
+	if err != nil {
+		return nil, err
 	}
-
-	// Parse user ID for ownership checks
-	userID, _ := uuid.Parse(claims.UserID)
 
 	count := int32(0)
 
 	// Parse tag ID
-	tagUUID, err := uuid.Parse(request.GetId())
+	tagPgUUID, err := parseUUIDParam(request.GetId(), "invalid tag ID")
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, "invalid tag ID")
+		return nil, err
 	}
-	tagPgUUID := pgtype.UUID{Bytes: tagUUID, Valid: true}
 
 	// Verify tag ownership
-	tag, err := s.queries.GetTag(ctx, tagPgUUID)
-	if err != nil {
-		return nil, status.Error(codes.NotFound, "tag not found")
-	}
-	if tag.UserId.Bytes != userID {
-		return nil, status.Error(codes.PermissionDenied, "tag does not belong to user")
+	if _, err := s.getOwnedTag(ctx, tagPgUUID, userID); err != nil {
+		return nil, err
 	}
 
 	// Remove tag from each asset
@@ -400,7 +361,7 @@ func (s *Server) UntagAssets(ctx context.Context, request *immichv1.UntagAssetsR
 		if err != nil {
 			continue // Skip invalid IDs
 		}
-		assetPgUUID := pgtype.UUID{Bytes: assetUUID, Valid: true}
+		assetPgUUID := pgUUID(assetUUID)
 
 		// Remove tag from asset
 		err = s.queries.RemoveTagFromAsset(ctx, sqlc.RemoveTagFromAssetParams{
@@ -419,30 +380,22 @@ func (s *Server) UntagAssets(ctx context.Context, request *immichv1.UntagAssetsR
 
 // TagAssets adds tags to multiple assets
 func (s *Server) TagAssets(ctx context.Context, request *immichv1.TagAssetsRequest) (*immichv1.TagAssetsResponse, error) {
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	userID, err := currentUserIDFromContext(ctx)
+	if err != nil {
+		return nil, err
 	}
-
-	// Parse user ID for ownership checks
-	userID, _ := uuid.Parse(claims.UserID)
 
 	count := int32(0)
 
 	// Parse tag ID
-	tagUUID, err := uuid.Parse(request.GetId())
+	tagPgUUID, err := parseUUIDParam(request.GetId(), "invalid tag ID")
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, "invalid tag ID")
+		return nil, err
 	}
-	tagPgUUID := pgtype.UUID{Bytes: tagUUID, Valid: true}
 
 	// Verify tag ownership
-	tag, err := s.queries.GetTag(ctx, tagPgUUID)
-	if err != nil {
-		return nil, status.Error(codes.NotFound, "tag not found")
-	}
-	if tag.UserId.Bytes != userID {
-		return nil, status.Error(codes.PermissionDenied, "tag does not belong to user")
+	if _, err := s.getOwnedTag(ctx, tagPgUUID, userID); err != nil {
+		return nil, err
 	}
 
 	// Add tag to each asset
@@ -452,7 +405,7 @@ func (s *Server) TagAssets(ctx context.Context, request *immichv1.TagAssetsReque
 		if err != nil {
 			continue // Skip invalid IDs
 		}
-		assetPgUUID := pgtype.UUID{Bytes: assetUUID, Valid: true}
+		assetPgUUID := pgUUID(assetUUID)
 
 		// Add tag to asset
 		err = s.queries.AddTagToAsset(ctx, sqlc.AddTagToAssetParams{

@@ -758,6 +758,101 @@ test.describe('users', () => {
   });
 });
 
+test.describe('tags', () => {
+  test('tag CRUD, upsert, and asset assignment endpoints round-trip', async ({ request }) => {
+    const user = await signUpAdmin(request, 'tags');
+    const tagName = uniqueId('e2e-tag');
+
+    const create = await request.post('/api/tags', {
+      headers: user.headers,
+      data: { name: tagName, color: '#123456' },
+    });
+    await expectOk(create);
+    const tag = await create.json();
+    expect(tag).toMatchObject({
+      id: expect.any(String),
+      name: tagName,
+      userId: user.userId,
+      color: '#123456',
+    });
+
+    const list = await request.get('/api/tags', { headers: user.headers });
+    await expectOk(list);
+    const listBody = await list.json();
+    expect(listBody.tags.map((item: { id: string }) => item.id)).toContain(tag.id);
+
+    const updatedName = `${tagName}-updated`;
+    const update = await request.put(`/api/tags/${tag.id}`, {
+      headers: user.headers,
+      data: { name: updatedName, color: '#654321' },
+    });
+    await expectOk(update);
+    const updated = await update.json();
+    expect(updated).toMatchObject({ id: tag.id, name: updatedName, color: '#654321' });
+
+    const upsertedName = `${tagName}-bulk`;
+    const upsert = await request.put('/api/tags', {
+      headers: user.headers,
+      data: { tags: [{ name: updatedName }, { name: upsertedName }, { name: upsertedName }] },
+    });
+    await expectOk(upsert);
+    const upserted = await upsert.json();
+    const existingTags = upserted.tags.filter((item: { name: string }) => item.name === updatedName);
+    const createdTags = upserted.tags.filter((item: { name: string }) => item.name === upsertedName);
+    expect(existingTags).toHaveLength(1);
+    expect(existingTags[0].id).toBe(tag.id);
+    expect(createdTags).toHaveLength(2);
+    expect(new Set(createdTags.map((item: { id: string }) => item.id)).size).toBe(1);
+    const bulkTag = createdTags[0];
+
+    const upload = await request.post('/api/assets', {
+      headers: user.headers,
+      multipart: {
+        assetData: {
+          name: 'e2e-tags.png',
+          mimeType: 'image/png',
+          buffer: png1x1,
+        },
+        deviceAssetId: uniqueId('tags-asset'),
+        deviceId: 'e2e-device',
+      },
+    });
+    expect(upload.status()).toBe(201);
+    const asset = await upload.json();
+
+    const tagAsset = await request.put(`/api/tags/${tag.id}/assets`, {
+      headers: user.headers,
+      data: { assetIds: [asset.id] },
+    });
+    await expectOk(tagAsset);
+    expect((await tagAsset.json()).count).toBe(1);
+
+    const bulkTagAsset = await request.put('/api/tags/assets', {
+      headers: user.headers,
+      data: { assetIds: [asset.id], tagIds: [bulkTag.id] },
+    });
+    await expectOk(bulkTagAsset);
+    expect((await bulkTagAsset.json()).count).toBe(1);
+
+    const untagAsset = await request.delete(`/api/tags/${bulkTag.id}/assets`, {
+      headers: user.headers,
+      data: { assetIds: [asset.id] },
+    });
+    await expectOk(untagAsset);
+    expect((await untagAsset.json()).count).toBe(1);
+
+    const untagOriginalAsset = await request.delete(`/api/tags/${tag.id}/assets`, {
+      headers: user.headers,
+      data: { assetIds: [asset.id] },
+    });
+    await expectOk(untagOriginalAsset);
+    expect((await untagOriginalAsset.json()).count).toBe(1);
+
+    const remove = await request.delete(`/api/tags/${tag.id}`, { headers: user.headers });
+    await expectOk(remove);
+  });
+});
+
 test.describe('partners', () => {
   test('create partners with stable and deprecated upstream routes', async ({ request }) => {
     const owner = await signUpAdmin(request, 'partners-owner');
