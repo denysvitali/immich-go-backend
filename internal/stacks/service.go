@@ -77,8 +77,39 @@ func stringsToPgtypeUUIDs(strs []string) ([]pgtype.UUID, error) {
 	return uuids, nil
 }
 
+func userUUIDFromString(userID string) (pgtype.UUID, error) {
+	userUUID, err := pgutil.StringToUUID(userID)
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("invalid user ID: %w", err)
+	}
+
+	return userUUID, nil
+}
+
+func (s *Service) getOwnedStackUUID(ctx context.Context, stackID, userID string) (pgtype.UUID, error) {
+	stackUUID, err := pgutil.StringToUUID(stackID)
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("invalid stack ID: %w", err)
+	}
+
+	userUUID, err := userUUIDFromString(userID)
+	if err != nil {
+		return pgtype.UUID{}, err
+	}
+
+	stack, err := s.db.GetStack(ctx, stackUUID)
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("stack not found: %w", err)
+	}
+	if stack.OwnerId != userUUID {
+		return pgtype.UUID{}, fmt.Errorf("access denied: stack is not owned by the user")
+	}
+
+	return stackUUID, nil
+}
+
 // CreateStack creates a new asset stack
-func (s *Service) CreateStack(ctx context.Context, req CreateStackRequest) (*StackResponse, error) {
+func (s *Service) CreateStack(ctx context.Context, userID string, req CreateStackRequest) (*StackResponse, error) {
 	ctx, span := tracer.Start(ctx, "stacks.create_stack",
 		trace.WithAttributes(attribute.Int("asset_count", len(req.AssetIDs))))
 	defer span.End()
@@ -95,6 +126,11 @@ func (s *Service) CreateStack(ctx context.Context, req CreateStackRequest) (*Sta
 		return nil, fmt.Errorf("at least one asset ID is required")
 	}
 
+	userUUID, err := userUUIDFromString(userID)
+	if err != nil {
+		return nil, err
+	}
+
 	// Parse asset IDs
 	assetUUIDs, err := stringsToPgtypeUUIDs(req.AssetIDs)
 	if err != nil {
@@ -109,11 +145,24 @@ func (s *Service) CreateStack(ctx context.Context, req CreateStackRequest) (*Sta
 	if err != nil {
 		return nil, fmt.Errorf("failed to get primary asset: %w", err)
 	}
+	if asset.OwnerId != userUUID {
+		return nil, fmt.Errorf("access denied: asset is not owned by the user")
+	}
+
+	for i, assetUUID := range assetUUIDs[1:] {
+		stackAsset, err := s.db.GetAsset(ctx, assetUUID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get stack asset at index %d: %w", i+1, err)
+		}
+		if stackAsset.OwnerId != userUUID {
+			return nil, fmt.Errorf("access denied: asset is not owned by the user")
+		}
+	}
 
 	// Create the stack
 	stack, err := s.db.CreateStack(ctx, sqlc.CreateStackParams{
 		PrimaryAssetId: primaryAssetID,
-		OwnerId:        asset.OwnerId,
+		OwnerId:        userUUID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create stack: %w", err)
@@ -143,7 +192,7 @@ func (s *Service) CreateStack(ctx context.Context, req CreateStackRequest) (*Sta
 }
 
 // GetStack retrieves a stack by ID
-func (s *Service) GetStack(ctx context.Context, stackID string) (*StackResponse, error) {
+func (s *Service) GetStack(ctx context.Context, userID, stackID string) (*StackResponse, error) {
 	ctx, span := tracer.Start(ctx, "stacks.get_stack",
 		trace.WithAttributes(attribute.String("stack_id", stackID)))
 	defer span.End()
@@ -162,10 +211,18 @@ func (s *Service) GetStack(ctx context.Context, stackID string) (*StackResponse,
 		return nil, fmt.Errorf("invalid stack ID: %w", err)
 	}
 
+	userUUID, err := userUUIDFromString(userID)
+	if err != nil {
+		return nil, err
+	}
+
 	// Get stack with asset count
 	stack, err := s.db.GetStackWithAssets(ctx, stackUUID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get stack: %w", err)
+	}
+	if stack.OwnerId != userUUID {
+		return nil, fmt.Errorf("access denied: stack is not owned by the user")
 	}
 
 	// Get assets in the stack
@@ -191,7 +248,7 @@ func (s *Service) GetStack(ctx context.Context, stackID string) (*StackResponse,
 }
 
 // UpdateStack updates an existing stack
-func (s *Service) UpdateStack(ctx context.Context, stackID string, req UpdateStackRequest) (*StackResponse, error) {
+func (s *Service) UpdateStack(ctx context.Context, userID, stackID string, req UpdateStackRequest) (*StackResponse, error) {
 	ctx, span := tracer.Start(ctx, "stacks.update_stack",
 		trace.WithAttributes(attribute.String("stack_id", stackID)))
 	defer span.End()
@@ -204,10 +261,14 @@ func (s *Service) UpdateStack(ctx context.Context, stackID string, req UpdateSta
 			metric.WithAttributes(attribute.String("operation", "update_stack")))
 	}()
 
-	// Parse stack ID
-	stackUUID, err := pgutil.StringToUUID(stackID)
+	stackUUID, err := s.getOwnedStackUUID(ctx, stackID, userID)
 	if err != nil {
-		return nil, fmt.Errorf("invalid stack ID: %w", err)
+		return nil, err
+	}
+
+	userUUID, err := userUUIDFromString(userID)
+	if err != nil {
+		return nil, err
 	}
 
 	// Update primary asset if specified
@@ -215,6 +276,29 @@ func (s *Service) UpdateStack(ctx context.Context, stackID string, req UpdateSta
 		primaryUUID, err := pgutil.StringToUUID(*req.PrimaryAssetID)
 		if err != nil {
 			return nil, fmt.Errorf("invalid primary asset ID: %w", err)
+		}
+
+		primaryAsset, err := s.db.GetAsset(ctx, primaryUUID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get primary asset: %w", err)
+		}
+		if primaryAsset.OwnerId != userUUID {
+			return nil, fmt.Errorf("access denied: asset is not owned by the user")
+		}
+
+		assets, err := s.db.GetStackAssets(ctx, stackUUID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get stack assets: %w", err)
+		}
+		found := false
+		for _, asset := range assets {
+			if asset.ID == primaryUUID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("asset not found: asset is not part of this stack")
 		}
 
 		_, err = s.db.UpdateStackPrimaryAsset(ctx, sqlc.UpdateStackPrimaryAssetParams{
@@ -227,11 +311,11 @@ func (s *Service) UpdateStack(ctx context.Context, stackID string, req UpdateSta
 	}
 
 	// Return updated stack
-	return s.GetStack(ctx, stackID)
+	return s.GetStack(ctx, userID, stackID)
 }
 
 // DeleteStack removes a stack
-func (s *Service) DeleteStack(ctx context.Context, stackID string) error {
+func (s *Service) DeleteStack(ctx context.Context, userID, stackID string) error {
 	ctx, span := tracer.Start(ctx, "stacks.delete_stack",
 		trace.WithAttributes(attribute.String("stack_id", stackID)))
 	defer span.End()
@@ -244,10 +328,9 @@ func (s *Service) DeleteStack(ctx context.Context, stackID string) error {
 			metric.WithAttributes(attribute.String("operation", "delete_stack")))
 	}()
 
-	// Parse stack ID
-	stackUUID, err := pgutil.StringToUUID(stackID)
+	stackUUID, err := s.getOwnedStackUUID(ctx, stackID, userID)
 	if err != nil {
-		return fmt.Errorf("invalid stack ID: %w", err)
+		return err
 	}
 
 	pgStackID := stackUUID
@@ -271,7 +354,7 @@ func (s *Service) DeleteStack(ctx context.Context, stackID string) error {
 }
 
 // DeleteStacks removes multiple stacks
-func (s *Service) DeleteStacks(ctx context.Context, stackIDs []string) error {
+func (s *Service) DeleteStacks(ctx context.Context, userID string, stackIDs []string) error {
 	ctx, span := tracer.Start(ctx, "stacks.delete_stacks",
 		trace.WithAttributes(attribute.Int("stack_count", len(stackIDs))))
 	defer span.End()
@@ -288,10 +371,25 @@ func (s *Service) DeleteStacks(ctx context.Context, stackIDs []string) error {
 		return nil
 	}
 
+	userUUID, err := userUUIDFromString(userID)
+	if err != nil {
+		return err
+	}
+
 	// Parse stack IDs
 	stackUUIDs, err := stringsToPgtypeUUIDs(stackIDs)
 	if err != nil {
 		return fmt.Errorf("invalid stack IDs: %w", err)
+	}
+
+	for _, stackUUID := range stackUUIDs {
+		stack, err := s.db.GetStack(ctx, stackUUID)
+		if err != nil {
+			return fmt.Errorf("stack not found: %w", err)
+		}
+		if stack.OwnerId != userUUID {
+			return fmt.Errorf("access denied: stack is not owned by the user")
+		}
 	}
 
 	// Clear stack references from assets for each stack

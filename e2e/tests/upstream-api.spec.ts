@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { expectOk, gpsJpeg, png1x1, signUpAdmin, uniqueId } from './helpers';
+import { expectOk, gpsJpeg, png1x1, signUpAdmin, signUpUser, uniqueId, uploadAsset } from './helpers';
 
 // Covers the upstream Immich v2.4.0 API surface added for the web UI:
 // system-config CRUD, multipart asset upload, download info/archive and the
@@ -16,6 +16,13 @@ type AlbumMapMarker = {
   city: string;
   state: string;
   country: string;
+};
+
+type StackResponse = {
+  id: string;
+  primaryAssetId: string;
+  assetIds: string[];
+  assetCount: number;
 };
 
 function delay(ms: number) {
@@ -850,6 +857,87 @@ test.describe('tags', () => {
 
     const remove = await request.delete(`/api/tags/${tag.id}`, { headers: user.headers });
     await expectOk(remove);
+  });
+});
+
+test.describe('stacks', () => {
+  test('stack CRUD endpoints use /api routes and default search to the current user', async ({
+    request,
+  }) => {
+    const unauthenticated = await request.get('/api/stacks');
+    expect(unauthenticated.status()).toBe(401);
+
+    const user = await signUpUser(request, 'stacks-owner');
+    const otherUser = await signUpUser(request, 'stacks-other');
+    const asset1 = await uploadAsset(request, user, '2026-07-01T12:00:00Z');
+    const asset2 = await uploadAsset(request, user, '2026-07-01T12:01:00Z');
+
+    const create = await request.post('/api/stacks', {
+      headers: user.headers,
+      data: { assetIds: [asset1.id, asset2.id] },
+    });
+    await expectOk(create);
+    const stack = (await create.json()) as StackResponse;
+    expect(stack).toMatchObject({
+      id: expect.any(String),
+      primaryAssetId: asset1.id,
+      assetCount: 2,
+    });
+    expect(stack.assetIds).toEqual(expect.arrayContaining([asset1.id, asset2.id]));
+
+    const list = await request.get('/api/stacks', { headers: user.headers });
+    await expectOk(list);
+    const listBody = await list.json();
+    const listedStacks = (listBody.stacks ?? []) as StackResponse[];
+    const listed = listedStacks.find((item) => item.id === stack.id);
+    expect(listed).toBeTruthy();
+    expect(listed?.assetIds).toEqual(expect.arrayContaining([asset1.id, asset2.id]));
+
+    const get = await request.get(`/api/stacks/${stack.id}`, { headers: user.headers });
+    await expectOk(get);
+    const fetched = (await get.json()) as StackResponse;
+    expect(fetched.id).toBe(stack.id);
+
+    const otherUserGet = await request.get(`/api/stacks/${stack.id}`, {
+      headers: otherUser.headers,
+    });
+    expect(otherUserGet.status()).toBe(403);
+
+    const otherUserUpdate = await request.put(`/api/stacks/${stack.id}`, {
+      headers: otherUser.headers,
+      data: { primaryAssetId: asset2.id },
+    });
+    expect(otherUserUpdate.status()).toBe(403);
+
+    const otherUserDelete = await request.delete(`/api/stacks/${stack.id}`, {
+      headers: otherUser.headers,
+    });
+    expect(otherUserDelete.status()).toBe(403);
+
+    const update = await request.put(`/api/stacks/${stack.id}`, {
+      headers: user.headers,
+      data: { primaryAssetId: asset2.id },
+    });
+    await expectOk(update);
+    const updated = (await update.json()) as StackResponse;
+    expect(updated.primaryAssetId).toBe(asset2.id);
+
+    const removeAsset = await request.delete(`/api/stacks/${stack.id}/assets/${asset1.id}`, {
+      headers: user.headers,
+    });
+    await expectOk(removeAsset);
+
+    const afterRemoveResponse = await request.get(`/api/stacks/${stack.id}`, {
+      headers: user.headers,
+    });
+    await expectOk(afterRemoveResponse);
+    const afterRemove = (await afterRemoveResponse.json()) as StackResponse;
+    expect(afterRemove.assetIds).not.toContain(asset1.id);
+    expect(afterRemove.assetIds).toContain(asset2.id);
+    expect(afterRemove.assetCount).toBe(1);
+
+    const removeStack = await request.delete(`/api/stacks/${stack.id}`, { headers: user.headers });
+    await expectOk(removeStack);
   });
 });
 

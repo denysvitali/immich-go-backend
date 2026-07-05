@@ -184,6 +184,24 @@ export async function signUpAdmin(
   };
 }
 
+export async function signUpUser(
+  request: APIRequestContext,
+  prefix = 'e2e-user',
+  name = 'E2E User',
+): Promise<TestUser> {
+  await ensureRootAdmin(request);
+  const email = uniqueEmail(prefix);
+  const signup = await request.post('/api/auth/admin-sign-up', {
+    data: { email, password, name },
+  });
+  await expectOk(signup);
+
+  const user = userFromAuthResponse(email, await signup.json());
+  expect(user.isAdmin).toBe(false);
+
+  return user;
+}
+
 export async function login(
   request: APIRequestContext,
   user: Pick<TestUser, 'email' | 'password'>,

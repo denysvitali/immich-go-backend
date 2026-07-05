@@ -13,7 +13,7 @@ service StacksService {
   // Delete stacks
   rpc DeleteStacks(DeleteStacksRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {
-      delete: "/stacks"
+      delete: "/api/stacks"
       body: "*"
     };
   }
@@ -21,14 +21,14 @@ service StacksService {
   // Search stacks
   rpc SearchStacks(SearchStacksRequest) returns (SearchStacksResponse) {
     option (google.api.http) = {
-      get: "/stacks"
+      get: "/api/stacks"
     };
   }
 
   // Create stack
   rpc CreateStack(CreateStackRequest) returns (StackResponse) {
     option (google.api.http) = {
-      post: "/stacks"
+      post: "/api/stacks"
       body: "*"
     };
   }
@@ -36,21 +36,21 @@ service StacksService {
   // Delete stack
   rpc DeleteStack(DeleteStackRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {
-      delete: "/stacks/{id}"
+      delete: "/api/stacks/{id}"
     };
   }
 
   // Get stack
   rpc GetStack(GetStackRequest) returns (StackResponse) {
     option (google.api.http) = {
-      get: "/stacks/{id}"
+      get: "/api/stacks/{id}"
     };
   }
 
   // Update stack
   rpc UpdateStack(UpdateStackRequest) returns (StackResponse) {
     option (google.api.http) = {
-      put: "/stacks/{id}"
+      put: "/api/stacks/{id}"
       body: "*"
     };
   }
@@ -58,7 +58,7 @@ service StacksService {
   // Remove asset from stack
   rpc RemoveAssetFromStack(RemoveAssetFromStackRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {
-      delete: "/stacks/{id}/assets/{asset_id}"
+      delete: "/api/stacks/{id}/assets/{asset_id}"
     };
   }
 }
