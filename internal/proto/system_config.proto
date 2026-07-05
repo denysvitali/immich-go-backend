@@ -186,6 +186,7 @@ message SystemConfigSmtpTransportDto {
   string username = 3;
   string password = 4;
   bool ignore_cert = 5;
+  bool secure = 6;
 }
 
 // OAuth configuration

@@ -2,12 +2,14 @@ package admin
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"html"
 	"regexp"
 	"strings"
 	"time"
 
+	"github.com/denysvitali/immich-go-backend/internal/auth"
 	"github.com/denysvitali/immich-go-backend/internal/config"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/denysvitali/immich-go-backend/internal/storage"
@@ -24,6 +26,8 @@ var tracer = telemetry.GetTracer("admin")
 
 var templateTagPattern = regexp.MustCompile(`\{(.*?)\}`)
 
+var ErrInvalidSMTPConfig = errors.New("invalid SMTP configuration")
+
 const defaultTemplateBaseURL = "https://demo.immich.app"
 
 // Service handles administrative operations
@@ -31,6 +35,7 @@ type Service struct {
 	db      *sqlc.Queries
 	config  *config.Config
 	storage *storage.Service
+	email   emailSender
 
 	// Metrics
 	operationCounter  metric.Int64Counter
@@ -61,6 +66,7 @@ func NewService(queries *sqlc.Queries, cfg *config.Config, storageSvc *storage.S
 		db:                queries,
 		config:            cfg,
 		storage:           storageSvc,
+		email:             smtpEmailSender{},
 		operationCounter:  operationCounter,
 		operationDuration: operationDuration,
 	}, nil
@@ -140,9 +146,18 @@ func (s *Service) RenderNotificationTemplate(ctx context.Context, name string, c
 }
 
 func renderNotificationTemplateHTML(name string, customTemplate string) string {
+	preview, body, ok := renderNotificationTemplateBody(name, customTemplate)
+	if !ok {
+		return ""
+	}
+
+	return emailPreviewHTML(body, preview.ActionText, preview.ActionURL)
+}
+
+func renderNotificationTemplateBody(name string, customTemplate string) (*notificationTemplateData, string, bool) {
 	preview := notificationTemplatePreview(name)
 	if preview == nil {
-		return ""
+		return nil, "", false
 	}
 
 	body := preview.Body
@@ -150,7 +165,7 @@ func renderNotificationTemplateHTML(name string, customTemplate string) string {
 		body = replaceTemplateTags(customTemplate, preview.Variables)
 	}
 
-	return emailPreviewHTML(body, preview.ActionText, preview.ActionURL)
+	return preview, body, true
 }
 
 type notificationTemplateData struct {
@@ -259,9 +274,18 @@ func writeParagraphs(b *strings.Builder, body string) {
 }
 
 // TestEmailNotification tests email notification functionality
-func (s *Service) TestEmailNotification(ctx context.Context, recipient string) (*TestEmailResponseDto, error) {
+func (s *Service) TestEmailNotification(ctx context.Context, req TestEmailNotificationRequest) (*TestEmailResponseDto, error) {
+	user, err := auth.RequireAdmin(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	ctx, span := tracer.Start(ctx, "admin.test_email_notification",
-		trace.WithAttributes(attribute.String("recipient", recipient)))
+		trace.WithAttributes(
+			attribute.String("recipient", user.Email),
+			attribute.String("smtp_host", req.SMTP.Transport.Host),
+			attribute.Bool("smtp_secure", req.SMTP.Transport.Secure),
+		))
 	defer span.End()
 
 	start := time.Now()
@@ -272,9 +296,72 @@ func (s *Service) TestEmailNotification(ctx context.Context, recipient string) (
 			metric.WithAttributes(attribute.String("operation", "test_email_notification")))
 	}()
 
-	// Email testing requires email system to be implemented
-	// Return error instead of mock data
-	return nil, fmt.Errorf("email testing not yet implemented - requires email system")
+	if s.email == nil {
+		s.email = smtpEmailSender{}
+	}
+
+	if err := validateTestEmailRequest(req); err != nil {
+		return nil, err
+	}
+
+	if err := s.email.Verify(ctx, req.SMTP.Transport); err != nil {
+		return nil, fmt.Errorf("%w: failed to verify SMTP configuration: %v", ErrInvalidSMTPConfig, err)
+	}
+
+	html, text := renderTestEmailContent(user.Name, req.Template)
+
+	messageID := fmt.Sprintf("<%s@immich-go>", uuid.NewString())
+	message := emailMessage{
+		From:      req.SMTP.From,
+		ReplyTo:   firstNonEmpty(req.SMTP.ReplyTo, req.SMTP.From),
+		To:        user.Email,
+		Subject:   "Test email from Immich",
+		HTML:      html,
+		Text:      text,
+		MessageID: messageID,
+		Transport: req.SMTP.Transport,
+	}
+
+	if err := s.email.Send(ctx, message); err != nil {
+		return nil, fmt.Errorf("failed to send test email: %w", err)
+	}
+
+	return &TestEmailResponseDto{MessageID: messageID}, nil
+}
+
+func validateTestEmailRequest(req TestEmailNotificationRequest) error {
+	if strings.TrimSpace(req.SMTP.From) == "" {
+		return fmt.Errorf("%w: smtp from address is required", ErrInvalidSMTPConfig)
+	}
+	if strings.TrimSpace(req.SMTP.Transport.Host) == "" {
+		return fmt.Errorf("%w: smtp host is required", ErrInvalidSMTPConfig)
+	}
+	if req.SMTP.Transport.Port <= 0 {
+		return fmt.Errorf("%w: smtp port is required", ErrInvalidSMTPConfig)
+	}
+	return nil
+}
+
+func renderTestEmailContent(displayName string, customTemplate string) (string, string) {
+	displayName = firstNonEmpty(displayName, "Immich User")
+	variables := map[string]string{
+		"baseUrl":     defaultTemplateBaseURL,
+		"displayName": displayName,
+	}
+	body := fmt.Sprintf("Hey %s!\n\nThis is a test email from your Immich Instance!\n%s", displayName, defaultTemplateBaseURL)
+	if customTemplate != "" {
+		body = replaceTemplateTags(customTemplate, variables)
+	}
+	return emailPreviewHTML(body, "", ""), body
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 // SearchUsersAdmin searches for users (admin function)
@@ -670,7 +757,43 @@ type TemplateResponseDto struct {
 }
 
 type TestEmailResponseDto struct {
-	Message string
+	MessageID string
+}
+
+type TestEmailNotificationRequest struct {
+	SMTP     SMTPConfig
+	Template string
+}
+
+type SMTPConfig struct {
+	From      string
+	ReplyTo   string
+	Transport SMTPTransport
+}
+
+type SMTPTransport struct {
+	Host       string
+	Port       int
+	Username   string
+	Password   string
+	IgnoreCert bool
+	Secure     bool
+}
+
+type emailMessage struct {
+	From      string
+	ReplyTo   string
+	To        string
+	Subject   string
+	HTML      string
+	Text      string
+	MessageID string
+	Transport SMTPTransport
+}
+
+type emailSender interface {
+	Verify(ctx context.Context, transport SMTPTransport) error
+	Send(ctx context.Context, message emailMessage) error
 }
 
 type SearchUsersAdminRequest struct {

@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"github.com/denysvitali/immich-go-backend/internal/auth"
 	"github.com/denysvitali/immich-go-backend/internal/calendarheatmap"
@@ -87,14 +88,45 @@ func (s *Server) TestEmailNotification(ctx context.Context, request *immichv1.Te
 	}
 
 	// Call service
-	response, err := s.service.TestEmailNotification(ctx, request.GetRecipient())
+	response, err := s.service.TestEmailNotification(ctx, TestEmailNotificationRequest{
+		SMTP:     protoSMTPConfig(request.GetSmtp()),
+		Template: request.GetTemplate(),
+	})
 	if err != nil {
+		if errors.Is(err, ErrInvalidSMTPConfig) {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
 		return nil, grpcutil.SanitizedInternal(ctx, "failed to test email notification", err)
 	}
 
 	return &immichv1.TestEmailResponseDto{
-		Message: response.Message,
+		MessageId: response.MessageID,
 	}, nil
+}
+
+func protoSMTPConfig(smtp *immichv1.SystemConfigNotificationsSmtpDto) SMTPConfig {
+	if smtp == nil {
+		return SMTPConfig{}
+	}
+	return SMTPConfig{
+		From:      smtp.GetFrom(),
+		ReplyTo:   smtp.GetReplyTo(),
+		Transport: protoSMTPTransport(smtp.GetTransport()),
+	}
+}
+
+func protoSMTPTransport(transport *immichv1.SystemConfigSmtpTransportDto) SMTPTransport {
+	if transport == nil {
+		return SMTPTransport{}
+	}
+	return SMTPTransport{
+		Host:       transport.GetHost(),
+		Port:       int(transport.GetPort()),
+		Username:   transport.GetUsername(),
+		Password:   transport.GetPassword(),
+		IgnoreCert: transport.GetIgnoreCert(),
+		Secure:     transport.GetSecure(),
+	}
 }
 
 // SearchUsersAdmin searches for users (admin function)

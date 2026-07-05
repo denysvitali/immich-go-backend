@@ -166,6 +166,7 @@ func systemConfigToProto(cfg systemconfig.Dto) *immichv1.SystemConfigDto {
 					Username:   cfg.Notifications.SMTP.Transport.Username,
 					Password:   cfg.Notifications.SMTP.Transport.Password,
 					IgnoreCert: cfg.Notifications.SMTP.Transport.IgnoreCert,
+					Secure:     cfg.Notifications.SMTP.Transport.Secure,
 				},
 			},
 		},
@@ -356,6 +357,7 @@ func applyProtoToSystemConfig(cfg *systemconfig.Dto, req *immichv1.SystemConfigD
 			cfg.Notifications.SMTP.Transport.Username = t.Username
 			cfg.Notifications.SMTP.Transport.Password = t.Password
 			cfg.Notifications.SMTP.Transport.IgnoreCert = t.IgnoreCert
+			cfg.Notifications.SMTP.Transport.Secure = t.Secure
 		}
 	}
 	if o := req.Oauth; o != nil {

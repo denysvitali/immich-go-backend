@@ -119,6 +119,7 @@ test.describe('system config', () => {
 
     config.trash.days = 45;
     config.server.loginPageMessage = 'e2e message';
+    config.notifications.smtp.transport.secure = true;
 
     const update = await request.put('/api/system-config', {
       headers: admin.headers,
@@ -133,6 +134,7 @@ test.describe('system config', () => {
     const persisted = await reread.json();
     expect(persisted.trash.days).toBe(45);
     expect(persisted.server.loginPageMessage).toBe('e2e message');
+    expect(persisted.notifications.smtp.transport.secure).toBe(true);
   });
 
   test('defaults and storage template options', async ({ request }) => {
@@ -218,6 +220,33 @@ test.describe('notifications', () => {
     expect(body.html).toContain('Hello John Doe, use https://demo.immich.app.');
     expect(body.html).toContain('Unknown {missing}');
     expect(body.subject).toBeUndefined();
+  });
+
+  test('admin test email validates upstream SMTP body and response shape', async ({ request }) => {
+    const admin = await signUpAdmin(request, 'notification-test-email');
+
+    const response = await request.post('/api/admin/notifications/test-email', {
+      headers: admin.headers,
+      data: {
+        smtp: {
+          from: 'Immich <noreply@example.com>',
+          replyTo: 'reply@example.com',
+          transport: {
+            host: '127.0.0.1',
+            port: 1,
+            secure: false,
+            ignoreCert: false,
+            username: '',
+            password: '',
+          },
+        },
+        template: 'Hello {displayName}',
+      },
+    });
+
+    expect(response.status()).toBe(400);
+    const body = await response.json();
+    expect(String(body.message ?? body.error)).toContain('failed to verify SMTP configuration');
   });
 
   test('admin messages round-trip through notification list, read, and delete APIs', async ({

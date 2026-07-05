@@ -7,6 +7,7 @@ import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
 import "common.proto";
 import "preferences.proto";
+import "system_config.proto";
 
 option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immichv1";
 
@@ -236,7 +237,7 @@ message TemplateResponseDto {
 
 // Test email response DTO
 message TestEmailResponseDto {
-  string message = 1;
+  string message_id = 1;
 }
 
 // User admin response DTO
@@ -293,7 +294,8 @@ message RenderNotificationTemplateRequest {
 
 // Test email notification request
 message TestEmailNotificationRequest {
-  string recipient = 1;
+  SystemConfigNotificationsSmtpDto smtp = 1;
+  string template = 2;
 }
 
 // Integrity report request
