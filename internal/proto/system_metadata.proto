@@ -11,14 +11,14 @@ service SystemMetadataService {
   // Get admin onboarding
   rpc GetAdminOnboarding(GetAdminOnboardingRequest) returns (GetAdminOnboardingResponse) {
     option (google.api.http) = {
-      get: "/system-metadata/admin-onboarding"
+      get: "/api/system-metadata/admin-onboarding"
     };
   }
 
   // Update admin onboarding
   rpc UpdateAdminOnboarding(UpdateAdminOnboardingRequest) returns (UpdateAdminOnboardingResponse) {
     option (google.api.http) = {
-      post: "/system-metadata/admin-onboarding"
+      post: "/api/system-metadata/admin-onboarding"
       body: "*"
     };
   }
@@ -26,14 +26,14 @@ service SystemMetadataService {
   // Get reverse geocoding state
   rpc GetReverseGeocodingState(GetReverseGeocodingStateRequest) returns (GetReverseGeocodingStateResponse) {
     option (google.api.http) = {
-      get: "/system-metadata/reverse-geocoding-state"
+      get: "/api/system-metadata/reverse-geocoding-state"
     };
   }
 
   // Get version check state
   rpc GetVersionCheckState(GetVersionCheckStateRequest) returns (VersionCheckStateResponse) {
     option (google.api.http) = {
-      get: "/system-metadata/version-check-state"
+      get: "/api/system-metadata/version-check-state"
     };
   }
 }

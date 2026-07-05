@@ -177,10 +177,10 @@ test.describe('system metadata', () => {
       baseURL: process.env.IMMICH_SERVER_URL ?? 'http://127.0.0.1:3001',
     });
     try {
-      const unauthenticated = await backend.get('/system-metadata/version-check-state');
+      const unauthenticated = await backend.get('/api/system-metadata/version-check-state');
       expect(unauthenticated.status()).toBe(401);
 
-      const response = await backend.get('/system-metadata/version-check-state', {
+      const response = await backend.get('/api/system-metadata/version-check-state', {
         headers: admin.headers,
       });
       await expectOk(response);
