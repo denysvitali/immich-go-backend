@@ -36,6 +36,41 @@ service AdminService {
     };
   }
 
+  // Get integrity report by type
+  rpc GetIntegrityReport(GetIntegrityReportRequest) returns (IntegrityReportResponseDto) {
+    option (google.api.http) = {
+      get: "/api/admin/integrity/report"
+    };
+  }
+
+  // Delete integrity report item
+  rpc DeleteIntegrityReport(DeleteIntegrityReportRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/api/admin/integrity/report/{id}"
+    };
+  }
+
+  // Download flagged file
+  rpc GetIntegrityReportFile(GetIntegrityReportFileRequest) returns (IntegrityReportFileResponse) {
+    option (google.api.http) = {
+      get: "/api/admin/integrity/report/{id}/file"
+    };
+  }
+
+  // Export integrity report by type as CSV
+  rpc GetIntegrityReportCsv(GetIntegrityReportCsvRequest) returns (IntegrityReportFileResponse) {
+    option (google.api.http) = {
+      get: "/api/admin/integrity/report/{type}/csv"
+    };
+  }
+
+  // Get integrity report summary
+  rpc GetIntegrityReportSummary(google.protobuf.Empty) returns (IntegrityReportSummaryResponseDto) {
+    option (google.api.http) = {
+      get: "/api/admin/integrity/summary"
+    };
+  }
+
   // Search users (admin)
   rpc SearchUsersAdmin(SearchUsersAdminRequest) returns (SearchUsersAdminResponse) {
     option (google.api.http) = {
@@ -259,6 +294,55 @@ message RenderNotificationTemplateRequest {
 // Test email notification request
 message TestEmailNotificationRequest {
   string recipient = 1;
+}
+
+// Integrity report request
+message GetIntegrityReportRequest {
+  optional string cursor = 1;
+  optional int64 limit = 2;
+  string type = 3;
+}
+
+// Delete integrity report item request
+message DeleteIntegrityReportRequest {
+  string id = 1;
+}
+
+// Download flagged file request
+message GetIntegrityReportFileRequest {
+  string id = 1;
+}
+
+// Export integrity report CSV request
+message GetIntegrityReportCsvRequest {
+  string type = 1;
+}
+
+// Integrity report item
+message IntegrityReportItemDto {
+  string id = 1;
+  string type = 2;
+  string path = 3;
+}
+
+// Integrity report response
+message IntegrityReportResponseDto {
+  repeated IntegrityReportItemDto items = 1;
+  optional string next_cursor = 2;
+}
+
+// Integrity report summary response
+message IntegrityReportSummaryResponseDto {
+  int64 checksum_mismatch = 1;
+  int64 missing_file = 2;
+  int64 untracked_file = 3;
+}
+
+// Binary integrity report response
+message IntegrityReportFileResponse {
+  bytes data = 1;
+  string content_type = 2;
+  string filename = 3;
 }
 
 // Search users admin request

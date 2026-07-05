@@ -80,6 +80,16 @@ func (s *Server) handleFrontendShape(w http.ResponseWriter, r *http.Request) (ha
 			return true
 		}
 
+		if reportType, ok := adminIntegrityCSVTypeFromPath(r.URL.Path); ok {
+			s.handleAdminIntegrityCSV(w, r, reportType)
+			return true
+		}
+
+		if itemID, ok := adminIntegrityFileIDFromPath(r.URL.Path); ok {
+			s.handleAdminIntegrityFile(w, r, itemID)
+			return true
+		}
+
 		if albumID, ok := albumMapMarkersIDFromPath(r.URL.Path); ok {
 			s.handleAlbumMapMarkers(w, r, albumID)
 			return true

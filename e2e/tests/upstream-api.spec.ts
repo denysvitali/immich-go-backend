@@ -135,6 +135,50 @@ test.describe('system metadata', () => {
   });
 });
 
+test.describe('admin integrity', () => {
+  test('integrity reports expose the upstream empty-report shape', async ({ request }) => {
+    const unauthenticated = await request.get('/api/admin/integrity/summary');
+    expect(unauthenticated.status()).toBe(401);
+
+    const admin = await signUpAdmin(request, 'integrity');
+
+    const summary = await request.get('/api/admin/integrity/summary', { headers: admin.headers });
+    await expectOk(summary);
+    expect(await summary.json()).toEqual({
+      checksumMismatch: 0,
+      missingFile: 0,
+      untrackedFile: 0,
+    });
+
+    const report = await request.get('/api/admin/integrity/report?type=missing_file', {
+      headers: admin.headers,
+    });
+    await expectOk(report);
+    const reportBody = await report.json();
+    expect(reportBody.items).toEqual([]);
+    expect(reportBody.nextCursor).toBeUndefined();
+
+    const csv = await request.get('/api/admin/integrity/report/missing_file/csv', {
+      headers: admin.headers,
+    });
+    await expectOk(csv);
+    expect(csv.headers()['content-type']).toContain('application/octet-stream');
+    expect(csv.headers()['content-disposition']).toContain('missing_file.csv');
+    expect(await csv.text()).toBe('id,type,path\n');
+
+    const invalid = await request.get('/api/admin/integrity/report?type=unknown', {
+      headers: admin.headers,
+    });
+    expect(invalid.status()).toBe(400);
+
+    const missingItem = await request.delete(
+      '/api/admin/integrity/report/00000000-0000-4000-8000-000000000000',
+      { headers: admin.headers },
+    );
+    expect(missingItem.status()).toBe(404);
+  });
+});
+
 test.describe('plugins', () => {
   test('plugin triggers require auth and expose upstream enum values', async ({ request }) => {
     const unauthenticated = await request.get('/api/plugins/triggers');
