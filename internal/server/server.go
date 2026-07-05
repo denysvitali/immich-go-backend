@@ -92,7 +92,7 @@ type Server struct {
 	systemConfigService   *systemconfig.Service
 	jobService            *jobs.Service
 	trashService          *trash.Server
-	tagsService           *tags.Server
+	tagsService           immichv1.TagsServiceServer
 	mapService            *mapservice.Server
 	peopleService         *people.Server
 	partnersService       *partners.Server
@@ -642,6 +642,12 @@ func (s *Server) handleWs(mux *runtime.ServeMux) http.Handler {
 				return
 			}
 			writeProtoJSON(w, marshaler, resp)
+			return
+		}
+		if r.Method == http.MethodPut && r.URL.Path == "/api/tags/assets" {
+			s.authContextMiddleware(func(w http.ResponseWriter, r *http.Request, _ map[string]string) {
+				s.handleBulkTagAssets(w, r, mux, marshaler)
+			})(w, r, nil)
 			return
 		}
 		if s.handleFrontendShape(w, r) {
