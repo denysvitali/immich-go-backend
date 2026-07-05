@@ -231,7 +231,7 @@ service AdminService {
 // Template response DTO
 message TemplateResponseDto {
   string html = 1;
-  string subject = 2;
+  string name = 2;
 }
 
 // Test email response DTO
@@ -288,7 +288,7 @@ message SendNotificationRequest {
 // Render notification template request
 message RenderNotificationTemplateRequest {
   string name = 1;
-  map<string, string> data = 2;
+  string template = 2;
 }
 
 // Test email notification request

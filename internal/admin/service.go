@@ -3,6 +3,9 @@ package admin
 import (
 	"context"
 	"fmt"
+	"html"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/denysvitali/immich-go-backend/internal/config"
@@ -18,6 +21,10 @@ import (
 )
 
 var tracer = telemetry.GetTracer("admin")
+
+var templateTagPattern = regexp.MustCompile(`\{(.*?)\}`)
+
+const defaultTemplateBaseURL = "https://demo.immich.app"
 
 // Service handles administrative operations
 type Service struct {
@@ -108,10 +115,13 @@ func (s *Service) SendNotification(ctx context.Context, req SendNotificationRequ
 	return nil
 }
 
-// RenderNotificationTemplate renders a notification template
-func (s *Service) RenderNotificationTemplate(ctx context.Context, name string, data map[string]string) (*TemplateResponseDto, error) {
+// RenderNotificationTemplate renders a notification email preview.
+func (s *Service) RenderNotificationTemplate(ctx context.Context, name string, customTemplate string) (*TemplateResponseDto, error) {
 	ctx, span := tracer.Start(ctx, "admin.render_notification_template",
-		trace.WithAttributes(attribute.String("template_name", name)))
+		trace.WithAttributes(
+			attribute.String("template_name", name),
+			attribute.Bool("custom_template", customTemplate != ""),
+		))
 	defer span.End()
 
 	start := time.Now()
@@ -122,9 +132,130 @@ func (s *Service) RenderNotificationTemplate(ctx context.Context, name string, d
 			metric.WithAttributes(attribute.String("operation", "render_notification_template")))
 	}()
 
-	// Template rendering requires template system to be implemented
-	// Return error instead of mock data
-	return nil, fmt.Errorf("template rendering not yet implemented - requires template system")
+	htmlBody := renderNotificationTemplateHTML(name, customTemplate)
+	return &TemplateResponseDto{
+		HTML: htmlBody,
+		Name: name,
+	}, nil
+}
+
+func renderNotificationTemplateHTML(name string, customTemplate string) string {
+	preview := notificationTemplatePreview(name)
+	if preview == nil {
+		return ""
+	}
+
+	body := preview.Body
+	if customTemplate != "" {
+		body = replaceTemplateTags(customTemplate, preview.Variables)
+	}
+
+	return emailPreviewHTML(body, preview.ActionText, preview.ActionURL)
+}
+
+type notificationTemplateData struct {
+	Body       string
+	ActionText string
+	ActionURL  string
+	Variables  map[string]string
+}
+
+func notificationTemplatePreview(name string) *notificationTemplateData {
+	switch name {
+	case "welcome":
+		vars := map[string]string{
+			"baseUrl":     defaultTemplateBaseURL,
+			"displayName": "John Doe",
+			"username":    "john@doe.com",
+			"password":    "thisIsAPassword123",
+		}
+		return &notificationTemplateData{
+			Body:       "Hey John Doe!\n\nA new account has been created for you.\nUsername: john@doe.com\nPassword: thisIsAPassword123",
+			ActionText: "Login",
+			ActionURL:  defaultTemplateBaseURL,
+			Variables:  vars,
+		}
+	case "album-invite":
+		vars := map[string]string{
+			"albumId":       "1",
+			"albumName":     "John Doe's Favorites",
+			"baseUrl":       defaultTemplateBaseURL,
+			"recipientName": "Jane Doe",
+			"senderName":    "John Doe",
+		}
+		return &notificationTemplateData{
+			Body:       "Hey Jane Doe!\n\nJohn Doe has added you to the album John Doe's Favorites.",
+			ActionText: "View Album",
+			ActionURL:  defaultTemplateBaseURL + "/albums/1",
+			Variables:  vars,
+		}
+	case "album-update":
+		vars := map[string]string{
+			"albumId":       "1",
+			"albumName":     "Favorite Photos",
+			"baseUrl":       defaultTemplateBaseURL,
+			"recipientName": "Jane Doe",
+		}
+		return &notificationTemplateData{
+			Body:       "Hey Jane Doe!\n\nNew media has been added to Favorite Photos.\nCheck it out!",
+			ActionText: "View Album",
+			ActionURL:  defaultTemplateBaseURL + "/albums/1",
+			Variables:  vars,
+		}
+	case "test":
+		vars := map[string]string{
+			"baseUrl":     defaultTemplateBaseURL,
+			"displayName": "John Doe",
+		}
+		return &notificationTemplateData{
+			Body:      "Hey John Doe!\n\nThis is a test email from your Immich Instance!\n" + defaultTemplateBaseURL,
+			Variables: vars,
+		}
+	default:
+		return nil
+	}
+}
+
+func replaceTemplateTags(template string, variables map[string]string) string {
+	return templateTagPattern.ReplaceAllStringFunc(template, func(match string) string {
+		key := strings.TrimSuffix(strings.TrimPrefix(match, "{"), "}")
+		if value := variables[key]; value != "" {
+			return value
+		}
+		return match
+	})
+}
+
+func emailPreviewHTML(body string, actionText string, actionURL string) string {
+	var b strings.Builder
+	b.WriteString("<!doctype html><html><body>")
+	writeParagraphs(&b, body)
+	if actionText != "" && actionURL != "" {
+		escapedURL := html.EscapeString(actionURL)
+		b.WriteString(`<p><a href="`)
+		b.WriteString(escapedURL)
+		b.WriteString(`">`)
+		b.WriteString(html.EscapeString(actionText))
+		b.WriteString("</a></p>")
+		b.WriteString("<p>If you cannot click the button use the link below to proceed.</p>")
+		b.WriteString("<p>")
+		b.WriteString(escapedURL)
+		b.WriteString("</p>")
+	}
+	b.WriteString("</body></html>")
+	return b.String()
+}
+
+func writeParagraphs(b *strings.Builder, body string) {
+	for _, part := range strings.Split(body, "\n\n") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		b.WriteString("<p>")
+		b.WriteString(strings.ReplaceAll(html.EscapeString(part), "\n", "<br>"))
+		b.WriteString("</p>")
+	}
 }
 
 // TestEmailNotification tests email notification functionality
@@ -534,8 +665,8 @@ type SendNotificationRequest struct {
 }
 
 type TemplateResponseDto struct {
-	HTML    string
-	Subject string
+	HTML string
+	Name string
 }
 
 type TestEmailResponseDto struct {

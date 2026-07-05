@@ -202,6 +202,24 @@ test.describe('oauth', () => {
 });
 
 test.describe('notifications', () => {
+  test('admin email template preview returns upstream shape', async ({ request }) => {
+    const admin = await signUpAdmin(request, 'notification-template');
+
+    const response = await request.post('/api/admin/notifications/templates/welcome', {
+      headers: admin.headers,
+      data: {
+        template: 'Hello {displayName}, use {baseUrl}. Unknown {missing}',
+      },
+    });
+    await expectOk(response);
+
+    const body = await response.json();
+    expect(body.name).toBe('welcome');
+    expect(body.html).toContain('Hello John Doe, use https://demo.immich.app.');
+    expect(body.html).toContain('Unknown {missing}');
+    expect(body.subject).toBeUndefined();
+  });
+
   test('admin messages round-trip through notification list, read, and delete APIs', async ({
     request,
   }) => {

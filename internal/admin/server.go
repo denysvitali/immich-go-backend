@@ -67,14 +67,14 @@ func (s *Server) RenderNotificationTemplate(ctx context.Context, request *immich
 	}
 
 	// Call service
-	response, err := s.service.RenderNotificationTemplate(ctx, request.GetName(), request.GetData())
+	response, err := s.service.RenderNotificationTemplate(ctx, request.GetName(), request.GetTemplate())
 	if err != nil {
 		return nil, grpcutil.SanitizedInternal(ctx, "failed to render template", err)
 	}
 
 	return &immichv1.TemplateResponseDto{
-		Html:    response.HTML,
-		Subject: response.Subject,
+		Html: response.HTML,
+		Name: response.Name,
 	}, nil
 }
 
