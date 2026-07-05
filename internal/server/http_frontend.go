@@ -93,6 +93,21 @@ func (s *Server) handleFrontendShape(w http.ResponseWriter, r *http.Request) (ha
 			return true
 		}
 
+		if assetID, ok := hlsMainPlaylistAssetIDFromPath(r.URL.Path); ok {
+			s.handleHLSMainPlaylist(w, r, assetID)
+			return true
+		}
+
+		if mediaPlaylist, ok := hlsMediaPlaylistFromPath(r.URL.Path); ok {
+			s.handleHLSMediaPlaylist(w, r, mediaPlaylist)
+			return true
+		}
+
+		if segment, ok := hlsSegmentFromPath(r.URL.Path); ok {
+			s.handleHLSSegment(w, r, segment)
+			return true
+		}
+
 		if albumID, ok := albumMapMarkersIDFromPath(r.URL.Path); ok {
 			s.handleAlbumMapMarkers(w, r, albumID)
 			return true
@@ -112,6 +127,11 @@ func (s *Server) handleFrontendShape(w http.ResponseWriter, r *http.Request) (ha
 	case http.MethodDelete:
 		if r.URL.Path == "/api/users/me/onboarding" {
 			s.handleUserOnboardingDelete(w, r)
+			return true
+		}
+
+		if assetID, sessionID, ok := hlsSessionFromPath(r.URL.Path); ok {
+			s.handleHLSEndSession(w, r, assetID, sessionID)
 			return true
 		}
 

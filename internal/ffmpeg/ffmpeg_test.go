@@ -155,6 +155,29 @@ func TestTranscodeToH264_Defaults(t *testing.T) {
 	assert.Equal(t, "h264", result.Codec)
 }
 
+func TestGenerateHLS(t *testing.T) {
+	skipIfNoFFmpeg(t)
+
+	tmpDir := t.TempDir()
+	testVideoPath := filepath.Join(tmpDir, "test.mp4")
+	outputDir := filepath.Join(tmpDir, "hls")
+
+	err := ffmpeg.GenerateTestVideo(testVideoPath, 320, 240, 2*time.Second)
+	require.NoError(t, err)
+
+	err = ffmpeg.GenerateHLS(t.Context(), testVideoPath, outputDir, ffmpeg.DefaultHLSOptions())
+	require.NoError(t, err)
+
+	playlist, err := os.ReadFile(filepath.Join(outputDir, "playlist.m3u8"))
+	require.NoError(t, err)
+	assert.Contains(t, string(playlist), "#EXTM3U")
+	assert.Contains(t, string(playlist), "init.mp4")
+	assert.Contains(t, string(playlist), "seg_0.m4s")
+
+	assert.FileExists(t, filepath.Join(outputDir, "init.mp4"))
+	assert.FileExists(t, filepath.Join(outputDir, "seg_0.m4s"))
+}
+
 func TestGenerateTestVideo(t *testing.T) {
 	skipIfNoFFmpeg(t)
 
@@ -216,6 +239,15 @@ func TestDefaultTranscodeOptions(t *testing.T) {
 	assert.Equal(t, "medium", opts.Preset)
 	assert.Equal(t, 1920, opts.MaxWidth)
 	assert.Equal(t, 1080, opts.MaxHeight)
+}
+
+func TestDefaultHLSOptions(t *testing.T) {
+	opts := ffmpeg.DefaultHLSOptions()
+	assert.Equal(t, 23, opts.CRF)
+	assert.Equal(t, "veryfast", opts.Preset)
+	assert.Equal(t, 1920, opts.MaxWidth)
+	assert.Equal(t, 1080, opts.MaxHeight)
+	assert.Equal(t, 2, opts.SegmentDuration)
 }
 
 func TestDefaultExtractFrameOptions(t *testing.T) {

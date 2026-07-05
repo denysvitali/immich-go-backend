@@ -46,6 +46,15 @@ type TranscodeOptions struct {
 	MaxHeight int    // Maximum output height (default 1080)
 }
 
+// HLSOptions configures HLS playlist and segment generation.
+type HLSOptions struct {
+	CRF             int
+	Preset          string
+	MaxWidth        int
+	MaxHeight       int
+	SegmentDuration int
+}
+
 // DefaultTranscodeOptions returns sensible defaults for transcoding.
 func DefaultTranscodeOptions() TranscodeOptions {
 	return TranscodeOptions{
@@ -53,6 +62,17 @@ func DefaultTranscodeOptions() TranscodeOptions {
 		Preset:    "medium",
 		MaxWidth:  1920,
 		MaxHeight: 1080,
+	}
+}
+
+// DefaultHLSOptions returns conservative defaults for on-demand HLS generation.
+func DefaultHLSOptions() HLSOptions {
+	return HLSOptions{
+		CRF:             23,
+		Preset:          "veryfast",
+		MaxWidth:        1920,
+		MaxHeight:       1080,
+		SegmentDuration: 2,
 	}
 }
 
@@ -321,6 +341,83 @@ func TranscodeToH264(ctx context.Context, inputPath, outputPath string, opts Tra
 		span.SetAttributes(attribute.String("ffmpeg_output", string(output)))
 		span.RecordError(err)
 		return fmt.Errorf("ffmpeg transcode failed: %w", err)
+	}
+
+	span.SetAttributes(attribute.String("status", "success"))
+	return nil
+}
+
+// GenerateHLS transcodes a video into a single-variant fMP4 HLS rendition.
+func GenerateHLS(ctx context.Context, inputPath, outputDir string, opts HLSOptions) error {
+	ctx, span := tracer.Start(ctx, "ffmpeg.generate_hls",
+		trace.WithAttributes(
+			attribute.String("input_path", inputPath),
+			attribute.String("output_dir", outputDir),
+		))
+	defer span.End()
+
+	ffmpegPath, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		span.SetAttributes(attribute.String("error", "ffmpeg_not_found"))
+		return fmt.Errorf("%w: ffmpeg", ErrFFmpegNotFound)
+	}
+
+	if opts.CRF <= 0 {
+		opts.CRF = 23
+	}
+	if opts.Preset == "" {
+		opts.Preset = "veryfast"
+	}
+	if opts.MaxWidth <= 0 {
+		opts.MaxWidth = 1920
+	}
+	if opts.MaxHeight <= 0 {
+		opts.MaxHeight = 1080
+	}
+	if opts.SegmentDuration <= 0 {
+		opts.SegmentDuration = 2
+	}
+
+	if err := os.MkdirAll(outputDir, 0o750); err != nil {
+		return fmt.Errorf("failed to create HLS output directory: %w", err)
+	}
+
+	scaleFilter := fmt.Sprintf(
+		"scale=w=%d:h=%d:force_original_aspect_ratio=decrease",
+		opts.MaxWidth,
+		opts.MaxHeight,
+	)
+	playlistPath := filepath.Join(outputDir, "playlist.m3u8")
+	segmentPattern := filepath.Join(outputDir, "seg_%d.m4s")
+
+	args := []string{
+		"-i", inputPath,
+		"-map", "0:v:0",
+		"-map", "0:a?",
+		"-c:v", "libx264",
+		"-crf", strconv.Itoa(opts.CRF),
+		"-preset", opts.Preset,
+		"-vf", scaleFilter,
+		"-pix_fmt", "yuv420p",
+		"-c:a", "aac",
+		"-b:a", "128k",
+		"-f", "hls",
+		"-hls_time", strconv.Itoa(opts.SegmentDuration),
+		"-hls_playlist_type", "vod",
+		"-hls_segment_type", "fmp4",
+		"-hls_fmp4_init_filename", "init.mp4",
+		"-hls_segment_filename", segmentPattern,
+		"-hls_flags", "independent_segments",
+		"-y",
+		playlistPath,
+	}
+
+	cmd := exec.CommandContext(ctx, ffmpegPath, args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		span.SetAttributes(attribute.String("ffmpeg_output", string(output)))
+		span.RecordError(err)
+		return fmt.Errorf("ffmpeg HLS generation failed: %w", err)
 	}
 
 	span.SetAttributes(attribute.String("status", "success"))

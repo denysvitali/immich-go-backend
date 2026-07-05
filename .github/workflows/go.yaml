@@ -15,6 +15,7 @@ env:
   GO_VERSION: '1.24'
   BUF_VERSION: '1.49.0'
   IMMICH_UPSTREAM_REF: 'v2.7.5'
+  OPENAPI_UPSTREAM_REF: 'v3.0.1'
   OPENAPI_COVERAGE_FAIL_UNDER: '100'
 
 # Cancel in-progress runs for the same ref when a new commit is pushed.
@@ -39,7 +40,7 @@ jobs:
       uses: actions/checkout@v4
       with:
         repository: immich-app/immich
-        ref: ${{ env.IMMICH_UPSTREAM_REF }}
+        ref: ${{ env.OPENAPI_UPSTREAM_REF }}
         path: immich-upstream
         sparse-checkout: open-api
 
@@ -357,6 +358,16 @@ jobs:
       with:
         node-version: '24.14.0'
 
+    - name: Install ffmpeg for HLS E2E
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends ffmpeg
+
+    - name: Verify ffmpeg for HLS E2E
+      run: |
+        ffmpeg -version
+        ffprobe -version
+
     - name: Enable pnpm
       run: |
         corepack enable pnpm
@@ -518,6 +529,9 @@ jobs:
         jobs:
           enabled: false
           redis_url: "redis://127.0.0.1:6379/0"
+
+        features:
+          video_transcoding_enabled: true
 
         redis:
           host: "127.0.0.1"

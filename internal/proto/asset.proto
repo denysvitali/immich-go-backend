@@ -158,6 +158,34 @@ service AssetService {
     };
   }
 
+  // Get HLS main playlist
+  rpc GetMainPlaylist(GetMainPlaylistRequest) returns (HLSPlaylistResponse) {
+    option (google.api.http) = {
+      get: "/api/assets/{id}/video/stream/main.m3u8"
+    };
+  }
+
+  // End HLS streaming session
+  rpc EndSession(EndSessionRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/api/assets/{id}/video/stream/{session_id}"
+    };
+  }
+
+  // Get HLS media playlist
+  rpc GetMediaPlaylist(GetMediaPlaylistRequest) returns (HLSPlaylistResponse) {
+    option (google.api.http) = {
+      get: "/api/assets/{id}/video/stream/{session_id}/{variant_index}/playlist.m3u8"
+    };
+  }
+
+  // Get HLS segment or init file
+  rpc GetSegment(GetSegmentRequest) returns (HLSSegmentResponse) {
+    option (google.api.http) = {
+      get: "/api/assets/{id}/video/stream/{session_id}/{variant_index}/{filename}"
+    };
+  }
+
   // Get recently added assets
   rpc GetRecentlyAddedAssets(GetRecentlyAddedAssetsRequest) returns (GetRecentlyAddedAssetsResponse) {
     option (google.api.http) = {
@@ -452,6 +480,47 @@ message PlayAssetVideoRequest {
 message PlayAssetVideoResponse {
   bytes data = 1;
   string content_type = 2;
+}
+
+message GetMainPlaylistRequest {
+  string id = 1;
+  optional string key = 2;
+  optional string slug = 3;
+}
+
+message EndSessionRequest {
+  string id = 1;
+  string session_id = 2;
+  optional string key = 3;
+  optional string slug = 4;
+}
+
+message GetMediaPlaylistRequest {
+  string id = 1;
+  string session_id = 2;
+  uint64 variant_index = 3;
+  optional string key = 4;
+  optional string slug = 5;
+}
+
+message GetSegmentRequest {
+  string id = 1;
+  string session_id = 2;
+  uint64 variant_index = 3;
+  string filename = 4;
+  optional string key = 5;
+  optional string slug = 6;
+}
+
+message HLSPlaylistResponse {
+  string data = 1;
+  string content_type = 2;
+}
+
+message HLSSegmentResponse {
+  bytes data = 1;
+  string content_type = 2;
+  string filename = 3;
 }
 
 // Get recently added assets request

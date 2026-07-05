@@ -1,4 +1,8 @@
 import { expect, test } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { expectOk, gpsJpeg, png1x1, signUpAdmin, uniqueId } from './helpers';
 
 // Covers the upstream Immich v2.4.0 API surface added for the web UI:
@@ -16,6 +20,54 @@ type AlbumMapMarker = {
 
 function delay(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+function hasFFmpeg() {
+  try {
+    execFileSync('ffmpeg', ['-version'], { stdio: 'ignore' });
+    execFileSync('ffprobe', ['-version'], { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function generateTestMp4() {
+  const dir = mkdtempSync(join(tmpdir(), 'immich-e2e-video-'));
+  const output = join(dir, 'test.mp4');
+  try {
+    execFileSync(
+      'ffmpeg',
+      [
+        '-hide_banner',
+        '-loglevel',
+        'error',
+        '-f',
+        'lavfi',
+        '-i',
+        'testsrc=duration=2:size=64x64:rate=10',
+        '-f',
+        'lavfi',
+        '-i',
+        'sine=frequency=1000:duration=2',
+        '-shortest',
+        '-c:v',
+        'libx264',
+        '-c:a',
+        'aac',
+        '-pix_fmt',
+        'yuv420p',
+        '-movflags',
+        '+faststart',
+        '-y',
+        output,
+      ],
+      { stdio: 'pipe' },
+    );
+    return readFileSync(output);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 test.describe('system config', () => {
@@ -146,6 +198,81 @@ test.describe('oauth', () => {
     expect(disabledOAuth.status()).toBe(400);
     const body = await disabledOAuth.json();
     expect(String(body.message ?? body.error)).toContain('OAuth is not enabled');
+  });
+});
+
+test.describe('asset HLS streaming', () => {
+  test('streams playlists and generated fMP4 segments', async ({ request }) => {
+    test.skip(!hasFFmpeg(), 'ffmpeg/ffprobe are required for HLS E2E coverage');
+
+    const admin = await signUpAdmin(request, 'hls');
+    const mediaId = uniqueId('hls-video');
+    const filename = `${mediaId}.mp4`;
+    const video = generateTestMp4();
+
+    const uploaded = await request.post('/api/assets', {
+      headers: admin.headers,
+      data: {
+        assetData: {
+          deviceAssetId: mediaId,
+          deviceId: 'playwright-e2e',
+          type: 'ASSET_TYPE_VIDEO',
+          originalPath: `fallback/${filename}`,
+          originalFileName: filename,
+          fileCreatedAt: '2026-01-01T00:00:00Z',
+          fileModifiedAt: '2026-01-01T00:00:00Z',
+        },
+        checksum: `checksum-${mediaId}`,
+        fileContent: video.toString('base64'),
+      },
+    });
+    await expectOk(uploaded);
+    const asset = await uploaded.json();
+
+    const main = await request.get(`/api/assets/${asset.id}/video/stream/main.m3u8`, {
+      headers: admin.headers,
+    });
+    await expectOk(main);
+    expect(main.headers()['content-type']).toContain('application/vnd.apple.mpegurl');
+
+    const mainText = await main.text();
+    expect(mainText).toContain('#EXTM3U');
+    const sessionMatch = mainText.match(/([0-9a-f-]{36})\/0\/playlist\.m3u8/);
+    expect(sessionMatch).not.toBeNull();
+    const sessionId = sessionMatch![1];
+
+    const media = await request.get(
+      `/api/assets/${asset.id}/video/stream/${sessionId}/0/playlist.m3u8`,
+      { headers: admin.headers },
+    );
+    await expectOk(media);
+    expect(media.headers()['content-type']).toContain('application/vnd.apple.mpegurl');
+
+    const mediaText = await media.text();
+    expect(mediaText).toContain('#EXT-X-MAP:URI="init.mp4"');
+    const segmentName = mediaText.match(/(seg_\d+\.m4s)/)?.[1];
+    expect(segmentName).toBeTruthy();
+
+    const init = await request.get(
+      `/api/assets/${asset.id}/video/stream/${sessionId}/0/init.mp4`,
+      { headers: admin.headers },
+    );
+    await expectOk(init);
+    expect(init.headers()['content-type']).toContain('application/octet-stream');
+    expect((await init.body()).byteLength).toBeGreaterThan(0);
+
+    const segment = await request.get(
+      `/api/assets/${asset.id}/video/stream/${sessionId}/0/${segmentName}`,
+      { headers: admin.headers },
+    );
+    await expectOk(segment);
+    expect(segment.headers()['content-type']).toContain('application/octet-stream');
+    expect((await segment.body()).byteLength).toBeGreaterThan(0);
+
+    const end = await request.delete(`/api/assets/${asset.id}/video/stream/${sessionId}`, {
+      headers: admin.headers,
+    });
+    expect(end.status()).toBe(204);
   });
 });
 
