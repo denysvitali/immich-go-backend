@@ -257,7 +257,7 @@ test.describe('notifications', () => {
     await expectOk(update);
     const updated = await update.json();
     expect(updated.id).toBe(notification.id);
-    expect(updated.readAt).toBe(readAt);
+    expect(new Date(updated.readAt).toISOString()).toBe(new Date(readAt).toISOString());
 
     const unread = await request.get('/api/notifications?unread=true', { headers: user.headers });
     await expectOk(unread);
