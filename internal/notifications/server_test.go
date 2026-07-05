@@ -1,12 +1,16 @@
 package notifications
 
 import (
+	"context"
+	"fmt"
 	"testing"
 	"time"
 
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestNotificationTypeToProto(t *testing.T) {
@@ -62,7 +66,7 @@ func TestNotificationToProto(t *testing.T) {
 		Level:       "success",
 		Title:       "Backup complete",
 		Description: "Everything finished",
-		Data: map[string]interface{}{
+		Data: map[string]any{
 			"assetCount": float64(42),
 			"source":     "library",
 		},
@@ -98,4 +102,25 @@ func TestNotificationToProtoUsesReadFlagFallback(t *testing.T) {
 	require.NotNil(t, got.ReadAt)
 	assert.False(t, got.ReadAt.AsTime().Before(before))
 	assert.False(t, got.ReadAt.AsTime().After(time.Now()))
+}
+
+func TestNotificationStatusError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want codes.Code
+	}{
+		{"invalid user ID", fmt.Errorf("%w: bad uuid", ErrInvalidUserID), codes.InvalidArgument},
+		{"invalid notification ID", fmt.Errorf("%w: bad uuid", ErrInvalidNotificationID), codes.InvalidArgument},
+		{"access denied", fmt.Errorf("%w: other user", ErrAccessDenied), codes.PermissionDenied},
+		{"not found", fmt.Errorf("%w: no rows", ErrNotificationNotFound), codes.NotFound},
+		{"internal", fmt.Errorf("database unavailable"), codes.Internal},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := notificationStatusError(context.Background(), "notification failed", tt.err)
+			assert.Equal(t, tt.want, status.Code(got))
+		})
+	}
 }

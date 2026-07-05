@@ -201,6 +201,83 @@ test.describe('oauth', () => {
   });
 });
 
+test.describe('notifications', () => {
+  test('admin messages round-trip through notification list, read, and delete APIs', async ({
+    request,
+  }) => {
+    const admin = await signUpAdmin(request, 'notifications-admin');
+    const user = await signUpAdmin(request, 'notifications-user');
+    const subject = `E2E notification ${uniqueId('subject')}`;
+    const message = `Message ${uniqueId('body')}`;
+
+    const create = await request.post('/api/admin/notifications', {
+      headers: admin.headers,
+      data: {
+        subject,
+        message,
+        userIds: [user.userId],
+      },
+    });
+    await expectOk(create);
+
+    const list = await request.get('/api/notifications', { headers: user.headers });
+    await expectOk(list);
+    const listBody = await list.json();
+    expect(Array.isArray(listBody.notifications)).toBe(true);
+
+    const notification = listBody.notifications.find(
+      (item: { title?: string }) => item.title === subject,
+    );
+    expect(notification).toBeTruthy();
+    expect(notification).toMatchObject({
+      title: subject,
+      description: message,
+      level: 'NOTIFICATION_LEVEL_INFO',
+      type: 'NOTIFICATION_TYPE_SYSTEM_MESSAGE',
+    });
+    expect(notification.id).toBeTruthy();
+    expect(notification.createdAt).toBeTruthy();
+    expect(notification.readAt).toBeUndefined();
+
+    const one = await request.get(`/api/notifications/${notification.id}`, {
+      headers: user.headers,
+    });
+    await expectOk(one);
+    expect(await one.json()).toMatchObject({
+      id: notification.id,
+      title: subject,
+      description: message,
+    });
+
+    const readAt = '2026-07-05T00:00:00Z';
+    const update = await request.put(`/api/notifications/${notification.id}`, {
+      headers: user.headers,
+      data: { readAt },
+    });
+    await expectOk(update);
+    const updated = await update.json();
+    expect(updated.id).toBe(notification.id);
+    expect(updated.readAt).toBe(readAt);
+
+    const unread = await request.get('/api/notifications?unread=true', { headers: user.headers });
+    await expectOk(unread);
+    const unreadBody = await unread.json();
+    expect(
+      unreadBody.notifications.some((item: { id?: string }) => item.id === notification.id),
+    ).toBe(false);
+
+    const remove = await request.delete(`/api/notifications/${notification.id}`, {
+      headers: user.headers,
+    });
+    expect(remove.status()).toBe(200);
+
+    const missing = await request.get(`/api/notifications/${notification.id}`, {
+      headers: user.headers,
+    });
+    expect(missing.status()).toBe(404);
+  });
+});
+
 test.describe('asset HLS streaming', () => {
   test('streams playlists and generated fMP4 segments', async ({ request }) => {
     test.skip(!hasFFmpeg(), 'ffmpeg/ffprobe are required for HLS E2E coverage');

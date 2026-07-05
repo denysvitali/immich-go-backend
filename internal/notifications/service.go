@@ -3,6 +3,7 @@ package notifications
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -14,6 +15,13 @@ import (
 type Service struct {
 	queries *sqlc.Queries
 }
+
+var (
+	ErrInvalidUserID         = errors.New("invalid user ID")
+	ErrInvalidNotificationID = errors.New("invalid notification ID")
+	ErrNotificationNotFound  = errors.New("notification not found")
+	ErrAccessDenied          = errors.New("access denied")
+)
 
 func NewService(queries *sqlc.Queries) *Service {
 	return &Service{
@@ -38,7 +46,7 @@ type Notification struct {
 func (s *Service) GetNotifications(ctx context.Context, userID string, unreadOnly bool) ([]*Notification, error) {
 	uid, err := uuid.Parse(userID)
 	if err != nil {
-		return nil, fmt.Errorf("invalid user ID: %w", err)
+		return nil, fmt.Errorf("%w: %v", ErrInvalidUserID, err)
 	}
 	userUUID := pgtype.UUID{Bytes: uid, Valid: true}
 
@@ -99,18 +107,18 @@ func (s *Service) GetNotifications(ctx context.Context, userID string, unreadOnl
 func (s *Service) GetNotification(ctx context.Context, userID string, notificationID string) (*Notification, error) {
 	nid, err := uuid.Parse(notificationID)
 	if err != nil {
-		return nil, fmt.Errorf("invalid notification ID: %w", err)
+		return nil, fmt.Errorf("%w: %v", ErrInvalidNotificationID, err)
 	}
 	notifUUID := pgtype.UUID{Bytes: nid, Valid: true}
 
 	dbN, err := s.queries.GetNotification(ctx, notifUUID)
 	if err != nil {
-		return nil, fmt.Errorf("notification not found: %w", err)
+		return nil, fmt.Errorf("%w: %v", ErrNotificationNotFound, err)
 	}
 
 	// Verify ownership
 	if uuid.UUID(dbN.UserId.Bytes).String() != userID {
-		return nil, fmt.Errorf("access denied: notification does not belong to user")
+		return nil, fmt.Errorf("%w: notification does not belong to user", ErrAccessDenied)
 	}
 
 	// Parse JSON data
@@ -149,18 +157,18 @@ func (s *Service) GetNotification(ctx context.Context, userID string, notificati
 func (s *Service) MarkAsRead(ctx context.Context, userID string, notificationID string) error {
 	nid, err := uuid.Parse(notificationID)
 	if err != nil {
-		return fmt.Errorf("invalid notification ID: %w", err)
+		return fmt.Errorf("%w: %v", ErrInvalidNotificationID, err)
 	}
 	notifUUID := pgtype.UUID{Bytes: nid, Valid: true}
 
 	// Verify ownership first
 	dbN, err := s.queries.GetNotification(ctx, notifUUID)
 	if err != nil {
-		return fmt.Errorf("notification not found: %w", err)
+		return fmt.Errorf("%w: %v", ErrNotificationNotFound, err)
 	}
 
 	if uuid.UUID(dbN.UserId.Bytes).String() != userID {
-		return fmt.Errorf("access denied: notification does not belong to user")
+		return fmt.Errorf("%w: notification does not belong to user", ErrAccessDenied)
 	}
 
 	// Mark as read
@@ -175,7 +183,7 @@ func (s *Service) MarkAsRead(ctx context.Context, userID string, notificationID 
 func (s *Service) MarkAllAsRead(ctx context.Context, userID string) error {
 	uid, err := uuid.Parse(userID)
 	if err != nil {
-		return fmt.Errorf("invalid user ID: %w", err)
+		return fmt.Errorf("%w: %v", ErrInvalidUserID, err)
 	}
 	userUUID := pgtype.UUID{Bytes: uid, Valid: true}
 
@@ -206,18 +214,18 @@ func (s *Service) MarkAllAsRead(ctx context.Context, userID string) error {
 func (s *Service) DeleteNotification(ctx context.Context, userID string, notificationID string) error {
 	nid, err := uuid.Parse(notificationID)
 	if err != nil {
-		return fmt.Errorf("invalid notification ID: %w", err)
+		return fmt.Errorf("%w: %v", ErrInvalidNotificationID, err)
 	}
 	notifUUID := pgtype.UUID{Bytes: nid, Valid: true}
 
 	// Verify ownership first
 	dbN, err := s.queries.GetNotification(ctx, notifUUID)
 	if err != nil {
-		return fmt.Errorf("notification not found: %w", err)
+		return fmt.Errorf("%w: %v", ErrNotificationNotFound, err)
 	}
 
 	if uuid.UUID(dbN.UserId.Bytes).String() != userID {
-		return fmt.Errorf("access denied: notification does not belong to user")
+		return fmt.Errorf("%w: notification does not belong to user", ErrAccessDenied)
 	}
 
 	// Delete notification (soft delete)
@@ -232,7 +240,7 @@ func (s *Service) DeleteNotification(ctx context.Context, userID string, notific
 func (s *Service) CreateNotification(ctx context.Context, notification *Notification) error {
 	uid, err := uuid.Parse(notification.UserID)
 	if err != nil {
-		return fmt.Errorf("invalid user ID: %w", err)
+		return fmt.Errorf("%w: %v", ErrInvalidUserID, err)
 	}
 	userUUID := pgtype.UUID{Bytes: uid, Valid: true}
 
@@ -298,7 +306,7 @@ func (s *Service) SendPushNotification(ctx context.Context, userID string, title
 func (s *Service) GetUnreadCount(ctx context.Context, userID string) (int, error) {
 	uid, err := uuid.Parse(userID)
 	if err != nil {
-		return 0, fmt.Errorf("invalid user ID: %w", err)
+		return 0, fmt.Errorf("%w: %v", ErrInvalidUserID, err)
 	}
 	userUUID := pgtype.UUID{Bytes: uid, Valid: true}
 

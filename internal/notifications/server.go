@@ -2,9 +2,11 @@ package notifications
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/denysvitali/immich-go-backend/internal/auth"
+	"github.com/denysvitali/immich-go-backend/internal/grpcutil"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -81,6 +83,19 @@ func notificationToProto(notification *Notification) *immichv1.NotificationDto {
 	return protoNotif
 }
 
+func notificationStatusError(ctx context.Context, publicMsg string, err error) error {
+	switch {
+	case errors.Is(err, ErrInvalidUserID), errors.Is(err, ErrInvalidNotificationID):
+		return status.Error(codes.InvalidArgument, err.Error())
+	case errors.Is(err, ErrAccessDenied):
+		return status.Error(codes.PermissionDenied, "access denied")
+	case errors.Is(err, ErrNotificationNotFound):
+		return status.Error(codes.NotFound, "notification not found")
+	default:
+		return grpcutil.SanitizedInternal(ctx, publicMsg, err)
+	}
+}
+
 // GetNotifications returns notifications based on filters
 func (s *Server) GetNotifications(ctx context.Context, req *immichv1.GetNotificationsRequest) (*immichv1.GetNotificationsResponse, error) {
 	claims, ok := auth.GetClaimsFromStdContext(ctx)
@@ -91,7 +106,7 @@ func (s *Server) GetNotifications(ctx context.Context, req *immichv1.GetNotifica
 	unreadOnly := req.Unread != nil && *req.Unread
 	notifications, err := s.service.GetNotifications(ctx, claims.UserID, unreadOnly)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get notifications: %v", err)
+		return nil, notificationStatusError(ctx, "failed to get notifications", err)
 	}
 
 	// Convert to proto notifications
@@ -100,6 +115,9 @@ func (s *Server) GetNotifications(ctx context.Context, req *immichv1.GetNotifica
 		protoNotif := notificationToProto(notif)
 
 		// Apply filters if provided
+		if req.Id != nil && *req.Id != protoNotif.Id {
+			continue
+		}
 		if req.Level != nil && *req.Level != protoNotif.Level {
 			continue
 		}
@@ -125,7 +143,7 @@ func (s *Server) GetNotification(ctx context.Context, req *immichv1.GetNotificat
 	// Get the specific notification from service
 	notification, err := s.service.GetNotification(ctx, claims.UserID, req.Id)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get notification: %v", err)
+		return nil, notificationStatusError(ctx, "failed to get notification", err)
 	}
 
 	if notification == nil {
@@ -146,14 +164,14 @@ func (s *Server) UpdateNotification(ctx context.Context, req *immichv1.UpdateNot
 	if req.ReadAt != nil {
 		err := s.service.MarkAsRead(ctx, claims.UserID, req.Id)
 		if err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to mark as read: %v", err)
+			return nil, notificationStatusError(ctx, "failed to mark as read", err)
 		}
 	}
 
 	// Retrieve the updated notification from service
 	notification, err := s.service.GetNotification(ctx, claims.UserID, req.Id)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get updated notification: %v", err)
+		return nil, notificationStatusError(ctx, "failed to get updated notification", err)
 	}
 
 	if notification == nil {
@@ -179,7 +197,7 @@ func (s *Server) DeleteNotification(ctx context.Context, req *immichv1.DeleteNot
 
 	err := s.service.DeleteNotification(ctx, claims.UserID, req.Id)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to delete notification: %v", err)
+		return nil, notificationStatusError(ctx, "failed to delete notification", err)
 	}
 
 	return &emptypb.Empty{}, nil
@@ -198,14 +216,14 @@ func (s *Server) UpdateNotifications(ctx context.Context, req *immichv1.UpdateNo
 			// Mark all as read
 			err := s.service.MarkAllAsRead(ctx, claims.UserID)
 			if err != nil {
-				return nil, status.Errorf(codes.Internal, "failed to mark all as read: %v", err)
+				return nil, notificationStatusError(ctx, "failed to mark all as read", err)
 			}
 		} else {
 			// Mark specific ones as read
 			for _, id := range req.Ids {
 				err := s.service.MarkAsRead(ctx, claims.UserID, id)
 				if err != nil {
-					return nil, status.Errorf(codes.Internal, "failed to mark notification %s as read: %v", id, err)
+					return nil, notificationStatusError(ctx, "failed to mark notification as read", err)
 				}
 			}
 		}
@@ -224,8 +242,7 @@ func (s *Server) DeleteNotifications(ctx context.Context, req *immichv1.DeleteNo
 	for _, id := range req.Ids {
 		err := s.service.DeleteNotification(ctx, claims.UserID, id)
 		if err != nil {
-			// Log error but continue with other deletions
-			continue
+			return nil, notificationStatusError(ctx, "failed to delete notification", err)
 		}
 	}
 
