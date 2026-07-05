@@ -32,6 +32,10 @@ type Service struct {
 
 // NewService creates a new sync service
 func NewService(queries *sqlc.Queries, logger *logrus.Logger) *Service {
+	if logger == nil {
+		logger = logrus.StandardLogger()
+	}
+
 	return &Service{
 		queries:          queries,
 		logger:           logger,
