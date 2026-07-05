@@ -22,6 +22,7 @@ import (
 	"github.com/denysvitali/immich-go-backend/internal/db"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/denysvitali/immich-go-backend/internal/db/testdb"
+	"github.com/denysvitali/immich-go-backend/internal/jobs"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 	"github.com/denysvitali/immich-go-backend/internal/storage"
 )
@@ -305,6 +306,56 @@ func TestServer_ReplaceAsset_UserIsolation(t *testing.T) {
 	assert.Equal(t, assetAID, resp.GetId())
 	assert.Equal(t, userA.String(), resp.GetOwnerId())
 	assert.Equal(t, assetA.OriginalFileName, resp.GetOriginalFileName())
+}
+
+func TestServer_DeleteAssets_UserIsolation(t *testing.T) {
+	env := newAssetViewerTestEnv(t)
+	ctx := context.Background()
+
+	userA := createAssetViewerTestUser(t, ctx, env.tdb)
+	userB := createAssetViewerTestUser(t, ctx, env.tdb)
+	assetA := seedAsset(t, ctx, env, userA, "delete-userA-only.jpg", "image/jpeg", []byte("userA-bytes"))
+	assetAID := uuid.UUID(assetA.ID.Bytes).String()
+
+	resp, err := env.srv.DeleteAssets(assetViewerContext(userB), &immichv1.DeleteAssetsRequest{
+		Ids: []string{assetAID},
+	})
+	require.NoError(t, err)
+	assert.NotNil(t, resp)
+
+	reloaded, err := env.tdb.Queries.GetAssetByID(ctx, assetA.ID)
+	require.NoError(t, err)
+	assert.Equal(t, sqlc.AssetsStatusEnumActive, reloaded.Status)
+
+	resp, err = env.srv.DeleteAssets(assetViewerContext(userA), &immichv1.DeleteAssetsRequest{
+		Ids: []string{assetAID},
+	})
+	require.NoError(t, err)
+	assert.NotNil(t, resp)
+
+	reloaded, err = env.tdb.Queries.GetAssetByID(ctx, assetA.ID)
+	require.NoError(t, err)
+	assert.Equal(t, sqlc.AssetsStatusEnumTrashed, reloaded.Status)
+}
+
+func TestServer_AssetJobs_UserIsolation(t *testing.T) {
+	env := newAssetViewerTestEnv(t)
+	ctx := context.Background()
+
+	userA := createAssetViewerTestUser(t, ctx, env.tdb)
+	userB := createAssetViewerTestUser(t, ctx, env.tdb)
+	assetA := seedAsset(t, ctx, env, userA, "job-userA-only.jpg", "image/jpeg", []byte("userA-bytes"))
+	assetAID := uuid.UUID(assetA.ID.Bytes).String()
+
+	assertAssetViewerNotFound(t, func() error {
+		return env.srv.enqueueAssetJobsForAssets(
+			ctx,
+			mustUUID(t, userB),
+			[]string{assetAID},
+			jobs.JobTypeThumbnailGeneration,
+			jobs.PriorityHigh,
+		)
+	})
 }
 
 // TestServer_GetAssetThumbnail_NotFound covers the NotFound path of the

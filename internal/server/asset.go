@@ -292,54 +292,32 @@ func (s *Server) UpdateAssets(ctx context.Context, request *immichv1.UpdateAsset
 }
 
 func (s *Server) DeleteAssets(ctx context.Context, request *immichv1.DeleteAssetsRequest) (*emptypb.Empty, error) {
-	claims, err := s.claimsFromContext(ctx)
+	userID, err := s.userUUIDFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	userID, err := pgutil.ParseUserID(claims.UserID)
-	if err != nil {
-		return nil, SanitizedInternal(ctx, "invalid user ID", err)
-	}
-
-	// Convert string IDs to UUIDs
-	assetUUIDs := make([]pgtype.UUID, 0, len(request.Ids))
 	for _, assetID := range request.Ids {
-		assetUUID := pgtype.UUID{}
-		if err := assetUUID.Scan(assetID); err != nil {
-			continue // Skip invalid UUIDs
-		}
-		assetUUIDs = append(assetUUIDs, assetUUID)
-	}
-
-	if len(assetUUIDs) == 0 {
-		return &emptypb.Empty{}, nil
-	}
-
-	for _, assetUUID := range assetUUIDs {
-		asset, err := s.db.GetAsset(ctx, assetUUID)
+		asset, err := s.getAssetForUser(ctx, userID, assetID)
 		if err != nil {
-			continue
-		}
-		if asset.OwnerId != userID {
 			continue
 		}
 
 		if request.Force {
 			if _, err := s.db.UpdateAssetStatus(ctx, sqlc.UpdateAssetStatusParams{
-				ID:     assetUUID,
+				ID:     asset.ID,
 				Status: sqlc.AssetsStatusEnumDeleted,
 			}); err != nil {
 				return nil, SanitizedInternal(ctx, "failed to delete assets", err)
 			}
-			if err := s.db.PermanentlyDeleteAsset(ctx, assetUUID); err != nil {
+			if err := s.db.PermanentlyDeleteAsset(ctx, asset.ID); err != nil {
 				return nil, SanitizedInternal(ctx, "failed to delete assets", err)
 			}
 			continue
 		}
 
 		if _, err := s.db.UpdateAssetStatus(ctx, sqlc.UpdateAssetStatusParams{
-			ID:     assetUUID,
+			ID:     asset.ID,
 			Status: sqlc.AssetsStatusEnumTrashed,
 		}); err != nil {
 			return nil, SanitizedInternal(ctx, "failed to delete assets", err)
@@ -526,17 +504,12 @@ func (s *Server) GetRecentlyAddedAssets(ctx context.Context, request *immichv1.G
 }
 
 func (s *Server) RunAssetJobs(ctx context.Context, request *immichv1.RunAssetJobsRequest) (*emptypb.Empty, error) {
-	claims, err := s.claimsFromContext(ctx)
+	userID, err := s.userUUIDFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if s.jobService == nil {
 		return nil, status.Error(codes.Unavailable, "job service not configured")
-	}
-
-	userID, err := pgutil.ParseUserID(claims.UserID)
-	if err != nil {
-		return nil, SanitizedInternal(ctx, "invalid user ID", err)
 	}
 
 	switch request.GetName() {
@@ -549,7 +522,7 @@ func (s *Server) RunAssetJobs(ctx context.Context, request *immichv1.RunAssetJob
 			return nil, err
 		}
 	case immichv1.AssetJobName_ASSET_JOB_NAME_DUPLICATE_DETECTION:
-		payload := jobs.DuplicateDetectionPayload{UserID: claims.UserID}
+		payload := jobs.DuplicateDetectionPayload{UserID: userID.String()}
 		if err := s.jobService.EnqueueJobWithPriority(ctx, jobs.JobTypeDuplicateDetect, payload, jobs.PriorityNormal); err != nil {
 			return nil, SanitizedInternal(ctx, "failed to enqueue duplicate detection job", err)
 		}
@@ -576,28 +549,19 @@ func (s *Server) enqueueAssetJobsForAssets(
 	}
 
 	for _, assetID := range assetIDs {
-		assetUUID, err := uuid.Parse(assetID)
+		asset, err := s.getAssetForUser(ctx, userID, assetID)
 		if err != nil {
-			return status.Errorf(codes.InvalidArgument, "invalid asset ID: %v", err)
-		}
-		pgAssetID := pgtype.UUID{Bytes: assetUUID, Valid: true}
-
-		asset, err := s.db.GetAsset(ctx, pgAssetID)
-		if err != nil {
-			return status.Errorf(codes.NotFound, "asset not found: %s", assetUUID.String())
-		}
-		if asset.OwnerId != userID {
-			return status.Error(codes.PermissionDenied, "not authorized to run jobs for this asset")
+			return err
 		}
 
 		var payload any
 		switch jobType {
 		case jobs.JobTypeThumbnailGeneration:
-			payload = jobs.ThumbnailGenerationPayload{AssetID: assetUUID.String()}
+			payload = jobs.ThumbnailGenerationPayload{AssetID: asset.ID.String()}
 		case jobs.JobTypeMetadataExtraction:
-			payload = jobs.MetadataExtractionPayload{AssetID: assetUUID.String()}
+			payload = jobs.MetadataExtractionPayload{AssetID: asset.ID.String()}
 		case jobs.JobTypeVideoTranscode:
-			payload = jobs.VideoTranscodePayload{AssetID: assetUUID.String(), Quality: "medium", Format: "mp4"}
+			payload = jobs.VideoTranscodePayload{AssetID: asset.ID.String(), Quality: "medium", Format: "mp4"}
 		default:
 			return status.Errorf(codes.InvalidArgument, "unsupported asset job type: %s", jobType)
 		}
