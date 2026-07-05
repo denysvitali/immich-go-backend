@@ -36,6 +36,23 @@ func TestResponseStatusRecorderCapturesExplicitStatus(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, statusRec.status)
 }
 
+func TestHandleFrontendShapeInterceptsVersionCheckStateRoutes(t *testing.T) {
+	for _, path := range []string{
+		"/system-metadata/version-check-state",
+		"/api/system-metadata/version-check-state",
+	} {
+		t.Run(path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			rec := httptest.NewRecorder()
+
+			handled := (&Server{}).handleFrontendShape(rec, req)
+
+			assert.True(t, handled)
+			assert.Equal(t, http.StatusUnauthorized, rec.Code)
+		})
+	}
+}
+
 func TestPartnerIDFromPath(t *testing.T) {
 	tests := []struct {
 		path   string
