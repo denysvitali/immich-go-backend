@@ -29,14 +29,9 @@ func NewServer(queries *sqlc.Queries) *Server {
 }
 
 func currentUserUUIDFromContext(ctx context.Context) (pgtype.UUID, error) {
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return pgtype.UUID{}, status.Error(codes.Unauthenticated, "unauthorized")
-	}
-
-	userID, err := uuid.Parse(claims.UserID)
+	userID, err := auth.GetUserIDFromContext(ctx)
 	if err != nil {
-		return pgtype.UUID{}, status.Error(codes.Internal, "invalid user ID")
+		return pgtype.UUID{}, err
 	}
 
 	return pgUUID(userID), nil

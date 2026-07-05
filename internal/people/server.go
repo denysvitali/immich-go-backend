@@ -51,16 +51,7 @@ func thumbnailContentType(path string) string {
 }
 
 func currentUserIDFromContext(ctx context.Context) (uuid.UUID, error) {
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok || claims == nil {
-		return uuid.Nil, status.Error(codes.Unauthenticated, "unauthorized")
-	}
-
-	userID, err := uuid.Parse(claims.UserID)
-	if err != nil {
-		return uuid.Nil, status.Error(codes.Internal, "invalid user ID")
-	}
-	return userID, nil
+	return auth.GetUserIDFromContext(ctx)
 }
 
 func pgUUID(id uuid.UUID) pgtype.UUID {

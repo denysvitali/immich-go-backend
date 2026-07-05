@@ -90,9 +90,10 @@ func GetUserIDFromContext(ctx context.Context) (uuid.UUID, error) {
 	claims, ok := GetClaimsFromStdContext(ctx)
 	if ok && claims != nil {
 		userID, err := uuid.Parse(claims.UserID)
-		if err == nil {
-			return userID, nil
+		if err != nil {
+			return uuid.UUID{}, status.Error(codes.Internal, "invalid user ID")
 		}
+		return userID, nil
 	}
 
 	// Try to extract from gRPC metadata
