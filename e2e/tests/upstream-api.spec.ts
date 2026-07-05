@@ -822,28 +822,28 @@ test.describe('tags', () => {
 
     const tagAsset = await request.put(`/api/tags/${tag.id}/assets`, {
       headers: user.headers,
-      data: { assetIds: [asset.id] },
+      data: { asset_ids: [asset.id] },
     });
     await expectOk(tagAsset);
     expect((await tagAsset.json()).count).toBe(1);
 
     const bulkTagAsset = await request.put('/api/tags/assets', {
       headers: user.headers,
-      data: { assetIds: [asset.id], tagIds: [bulkTag.id] },
+      data: { asset_ids: [asset.id], tag_ids: [bulkTag.id] },
     });
     await expectOk(bulkTagAsset);
     expect((await bulkTagAsset.json()).count).toBe(1);
 
     const untagAsset = await request.delete(`/api/tags/${bulkTag.id}/assets`, {
       headers: user.headers,
-      data: { assetIds: [asset.id] },
+      data: { asset_ids: [asset.id] },
     });
     await expectOk(untagAsset);
     expect((await untagAsset.json()).count).toBe(1);
 
     const untagOriginalAsset = await request.delete(`/api/tags/${tag.id}/assets`, {
       headers: user.headers,
-      data: { assetIds: [asset.id] },
+      data: { asset_ids: [asset.id] },
     });
     await expectOk(untagOriginalAsset);
     expect((await untagOriginalAsset.json()).count).toBe(1);
