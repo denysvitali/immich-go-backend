@@ -31,12 +31,19 @@ type UserInfo struct {
 type UserPreferences struct {
 	UserID                        uuid.UUID `json:"userId"`
 	EmailNotifications            *bool     `json:"emailNotifications,omitempty"`
+	EmailAlbumInvite              *bool     `json:"emailAlbumInvite,omitempty"`
+	EmailAlbumUpdate              *bool     `json:"emailAlbumUpdate,omitempty"`
 	DownloadIncludeEmbeddedVideos *bool     `json:"downloadIncludeEmbeddedVideos,omitempty"`
 	FoldersEnabled                *bool     `json:"foldersEnabled,omitempty"`
+	FoldersSizeThreshold          *int32    `json:"foldersSizeThreshold,omitempty"`
 	MemoriesEnabled               *bool     `json:"memoriesEnabled,omitempty"`
 	PeopleEnabled                 *bool     `json:"peopleEnabled,omitempty"`
 	PeopleSizeThreshold           *int32    `json:"peopleSizeThreshold,omitempty"`
+	PurchaseShowSupportBadge      *bool     `json:"purchaseShowSupportBadge,omitempty"`
+	RatingsEnabled                *bool     `json:"ratingsEnabled,omitempty"`
 	SharedLinksEnabled            *bool     `json:"sharedLinksEnabled,omitempty"`
+	SharedLinksShowMetadata       *bool     `json:"sharedLinksShowMetadata,omitempty"`
+	SharedLinksPasswordOptions    *string   `json:"sharedLinksPasswordOptions,omitempty"`
 	TagsEnabled                   *bool     `json:"tagsEnabled,omitempty"`
 	TagsSizeThreshold             *int32    `json:"tagsSizeThreshold,omitempty"`
 }
@@ -73,15 +80,22 @@ type UpdatePasswordRequest struct {
 
 // UpdateUserPreferencesRequest represents a request to update user preferences
 type UpdateUserPreferencesRequest struct {
-	EmailNotifications            *bool  `json:"emailNotifications,omitempty"`
-	DownloadIncludeEmbeddedVideos *bool  `json:"downloadIncludeEmbeddedVideos,omitempty"`
-	FoldersEnabled                *bool  `json:"foldersEnabled,omitempty"`
-	MemoriesEnabled               *bool  `json:"memoriesEnabled,omitempty"`
-	PeopleEnabled                 *bool  `json:"peopleEnabled,omitempty"`
-	PeopleSizeThreshold           *int32 `json:"peopleSizeThreshold,omitempty"`
-	SharedLinksEnabled            *bool  `json:"sharedLinksEnabled,omitempty"`
-	TagsEnabled                   *bool  `json:"tagsEnabled,omitempty"`
-	TagsSizeThreshold             *int32 `json:"tagsSizeThreshold,omitempty"`
+	EmailNotifications            *bool   `json:"emailNotifications,omitempty"`
+	EmailAlbumInvite              *bool   `json:"emailAlbumInvite,omitempty"`
+	EmailAlbumUpdate              *bool   `json:"emailAlbumUpdate,omitempty"`
+	DownloadIncludeEmbeddedVideos *bool   `json:"downloadIncludeEmbeddedVideos,omitempty"`
+	FoldersEnabled                *bool   `json:"foldersEnabled,omitempty"`
+	FoldersSizeThreshold          *int32  `json:"foldersSizeThreshold,omitempty"`
+	MemoriesEnabled               *bool   `json:"memoriesEnabled,omitempty"`
+	PeopleEnabled                 *bool   `json:"peopleEnabled,omitempty"`
+	PeopleSizeThreshold           *int32  `json:"peopleSizeThreshold,omitempty"`
+	PurchaseShowSupportBadge      *bool   `json:"purchaseShowSupportBadge,omitempty"`
+	RatingsEnabled                *bool   `json:"ratingsEnabled,omitempty"`
+	SharedLinksEnabled            *bool   `json:"sharedLinksEnabled,omitempty"`
+	SharedLinksShowMetadata       *bool   `json:"sharedLinksShowMetadata,omitempty"`
+	SharedLinksPasswordOptions    *string `json:"sharedLinksPasswordOptions,omitempty"`
+	TagsEnabled                   *bool   `json:"tagsEnabled,omitempty"`
+	TagsSizeThreshold             *int32  `json:"tagsSizeThreshold,omitempty"`
 }
 
 // OnboardingStatus represents user's onboarding status

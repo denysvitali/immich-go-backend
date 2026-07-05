@@ -196,45 +196,136 @@ func userLicenseToProto(license userLicenseMetadata) *immichv1.UserLicenseRespon
 }
 
 func (s *Server) GetMyPreferences(ctx context.Context, empty *emptypb.Empty) (*immichv1.UserPreferencesResponse, error) {
-	return &immichv1.UserPreferencesResponse{
-		Download:           &immichv1.UserDownloadPreferencesResponse{IncludeEmbeddedVideos: true},
-		EmailNotifications: &immichv1.EmailNotificationsResponse{Enabled: false},
-		Folders:            &immichv1.FoldersResponse{Enabled: true},
-		Memories: &immichv1.MemoriesResponse{
-			Enabled: true,
-		},
-		People: &immichv1.PeopleResponse{
-			Enabled:       true,
-			SizeThreshold: 0,
-		},
-		Purchase: &immichv1.PurchaseResponse{
-			ShowSupportBadge: true,
-		},
-		Ratings: nil,
-		SharedLinks: &immichv1.SharedLinksResponse{
-			Enabled: true,
-		},
-		Tags: &immichv1.TagsResponse{
-			Enabled:       true,
-			SizeThreshold: 0,
-		},
-	}, nil
+	userID, err := s.userIDFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	prefs, err := s.userService.GetUserPreferences(ctx, userID)
+	if err != nil {
+		return nil, SanitizedInternal(ctx, "failed to get user preferences", err)
+	}
+
+	return userPreferencesToProto(prefs), nil
 }
 
 func (s *Server) UpdateMyPreferences(ctx context.Context, request *immichv1.UserPreferencesUpdateRequest) (*immichv1.UserPreferencesResponse, error) {
-	// User preferences would be stored in a separate table
-	// For now, return empty responses (would need proper conversion from Update to Response types)
+	userID, err := s.userIDFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	prefs, err := s.userService.UpdateUserPreferences(ctx, userID, userPreferencesUpdateFromProto(request))
+	if err != nil {
+		return nil, SanitizedInternal(ctx, "failed to update user preferences", err)
+	}
+
+	return userPreferencesToProto(prefs), nil
+}
+
+func userPreferencesToProto(prefs *users.UserPreferences) *immichv1.UserPreferencesResponse {
+	if prefs == nil {
+		prefs = &users.UserPreferences{}
+	}
+
 	return &immichv1.UserPreferencesResponse{
-		Download:           &immichv1.UserDownloadPreferencesResponse{},
-		EmailNotifications: &immichv1.EmailNotificationsResponse{},
-		Folders:            &immichv1.FoldersResponse{},
-		Memories:           &immichv1.MemoriesResponse{},
-		People:             &immichv1.PeopleResponse{},
-		Purchase:           &immichv1.PurchaseResponse{},
-		Ratings:            &immichv1.RatingsResponse{},
-		SharedLinks:        &immichv1.SharedLinksResponse{},
-		Tags:               &immichv1.TagsResponse{},
-	}, nil
+		Download: &immichv1.UserDownloadPreferencesResponse{
+			IncludeEmbeddedVideos: boolValue(prefs.DownloadIncludeEmbeddedVideos),
+		},
+		EmailNotifications: &immichv1.EmailNotificationsResponse{
+			Enabled:     boolValue(prefs.EmailNotifications),
+			AlbumInvite: boolValue(prefs.EmailAlbumInvite),
+			AlbumUpdate: boolValue(prefs.EmailAlbumUpdate),
+		},
+		Folders: &immichv1.FoldersResponse{
+			Enabled:       boolValue(prefs.FoldersEnabled),
+			SizeThreshold: int32Value(prefs.FoldersSizeThreshold),
+		},
+		Memories: &immichv1.MemoriesResponse{
+			Enabled: boolValue(prefs.MemoriesEnabled),
+		},
+		People: &immichv1.PeopleResponse{
+			Enabled:       boolValue(prefs.PeopleEnabled),
+			SizeThreshold: int32Value(prefs.PeopleSizeThreshold),
+		},
+		Purchase: &immichv1.PurchaseResponse{
+			ShowSupportBadge: boolValue(prefs.PurchaseShowSupportBadge),
+		},
+		Ratings: &immichv1.RatingsResponse{
+			Enabled: boolValue(prefs.RatingsEnabled),
+		},
+		SharedLinks: &immichv1.SharedLinksResponse{
+			Enabled:         boolValue(prefs.SharedLinksEnabled),
+			ShowMetadata:    boolValue(prefs.SharedLinksShowMetadata),
+			PasswordOptions: stringValue(prefs.SharedLinksPasswordOptions),
+		},
+		Tags: &immichv1.TagsResponse{
+			Enabled:       boolValue(prefs.TagsEnabled),
+			SizeThreshold: int32Value(prefs.TagsSizeThreshold),
+		},
+	}
+}
+
+func userPreferencesUpdateFromProto(request *immichv1.UserPreferencesUpdateRequest) users.UpdateUserPreferencesRequest {
+	update := users.UpdateUserPreferencesRequest{}
+	if request == nil {
+		return update
+	}
+
+	if request.Download != nil && request.Download.IncludeEmbeddedVideos != nil {
+		update.DownloadIncludeEmbeddedVideos = request.Download.IncludeEmbeddedVideos
+	}
+	if request.EmailNotifications != nil {
+		update.EmailNotifications = request.EmailNotifications.Enabled
+		update.EmailAlbumInvite = request.EmailNotifications.AlbumInvite
+		update.EmailAlbumUpdate = request.EmailNotifications.AlbumUpdate
+	}
+	if request.Folders != nil {
+		update.FoldersEnabled = request.Folders.Enabled
+		update.FoldersSizeThreshold = request.Folders.SizeThreshold
+	}
+	if request.Memories != nil && request.Memories.Enabled != nil {
+		update.MemoriesEnabled = request.Memories.Enabled
+	}
+	if request.People != nil {
+		update.PeopleEnabled = request.People.Enabled
+		update.PeopleSizeThreshold = request.People.SizeThreshold
+	}
+	if request.Purchase != nil && request.Purchase.ShowSupportBadge != nil {
+		update.PurchaseShowSupportBadge = request.Purchase.ShowSupportBadge
+	}
+	if request.Ratings != nil && request.Ratings.Enabled != nil {
+		update.RatingsEnabled = request.Ratings.Enabled
+	}
+	if request.SharedLinks != nil {
+		update.SharedLinksEnabled = request.SharedLinks.Enabled
+		update.SharedLinksShowMetadata = request.SharedLinks.ShowMetadata
+		update.SharedLinksPasswordOptions = request.SharedLinks.PasswordOptions
+	}
+	if request.Tags != nil {
+		update.TagsEnabled = request.Tags.Enabled
+		update.TagsSizeThreshold = request.Tags.SizeThreshold
+	}
+
+	return update
+}
+
+func boolValue(value *bool) bool {
+	return value != nil && *value
+}
+
+func int32Value(value *int32) int32 {
+	if value == nil {
+		return 0
+	}
+	return *value
+}
+
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func (s *Server) GetMyCalendarHeatmap(ctx context.Context, request *immichv1.GetMyCalendarHeatmapRequest) (*immichv1.CalendarHeatmapResponseDto, error) {

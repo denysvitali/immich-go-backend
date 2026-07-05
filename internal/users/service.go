@@ -504,11 +504,20 @@ func (s *Service) UpdateUserPreferences(ctx context.Context, userID uuid.UUID, r
 	if req.EmailNotifications != nil {
 		currentPrefs.EmailNotifications = req.EmailNotifications
 	}
+	if req.EmailAlbumInvite != nil {
+		currentPrefs.EmailAlbumInvite = req.EmailAlbumInvite
+	}
+	if req.EmailAlbumUpdate != nil {
+		currentPrefs.EmailAlbumUpdate = req.EmailAlbumUpdate
+	}
 	if req.DownloadIncludeEmbeddedVideos != nil {
 		currentPrefs.DownloadIncludeEmbeddedVideos = req.DownloadIncludeEmbeddedVideos
 	}
 	if req.FoldersEnabled != nil {
 		currentPrefs.FoldersEnabled = req.FoldersEnabled
+	}
+	if req.FoldersSizeThreshold != nil {
+		currentPrefs.FoldersSizeThreshold = req.FoldersSizeThreshold
 	}
 	if req.MemoriesEnabled != nil {
 		currentPrefs.MemoriesEnabled = req.MemoriesEnabled
@@ -519,8 +528,20 @@ func (s *Service) UpdateUserPreferences(ctx context.Context, userID uuid.UUID, r
 	if req.PeopleSizeThreshold != nil {
 		currentPrefs.PeopleSizeThreshold = req.PeopleSizeThreshold
 	}
+	if req.PurchaseShowSupportBadge != nil {
+		currentPrefs.PurchaseShowSupportBadge = req.PurchaseShowSupportBadge
+	}
+	if req.RatingsEnabled != nil {
+		currentPrefs.RatingsEnabled = req.RatingsEnabled
+	}
 	if req.SharedLinksEnabled != nil {
 		currentPrefs.SharedLinksEnabled = req.SharedLinksEnabled
+	}
+	if req.SharedLinksShowMetadata != nil {
+		currentPrefs.SharedLinksShowMetadata = req.SharedLinksShowMetadata
+	}
+	if req.SharedLinksPasswordOptions != nil {
+		currentPrefs.SharedLinksPasswordOptions = req.SharedLinksPasswordOptions
 	}
 	if req.TagsEnabled != nil {
 		currentPrefs.TagsEnabled = req.TagsEnabled
@@ -607,11 +628,14 @@ func (s *Service) getDefaultUserPreferences(userID uuid.UUID) *UserPreferences {
 	return &UserPreferences{
 		UserID:                        userID,
 		EmailNotifications:            util.Ptr(true),
+		EmailAlbumInvite:              util.Ptr(true),
+		EmailAlbumUpdate:              util.Ptr(true),
 		DownloadIncludeEmbeddedVideos: util.Ptr(false),
 		FoldersEnabled:                util.Ptr(true),
 		MemoriesEnabled:               util.Ptr(true),
 		PeopleEnabled:                 util.Ptr(true),
 		PeopleSizeThreshold:           util.Ptr(int32(10)),
+		PurchaseShowSupportBadge:      util.Ptr(true),
 		SharedLinksEnabled:            util.Ptr(true),
 		TagsEnabled:                   util.Ptr(true),
 		TagsSizeThreshold:             util.Ptr(int32(10)),

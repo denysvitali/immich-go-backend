@@ -89,6 +89,13 @@ func TestService_GetDefaultUserPreferences(t *testing.T) {
 	// Check default values
 	assert.NotNil(t, prefs.EmailNotifications)
 	assert.True(t, *prefs.EmailNotifications)
+	assert.NotNil(t, prefs.EmailAlbumInvite)
+	assert.True(t, *prefs.EmailAlbumInvite)
+	assert.NotNil(t, prefs.EmailAlbumUpdate)
+	assert.True(t, *prefs.EmailAlbumUpdate)
+
+	assert.NotNil(t, prefs.DownloadIncludeEmbeddedVideos)
+	assert.False(t, *prefs.DownloadIncludeEmbeddedVideos)
 
 	assert.NotNil(t, prefs.MemoriesEnabled)
 	assert.True(t, *prefs.MemoriesEnabled)
@@ -98,9 +105,16 @@ func TestService_GetDefaultUserPreferences(t *testing.T) {
 
 	assert.NotNil(t, prefs.PeopleEnabled)
 	assert.True(t, *prefs.PeopleEnabled)
+	assert.NotNil(t, prefs.PeopleSizeThreshold)
+	assert.Equal(t, int32(10), *prefs.PeopleSizeThreshold)
 
 	assert.NotNil(t, prefs.TagsEnabled)
 	assert.True(t, *prefs.TagsEnabled)
+	assert.NotNil(t, prefs.TagsSizeThreshold)
+	assert.Equal(t, int32(10), *prefs.TagsSizeThreshold)
+
+	assert.NotNil(t, prefs.PurchaseShowSupportBadge)
+	assert.True(t, *prefs.PurchaseShowSupportBadge)
 }
 
 func TestService_UpdateUserRequest(t *testing.T) {
@@ -170,21 +184,49 @@ func TestListUsersRequest(t *testing.T) {
 func TestUserPreferences(t *testing.T) {
 	t.Run("update preferences", func(t *testing.T) {
 		emailNotif := false
+		emailAlbumInvite := true
+		emailAlbumUpdate := false
 		memoriesEnabled := false
+		foldersThreshold := int32(3)
 		peopleThreshold := int32(5)
+		purchaseBadge := true
+		ratingsEnabled := false
+		sharedLinksMetadata := true
+		sharedLinksPasswordOptions := "password-required"
 
 		req := UpdateUserPreferencesRequest{
-			EmailNotifications:  &emailNotif,
-			MemoriesEnabled:     &memoriesEnabled,
-			PeopleSizeThreshold: &peopleThreshold,
+			EmailNotifications:         &emailNotif,
+			EmailAlbumInvite:           &emailAlbumInvite,
+			EmailAlbumUpdate:           &emailAlbumUpdate,
+			MemoriesEnabled:            &memoriesEnabled,
+			FoldersSizeThreshold:       &foldersThreshold,
+			PeopleSizeThreshold:        &peopleThreshold,
+			PurchaseShowSupportBadge:   &purchaseBadge,
+			RatingsEnabled:             &ratingsEnabled,
+			SharedLinksShowMetadata:    &sharedLinksMetadata,
+			SharedLinksPasswordOptions: &sharedLinksPasswordOptions,
 		}
 
 		assert.NotNil(t, req.EmailNotifications)
 		assert.False(t, *req.EmailNotifications)
+		assert.NotNil(t, req.EmailAlbumInvite)
+		assert.True(t, *req.EmailAlbumInvite)
+		assert.NotNil(t, req.EmailAlbumUpdate)
+		assert.False(t, *req.EmailAlbumUpdate)
 		assert.NotNil(t, req.MemoriesEnabled)
 		assert.False(t, *req.MemoriesEnabled)
+		assert.NotNil(t, req.FoldersSizeThreshold)
+		assert.Equal(t, int32(3), *req.FoldersSizeThreshold)
 		assert.NotNil(t, req.PeopleSizeThreshold)
 		assert.Equal(t, int32(5), *req.PeopleSizeThreshold)
+		assert.NotNil(t, req.PurchaseShowSupportBadge)
+		assert.True(t, *req.PurchaseShowSupportBadge)
+		assert.NotNil(t, req.RatingsEnabled)
+		assert.False(t, *req.RatingsEnabled)
+		assert.NotNil(t, req.SharedLinksShowMetadata)
+		assert.True(t, *req.SharedLinksShowMetadata)
+		assert.NotNil(t, req.SharedLinksPasswordOptions)
+		assert.Equal(t, "password-required", *req.SharedLinksPasswordOptions)
 
 		// Check that unset fields remain nil
 		assert.Nil(t, req.FoldersEnabled)
