@@ -222,10 +222,10 @@ test.describe('notifications', () => {
 
     const list = await request.get('/api/notifications', { headers: user.headers });
     await expectOk(list);
-    const listBody = await list.json();
-    expect(Array.isArray(listBody.notifications)).toBe(true);
+    const notifications = await list.json();
+    expect(Array.isArray(notifications)).toBe(true);
 
-    const notification = listBody.notifications.find(
+    const notification = notifications.find(
       (item: { title?: string }) => item.title === subject,
     );
     expect(notification).toBeTruthy();
@@ -261,9 +261,10 @@ test.describe('notifications', () => {
 
     const unread = await request.get('/api/notifications?unread=true', { headers: user.headers });
     await expectOk(unread);
-    const unreadBody = await unread.json();
+    const unreadNotifications = await unread.json();
+    expect(Array.isArray(unreadNotifications)).toBe(true);
     expect(
-      unreadBody.notifications.some((item: { id?: string }) => item.id === notification.id),
+      unreadNotifications.some((item: { id?: string }) => item.id === notification.id),
     ).toBe(false);
 
     const remove = await request.delete(`/api/notifications/${notification.id}`, {
