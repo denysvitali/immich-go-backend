@@ -47,3 +47,20 @@ func TestWriteBinaryResponse(t *testing.T) {
 	assert.Equal(t, `attachment; filename="missing_file.csv"`, resp.Header.Get("Content-Disposition"))
 	assert.Equal(t, "id,type,path\n", w.Body.String())
 }
+
+func TestAdminIntegritySummaryResponseEncodesNumericCounts(t *testing.T) {
+	w := httptest.NewRecorder()
+
+	writeJSON(w, http.StatusOK, adminIntegritySummaryResponse{
+		ChecksumMismatch: 1,
+		MissingFile:      2,
+		UntrackedFile:    3,
+	})
+
+	resp := w.Result()
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, "application/json", resp.Header.Get("Content-Type"))
+	assert.Equal(t, "{\"checksumMismatch\":1,\"missingFile\":2,\"untrackedFile\":3}\n", w.Body.String())
+}

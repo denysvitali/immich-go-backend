@@ -6,7 +6,14 @@ import (
 	"strings"
 
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
+
+type adminIntegritySummaryResponse struct {
+	ChecksumMismatch int64 `json:"checksumMismatch"`
+	MissingFile      int64 `json:"missingFile"`
+	UntrackedFile    int64 `json:"untrackedFile"`
+}
 
 func adminIntegrityCSVTypeFromPath(path string) (string, bool) {
 	reportType, ok := strings.CutPrefix(path, "/api/admin/integrity/report/")
@@ -30,6 +37,25 @@ func adminIntegrityFileIDFromPath(path string) (string, bool) {
 		return "", false
 	}
 	return itemID, true
+}
+
+func (s *Server) handleAdminIntegritySummary(w http.ResponseWriter, r *http.Request) {
+	ctx, ok := s.frontendGatewayContext(w, r)
+	if !ok {
+		return
+	}
+
+	resp, err := s.adminServer.GetIntegrityReportSummary(ctx, &emptypb.Empty{})
+	if err != nil {
+		writeGRPCErrorJSON(w, r, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, adminIntegritySummaryResponse{
+		ChecksumMismatch: resp.GetChecksumMismatch(),
+		MissingFile:      resp.GetMissingFile(),
+		UntrackedFile:    resp.GetUntrackedFile(),
+	})
 }
 
 func (s *Server) handleAdminIntegrityCSV(w http.ResponseWriter, r *http.Request, reportType string) {

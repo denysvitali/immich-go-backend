@@ -45,6 +45,9 @@ func (s *Server) handleFrontendShape(w http.ResponseWriter, r *http.Request) (ha
 		case "/api/admin/users":
 			s.handleAdminUsers(w, r)
 			return true
+		case "/api/admin/integrity/summary":
+			s.handleAdminIntegritySummary(w, r)
+			return true
 		case "/api/libraries":
 			s.handleLibraries(w, r)
 			return true
