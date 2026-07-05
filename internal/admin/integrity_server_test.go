@@ -56,6 +56,14 @@ func TestGetIntegrityReportSummaryReturnsZeroCounts(t *testing.T) {
 	assert.EqualValues(t, 0, resp.GetUntrackedFile())
 }
 
+func TestGetIntegrityReportSummaryRequiresAuthentication(t *testing.T) {
+	srv := &Server{}
+
+	_, err := srv.GetIntegrityReportSummary(context.Background(), &emptypb.Empty{})
+	require.Error(t, err)
+	assert.Equal(t, codes.Unauthenticated, status.Code(err))
+}
+
 func TestGetIntegrityReportCsvReturnsHeader(t *testing.T) {
 	srv := &Server{}
 

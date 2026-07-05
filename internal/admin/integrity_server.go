@@ -39,11 +39,18 @@ func requireIntegrityReportItemID(id string) error {
 	return nil
 }
 
+func requireIntegrityAdmin(ctx context.Context) error {
+	if _, err := auth.RequireAdmin(ctx); err != nil {
+		return status.Error(auth.MapAuthErrorToGRPC(err), "admin privileges required")
+	}
+	return nil
+}
+
 // GetIntegrityReport returns integrity-report items for the requested report
 // type. Integrity scanning is not implemented yet, so every report is empty.
 func (s *Server) GetIntegrityReport(ctx context.Context, request *immichv1.GetIntegrityReportRequest) (*immichv1.IntegrityReportResponseDto, error) {
-	if _, err := auth.RequireAdmin(ctx); err != nil {
-		return nil, status.Error(codes.PermissionDenied, "admin privileges required")
+	if err := requireIntegrityAdmin(ctx); err != nil {
+		return nil, err
 	}
 	if err := requireIntegrityReportType(request.GetType()); err != nil {
 		return nil, err
@@ -57,8 +64,8 @@ func (s *Server) GetIntegrityReport(ctx context.Context, request *immichv1.GetIn
 // DeleteIntegrityReport deletes a flagged report item. With no persisted
 // integrity report items, every well-formed item ID is currently absent.
 func (s *Server) DeleteIntegrityReport(ctx context.Context, request *immichv1.DeleteIntegrityReportRequest) (*emptypb.Empty, error) {
-	if _, err := auth.RequireAdmin(ctx); err != nil {
-		return nil, status.Error(codes.PermissionDenied, "admin privileges required")
+	if err := requireIntegrityAdmin(ctx); err != nil {
+		return nil, err
 	}
 	if err := requireIntegrityReportItemID(request.GetId()); err != nil {
 		return nil, err
@@ -70,8 +77,8 @@ func (s *Server) DeleteIntegrityReport(ctx context.Context, request *immichv1.De
 // GetIntegrityReportFile downloads the file for a flagged report item. With no
 // persisted integrity report items, every well-formed item ID is absent.
 func (s *Server) GetIntegrityReportFile(ctx context.Context, request *immichv1.GetIntegrityReportFileRequest) (*immichv1.IntegrityReportFileResponse, error) {
-	if _, err := auth.RequireAdmin(ctx); err != nil {
-		return nil, status.Error(codes.PermissionDenied, "admin privileges required")
+	if err := requireIntegrityAdmin(ctx); err != nil {
+		return nil, err
 	}
 	if err := requireIntegrityReportItemID(request.GetId()); err != nil {
 		return nil, err
@@ -83,8 +90,8 @@ func (s *Server) GetIntegrityReportFile(ctx context.Context, request *immichv1.G
 // GetIntegrityReportCsv exports the requested report as CSV. Empty reports
 // still return the CSV header row so clients can save a valid file.
 func (s *Server) GetIntegrityReportCsv(ctx context.Context, request *immichv1.GetIntegrityReportCsvRequest) (*immichv1.IntegrityReportFileResponse, error) {
-	if _, err := auth.RequireAdmin(ctx); err != nil {
-		return nil, status.Error(codes.PermissionDenied, "admin privileges required")
+	if err := requireIntegrityAdmin(ctx); err != nil {
+		return nil, err
 	}
 	reportType := request.GetType()
 	if err := requireIntegrityReportType(reportType); err != nil {
@@ -100,8 +107,8 @@ func (s *Server) GetIntegrityReportCsv(ctx context.Context, request *immichv1.Ge
 
 // GetIntegrityReportSummary returns counts for every integrity report type.
 func (s *Server) GetIntegrityReportSummary(ctx context.Context, _ *emptypb.Empty) (*immichv1.IntegrityReportSummaryResponseDto, error) {
-	if _, err := auth.RequireAdmin(ctx); err != nil {
-		return nil, status.Error(codes.PermissionDenied, "admin privileges required")
+	if err := requireIntegrityAdmin(ctx); err != nil {
+		return nil, err
 	}
 
 	return &immichv1.IntegrityReportSummaryResponseDto{}, nil
