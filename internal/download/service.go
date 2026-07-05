@@ -49,66 +49,18 @@ type DownloadRequest struct {
 
 // GetDownloadInfo retrieves information about a potential download
 func (s *Service) GetDownloadInfo(ctx context.Context, userID uuid.UUID, req *DownloadRequest) (*DownloadInfo, error) {
-	var assetIDs []uuid.UUID
-
-	// If album ID is provided, get all assets from the album
-	if req.AlbumID != nil {
-		albumID, err := uuid.Parse(*req.AlbumID)
-		if err != nil {
-			return nil, fmt.Errorf("invalid album ID: %w", err)
-		}
-
-		// Get album assets
-		albumAssets, err := s.db.GetAlbumAssets(ctx, pgtype.UUID{Bytes: albumID, Valid: true})
-		if err != nil {
-			return nil, fmt.Errorf("failed to get album assets: %w", err)
-		}
-
-		for _, asset := range albumAssets {
-			// Convert pgtype.UUID to uuid.UUID
-			if asset.ID.Valid {
-				assetIDs = append(assetIDs, asset.ID.Bytes)
-			}
-		}
-	} else {
-		// Parse provided asset IDs
-		for _, idStr := range req.AssetIDs {
-			id, err := uuid.Parse(idStr)
-			if err != nil {
-				continue
-			}
-			assetIDs = append(assetIDs, id)
-		}
+	assets, err := s.resolveDownloadAssets(ctx, userID, req)
+	if err != nil {
+		return nil, err
 	}
 
 	// Calculate total size
 	var totalSize int64
-	validAssetIDs := make([]string, 0, len(assetIDs))
+	validAssetIDs := make([]string, 0, len(assets))
 
-	for _, assetID := range assetIDs {
-		asset, err := s.db.GetAsset(ctx, pgtype.UUID{Bytes: assetID, Valid: true})
-		if err != nil {
-			continue
-		}
-
-		// Verify user has access to the asset
-		if asset.OwnerId.Bytes != userID {
-			// Check if user has shared access
-			hasAccess, err := s.checkSharedAccess(ctx, userID, assetID)
-			if err != nil || !hasAccess {
-				continue
-			}
-		}
-
-		// Get file size from EXIF data
-		exif, err := s.db.GetExifByAssetId(ctx, pgtype.UUID{Bytes: assetID, Valid: true})
-		if err == nil && exif.FileSizeInByte.Valid {
-			totalSize += exif.FileSizeInByte.Int64
-		} else {
-			// Fallback to estimate if EXIF data not available
-			totalSize += 1024 * 1024 // 1MB estimate per file
-		}
-		validAssetIDs = append(validAssetIDs, assetID.String())
+	for _, asset := range assets {
+		totalSize += s.assetDownloadSize(ctx, asset)
+		validAssetIDs = append(validAssetIDs, assetUUID(asset).String())
 	}
 
 	// Estimate archive size (typically 90-95% of original for already compressed media)
@@ -124,26 +76,14 @@ func (s *Service) GetDownloadInfo(ctx context.Context, userID uuid.UUID, req *Do
 
 // DownloadAsset downloads a single asset
 func (s *Service) DownloadAsset(ctx context.Context, userID uuid.UUID, assetID uuid.UUID) (io.ReadCloser, string, error) {
-	// Get asset from database
-	asset, err := s.db.GetAsset(ctx, pgtype.UUID{Bytes: assetID, Valid: true})
+	asset, err := s.getAccessibleAsset(ctx, userID, assetID)
 	if err != nil {
-		return nil, "", fmt.Errorf("asset not found: %w", err)
-	}
-
-	// Verify user has access
-	if asset.OwnerId.Bytes != userID {
-		hasAccess, err := s.checkSharedAccess(ctx, userID, assetID)
-		if err != nil || !hasAccess {
-			return nil, "", fmt.Errorf("access denied")
-		}
+		return nil, "", err
 	}
 
 	// Get file from storage
 	// Use original path or construct from ID
-	filePath := asset.OriginalPath
-	if filePath == "" {
-		filePath = storage.AssetFallbackPath(assetID, asset.OriginalFileName)
-	}
+	filePath := assetStoragePath(asset)
 	reader, err := s.storageService.Download(ctx, filePath)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to get file: %w", err)
@@ -164,29 +104,17 @@ func (s *Service) DownloadArchive(ctx context.Context, userID uuid.UUID, req *Do
 	zipWriter := zip.NewWriter(writer)
 	defer zipWriter.Close()
 
-	// Get download info to validate assets
-	info, err := s.GetDownloadInfo(ctx, userID, req)
+	assets, err := s.resolveDownloadAssets(ctx, userID, req)
 	if err != nil {
-		return fmt.Errorf("failed to get download info: %w", err)
+		return fmt.Errorf("failed to get download assets: %w", err)
 	}
 
 	// Track added files to avoid duplicates
 	addedFiles := make(map[string]bool)
 
 	// Add each asset to the archive
-	for _, assetIDStr := range info.AssetIDs {
-		assetID, err := uuid.Parse(assetIDStr)
-		if err != nil {
-			continue
-		}
-
-		// Get asset
-		asset, err := s.db.GetAsset(ctx, pgtype.UUID{Bytes: assetID, Valid: true})
-		if err != nil {
-			s.logger.WithError(err).Warnf("Failed to get asset %s", assetID)
-			continue
-		}
-
+	for _, asset := range assets {
+		assetID := assetUUID(asset)
 		// Generate archive path
 		archivePath := s.generateArchivePath(&asset)
 
@@ -215,10 +143,7 @@ func (s *Service) DownloadArchive(ctx context.Context, userID uuid.UUID, req *Do
 		}
 
 		// Get file from storage
-		filePath := asset.OriginalPath
-		if filePath == "" {
-			filePath = storage.AssetFallbackPath(assetID, asset.OriginalFileName)
-		}
+		filePath := assetStoragePath(asset)
 		reader, err := s.storageService.Download(ctx, filePath)
 		if err != nil {
 			s.logger.WithError(err).Warnf("Failed to get file for %s", assetID)
@@ -247,13 +172,8 @@ func (s *Service) DownloadAlbum(ctx context.Context, userID uuid.UUID, albumID u
 		return fmt.Errorf("album not found: %w", err)
 	}
 
-	// Check if user owns or has access to the album
-	if album.OwnerId.Bytes != userID {
-		// Check if user is shared with
-		hasAccess, err := s.checkAlbumAccess(ctx, userID, albumID)
-		if err != nil || !hasAccess {
-			return fmt.Errorf("access denied")
-		}
+	if !s.userCanAccessAlbum(ctx, userID, album) {
+		return fmt.Errorf("access denied")
 	}
 
 	// Create download request for album
@@ -267,18 +187,9 @@ func (s *Service) DownloadAlbum(ctx context.Context, userID uuid.UUID, albumID u
 
 // GetThumbnail retrieves a thumbnail for an asset
 func (s *Service) GetThumbnail(ctx context.Context, userID uuid.UUID, assetID uuid.UUID, size string) (io.ReadCloser, string, error) {
-	// Get asset to verify access
-	asset, err := s.db.GetAsset(ctx, pgtype.UUID{Bytes: assetID, Valid: true})
+	asset, err := s.getAccessibleAsset(ctx, userID, assetID)
 	if err != nil {
-		return nil, "", fmt.Errorf("asset not found: %w", err)
-	}
-
-	// Verify user has access
-	if asset.OwnerId.Bytes != userID {
-		hasAccess, err := s.checkSharedAccess(ctx, userID, assetID)
-		if err != nil || !hasAccess {
-			return nil, "", fmt.Errorf("access denied")
-		}
+		return nil, "", err
 	}
 
 	// Determine thumbnail path based on size
@@ -288,10 +199,7 @@ func (s *Service) GetThumbnail(ctx context.Context, userID uuid.UUID, assetID uu
 	reader, err := s.storageService.Download(ctx, thumbnailPath)
 	if err != nil {
 		// Fallback to original if thumbnail doesn't exist
-		filePath := asset.OriginalPath
-		if filePath == "" {
-			filePath = storage.AssetFallbackPath(assetID, asset.OriginalFileName)
-		}
+		filePath := assetStoragePath(asset)
 		reader, err = s.storageService.Download(ctx, filePath)
 		if err != nil {
 			return nil, "", fmt.Errorf("failed to get thumbnail: %w", err)
@@ -303,25 +211,13 @@ func (s *Service) GetThumbnail(ctx context.Context, userID uuid.UUID, assetID uu
 
 // GetPresignedURL generates a presigned download URL for an asset
 func (s *Service) GetPresignedURL(ctx context.Context, userID uuid.UUID, assetID uuid.UUID, expiry time.Duration) (string, error) {
-	// Get asset to verify access
-	asset, err := s.db.GetAsset(ctx, pgtype.UUID{Bytes: assetID, Valid: true})
+	asset, err := s.getAccessibleAsset(ctx, userID, assetID)
 	if err != nil {
-		return "", fmt.Errorf("asset not found: %w", err)
-	}
-
-	// Verify user has access
-	if asset.OwnerId.Bytes != userID {
-		hasAccess, err := s.checkSharedAccess(ctx, userID, assetID)
-		if err != nil || !hasAccess {
-			return "", fmt.Errorf("access denied")
-		}
+		return "", err
 	}
 
 	// Get file path
-	filePath := asset.OriginalPath
-	if filePath == "" {
-		filePath = storage.AssetFallbackPath(assetID, asset.OriginalFileName)
-	}
+	filePath := assetStoragePath(asset)
 
 	// Generate presigned URL
 	url, err := s.storageService.GeneratePresignedDownloadURL(ctx, filePath, expiry)
@@ -353,7 +249,105 @@ func (s *Service) generateArchivePath(asset *sqlc.Asset) string {
 	if asset.Type == "VIDEO" {
 		ext = ".mp4"
 	}
-	return fmt.Sprintf("%s%s", asset.ID.Bytes, ext)
+	return fmt.Sprintf("%s%s", assetUUID(*asset).String(), ext)
+}
+
+func (s *Service) resolveDownloadAssets(ctx context.Context, userID uuid.UUID, req *DownloadRequest) ([]sqlc.Asset, error) {
+	if req.AlbumID != nil {
+		return s.resolveAlbumDownloadAssets(ctx, userID, *req.AlbumID)
+	}
+
+	assets := make([]sqlc.Asset, 0, len(req.AssetIDs))
+	for _, idStr := range req.AssetIDs {
+		assetID, err := uuid.Parse(idStr)
+		if err != nil {
+			continue
+		}
+		asset, err := s.getAccessibleAsset(ctx, userID, assetID)
+		if err != nil {
+			continue
+		}
+		assets = append(assets, asset)
+	}
+	return assets, nil
+}
+
+func (s *Service) resolveAlbumDownloadAssets(ctx context.Context, userID uuid.UUID, albumID string) ([]sqlc.Asset, error) {
+	parsedAlbumID, err := uuid.Parse(albumID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid album ID: %w", err)
+	}
+
+	albumAssets, err := s.db.GetAlbumAssets(ctx, pgUUID(parsedAlbumID))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get album assets: %w", err)
+	}
+
+	assets := make([]sqlc.Asset, 0, len(albumAssets))
+	for _, asset := range albumAssets {
+		access, err := s.userCanAccessAsset(ctx, userID, asset)
+		if err != nil || !access {
+			continue
+		}
+		assets = append(assets, asset)
+	}
+	return assets, nil
+}
+
+func (s *Service) getAccessibleAsset(ctx context.Context, userID uuid.UUID, assetID uuid.UUID) (sqlc.Asset, error) {
+	asset, err := s.db.GetAsset(ctx, pgUUID(assetID))
+	if err != nil {
+		return sqlc.Asset{}, fmt.Errorf("asset not found: %w", err)
+	}
+
+	access, err := s.userCanAccessAsset(ctx, userID, asset)
+	if err != nil || !access {
+		return sqlc.Asset{}, fmt.Errorf("access denied")
+	}
+	return asset, nil
+}
+
+func (s *Service) userCanAccessAsset(ctx context.Context, userID uuid.UUID, asset sqlc.Asset) (bool, error) {
+	if asset.OwnerId.Valid && uuid.UUID(asset.OwnerId.Bytes) == userID {
+		return true, nil
+	}
+	return s.checkSharedAccess(ctx, userID, assetUUID(asset))
+}
+
+func (s *Service) userCanAccessAlbum(ctx context.Context, userID uuid.UUID, album sqlc.Album) bool {
+	if album.OwnerId.Valid && uuid.UUID(album.OwnerId.Bytes) == userID {
+		return true
+	}
+
+	hasAccess, err := s.checkAlbumAccess(ctx, userID, uuidFromPG(album.ID))
+	return err == nil && hasAccess
+}
+
+func (s *Service) assetDownloadSize(ctx context.Context, asset sqlc.Asset) int64 {
+	exif, err := s.db.GetExifByAssetId(ctx, asset.ID)
+	if err == nil && exif.FileSizeInByte.Valid {
+		return exif.FileSizeInByte.Int64
+	}
+	return 1024 * 1024 // 1MB estimate when EXIF data is not available.
+}
+
+func assetStoragePath(asset sqlc.Asset) string {
+	if asset.OriginalPath != "" {
+		return asset.OriginalPath
+	}
+	return storage.AssetFallbackPath(assetUUID(asset), asset.OriginalFileName)
+}
+
+func assetUUID(asset sqlc.Asset) uuid.UUID {
+	return uuidFromPG(asset.ID)
+}
+
+func uuidFromPG(id pgtype.UUID) uuid.UUID {
+	return uuid.UUID(id.Bytes)
+}
+
+func pgUUID(id uuid.UUID) pgtype.UUID {
+	return pgtype.UUID{Bytes: id, Valid: true}
 }
 
 // checkSharedAccess checks if a user has shared access to an asset
