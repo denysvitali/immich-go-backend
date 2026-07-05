@@ -324,7 +324,8 @@ func (s *Server) hlsSegmentFilePath(ctx context.Context, assetID, sessionID stri
 
 func downloadAssetVideoToTemp(ctx context.Context, storage interface {
 	Download(context.Context, string) (io.ReadCloser, error)
-}, asset sqlc.Asset) (string, error) {
+}, asset sqlc.Asset,
+) (string, error) {
 	videoPath := asset.OriginalPath
 	if asset.EncodedVideoPath.Valid && asset.EncodedVideoPath.String != "" {
 		videoPath = asset.EncodedVideoPath.String

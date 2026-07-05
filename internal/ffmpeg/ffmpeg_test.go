@@ -222,7 +222,7 @@ func TestCopyFile(t *testing.T) {
 	dstPath := filepath.Join(tmpDir, "dst.txt")
 
 	content := []byte("hello world")
-	err := os.WriteFile(srcPath, content, 0644)
+	err := os.WriteFile(srcPath, content, 0o644)
 	require.NoError(t, err)
 
 	err = ffmpeg.CopyFile(srcPath, dstPath)
