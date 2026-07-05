@@ -17,6 +17,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/denysvitali/immich-go-backend/internal/assets"
+	"github.com/denysvitali/immich-go-backend/internal/auth"
 	"github.com/denysvitali/immich-go-backend/internal/config"
 	"github.com/denysvitali/immich-go-backend/internal/db"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
@@ -117,6 +118,13 @@ func createAssetViewerTestUser(t *testing.T, ctx context.Context, tdb *testdb.Te
 	return userID
 }
 
+func assetViewerContext(userID uuid.UUID) context.Context {
+	return auth.WithClaims(context.Background(), &auth.Claims{
+		UserID: userID.String(),
+		Email:  "asset-viewer-" + userID.String() + "@example.com",
+	})
+}
+
 // seedAsset creates an asset row owned by ownerID and uploads the raw bytes
 // to the local storage root at the asset's OriginalPath so that download /
 // thumbnail / video handlers can find them.
@@ -164,8 +172,9 @@ func seedAsset(t *testing.T, ctx context.Context, env *assetViewerTestEnv, owner
 func TestServer_GetAsset_NotFound(t *testing.T) {
 	env := newAssetViewerTestEnv(t)
 	ctx := context.Background()
+	userID := createAssetViewerTestUser(t, ctx, env.tdb)
 
-	resp, err := env.srv.GetAsset(ctx, &immichv1.GetAssetRequest{
+	resp, err := env.srv.GetAsset(assetViewerContext(userID), &immichv1.GetAssetRequest{
 		AssetId: uuid.New().String(),
 	})
 	require.Error(t, err)
@@ -185,7 +194,7 @@ func TestServer_GetAsset_OK(t *testing.T) {
 	userID := createAssetViewerTestUser(t, ctx, env.tdb)
 	asset := seedAsset(t, ctx, env, userID, "ok-test.jpg", "image/jpeg", []byte("fake-jpeg-bytes"))
 
-	resp, err := env.srv.GetAsset(ctx, &immichv1.GetAssetRequest{
+	resp, err := env.srv.GetAsset(assetViewerContext(userID), &immichv1.GetAssetRequest{
 		AssetId: uuid.UUID(asset.ID.Bytes).String(),
 	})
 	require.NoError(t, err)
@@ -201,8 +210,9 @@ func TestServer_GetAsset_OK(t *testing.T) {
 func TestServer_GetAssetThumbnail_NotFound(t *testing.T) {
 	env := newAssetViewerTestEnv(t)
 	ctx := context.Background()
+	userID := createAssetViewerTestUser(t, ctx, env.tdb)
 
-	resp, err := env.srv.GetAssetThumbnail(ctx, &immichv1.GetAssetThumbnailRequest{
+	resp, err := env.srv.GetAssetThumbnail(assetViewerContext(userID), &immichv1.GetAssetThumbnailRequest{
 		AssetId: uuid.New().String(),
 	})
 	require.Error(t, err)
@@ -218,8 +228,9 @@ func TestServer_GetAssetThumbnail_NotFound(t *testing.T) {
 func TestServer_GetAssetOriginal_NotFound(t *testing.T) {
 	env := newAssetViewerTestEnv(t)
 	ctx := context.Background()
+	userID := createAssetViewerTestUser(t, ctx, env.tdb)
 
-	resp, err := env.srv.DownloadAsset(ctx, &immichv1.DownloadAssetRequest{
+	resp, err := env.srv.DownloadAsset(assetViewerContext(userID), &immichv1.DownloadAssetRequest{
 		AssetId: uuid.New().String(),
 	})
 	require.Error(t, err)
@@ -229,20 +240,9 @@ func TestServer_GetAssetOriginal_NotFound(t *testing.T) {
 	assert.Equal(t, codes.NotFound, st.Code())
 }
 
-// TestServer_AssetViewer_UserIsolation documents the current authorization
-// behavior of the asset viewer endpoints. As of this writing, Server.GetAsset
-// / Server.DownloadAsset / Server.GetAssetThumbnail / Server.PlayAssetVideo
-// do NOT consult auth claims and will happily return any asset whose ID is
-// supplied, regardless of the requesting user. This is a known gap relative
-// to the upstream Immich server and the assets.Service.GetAsset helper, which
-// joins on ownerId. The test asserts the current (permissive) behavior so
-// that a future fix that adds user isolation will trip a red test, and so
-// that we have a regression net for the NoOp path in the meantime.
-//
-// TODO(security): when the handlers are updated to enforce ownership (by
-// reading auth claims and joining on ownerId, or by routing through the
-// assets.Service), flip the assertions below to expect codes.PermissionDenied
-// or to assert the user-isolated payload.
+// TestServer_AssetViewer_UserIsolation verifies that the server-level asset
+// viewer handlers scope asset IDs to the authenticated owner before returning
+// metadata or file bytes.
 func TestServer_AssetViewer_UserIsolation(t *testing.T) {
 	env := newAssetViewerTestEnv(t)
 	ctx := context.Background()
@@ -262,15 +262,50 @@ func TestServer_AssetViewer_UserIsolation(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, assetsB, "user B should not own any assets")
 
-	// Calling Server.GetAsset with user A's asset ID succeeds today, even
-	// when no claims for user A are present in the context. This documents
-	// the current behavior; see the TODO above.
-	resp, err := env.srv.GetAsset(ctx, &immichv1.GetAssetRequest{
+	resp, err := env.srv.GetAsset(assetViewerContext(userA), &immichv1.GetAssetRequest{
 		AssetId: uuid.UUID(assetA.ID.Bytes).String(),
 	})
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	assert.Equal(t, uuid.UUID(assetA.ID.Bytes).String(), resp.GetId())
+
+	assertAssetViewerNotFound(t, func() error {
+		_, err := env.srv.GetAsset(assetViewerContext(userB), &immichv1.GetAssetRequest{
+			AssetId: uuid.UUID(assetA.ID.Bytes).String(),
+		})
+		return err
+	})
+
+	assertAssetViewerNotFound(t, func() error {
+		_, err := env.srv.DownloadAsset(assetViewerContext(userB), &immichv1.DownloadAssetRequest{
+			AssetId: uuid.UUID(assetA.ID.Bytes).String(),
+		})
+		return err
+	})
+
+	assertAssetViewerNotFound(t, func() error {
+		_, err := env.srv.GetAssetThumbnail(assetViewerContext(userB), &immichv1.GetAssetThumbnailRequest{
+			AssetId: uuid.UUID(assetA.ID.Bytes).String(),
+		})
+		return err
+	})
+
+	videoA := seedAsset(t, ctx, env, userA, "userA-only.mp4", "video/mp4", []byte("fake-mp4-bytes"))
+	assertAssetViewerNotFound(t, func() error {
+		_, err := env.srv.PlayAssetVideo(assetViewerContext(userB), &immichv1.PlayAssetVideoRequest{
+			AssetId: uuid.UUID(videoA.ID.Bytes).String(),
+		})
+		return err
+	})
+}
+
+func assertAssetViewerNotFound(t *testing.T, call func() error) {
+	t.Helper()
+	err := call()
+	require.Error(t, err)
+	st, ok := status.FromError(err)
+	require.True(t, ok)
+	assert.Equal(t, codes.NotFound, st.Code())
 }
 
 // mustUUID is a small helper to convert a uuid.UUID to pgtype.UUID with a

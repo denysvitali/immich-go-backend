@@ -97,14 +97,9 @@ func (s *Server) GetAssets(ctx context.Context, request *immichv1.GetAssetsReque
 }
 
 func (s *Server) GetAsset(ctx context.Context, request *immichv1.GetAssetRequest) (*immichv1.Asset, error) {
-	assetID := pgtype.UUID{}
-	if err := assetID.Scan(request.AssetId); err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid asset ID: %v", err)
-	}
-
-	asset, err := s.db.GetAsset(ctx, assetID)
+	asset, err := s.getAuthenticatedAsset(ctx, request.AssetId)
 	if err != nil {
-		return nil, status.Errorf(codes.NotFound, "asset not found: %v", err)
+		return nil, err
 	}
 
 	return s.convertAssetToProto(asset), nil
@@ -611,19 +606,9 @@ func (s *Server) enqueueAssetJobsForAssets(
 }
 
 func (s *Server) DownloadAsset(ctx context.Context, request *immichv1.DownloadAssetRequest) (*immichv1.DownloadAssetResponse, error) {
-	// Parse asset ID
-	assetID, err := uuid.Parse(request.AssetId)
+	asset, err := s.getAuthenticatedAsset(ctx, request.AssetId)
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid asset ID: %v", err)
-	}
-
-	// Convert to pgtype.UUID
-	assetUUID := pgtype.UUID{Bytes: assetID, Valid: true}
-
-	// Get asset from database
-	asset, err := s.db.GetAssetByID(ctx, assetUUID)
-	if err != nil {
-		return nil, status.Errorf(codes.NotFound, "asset not found: %v", err)
+		return nil, err
 	}
 
 	// Get storage service
@@ -695,19 +680,9 @@ func (s *Server) ReplaceAsset(ctx context.Context, request *immichv1.ReplaceAsse
 }
 
 func (s *Server) GetAssetThumbnail(ctx context.Context, request *immichv1.GetAssetThumbnailRequest) (*immichv1.GetAssetThumbnailResponse, error) {
-	// Parse asset ID
-	assetID, err := uuid.Parse(request.AssetId)
+	asset, err := s.getAuthenticatedAsset(ctx, request.AssetId)
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid asset ID: %v", err)
-	}
-
-	// Convert to pgtype.UUID
-	assetUUID := pgtype.UUID{Bytes: assetID, Valid: true}
-
-	// Get asset from database
-	asset, err := s.db.GetAssetByID(ctx, assetUUID)
-	if err != nil {
-		return nil, status.Errorf(codes.NotFound, "asset not found: %v", err)
+		return nil, err
 	}
 
 	// Determine thumbnail type based on format parameter
@@ -789,19 +764,9 @@ var thumbnailContentTypes = map[assets.ThumbnailType]string{
 }
 
 func (s *Server) PlayAssetVideo(ctx context.Context, request *immichv1.PlayAssetVideoRequest) (*immichv1.PlayAssetVideoResponse, error) {
-	// Parse asset ID
-	assetID, err := uuid.Parse(request.AssetId)
+	asset, err := s.getAuthenticatedAsset(ctx, request.AssetId)
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid asset ID: %v", err)
-	}
-
-	// Convert to pgtype.UUID
-	assetUUID := pgtype.UUID{Bytes: assetID, Valid: true}
-
-	// Get asset from database
-	asset, err := s.db.GetAssetByID(ctx, assetUUID)
-	if err != nil {
-		return nil, status.Errorf(codes.NotFound, "asset not found: %v", err)
+		return nil, err
 	}
 
 	// Check if asset is a video
@@ -860,6 +825,28 @@ func assetDownloadContentType(filename string) string {
 		return contentType
 	}
 	return "application/octet-stream"
+}
+
+func (s *Server) getAuthenticatedAsset(ctx context.Context, assetID string) (sqlc.Asset, error) {
+	parsedAssetID, err := uuid.Parse(assetID)
+	if err != nil {
+		return sqlc.Asset{}, status.Errorf(codes.InvalidArgument, "invalid asset ID: %v", err)
+	}
+
+	userID, err := s.userUUIDFromContext(ctx)
+	if err != nil {
+		return sqlc.Asset{}, err
+	}
+
+	asset, err := s.db.GetAssetByIDAndUser(ctx, sqlc.GetAssetByIDAndUserParams{
+		ID:      pgtype.UUID{Bytes: parsedAssetID, Valid: true},
+		OwnerId: userID,
+	})
+	if err != nil {
+		return sqlc.Asset{}, status.Errorf(codes.NotFound, "asset not found: %v", err)
+	}
+
+	return asset, nil
 }
 
 var assetDownloadContentTypes = map[string]string{
