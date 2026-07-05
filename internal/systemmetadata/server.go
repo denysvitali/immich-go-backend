@@ -78,7 +78,7 @@ func (s *Server) GetReverseGeocodingState(ctx context.Context, request *immichv1
 	// Require admin privileges for accessing system state
 	_, err := auth.RequireAdmin(ctx)
 	if err != nil {
-		return nil, status.Error(codes.PermissionDenied, "admin privileges required")
+		return nil, status.Error(auth.MapAuthErrorToGRPC(err), "admin privileges required")
 	}
 
 	// Call service
@@ -97,7 +97,7 @@ func (s *Server) GetReverseGeocodingState(ctx context.Context, request *immichv1
 func (s *Server) GetVersionCheckState(ctx context.Context, request *immichv1.GetVersionCheckStateRequest) (*immichv1.VersionCheckStateResponse, error) {
 	_, err := auth.RequireAdmin(ctx)
 	if err != nil {
-		return nil, status.Error(codes.PermissionDenied, "admin privileges required")
+		return nil, status.Error(auth.MapAuthErrorToGRPC(err), "admin privileges required")
 	}
 
 	response, err := s.service.GetVersionCheckState(ctx)
