@@ -50,24 +50,85 @@ func thumbnailContentType(path string) string {
 	}
 }
 
-// GetAllPeople gets all people for the user
-func (s *Server) GetAllPeople(ctx context.Context, request *immichv1.GetAllPeopleRequest) (*immichv1.GetAllPeopleResponse, error) {
-	// Get user from context
+func currentUserIDFromContext(ctx context.Context) (uuid.UUID, error) {
 	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	if !ok || claims == nil {
+		return uuid.Nil, status.Error(codes.Unauthenticated, "unauthorized")
 	}
 
-	// Parse user ID
 	userID, err := uuid.Parse(claims.UserID)
 	if err != nil {
-		return nil, status.Error(codes.Internal, "invalid user ID")
+		return uuid.Nil, status.Error(codes.Internal, "invalid user ID")
+	}
+	return userID, nil
+}
+
+func pgUUID(id uuid.UUID) pgtype.UUID {
+	return pgtype.UUID{Bytes: id, Valid: true}
+}
+
+func isPGUUID(id pgtype.UUID, want uuid.UUID) bool {
+	return id.Valid && id.Bytes == want
+}
+
+func buildPersonResponse(person sqlc.Person, faceCount int64) *immichv1.PersonResponse {
+	var birthDate *string
+	if person.BirthDate.Valid {
+		bd := person.BirthDate.Time.Format("2006-01-02")
+		birthDate = &bd
 	}
 
-	userUUID := pgtype.UUID{Bytes: userID, Valid: true}
+	return &immichv1.PersonResponse{
+		Id:            uuid.UUID(person.ID.Bytes).String(),
+		Name:          person.Name,
+		BirthDate:     birthDate,
+		ThumbnailPath: person.ThumbnailPath,
+		Faces:         int32(faceCount),
+		UpdatedAt:     timestamppb.New(person.UpdatedAt.Time),
+		IsHidden:      person.IsHidden,
+	}
+}
+
+func (s *Server) personResponse(ctx context.Context, person sqlc.Person) *immichv1.PersonResponse {
+	faceCount, err := s.queries.CountPersonAssets(ctx, person.ID)
+	if err != nil {
+		faceCount = 0
+	}
+	return buildPersonResponse(person, faceCount)
+}
+
+func (s *Server) getOwnedPerson(
+	ctx context.Context,
+	userID uuid.UUID,
+	id string,
+	invalidIDMessage string,
+	notFoundMessage string,
+) (sqlc.Person, pgtype.UUID, error) {
+	personID, err := uuid.Parse(id)
+	if err != nil {
+		return sqlc.Person{}, pgtype.UUID{}, status.Error(codes.InvalidArgument, invalidIDMessage)
+	}
+
+	personUUID := pgUUID(personID)
+	person, err := s.queries.GetPerson(ctx, personUUID)
+	if err != nil {
+		return sqlc.Person{}, pgtype.UUID{}, status.Error(codes.NotFound, notFoundMessage)
+	}
+	if !isPGUUID(person.OwnerId, userID) {
+		return sqlc.Person{}, pgtype.UUID{}, status.Error(codes.PermissionDenied, "access denied")
+	}
+	return person, personUUID, nil
+}
+
+// GetAllPeople gets all people for the user
+func (s *Server) GetAllPeople(ctx context.Context, request *immichv1.GetAllPeopleRequest) (*immichv1.GetAllPeopleResponse, error) {
+	userID, err := currentUserIDFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	// Get people from database
-	dbPeople, err := s.queries.GetPeople(ctx, userUUID)
+	dbPeople, err := s.queries.GetPeople(ctx, pgUUID(userID))
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get people: %v", err)
 	}
@@ -75,28 +136,7 @@ func (s *Server) GetAllPeople(ctx context.Context, request *immichv1.GetAllPeopl
 	// Convert to proto response
 	people := make([]*immichv1.PersonResponse, 0, len(dbPeople))
 	for _, person := range dbPeople {
-		// Count face assets for this person
-		faceCount, err := s.queries.CountPersonAssets(ctx, person.ID)
-		if err != nil {
-			// Log error but continue
-			faceCount = 0
-		}
-
-		var birthDate *string
-		if person.BirthDate.Valid {
-			bd := person.BirthDate.Time.Format("2006-01-02")
-			birthDate = &bd
-		}
-
-		people = append(people, &immichv1.PersonResponse{
-			Id:            uuid.UUID(person.ID.Bytes).String(),
-			Name:          person.Name,
-			BirthDate:     birthDate,
-			ThumbnailPath: person.ThumbnailPath,
-			Faces:         int32(faceCount),
-			UpdatedAt:     timestamppb.New(person.UpdatedAt.Time),
-			IsHidden:      person.IsHidden,
-		})
+		people = append(people, s.personResponse(ctx, person))
 	}
 
 	return &immichv1.GetAllPeopleResponse{
@@ -108,19 +148,10 @@ func (s *Server) GetAllPeople(ctx context.Context, request *immichv1.GetAllPeopl
 
 // CreatePerson creates a new person
 func (s *Server) CreatePerson(ctx context.Context, request *immichv1.CreatePersonRequest) (*immichv1.PersonResponse, error) {
-	// Get user from context
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
-	}
-
-	// Parse user ID
-	userID, err := uuid.Parse(claims.UserID)
+	userID, err := currentUserIDFromContext(ctx)
 	if err != nil {
-		return nil, status.Error(codes.Internal, "invalid user ID")
+		return nil, err
 	}
-
-	userUUID := pgtype.UUID{Bytes: userID, Valid: true}
 
 	// Prepare birth date
 	var birthDatePG pgtype.Date
@@ -135,7 +166,7 @@ func (s *Server) CreatePerson(ctx context.Context, request *immichv1.CreatePerso
 
 	// Create person in database
 	person, err := s.queries.CreatePerson(ctx, sqlc.CreatePersonParams{
-		OwnerId:       userUUID,
+		OwnerId:       pgUUID(userID),
 		Name:          request.GetName(),
 		BirthDate:     birthDatePG,
 		ThumbnailPath: "",            // Initially empty
@@ -146,35 +177,14 @@ func (s *Server) CreatePerson(ctx context.Context, request *immichv1.CreatePerso
 		return nil, status.Errorf(codes.Internal, "failed to create person: %v", err)
 	}
 
-	var birthDate *string
-	if person.BirthDate.Valid {
-		bd := person.BirthDate.Time.Format("2006-01-02")
-		birthDate = &bd
-	}
-
-	return &immichv1.PersonResponse{
-		Id:            uuid.UUID(person.ID.Bytes).String(),
-		Name:          person.Name,
-		BirthDate:     birthDate,
-		ThumbnailPath: person.ThumbnailPath,
-		Faces:         0, // New person has no faces yet
-		UpdatedAt:     timestamppb.New(person.UpdatedAt.Time),
-		IsHidden:      person.IsHidden,
-	}, nil
+	return buildPersonResponse(person, 0), nil
 }
 
 // UpdatePeople updates multiple people
 func (s *Server) UpdatePeople(ctx context.Context, request *immichv1.UpdatePeopleRequest) (*immichv1.UpdatePeopleResponse, error) {
-	// Get user from context
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
-	}
-
-	// Parse user ID for ownership verification
-	userID, err := uuid.Parse(claims.UserID)
+	userID, err := currentUserIDFromContext(ctx)
 	if err != nil {
-		return nil, status.Error(codes.Internal, "invalid user ID")
+		return nil, err
 	}
 
 	updatedPeople := make([]*immichv1.PersonResponse, 0)
@@ -187,7 +197,7 @@ func (s *Server) UpdatePeople(ctx context.Context, request *immichv1.UpdatePeopl
 			continue // Skip invalid IDs
 		}
 
-		personUUID := pgtype.UUID{Bytes: personID, Valid: true}
+		personUUID := pgUUID(personID)
 
 		// Get existing person to verify ownership
 		existingPerson, err := s.queries.GetPerson(ctx, personUUID)
@@ -196,7 +206,7 @@ func (s *Server) UpdatePeople(ctx context.Context, request *immichv1.UpdatePeopl
 		}
 
 		// Verify ownership
-		if existingPerson.OwnerId.Bytes != userID {
+		if !isPGUUID(existingPerson.OwnerId, userID) {
 			continue // Skip if not owned by user
 		}
 
@@ -231,24 +241,7 @@ func (s *Server) UpdatePeople(ctx context.Context, request *immichv1.UpdatePeopl
 			continue // Skip on error
 		}
 
-		// Count face assets
-		faceCount, _ := s.queries.CountPersonAssets(ctx, updatedPerson.ID)
-
-		var birthDate *string
-		if updatedPerson.BirthDate.Valid {
-			bd := updatedPerson.BirthDate.Time.Format("2006-01-02")
-			birthDate = &bd
-		}
-
-		updatedPeople = append(updatedPeople, &immichv1.PersonResponse{
-			Id:            uuid.UUID(updatedPerson.ID.Bytes).String(),
-			Name:          updatedPerson.Name,
-			BirthDate:     birthDate,
-			ThumbnailPath: updatedPerson.ThumbnailPath,
-			Faces:         int32(faceCount),
-			UpdatedAt:     timestamppb.New(updatedPerson.UpdatedAt.Time),
-			IsHidden:      updatedPerson.IsHidden,
-		})
+		updatedPeople = append(updatedPeople, s.personResponse(ctx, updatedPerson))
 	}
 
 	return &immichv1.UpdatePeopleResponse{
@@ -258,65 +251,24 @@ func (s *Server) UpdatePeople(ctx context.Context, request *immichv1.UpdatePeopl
 
 // GetPerson gets a person by ID
 func (s *Server) GetPerson(ctx context.Context, request *immichv1.GetPersonRequest) (*immichv1.PersonResponse, error) {
-	// Get user from context
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
-	}
-
-	// Parse person ID
-	personID, err := uuid.Parse(request.GetId())
+	userID, err := currentUserIDFromContext(ctx)
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, "invalid person ID")
+		return nil, err
 	}
 
-	personUUID := pgtype.UUID{Bytes: personID, Valid: true}
-
-	// Get person from database
-	person, err := s.queries.GetPerson(ctx, personUUID)
+	person, _, err := s.getOwnedPerson(ctx, userID, request.GetId(), "invalid person ID", "person not found")
 	if err != nil {
-		return nil, status.Error(codes.NotFound, "person not found")
+		return nil, err
 	}
 
-	// Verify ownership
-	userID, _ := uuid.Parse(claims.UserID)
-	if person.OwnerId.Bytes != userID {
-		return nil, status.Error(codes.PermissionDenied, "access denied")
-	}
-
-	// Count face assets
-	faceCount, err := s.queries.CountPersonAssets(ctx, person.ID)
-	if err != nil {
-		faceCount = 0
-	}
-
-	var birthDate *string
-	if person.BirthDate.Valid {
-		bd := person.BirthDate.Time.Format("2006-01-02")
-		birthDate = &bd
-	}
-
-	return &immichv1.PersonResponse{
-		Id:            uuid.UUID(person.ID.Bytes).String(),
-		Name:          person.Name,
-		BirthDate:     birthDate,
-		ThumbnailPath: person.ThumbnailPath,
-		Faces:         int32(faceCount),
-		UpdatedAt:     timestamppb.New(person.UpdatedAt.Time),
-		IsHidden:      person.IsHidden,
-	}, nil
+	return s.personResponse(ctx, person), nil
 }
 
 // DeletePeople deletes multiple people owned by the current user.
 func (s *Server) DeletePeople(ctx context.Context, request *immichv1.DeletePeopleRequest) (*emptypb.Empty, error) {
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
-	}
-
-	userID, err := uuid.Parse(claims.UserID)
+	userID, err := currentUserIDFromContext(ctx)
 	if err != nil {
-		return nil, status.Error(codes.Internal, "invalid user ID")
+		return nil, err
 	}
 
 	for _, id := range request.GetIds() {
@@ -330,14 +282,9 @@ func (s *Server) DeletePeople(ctx context.Context, request *immichv1.DeletePeopl
 
 // DeletePerson deletes one person owned by the current user.
 func (s *Server) DeletePerson(ctx context.Context, request *immichv1.DeletePersonRequest) (*emptypb.Empty, error) {
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
-	}
-
-	userID, err := uuid.Parse(claims.UserID)
+	userID, err := currentUserIDFromContext(ctx)
 	if err != nil {
-		return nil, status.Error(codes.Internal, "invalid user ID")
+		return nil, err
 	}
 
 	if err := s.deletePersonByID(ctx, userID, request.GetId()); err != nil {
@@ -348,18 +295,9 @@ func (s *Server) DeletePerson(ctx context.Context, request *immichv1.DeletePerso
 }
 
 func (s *Server) deletePersonByID(ctx context.Context, userID uuid.UUID, id string) error {
-	personID, err := uuid.Parse(id)
+	_, personUUID, err := s.getOwnedPerson(ctx, userID, id, "invalid person ID", "person not found")
 	if err != nil {
-		return status.Error(codes.InvalidArgument, "invalid person ID")
-	}
-
-	personUUID := pgtype.UUID{Bytes: personID, Valid: true}
-	person, err := s.queries.GetPerson(ctx, personUUID)
-	if err != nil {
-		return status.Error(codes.NotFound, "person not found")
-	}
-	if person.OwnerId.Bytes != userID {
-		return status.Error(codes.PermissionDenied, "access denied")
+		return err
 	}
 
 	if err := s.queries.DeletePerson(ctx, personUUID); err != nil {
@@ -370,30 +308,14 @@ func (s *Server) deletePersonByID(ctx context.Context, userID uuid.UUID, id stri
 
 // UpdatePerson updates a person
 func (s *Server) UpdatePerson(ctx context.Context, request *immichv1.UpdatePersonRequest) (*immichv1.PersonResponse, error) {
-	// Get user from context
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
-	}
-
-	// Parse person ID
-	personID, err := uuid.Parse(request.GetId())
+	userID, err := currentUserIDFromContext(ctx)
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, "invalid person ID")
+		return nil, err
 	}
 
-	personUUID := pgtype.UUID{Bytes: personID, Valid: true}
-
-	// Get existing person to verify ownership
-	existingPerson, err := s.queries.GetPerson(ctx, personUUID)
+	_, personUUID, err := s.getOwnedPerson(ctx, userID, request.GetId(), "invalid person ID", "person not found")
 	if err != nil {
-		return nil, status.Error(codes.NotFound, "person not found")
-	}
-
-	// Verify ownership
-	userID, _ := uuid.Parse(claims.UserID)
-	if existingPerson.OwnerId.Bytes != userID {
-		return nil, status.Error(codes.PermissionDenied, "access denied")
+		return nil, err
 	}
 
 	// Prepare update parameters
@@ -428,7 +350,7 @@ func (s *Server) UpdatePerson(ctx context.Context, request *immichv1.UpdatePerso
 	if request.FeatureFaceAssetId != nil {
 		faceAssetID, err := uuid.Parse(*request.FeatureFaceAssetId)
 		if err == nil {
-			updateParams.FaceAssetID = pgtype.UUID{Bytes: faceAssetID, Valid: true}
+			updateParams.FaceAssetID = pgUUID(faceAssetID)
 		}
 	}
 
@@ -438,75 +360,26 @@ func (s *Server) UpdatePerson(ctx context.Context, request *immichv1.UpdatePerso
 		return nil, status.Errorf(codes.Internal, "failed to update person: %v", err)
 	}
 
-	// Count face assets
-	faceCount, err := s.queries.CountPersonAssets(ctx, updatedPerson.ID)
-	if err != nil {
-		faceCount = 0
-	}
-
-	var birthDate *string
-	if updatedPerson.BirthDate.Valid {
-		bd := updatedPerson.BirthDate.Time.Format("2006-01-02")
-		birthDate = &bd
-	}
-
-	return &immichv1.PersonResponse{
-		Id:            uuid.UUID(updatedPerson.ID.Bytes).String(),
-		Name:          updatedPerson.Name,
-		BirthDate:     birthDate,
-		ThumbnailPath: updatedPerson.ThumbnailPath,
-		Faces:         int32(faceCount),
-		UpdatedAt:     timestamppb.New(updatedPerson.UpdatedAt.Time),
-		IsHidden:      updatedPerson.IsHidden,
-	}, nil
+	return s.personResponse(ctx, updatedPerson), nil
 }
 
 // MergePerson merges multiple people into one
 func (s *Server) MergePerson(ctx context.Context, request *immichv1.MergePersonRequest) (*immichv1.MergePersonResponse, error) {
-	// Get user from context
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
-	}
-
-	// Parse target person ID
-	targetID, err := uuid.Parse(request.GetId())
+	userID, err := currentUserIDFromContext(ctx)
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, "invalid target person ID")
+		return nil, err
 	}
 
-	targetUUID := pgtype.UUID{Bytes: targetID, Valid: true}
-
-	// Get target person from database
-	targetPerson, err := s.queries.GetPerson(ctx, targetUUID)
+	targetPerson, _, err := s.getOwnedPerson(ctx, userID, request.GetId(), "invalid target person ID", "target person not found")
 	if err != nil {
-		return nil, status.Error(codes.NotFound, "target person not found")
-	}
-
-	// Verify ownership
-	userID, _ := uuid.Parse(claims.UserID)
-	if targetPerson.OwnerId.Bytes != userID {
-		return nil, status.Error(codes.PermissionDenied, "access denied")
+		return nil, err
 	}
 
 	// For each person to merge, verify ownership and delete them
 	// In a real implementation, we would also reassign their face assets to the target person
 	for _, idStr := range request.GetIds() {
-		personID, err := uuid.Parse(idStr)
+		_, personUUID, err := s.getOwnedPerson(ctx, userID, idStr, "invalid person ID", "person not found")
 		if err != nil {
-			continue
-		}
-
-		personUUID := pgtype.UUID{Bytes: personID, Valid: true}
-
-		// Get person to verify ownership
-		person, err := s.queries.GetPerson(ctx, personUUID)
-		if err != nil {
-			continue
-		}
-
-		// Verify ownership
-		if person.OwnerId.Bytes != userID {
 			continue
 		}
 
@@ -514,49 +387,20 @@ func (s *Server) MergePerson(ctx context.Context, request *immichv1.MergePersonR
 		_ = s.queries.DeletePerson(ctx, personUUID)
 	}
 
-	// Get updated face count for target person
-	faceCount, err := s.queries.CountPersonAssets(ctx, targetPerson.ID)
-	if err != nil {
-		faceCount = 0
-	}
-
-	var birthDate *string
-	if targetPerson.BirthDate.Valid {
-		bd := targetPerson.BirthDate.Time.Format("2006-01-02")
-		birthDate = &bd
-	}
-
 	return &immichv1.MergePersonResponse{
-		Person: &immichv1.PersonResponse{
-			Id:            uuid.UUID(targetPerson.ID.Bytes).String(),
-			Name:          targetPerson.Name,
-			BirthDate:     birthDate,
-			ThumbnailPath: targetPerson.ThumbnailPath,
-			Faces:         int32(faceCount),
-			UpdatedAt:     timestamppb.New(targetPerson.UpdatedAt.Time),
-			IsHidden:      targetPerson.IsHidden,
-		},
+		Person: s.personResponse(ctx, targetPerson),
 	}, nil
 }
 
 // ReassignFaces reassigns faces to different people
 func (s *Server) ReassignFaces(ctx context.Context, request *immichv1.ReassignFacesRequest) (*immichv1.ReassignFacesResponse, error) {
-	// Get user from context
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
-	}
-
-	// Parse user ID for ownership verification
-	userID, err := uuid.Parse(claims.UserID)
+	userID, err := currentUserIDFromContext(ctx)
 	if err != nil {
-		return nil, status.Error(codes.Internal, "invalid user ID")
+		return nil, err
 	}
-
-	userUUID := pgtype.UUID{Bytes: userID, Valid: true}
 
 	// Get all people for the user to return updated list
-	dbPeople, err := s.queries.GetPeople(ctx, userUUID)
+	dbPeople, err := s.queries.GetPeople(ctx, pgUUID(userID))
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get people: %v", err)
 	}
@@ -564,23 +408,7 @@ func (s *Server) ReassignFaces(ctx context.Context, request *immichv1.ReassignFa
 	// Convert to proto response
 	people := make([]*immichv1.PersonResponse, 0, len(dbPeople))
 	for _, person := range dbPeople {
-		faceCount, _ := s.queries.CountPersonAssets(ctx, person.ID)
-
-		var birthDate *string
-		if person.BirthDate.Valid {
-			bd := person.BirthDate.Time.Format("2006-01-02")
-			birthDate = &bd
-		}
-
-		people = append(people, &immichv1.PersonResponse{
-			Id:            uuid.UUID(person.ID.Bytes).String(),
-			Name:          person.Name,
-			BirthDate:     birthDate,
-			ThumbnailPath: person.ThumbnailPath,
-			Faces:         int32(faceCount),
-			UpdatedAt:     timestamppb.New(person.UpdatedAt.Time),
-			IsHidden:      person.IsHidden,
-		})
+		people = append(people, s.personResponse(ctx, person))
 	}
 
 	return &immichv1.ReassignFacesResponse{
@@ -590,30 +418,14 @@ func (s *Server) ReassignFaces(ctx context.Context, request *immichv1.ReassignFa
 
 // GetPersonStatistics gets statistics for a person
 func (s *Server) GetPersonStatistics(ctx context.Context, request *immichv1.GetPersonStatisticsRequest) (*immichv1.PersonStatisticsResponse, error) {
-	// Get user from context
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
-	}
-
-	// Parse person ID
-	personID, err := uuid.Parse(request.GetId())
+	userID, err := currentUserIDFromContext(ctx)
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, "invalid person ID")
+		return nil, err
 	}
 
-	personUUID := pgtype.UUID{Bytes: personID, Valid: true}
-
-	// Get person to verify ownership
-	person, err := s.queries.GetPerson(ctx, personUUID)
+	person, _, err := s.getOwnedPerson(ctx, userID, request.GetId(), "invalid person ID", "person not found")
 	if err != nil {
-		return nil, status.Error(codes.NotFound, "person not found")
-	}
-
-	// Verify ownership
-	userID, _ := uuid.Parse(claims.UserID)
-	if person.OwnerId.Bytes != userID {
-		return nil, status.Error(codes.PermissionDenied, "access denied")
+		return nil, err
 	}
 
 	// Get asset count for this person
@@ -629,30 +441,14 @@ func (s *Server) GetPersonStatistics(ctx context.Context, request *immichv1.GetP
 
 // GetPersonThumbnail gets thumbnail for a person
 func (s *Server) GetPersonThumbnail(ctx context.Context, request *immichv1.GetPersonThumbnailRequest) (*immichv1.GetPersonThumbnailResponse, error) {
-	// Get user from context
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
-	}
-
-	// Parse person ID
-	personID, err := uuid.Parse(request.GetId())
+	userID, err := currentUserIDFromContext(ctx)
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, "invalid person ID")
+		return nil, err
 	}
 
-	personUUID := pgtype.UUID{Bytes: personID, Valid: true}
-
-	// Get person from database
-	person, err := s.queries.GetPerson(ctx, personUUID)
+	person, _, err := s.getOwnedPerson(ctx, userID, request.GetId(), "invalid person ID", "person not found")
 	if err != nil {
-		return nil, status.Error(codes.NotFound, "person not found")
-	}
-
-	// Verify ownership
-	userID, _ := uuid.Parse(claims.UserID)
-	if person.OwnerId.Bytes != userID {
-		return nil, status.Error(codes.PermissionDenied, "access denied")
+		return nil, err
 	}
 
 	// Check if thumbnail path exists
