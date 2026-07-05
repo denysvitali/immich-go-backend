@@ -2,6 +2,7 @@ package partners
 
 import (
 	"context"
+	"time"
 
 	"github.com/denysvitali/immich-go-backend/internal/auth"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
@@ -27,21 +28,76 @@ func NewServer(queries *sqlc.Queries) *Server {
 	}
 }
 
-// GetPartners gets all partners for the user
-func (s *Server) GetPartners(ctx context.Context, request *immichv1.GetPartnersRequest) (*immichv1.GetPartnersResponse, error) {
-	// Get user from context
+func currentUserUUIDFromContext(ctx context.Context) (pgtype.UUID, error) {
 	claims, ok := auth.GetClaimsFromStdContext(ctx)
 	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+		return pgtype.UUID{}, status.Error(codes.Unauthenticated, "unauthorized")
 	}
 
-	// Parse user ID
 	userID, err := uuid.Parse(claims.UserID)
 	if err != nil {
-		return nil, status.Error(codes.Internal, "invalid user ID")
+		return pgtype.UUID{}, status.Error(codes.Internal, "invalid user ID")
 	}
 
-	userUUID := pgtype.UUID{Bytes: userID, Valid: true}
+	return pgUUID(userID), nil
+}
+
+func parseUUIDParam(value, errMsg string) (pgtype.UUID, error) {
+	id, err := uuid.Parse(value)
+	if err != nil {
+		return pgtype.UUID{}, status.Error(codes.InvalidArgument, errMsg)
+	}
+
+	return pgUUID(id), nil
+}
+
+func pgUUID(id uuid.UUID) pgtype.UUID {
+	return pgtype.UUID{Bytes: id, Valid: true}
+}
+
+func buildPartnerResponse(
+	id pgtype.UUID,
+	email string,
+	name string,
+	inTimeline bool,
+	createdAt pgtype.Timestamptz,
+	updatedAt pgtype.Timestamptz,
+) *immichv1.PartnerResponse {
+	idStr := uuid.UUID(id.Bytes).String()
+	return &immichv1.PartnerResponse{
+		Id: idStr,
+		User: &immichv1.User{
+			Id:    idStr,
+			Email: email,
+			Name:  name,
+		},
+		InTimeline: inTimeline,
+		CreatedAt:  timestamppb.New(createdAt.Time),
+		UpdatedAt:  timestamppb.New(updatedAt.Time),
+	}
+}
+
+func partnerResponseFromRow(row sqlc.GetPartnersRow) *immichv1.PartnerResponse {
+	return buildPartnerResponse(
+		row.ID,
+		row.Email,
+		row.Name,
+		row.InTimeline,
+		row.PartnershipCreatedAt,
+		row.PartnershipUpdatedAt,
+	)
+}
+
+func partnerResponseFromUser(user sqlc.User, inTimeline bool, createdAt, updatedAt pgtype.Timestamptz) *immichv1.PartnerResponse {
+	return buildPartnerResponse(user.ID, user.Email, user.Name, inTimeline, createdAt, updatedAt)
+}
+
+// GetPartners gets all partners for the user
+func (s *Server) GetPartners(ctx context.Context, request *immichv1.GetPartnersRequest) (*immichv1.GetPartnersResponse, error) {
+	userUUID, err := currentUserUUIDFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	// Get partners from database
 	partnerRows, err := s.queries.GetPartners(ctx, userUUID)
@@ -52,20 +108,7 @@ func (s *Server) GetPartners(ctx context.Context, request *immichv1.GetPartnersR
 	// Convert to proto response
 	partners := make([]*immichv1.PartnerResponse, 0, len(partnerRows))
 	for _, row := range partnerRows {
-		// Build the partner response with actual user data
-		partnerIDStr := uuid.UUID(row.ID.Bytes).String()
-		partner := &immichv1.PartnerResponse{
-			Id: partnerIDStr,
-			User: &immichv1.User{
-				Id:    partnerIDStr,
-				Email: row.Email,
-				Name:  row.Name,
-			},
-			InTimeline: false, // Default to false since the current query doesn't include this field
-			CreatedAt:  timestamppb.New(row.CreatedAt.Time),
-			UpdatedAt:  timestamppb.New(row.UpdatedAt.Time),
-		}
-		partners = append(partners, partner)
+		partners = append(partners, partnerResponseFromRow(row))
 	}
 
 	return &immichv1.GetPartnersResponse{
@@ -75,26 +118,16 @@ func (s *Server) GetPartners(ctx context.Context, request *immichv1.GetPartnersR
 
 // RemovePartner removes a partnership
 func (s *Server) RemovePartner(ctx context.Context, request *immichv1.RemovePartnerRequest) (*emptypb.Empty, error) {
-	// Get user from context
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
-	}
-
-	// Parse user ID
-	userID, err := uuid.Parse(claims.UserID)
+	userUUID, err := currentUserUUIDFromContext(ctx)
 	if err != nil {
-		return nil, status.Error(codes.Internal, "invalid user ID")
+		return nil, err
 	}
 
 	// Parse partner ID
-	partnerID, err := uuid.Parse(request.GetId())
+	partnerUUID, err := parseUUIDParam(request.GetId(), "invalid partner ID")
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, "invalid partner ID")
+		return nil, err
 	}
-
-	userUUID := pgtype.UUID{Bytes: userID, Valid: true}
-	partnerUUID := pgtype.UUID{Bytes: partnerID, Valid: true}
 
 	// Delete the partnership from database
 	err = s.queries.DeletePartnership(ctx, sqlc.DeletePartnershipParams{
@@ -110,26 +143,16 @@ func (s *Server) RemovePartner(ctx context.Context, request *immichv1.RemovePart
 
 // CreatePartner creates a new partnership
 func (s *Server) CreatePartner(ctx context.Context, request *immichv1.CreatePartnerRequest) (*immichv1.PartnerResponse, error) {
-	// Get user from context
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
-	}
-
-	// Parse user ID
-	userID, err := uuid.Parse(claims.UserID)
+	userUUID, err := currentUserUUIDFromContext(ctx)
 	if err != nil {
-		return nil, status.Error(codes.Internal, "invalid user ID")
+		return nil, err
 	}
 
 	// Parse partner ID from request
-	partnerID, err := uuid.Parse(request.GetSharedWithId())
+	partnerUUID, err := parseUUIDParam(request.GetSharedWithId(), "invalid partner ID")
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, "invalid partner ID")
+		return nil, err
 	}
-
-	userUUID := pgtype.UUID{Bytes: userID, Valid: true}
-	partnerUUID := pgtype.UUID{Bytes: partnerID, Valid: true}
 
 	// First check if partner user exists
 	partnerUser, err := s.queries.GetUserByID(ctx, partnerUUID)
@@ -146,41 +169,21 @@ func (s *Server) CreatePartner(ctx context.Context, request *immichv1.CreatePart
 		return nil, status.Errorf(codes.Internal, "failed to create partnership: %v", err)
 	}
 
-	return &immichv1.PartnerResponse{
-		Id: uuid.UUID(partnerUser.ID.Bytes).String(),
-		User: &immichv1.User{
-			Id:    uuid.UUID(partnerUser.ID.Bytes).String(),
-			Email: partnerUser.Email,
-			Name:  partnerUser.Name,
-		},
-		InTimeline: partnership.InTimeline,
-		CreatedAt:  timestamppb.New(partnership.CreatedAt.Time),
-		UpdatedAt:  timestamppb.New(partnership.UpdatedAt.Time),
-	}, nil
+	return partnerResponseFromUser(partnerUser, partnership.InTimeline, partnership.CreatedAt, partnership.UpdatedAt), nil
 }
 
 // UpdatePartner updates partnership settings
 func (s *Server) UpdatePartner(ctx context.Context, request *immichv1.UpdatePartnerRequest) (*immichv1.PartnerResponse, error) {
-	// Get user from context
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
-	}
-
-	// Parse user ID
-	userID, err := uuid.Parse(claims.UserID)
+	userUUID, err := currentUserUUIDFromContext(ctx)
 	if err != nil {
-		return nil, status.Error(codes.Internal, "invalid user ID")
+		return nil, err
 	}
 
 	// Parse partner ID
-	partnerID, err := uuid.Parse(request.GetId())
+	partnerUUID, err := parseUUIDParam(request.GetId(), "invalid partner ID")
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, "invalid partner ID")
+		return nil, err
 	}
-
-	userUUID := pgtype.UUID{Bytes: userID, Valid: true}
-	partnerUUID := pgtype.UUID{Bytes: partnerID, Valid: true}
 
 	// For now, we'll fetch the partner details and return them
 	// The UpdatePartnership query needs SQLC regeneration to be available
@@ -198,7 +201,7 @@ func (s *Server) UpdatePartner(ctx context.Context, request *immichv1.UpdatePart
 	// Verify the partner exists in the partnership
 	found := false
 	for _, row := range partnerRows {
-		if row.ID.Bytes == partnerID {
+		if row.ID.Bytes == partnerUUID.Bytes {
 			found = true
 			break
 		}
@@ -210,15 +213,10 @@ func (s *Server) UpdatePartner(ctx context.Context, request *immichv1.UpdatePart
 
 	// Return the updated partnership info
 	// Note: InTimeline update requires SQLC regeneration
-	return &immichv1.PartnerResponse{
-		Id: uuid.UUID(partnerUser.ID.Bytes).String(),
-		User: &immichv1.User{
-			Id:    uuid.UUID(partnerUser.ID.Bytes).String(),
-			Email: partnerUser.Email,
-			Name:  partnerUser.Name,
-		},
-		InTimeline: request.GetInTimeline(),
-		CreatedAt:  timestamppb.New(partnerUser.CreatedAt.Time),
-		UpdatedAt:  timestamppb.Now(),
-	}, nil
+	return partnerResponseFromUser(
+		partnerUser,
+		request.GetInTimeline(),
+		partnerUser.CreatedAt,
+		pgtype.Timestamptz{Time: time.Now(), Valid: true},
+	), nil
 }
