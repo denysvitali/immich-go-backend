@@ -18,6 +18,20 @@ func TestAdminOnlyEndpointsMapAuthErrors(t *testing.T) {
 		call func(context.Context) error
 	}{
 		{
+			name: "admin onboarding",
+			call: func(ctx context.Context) error {
+				_, err := (&Server{}).GetAdminOnboarding(ctx, &immichv1.GetAdminOnboardingRequest{})
+				return err
+			},
+		},
+		{
+			name: "update admin onboarding",
+			call: func(ctx context.Context) error {
+				_, err := (&Server{}).UpdateAdminOnboarding(ctx, &immichv1.UpdateAdminOnboardingRequest{})
+				return err
+			},
+		},
+		{
 			name: "reverse geocoding state",
 			call: func(ctx context.Context) error {
 				_, err := (&Server{}).GetReverseGeocodingState(ctx, &immichv1.GetReverseGeocodingStateRequest{})

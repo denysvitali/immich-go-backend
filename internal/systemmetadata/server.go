@@ -24,15 +24,10 @@ func NewServer(service *Service) *Server {
 
 // GetAdminOnboarding retrieves admin onboarding status
 func (s *Server) GetAdminOnboarding(ctx context.Context, request *immichv1.GetAdminOnboardingRequest) (*immichv1.GetAdminOnboardingResponse, error) {
-	// This endpoint might not require authentication as it's used during initial setup
-	// But we'll check for admin privileges to be safe
-	user, err := auth.RequireAdmin(ctx)
+	_, err := auth.RequireAdmin(ctx)
 	if err != nil {
-		// For onboarding, allow access even without auth if no users exist yet
-		// In a real implementation, you'd check if any users exist in the system
-		// For now, we'll allow the request to proceed
+		return nil, status.Error(auth.MapAuthErrorToGRPC(err), "admin privileges required")
 	}
-	_ = user // Silence unused variable warning
 
 	// Call service
 	response, err := s.service.GetAdminOnboarding(ctx)
@@ -47,15 +42,10 @@ func (s *Server) GetAdminOnboarding(ctx context.Context, request *immichv1.GetAd
 
 // UpdateAdminOnboarding updates admin onboarding status
 func (s *Server) UpdateAdminOnboarding(ctx context.Context, request *immichv1.UpdateAdminOnboardingRequest) (*immichv1.UpdateAdminOnboardingResponse, error) {
-	// This endpoint might not require authentication during initial setup
-	// But we'll check for admin privileges to be safe
-	user, err := auth.RequireAdmin(ctx)
+	_, err := auth.RequireAdmin(ctx)
 	if err != nil {
-		// For onboarding, allow access even without auth if no users exist yet
-		// In a real implementation, you'd check if any users exist in the system
-		// For now, we'll allow the request to proceed
+		return nil, status.Error(auth.MapAuthErrorToGRPC(err), "admin privileges required")
 	}
-	_ = user // Silence unused variable warning
 
 	// Convert request
 	req := UpdateAdminOnboardingRequest{
