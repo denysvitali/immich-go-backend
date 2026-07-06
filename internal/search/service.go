@@ -276,15 +276,9 @@ func (s *Service) GetSearchSuggestions(ctx context.Context, userID uuid.UUID, re
 	return suggestions, nil
 }
 
-// SearchSmart performs AI-powered smart search (placeholder)
+// SearchSmart falls back to metadata search until embedding search is available.
 func (s *Service) SearchSmart(ctx context.Context, userID uuid.UUID, req SmartSearchRequest) (*SearchResult, error) {
-	// This would integrate with a machine learning service
-	// For now, fall back to metadata search
-	return s.SearchMetadata(ctx, userID, MetadataSearchRequest{
-		Query: req.Query,
-		Page:  req.Page,
-		Size:  req.Size,
-	})
+	return s.SearchMetadata(ctx, userID, req)
 }
 
 // SearchExplore returns explore/discovery results
@@ -497,11 +491,9 @@ type SuggestionsResult struct {
 	FileTypes []string `json:"fileTypes"`
 }
 
-type SmartSearchRequest struct {
-	Query string `json:"query"`
-	Page  int    `json:"page"`
-	Size  int    `json:"size"`
-}
+// SmartSearchRequest reuses metadata filters while smart search is implemented
+// as a metadata fallback.
+type SmartSearchRequest = MetadataSearchRequest
 
 type ExploreResult struct {
 	Categories []ExploreCategory `json:"categories"`

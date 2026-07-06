@@ -38,45 +38,7 @@ func (s *Server) SearchMetadata(ctx context.Context, req *immichv1.SearchMetadat
 		return nil, status.Error(codes.Unauthenticated, "unauthorized")
 	}
 
-	searchReq := MetadataSearchRequest{
-		Page: 0,
-		Size: 30,
-	}
-
-	if filter := req.GetFilter(); filter != nil {
-		searchReq.Query = stringValue(filter.OriginalFileName)
-		if searchReq.Query == "" {
-			searchReq.Query = stringValue(filter.OriginalPath)
-		}
-		searchReq.City = stringValue(filter.City)
-		searchReq.State = stringValue(filter.State)
-		searchReq.Country = stringValue(filter.Country)
-		searchReq.Make = stringValue(filter.Make)
-		searchReq.Model = stringValue(filter.Model)
-		searchReq.LensModel = stringValue(filter.LensModel)
-		searchReq.LibraryID = stringValue(filter.LibraryId)
-		searchReq.IsFavorite = filter.IsFavorite
-		searchReq.IsArchived = filter.IsArchived
-		searchReq.IsEncoded = filter.IsEncoded
-		searchReq.IsMotion = filter.IsMotion
-		searchReq.IsOffline = filter.IsOffline
-		searchReq.IsExternal = filter.IsExternal
-		if filter.Type != nil {
-			searchReq.Type = assetTypeFilter(*filter.Type)
-		}
-		if filter.TakenBefore != nil {
-			searchReq.TakenBefore = filter.TakenBefore.AsTime()
-		}
-		if filter.TakenAfter != nil {
-			searchReq.TakenAfter = filter.TakenAfter.AsTime()
-		}
-		if filter.Size != nil && filter.GetSize() > 0 {
-			searchReq.Size = int(filter.GetSize())
-		}
-		if filter.Page != nil && filter.GetPage() > 0 {
-			searchReq.Page = int(filter.GetPage())
-		}
-	}
+	searchReq := metadataSearchRequestFromFilter("", req.GetFilter())
 
 	result, err := s.service.SearchMetadata(ctx, userID, searchReq)
 	if err != nil {
@@ -116,11 +78,7 @@ func (s *Server) SearchSmart(ctx context.Context, req *immichv1.SearchSmartReque
 		return nil, status.Error(codes.Unauthenticated, "unauthorized")
 	}
 
-	searchReq := SmartSearchRequest{
-		Query: req.Query,
-		Page:  0,
-		Size:  30,
-	}
+	searchReq := metadataSearchRequestFromFilter(req.GetQuery(), req.GetFilter())
 
 	result, err := s.service.SearchSmart(ctx, userID, searchReq)
 	if err != nil {
@@ -141,18 +99,7 @@ func (s *Server) SearchSmart(ctx context.Context, req *immichv1.SearchSmartReque
 			continue // Skip assets that can't be loaded
 		}
 
-		assets = append(assets, &immichv1.AssetResponseDto{
-			Id:               item.ID,
-			DeviceAssetId:    asset.DeviceAssetId,
-			DeviceId:         asset.DeviceId,
-			Type:             assetdomain.AssetTypeFromString(asset.Type),
-			OriginalPath:     asset.OriginalPath,
-			OriginalFileName: asset.OriginalFileName,
-			IsFavorite:       asset.IsFavorite,
-			IsArchived:       asset.Visibility == "archive",
-			CreatedAt:        timestamppb.New(asset.CreatedAt.Time),
-			UpdatedAt:        timestamppb.New(asset.UpdatedAt.Time),
-		})
+		assets = append(assets, assetToSearchResponseDto(asset))
 	}
 
 	return &immichv1.SearchSmartResponse{
@@ -491,6 +438,53 @@ func stringValue(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+func metadataSearchRequestFromFilter(query string, filter *immichv1.SearchFilter) MetadataSearchRequest {
+	req := MetadataSearchRequest{
+		Query: query,
+		Page:  0,
+		Size:  30,
+	}
+	if filter == nil {
+		return req
+	}
+
+	if req.Query == "" {
+		req.Query = stringValue(filter.OriginalFileName)
+		if req.Query == "" {
+			req.Query = stringValue(filter.OriginalPath)
+		}
+	}
+	req.City = stringValue(filter.City)
+	req.State = stringValue(filter.State)
+	req.Country = stringValue(filter.Country)
+	req.Make = stringValue(filter.Make)
+	req.Model = stringValue(filter.Model)
+	req.LensModel = stringValue(filter.LensModel)
+	req.LibraryID = stringValue(filter.LibraryId)
+	req.IsFavorite = filter.IsFavorite
+	req.IsArchived = filter.IsArchived
+	req.IsEncoded = filter.IsEncoded
+	req.IsMotion = filter.IsMotion
+	req.IsOffline = filter.IsOffline
+	req.IsExternal = filter.IsExternal
+	if filter.Type != nil {
+		req.Type = assetTypeFilter(*filter.Type)
+	}
+	if filter.TakenBefore != nil {
+		req.TakenBefore = filter.TakenBefore.AsTime()
+	}
+	if filter.TakenAfter != nil {
+		req.TakenAfter = filter.TakenAfter.AsTime()
+	}
+	if filter.Size != nil && filter.GetSize() > 0 {
+		req.Size = int(filter.GetSize())
+	}
+	if filter.Page != nil && filter.GetPage() > 0 {
+		req.Page = int(filter.GetPage())
+	}
+	return req
 }
 
 func assetsToSearchResponseDtos(assets []sqlc.Asset) []*immichv1.AssetResponseDto {
