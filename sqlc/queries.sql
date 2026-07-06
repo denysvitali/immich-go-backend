@@ -177,6 +177,14 @@ WHERE "ownerId" = $1 AND "deviceId" = $2 AND "deletedAt" IS NULL;
 SELECT "deviceAssetId" FROM assets
 WHERE "ownerId" = $1 AND "deviceId" = $2 AND "deviceAssetId" = ANY($3::text[]) AND "deletedAt" IS NULL;
 
+-- name: GetAssetsByDeviceAssetIDs :many
+SELECT * FROM assets
+WHERE "ownerId" = sqlc.arg(owner_id)
+AND "deviceId" = sqlc.arg(device_id)
+AND "deviceAssetId" = ANY(sqlc.arg(device_asset_ids)::text[])
+AND "deletedAt" IS NULL
+ORDER BY array_position(sqlc.arg(device_asset_ids)::text[], "deviceAssetId");
+
 -- name: GetAssetStatistics :one
 SELECT 
     COUNT(CASE WHEN type = 'IMAGE' THEN 1 END) as images,

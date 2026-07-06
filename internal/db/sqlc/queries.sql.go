@@ -3727,6 +3727,70 @@ func (q *Queries) GetAssetsByDateRange(ctx context.Context, arg GetAssetsByDateR
 	return items, nil
 }
 
+const getAssetsByDeviceAssetIDs = `-- name: GetAssetsByDeviceAssetIDs :many
+SELECT id, "deviceAssetId", "ownerId", "deviceId", type, "originalPath", "fileCreatedAt", "fileModifiedAt", "isFavorite", duration, "encodedVideoPath", checksum, "livePhotoVideoId", "updatedAt", "createdAt", "originalFileName", "sidecarPath", thumbhash, "isOffline", "libraryId", "isExternal", "deletedAt", "localDateTime", "stackId", "duplicateId", status, "updateId", visibility FROM assets
+WHERE "ownerId" = $1
+AND "deviceId" = $2
+AND "deviceAssetId" = ANY($3::text[])
+AND "deletedAt" IS NULL
+ORDER BY array_position($3::text[], "deviceAssetId")
+`
+
+type GetAssetsByDeviceAssetIDsParams struct {
+	OwnerID        pgtype.UUID
+	DeviceID       string
+	DeviceAssetIds []string
+}
+
+func (q *Queries) GetAssetsByDeviceAssetIDs(ctx context.Context, arg GetAssetsByDeviceAssetIDsParams) ([]Asset, error) {
+	rows, err := q.db.Query(ctx, getAssetsByDeviceAssetIDs, arg.OwnerID, arg.DeviceID, arg.DeviceAssetIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Asset
+	for rows.Next() {
+		var i Asset
+		if err := rows.Scan(
+			&i.ID,
+			&i.DeviceAssetId,
+			&i.OwnerId,
+			&i.DeviceId,
+			&i.Type,
+			&i.OriginalPath,
+			&i.FileCreatedAt,
+			&i.FileModifiedAt,
+			&i.IsFavorite,
+			&i.Duration,
+			&i.EncodedVideoPath,
+			&i.Checksum,
+			&i.LivePhotoVideoId,
+			&i.UpdatedAt,
+			&i.CreatedAt,
+			&i.OriginalFileName,
+			&i.SidecarPath,
+			&i.Thumbhash,
+			&i.IsOffline,
+			&i.LibraryId,
+			&i.IsExternal,
+			&i.DeletedAt,
+			&i.LocalDateTime,
+			&i.StackId,
+			&i.DuplicateId,
+			&i.Status,
+			&i.UpdateId,
+			&i.Visibility,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getAssetsByDeviceId = `-- name: GetAssetsByDeviceId :many
 SELECT id FROM assets
 WHERE "ownerId" = $1 AND "deviceId" = $2 AND "deletedAt" IS NULL

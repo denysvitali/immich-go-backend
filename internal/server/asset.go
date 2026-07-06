@@ -367,10 +367,84 @@ func (s *Server) CheckExistingAssets(ctx context.Context, request *immichv1.Chec
 }
 
 func (s *Server) CheckBulkUpload(ctx context.Context, request *immichv1.CheckBulkUploadRequest) (*immichv1.CheckBulkUploadResponse, error) {
-	// This would typically check which assets already exist and return only new ones
-	// For now, return empty results
+	claims, err := s.claimsFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	userID, err := pgutil.ParseUserID(claims.UserID)
+	if err != nil {
+		return nil, SanitizedInternal(ctx, "invalid user ID", err)
+	}
+
+	type assetKey struct {
+		deviceID      string
+		deviceAssetID string
+	}
+
+	requested := make([]assetKey, 0, len(request.GetAssets()))
+	idsByDevice := make(map[string][]string)
+	seenByDevice := make(map[string]map[string]struct{})
+	for _, asset := range request.GetAssets() {
+		if asset == nil || asset.GetDeviceId() == "" || asset.GetDeviceAssetId() == "" {
+			continue
+		}
+		key := assetKey{
+			deviceID:      asset.GetDeviceId(),
+			deviceAssetID: asset.GetDeviceAssetId(),
+		}
+		requested = append(requested, key)
+
+		deviceSeen := seenByDevice[key.deviceID]
+		if deviceSeen == nil {
+			deviceSeen = make(map[string]struct{})
+			seenByDevice[key.deviceID] = deviceSeen
+		}
+		if _, ok := deviceSeen[key.deviceAssetID]; ok {
+			continue
+		}
+		deviceSeen[key.deviceAssetID] = struct{}{}
+		idsByDevice[key.deviceID] = append(idsByDevice[key.deviceID], key.deviceAssetID)
+	}
+
+	if len(requested) == 0 {
+		return &immichv1.CheckBulkUploadResponse{Results: []*immichv1.Asset{}}, nil
+	}
+
+	existingByKey := make(map[assetKey]sqlc.Asset)
+	for deviceID, deviceAssetIDs := range idsByDevice {
+		foundAssets, err := s.db.GetAssetsByDeviceAssetIDs(ctx, sqlc.GetAssetsByDeviceAssetIDsParams{
+			OwnerID:        userID,
+			DeviceID:       deviceID,
+			DeviceAssetIds: deviceAssetIDs,
+		})
+		if err != nil {
+			return nil, SanitizedInternal(ctx, "failed to check bulk upload assets", err)
+		}
+		for _, asset := range foundAssets {
+			existingByKey[assetKey{
+				deviceID:      asset.DeviceId,
+				deviceAssetID: asset.DeviceAssetId,
+			}] = asset
+		}
+	}
+
+	results := make([]*immichv1.Asset, 0, len(existingByKey))
+	emitted := make(map[assetKey]struct{}, len(existingByKey))
+	for _, key := range requested {
+		asset, ok := existingByKey[key]
+		if !ok {
+			continue
+		}
+		if _, ok := emitted[key]; ok {
+			continue
+		}
+		emitted[key] = struct{}{}
+		results = append(results, s.convertAssetToProto(asset))
+	}
+
 	return &immichv1.CheckBulkUploadResponse{
-		Results: []*immichv1.Asset{},
+		Results: results,
 	}, nil
 }
 
