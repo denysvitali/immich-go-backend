@@ -4398,6 +4398,43 @@ func (q *Queries) GetDatabaseBackup(ctx context.Context, filename string) (Datab
 	return i, err
 }
 
+const getDeletedAssetIDsForSync = `-- name: GetDeletedAssetIDsForSync :many
+SELECT id FROM assets
+WHERE "ownerId" = $1
+AND (
+    (status IN ('trashed'::assets_status_enum, 'deleted'::assets_status_enum) AND "updatedAt" > $2)
+    OR ("deletedAt" IS NOT NULL AND "deletedAt" > $2)
+)
+ORDER BY "updatedAt" ASC
+LIMIT $3
+`
+
+type GetDeletedAssetIDsForSyncParams struct {
+	OwnerID      pgtype.UUID
+	UpdatedAfter pgtype.Timestamptz
+	Limit        int32
+}
+
+func (q *Queries) GetDeletedAssetIDsForSync(ctx context.Context, arg GetDeletedAssetIDsForSyncParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, getDeletedAssetIDsForSync, arg.OwnerID, arg.UpdatedAfter, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getDistinctCameras = `-- name: GetDistinctCameras :many
 SELECT DISTINCT make, model FROM exif
 WHERE "assetId" IN (

@@ -230,6 +230,16 @@ ORDER BY "fileCreatedAt" DESC
 LIMIT sqlc.narg('limit')
 OFFSET sqlc.narg('offset');
 
+-- name: GetDeletedAssetIDsForSync :many
+SELECT id FROM assets
+WHERE "ownerId" = sqlc.arg(owner_id)
+AND (
+    (status IN ('trashed'::assets_status_enum, 'deleted'::assets_status_enum) AND "updatedAt" > sqlc.arg(updated_after))
+    OR ("deletedAt" IS NOT NULL AND "deletedAt" > sqlc.arg(updated_after))
+)
+ORDER BY "updatedAt" ASC
+LIMIT sqlc.arg('limit');
+
 -- EXIF queries
 -- name: CreateExif :one
 INSERT INTO exif (

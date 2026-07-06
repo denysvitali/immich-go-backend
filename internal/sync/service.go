@@ -90,13 +90,15 @@ func (s *Service) GetDeltaSync(ctx context.Context, userID string, updatedAfter 
 		return nil, err
 	}
 
-	// Get recently modified assets - for now, just get all user's assets
-	// In production, this would filter by updatedAt timestamp
+	// Get recently modified active assets.
 	assets, err := s.queries.GetUserAssets(ctx, sqlc.GetUserAssetsParams{
 		OwnerId: userUUID,
-		Status:  sqlc.NullAssetsStatusEnum{},
-		Offset:  pgtype.Int4{Int32: 0, Valid: true},
-		Limit:   pgtype.Int4{Int32: 100, Valid: true},
+		Status: sqlc.NullAssetsStatusEnum{
+			AssetsStatusEnum: sqlc.AssetsStatusEnumActive,
+			Valid:            true,
+		},
+		Offset: pgtype.Int4{Int32: 0, Valid: true},
+		Limit:  pgtype.Int4{Int32: 100, Valid: true},
 	})
 	if err != nil {
 		// If query fails, fall back to full sync
@@ -114,9 +116,22 @@ func (s *Service) GetDeltaSync(ctx context.Context, userID string, updatedAfter 
 		}
 	}
 
-	// Get deleted assets (would need a separate deleted_assets table in production)
-	// For now, return empty deleted list
-	deleted := []string{}
+	deletedAssetIDs, err := s.queries.GetDeletedAssetIDsForSync(ctx, sqlc.GetDeletedAssetIDsForSyncParams{
+		OwnerID:      userUUID,
+		UpdatedAfter: pgtype.Timestamptz{Time: updatedAfter, Valid: true},
+		Limit:        100,
+	})
+	if err != nil {
+		s.logger.WithError(err).Warn("Failed to get deleted assets, suggesting full sync")
+		return &DeltaSyncResult{
+			NeedsFullSync: true,
+		}, nil
+	}
+
+	deleted := make([]string, 0, len(deletedAssetIDs))
+	for _, assetID := range deletedAssetIDs {
+		deleted = append(deleted, assetID.String())
+	}
 
 	// Update last sync time
 	s.lastSyncMutex.Lock()
