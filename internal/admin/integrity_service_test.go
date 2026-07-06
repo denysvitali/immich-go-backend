@@ -3,7 +3,7 @@ package admin
 import (
 	"bytes"
 	"context"
-	"crypto/sha1"
+	"crypto/sha1" //nolint:gosec // Immich uses SHA-1 asset checksums; not for crypto.
 	"encoding/hex"
 	"fmt"
 	"io"

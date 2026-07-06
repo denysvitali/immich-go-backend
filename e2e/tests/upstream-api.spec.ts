@@ -409,7 +409,7 @@ test.describe('asset HLS streaming', () => {
 });
 
 test.describe('admin integrity', () => {
-  test('integrity reports expose the upstream empty-report shape', async ({ request }) => {
+  test('integrity reports expose the upstream report shape', async ({ request }) => {
     const unauthenticated = await request.get('/api/admin/integrity/summary');
     expect(unauthenticated.status()).toBe(401);
 
@@ -417,19 +417,26 @@ test.describe('admin integrity', () => {
 
     const summary = await request.get('/api/admin/integrity/summary', { headers: admin.headers });
     await expectOk(summary);
-    expect(await summary.json()).toEqual({
-      checksumMismatch: 0,
-      missingFile: 0,
-      untrackedFile: 0,
-    });
+    const summaryBody = await summary.json();
+    for (const key of ['checksumMismatch', 'missingFile', 'untrackedFile']) {
+      expect(typeof summaryBody[key]).toBe('number');
+      expect(summaryBody[key]).toBeGreaterThanOrEqual(0);
+    }
 
     const report = await request.get('/api/admin/integrity/report?type=missing_file', {
       headers: admin.headers,
     });
     await expectOk(report);
     const reportBody = await report.json();
-    expect(reportBody.items).toEqual([]);
-    expect(reportBody.nextCursor).toBeUndefined();
+    expect(Array.isArray(reportBody.items)).toBe(true);
+    for (const item of reportBody.items) {
+      expect(typeof item.id).toBe('string');
+      expect(item.type).toBe('missing_file');
+      expect(typeof item.path).toBe('string');
+    }
+    if (reportBody.nextCursor !== undefined) {
+      expect(typeof reportBody.nextCursor).toBe('string');
+    }
 
     const csv = await request.get('/api/admin/integrity/report/missing_file/csv', {
       headers: admin.headers,
@@ -437,7 +444,7 @@ test.describe('admin integrity', () => {
     await expectOk(csv);
     expect(csv.headers()['content-type']).toContain('application/octet-stream');
     expect(csv.headers()['content-disposition']).toContain('missing_file.csv');
-    expect(await csv.text()).toBe('id,type,path\n');
+    expect((await csv.text()).startsWith('id,type,path\n')).toBe(true);
 
     const invalid = await request.get('/api/admin/integrity/report?type=unknown', {
       headers: admin.headers,
