@@ -1581,6 +1581,53 @@ SELECT * FROM asset_files
 WHERE "assetId" = $1
 ORDER BY "createdAt" ASC;
 
+-- name: GetIntegrityOriginalAssets :many
+SELECT id, "originalPath", checksum
+FROM assets
+WHERE "deletedAt" IS NULL
+AND status != 'deleted'::assets_status_enum
+AND "isExternal" = false
+AND "originalPath" != ''
+ORDER BY "originalPath", id;
+
+-- name: GetIntegrityTrackedPaths :many
+SELECT DISTINCT path
+FROM (
+    SELECT "originalPath" AS path
+    FROM assets
+    WHERE "deletedAt" IS NULL
+    AND status != 'deleted'::assets_status_enum
+    AND "isExternal" = false
+
+    UNION
+
+    SELECT "encodedVideoPath" AS path
+    FROM assets
+    WHERE "deletedAt" IS NULL
+    AND status != 'deleted'::assets_status_enum
+    AND "encodedVideoPath" != ''
+
+    UNION
+
+    SELECT "sidecarPath" AS path
+    FROM assets
+    WHERE "deletedAt" IS NULL
+    AND status != 'deleted'::assets_status_enum
+    AND "isExternal" = false
+    AND "sidecarPath" IS NOT NULL
+    AND "sidecarPath" != ''
+
+    UNION
+
+    SELECT af.path
+    FROM asset_files af
+    JOIN assets a ON a.id = af."assetId"
+    WHERE a."deletedAt" IS NULL
+    AND a.status != 'deleted'::assets_status_enum
+) tracked
+WHERE path != ''
+ORDER BY path;
+
 -- name: GetAssetFilesByType :many
 SELECT * FROM asset_files
 WHERE "assetId" = $1 AND "type" = $2

@@ -411,6 +411,15 @@ func (s *Service) Delete(ctx context.Context, path string) error {
 	return s.backend.Delete(ctx, path)
 }
 
+// Exists reports whether data exists at the specified path.
+func (s *Service) Exists(ctx context.Context, path string) (bool, error) {
+	ctx, span := tracer.Start(ctx, "storage.Exists",
+		trace.WithAttributes(attribute.String("storage.path", path)))
+	defer span.End()
+
+	return s.backend.Exists(ctx, path)
+}
+
 // List lists storage entries beneath the specified prefix.
 func (s *Service) List(ctx context.Context, prefix string, recursive bool) ([]FileInfo, error) {
 	ctx, span := tracer.Start(ctx, "storage.List",

@@ -4876,6 +4876,101 @@ func (q *Queries) GetFavoriteAssets(ctx context.Context, arg GetFavoriteAssetsPa
 	return items, nil
 }
 
+const getIntegrityOriginalAssets = `-- name: GetIntegrityOriginalAssets :many
+SELECT id, "originalPath", checksum
+FROM assets
+WHERE "deletedAt" IS NULL
+AND status != 'deleted'::assets_status_enum
+AND "isExternal" = false
+AND "originalPath" != ''
+ORDER BY "originalPath", id
+`
+
+type GetIntegrityOriginalAssetsRow struct {
+	ID           pgtype.UUID
+	OriginalPath string
+	Checksum     []byte
+}
+
+func (q *Queries) GetIntegrityOriginalAssets(ctx context.Context) ([]GetIntegrityOriginalAssetsRow, error) {
+	rows, err := q.db.Query(ctx, getIntegrityOriginalAssets)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetIntegrityOriginalAssetsRow
+	for rows.Next() {
+		var i GetIntegrityOriginalAssetsRow
+		if err := rows.Scan(&i.ID, &i.OriginalPath, &i.Checksum); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getIntegrityTrackedPaths = `-- name: GetIntegrityTrackedPaths :many
+SELECT DISTINCT path
+FROM (
+    SELECT "originalPath" AS path
+    FROM assets
+    WHERE "deletedAt" IS NULL
+    AND status != 'deleted'::assets_status_enum
+    AND "isExternal" = false
+
+    UNION
+
+    SELECT "encodedVideoPath" AS path
+    FROM assets
+    WHERE "deletedAt" IS NULL
+    AND status != 'deleted'::assets_status_enum
+    AND "encodedVideoPath" != ''
+
+    UNION
+
+    SELECT "sidecarPath" AS path
+    FROM assets
+    WHERE "deletedAt" IS NULL
+    AND status != 'deleted'::assets_status_enum
+    AND "isExternal" = false
+    AND "sidecarPath" IS NOT NULL
+    AND "sidecarPath" != ''
+
+    UNION
+
+    SELECT af.path
+    FROM asset_files af
+    JOIN assets a ON a.id = af."assetId"
+    WHERE a."deletedAt" IS NULL
+    AND a.status != 'deleted'::assets_status_enum
+) tracked
+WHERE path != ''
+ORDER BY path
+`
+
+func (q *Queries) GetIntegrityTrackedPaths(ctx context.Context) ([]string, error) {
+	rows, err := q.db.Query(ctx, getIntegrityTrackedPaths)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			return nil, err
+		}
+		items = append(items, path)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getJobFailure = `-- name: GetJobFailure :one
 SELECT id, queue, job_type, payload, error, max_retries, retried_count, failed_at, last_failed_at FROM job_failures
 WHERE id = $1
