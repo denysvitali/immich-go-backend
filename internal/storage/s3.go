@@ -105,16 +105,7 @@ func (s *S3Backend) Upload(ctx context.Context, path string, reader io.Reader, s
 
 	key := s.getObjectKey(path)
 
-	uploadInput := &s3.PutObjectInput{
-		Bucket:        aws.String(s.config.Bucket),
-		Key:           aws.String(key),
-		Body:          reader,
-		ContentLength: aws.Int64(size),
-	}
-
-	if contentType != "" {
-		uploadInput.ContentType = aws.String(contentType)
-	}
+	uploadInput := newS3UploadInput(s.config.Bucket, key, reader, size, contentType)
 
 	_, err := s.uploader.Upload(ctx, uploadInput)
 	if err != nil {
@@ -123,6 +114,24 @@ func (s *S3Backend) Upload(ctx context.Context, path string, reader io.Reader, s
 	}
 
 	return nil
+}
+
+func newS3UploadInput(bucket, key string, reader io.Reader, size int64, contentType string) *s3.PutObjectInput {
+	uploadInput := &s3.PutObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+		Body:   reader,
+	}
+
+	if size >= 0 {
+		uploadInput.ContentLength = aws.Int64(size)
+	}
+
+	if contentType != "" {
+		uploadInput.ContentType = aws.String(contentType)
+	}
+
+	return uploadInput
 }
 
 // UploadBytes uploads byte data to S3

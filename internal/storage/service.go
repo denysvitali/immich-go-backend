@@ -347,9 +347,50 @@ func (s *Service) Upload(ctx context.Context, path string, reader io.Reader, con
 		))
 	defer span.End()
 
-	// For now, we'll use -1 to indicate unknown size
-	// In a real implementation, we might want to buffer the reader to get the size
-	return s.backend.Upload(ctx, path, reader, -1, contentType)
+	size, err := readableSize(reader)
+	if err != nil {
+		span.RecordError(err)
+		return wrapError("upload", path, s.config.Backend, err)
+	}
+
+	return s.backend.Upload(ctx, path, reader, size, contentType)
+}
+
+func readableSize(reader io.Reader) (int64, error) {
+	if reader == nil {
+		return -1, nil
+	}
+
+	if sized, ok := reader.(interface{ Len() int }); ok {
+		return int64(sized.Len()), nil
+	}
+
+	if seeker, ok := reader.(io.Seeker); ok {
+		current, err := seeker.Seek(0, io.SeekCurrent)
+		if err != nil {
+			return -1, nil
+		}
+
+		end, err := seeker.Seek(0, io.SeekEnd)
+		if restoreErr := restoreReaderPosition(seeker, current); restoreErr != nil {
+			return 0, restoreErr
+		}
+		if err != nil || end < current {
+			return -1, nil
+		}
+		return end - current, nil
+	}
+
+	if sized, ok := reader.(interface{ Size() int64 }); ok {
+		return sized.Size(), nil
+	}
+
+	return -1, nil
+}
+
+func restoreReaderPosition(seeker io.Seeker, offset int64) error {
+	_, err := seeker.Seek(offset, io.SeekStart)
+	return err
 }
 
 // Download downloads data from the specified path
