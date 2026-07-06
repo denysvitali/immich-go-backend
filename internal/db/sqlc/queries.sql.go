@@ -7718,6 +7718,66 @@ func (q *Queries) RemoveUserFromAlbum(ctx context.Context, arg RemoveUserFromAlb
 	return err
 }
 
+const replaceAssetFile = `-- name: ReplaceAssetFile :one
+UPDATE assets
+SET checksum = $1,
+    "fileModifiedAt" = $2,
+    "updatedAt" = now(),
+    "updateId" = immich_uuid_v7()
+WHERE id = $3
+AND "ownerId" = $4
+AND "deletedAt" IS NULL
+RETURNING id, "deviceAssetId", "ownerId", "deviceId", type, "originalPath", "fileCreatedAt", "fileModifiedAt", "isFavorite", duration, "encodedVideoPath", checksum, "livePhotoVideoId", "updatedAt", "createdAt", "originalFileName", "sidecarPath", thumbhash, "isOffline", "libraryId", "isExternal", "deletedAt", "localDateTime", "stackId", "duplicateId", status, "updateId", visibility
+`
+
+type ReplaceAssetFileParams struct {
+	Checksum       []byte
+	FileModifiedAt pgtype.Timestamptz
+	ID             pgtype.UUID
+	OwnerID        pgtype.UUID
+}
+
+func (q *Queries) ReplaceAssetFile(ctx context.Context, arg ReplaceAssetFileParams) (Asset, error) {
+	row := q.db.QueryRow(ctx, replaceAssetFile,
+		arg.Checksum,
+		arg.FileModifiedAt,
+		arg.ID,
+		arg.OwnerID,
+	)
+	var i Asset
+	err := row.Scan(
+		&i.ID,
+		&i.DeviceAssetId,
+		&i.OwnerId,
+		&i.DeviceId,
+		&i.Type,
+		&i.OriginalPath,
+		&i.FileCreatedAt,
+		&i.FileModifiedAt,
+		&i.IsFavorite,
+		&i.Duration,
+		&i.EncodedVideoPath,
+		&i.Checksum,
+		&i.LivePhotoVideoId,
+		&i.UpdatedAt,
+		&i.CreatedAt,
+		&i.OriginalFileName,
+		&i.SidecarPath,
+		&i.Thumbhash,
+		&i.IsOffline,
+		&i.LibraryId,
+		&i.IsExternal,
+		&i.DeletedAt,
+		&i.LocalDateTime,
+		&i.StackId,
+		&i.DuplicateId,
+		&i.Status,
+		&i.UpdateId,
+		&i.Visibility,
+	)
+	return i, err
+}
+
 const restoreAssetFromTrash = `-- name: RestoreAssetFromTrash :exec
 UPDATE assets
 SET status = 'active',

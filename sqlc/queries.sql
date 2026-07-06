@@ -213,6 +213,17 @@ SET status = $2,
 WHERE id = $1 AND "deletedAt" IS NULL
 RETURNING *;
 
+-- name: ReplaceAssetFile :one
+UPDATE assets
+SET checksum = sqlc.arg(checksum),
+    "fileModifiedAt" = sqlc.arg(file_modified_at),
+    "updatedAt" = now(),
+    "updateId" = immich_uuid_v7()
+WHERE id = sqlc.arg(id)
+AND "ownerId" = sqlc.arg(owner_id)
+AND "deletedAt" IS NULL
+RETURNING *;
+
 -- name: MarkAssetProcessed :execrows
 -- Sets an asset back to 'active' after background processing, but never
 -- resurrects an asset the user trashed or deleted while processing ran.

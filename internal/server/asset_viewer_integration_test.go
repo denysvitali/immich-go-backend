@@ -6,6 +6,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"io"
 	"os"
 	"testing"
 
@@ -292,20 +293,47 @@ func TestServer_ReplaceAsset_UserIsolation(t *testing.T) {
 	assetAID := uuid.UUID(assetA.ID.Bytes).String()
 
 	assertAssetViewerNotFound(t, func() error {
+		checksum := "replacement-checksum"
 		_, err := env.srv.ReplaceAsset(assetViewerContext(userB), &immichv1.ReplaceAssetRequest{
-			AssetId: assetAID,
+			AssetId:     assetAID,
+			Checksum:    &checksum,
+			FileContent: []byte("userB-replacement"),
 		})
 		return err
 	})
 
-	resp, err := env.srv.ReplaceAsset(assetViewerContext(userA), &immichv1.ReplaceAssetRequest{
+	_, err := env.srv.ReplaceAsset(assetViewerContext(userA), &immichv1.ReplaceAssetRequest{
 		AssetId: assetAID,
+	})
+	require.Error(t, err)
+	st, ok := status.FromError(err)
+	require.True(t, ok, "expected a gRPC status error")
+	assert.Equal(t, codes.InvalidArgument, st.Code())
+
+	replacement := []byte("replacement-bytes")
+	checksum := "replacement-checksum"
+	resp, err := env.srv.ReplaceAsset(assetViewerContext(userA), &immichv1.ReplaceAssetRequest{
+		AssetId:     assetAID,
+		Checksum:    &checksum,
+		FileContent: replacement,
 	})
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	assert.Equal(t, assetAID, resp.GetId())
 	assert.Equal(t, userA.String(), resp.GetOwnerId())
 	assert.Equal(t, assetA.OriginalFileName, resp.GetOriginalFileName())
+	assert.Equal(t, "7265706c6163656d656e742d636865636b73756d", resp.GetChecksum())
+
+	downloaded, err := env.srv.assetService.GetStorageService().Download(ctx, assetA.OriginalPath)
+	require.NoError(t, err)
+	defer downloaded.Close()
+	data, err := io.ReadAll(downloaded)
+	require.NoError(t, err)
+	assert.Equal(t, replacement, data)
+
+	reloaded, err := env.tdb.Queries.GetAssetByID(ctx, assetA.ID)
+	require.NoError(t, err)
+	assert.Equal(t, []byte(checksum), reloaded.Checksum)
 }
 
 func TestServer_DeleteAssets_UserIsolation(t *testing.T) {

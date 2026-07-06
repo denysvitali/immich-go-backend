@@ -456,6 +456,8 @@ message DownloadAssetResponse {
 message ReplaceAssetRequest {
   string asset_id = 1;
   CreateAssetRequest asset_data = 2;
+  optional string checksum = 3; // x-immich-checksum header
+  optional bytes file_content = 4; // replacement file bytes
 }
 
 // Get asset thumbnail request

@@ -683,15 +683,62 @@ func (s *Server) ReplaceAsset(ctx context.Context, request *immichv1.ReplaceAsse
 		return nil, err
 	}
 
-	// For now, return the existing asset as if it was replaced
-	// In a full implementation, this would:
-	// 1. Process the new asset data from request.AssetData
-	// 2. Store the new file using storage service
-	// 3. Update the database record
-	// 4. Handle thumbnails and metadata extraction
+	fileContent := request.GetFileContent()
+	if len(fileContent) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "file content is required for asset replacement")
+	}
 
-	// Convert to proto asset
-	return s.convertAssetToProto(existingAsset), nil
+	if request.Checksum == nil || *request.Checksum == "" {
+		return nil, status.Error(codes.InvalidArgument, "checksum is required for asset replacement")
+	}
+	if len(*request.Checksum) < 2 {
+		return nil, status.Error(codes.InvalidArgument, "invalid checksum format")
+	}
+
+	fileModifiedAt := timestamppb.Now()
+	if request.AssetData != nil && request.AssetData.FileModifiedAt != nil {
+		fileModifiedAt = request.AssetData.FileModifiedAt
+	}
+
+	storageService := s.assetService.GetStorageService()
+	if err := storageService.Upload(ctx, existingAsset.OriginalPath, bytes.NewReader(fileContent), assetDownloadContentType(existingAsset.OriginalFileName)); err != nil {
+		return nil, SanitizedInternal(ctx, "failed to replace asset file", err)
+	}
+
+	updatedAsset, err := s.db.ReplaceAssetFile(ctx, sqlc.ReplaceAssetFileParams{
+		Checksum:       []byte(*request.Checksum),
+		FileModifiedAt: pgtype.Timestamptz{Time: fileModifiedAt.AsTime(), Valid: true},
+		ID:             existingAsset.ID,
+		OwnerID:        existingAsset.OwnerId,
+	})
+	if err != nil {
+		return nil, SanitizedInternal(ctx, "failed to update asset after replacement", err)
+	}
+
+	assetUUID := uuid.UUID(updatedAsset.ID.Bytes)
+	assetIDStr := assetUUID.String()
+	if s.jobService != nil {
+		thumbPayload := &jobs.ThumbnailGenerationPayload{AssetID: assetIDStr}
+		if enqErr := s.jobService.EnqueueJobWithPriority(ctx, jobs.JobTypeThumbnailGeneration, thumbPayload, jobs.PriorityHigh); enqErr != nil {
+			logrus.WithError(enqErr).Warn("ReplaceAsset: failed to enqueue thumbnail generation job")
+		}
+
+		metaPayload := &jobs.MetadataExtractionPayload{AssetID: assetIDStr}
+		if enqErr := s.jobService.EnqueueJobWithPriority(ctx, jobs.JobTypeMetadataExtraction, metaPayload, jobs.PriorityHigh); enqErr != nil {
+			logrus.WithError(enqErr).Warn("ReplaceAsset: failed to enqueue metadata extraction job")
+		}
+
+		if updatedAsset.Type == "VIDEO" {
+			transcodePayload := &jobs.VideoTranscodePayload{AssetID: assetIDStr, Quality: "medium", Format: "mp4"}
+			if enqErr := s.jobService.EnqueueJobWithPriority(ctx, jobs.JobTypeVideoTranscode, transcodePayload, jobs.PriorityNormal); enqErr != nil {
+				logrus.WithError(enqErr).Warn("ReplaceAsset: failed to enqueue video transcode job")
+			}
+		}
+	} else {
+		s.assetService.TriggerProcessing(assetUUID)
+	}
+
+	return s.convertAssetToProto(updatedAsset), nil
 }
 
 func (s *Server) GetAssetThumbnail(ctx context.Context, request *immichv1.GetAssetThumbnailRequest) (*immichv1.GetAssetThumbnailResponse, error) {
