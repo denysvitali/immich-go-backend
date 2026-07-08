@@ -728,6 +728,24 @@ func (q *Queries) CountUsers(ctx context.Context, includeDeleted pgtype.Bool) (i
 	return count, err
 }
 
+const countWorkflowExecutions = `-- name: CountWorkflowExecutions :one
+SELECT COUNT(*) FROM workflow_executions
+WHERE "workflowId" = $1
+  AND ($2::text IS NULL OR status = $2::text)
+`
+
+type CountWorkflowExecutionsParams struct {
+	WorkflowId pgtype.UUID
+	Status     pgtype.Text
+}
+
+func (q *Queries) CountWorkflowExecutions(ctx context.Context, arg CountWorkflowExecutionsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countWorkflowExecutions, arg.WorkflowId, arg.Status)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createActivity = `-- name: CreateActivity :one
 INSERT INTO activity ("userId", "albumId", "assetId", comment, "isLiked")
 VALUES ($1, $2, $3, $4, $5)
@@ -1647,10 +1665,10 @@ const createSession = `-- name: CreateSession :one
 
 INSERT INTO sessions (
     id, token, "userId", "deviceType", "deviceOS",
-    "expiresAt", "createdAt", "updatedAt"
+    "expiresAt", "oauthSid", "createdAt", "updatedAt"
 ) VALUES (
-    gen_uuid_v7(), $1, $2, $3, $4, $5, NOW(), NOW()
-) RETURNING id, token, "createdAt", "updatedAt", "userId", "deviceType", "deviceOS", "updateId", "pinExpiresAt", "expiresAt", "parentId", "isPendingSyncReset", "appVersion"
+    gen_uuid_v7(), $1, $2, $3, $4, $5, $6, NOW(), NOW()
+) RETURNING id, token, "createdAt", "updatedAt", "userId", "deviceType", "deviceOS", "updateId", "pinExpiresAt", "expiresAt", "parentId", "isPendingSyncReset", "appVersion", "oauthSid"
 `
 
 type CreateSessionParams struct {
@@ -1659,6 +1677,7 @@ type CreateSessionParams struct {
 	DeviceType string
 	DeviceOS   string
 	ExpiresAt  pgtype.Timestamptz
+	OauthSid   pgtype.Text
 }
 
 // ================== SESSION MANAGEMENT ==================
@@ -1669,6 +1688,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 		arg.DeviceType,
 		arg.DeviceOS,
 		arg.ExpiresAt,
+		arg.OauthSid,
 	)
 	var i Session
 	err := row.Scan(
@@ -1685,6 +1705,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 		&i.ParentId,
 		&i.IsPendingSyncReset,
 		&i.AppVersion,
+		&i.OauthSid,
 	)
 	return i, err
 }
@@ -1865,6 +1886,102 @@ func (q *Queries) CreateVersionHistory(ctx context.Context, version string) (Ver
 	row := q.db.QueryRow(ctx, createVersionHistory, version)
 	var i VersionHistory
 	err := row.Scan(&i.ID, &i.CreatedAt, &i.Version)
+	return i, err
+}
+
+const createWorkflow = `-- name: CreateWorkflow :one
+
+INSERT INTO workflows (
+    id, "ownerId", name, description, enabled, status, trigger, actions,
+    "executionCount", "createdAt", "updatedAt"
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, 0, NOW(), NOW()
+) RETURNING id, "ownerId", name, description, enabled, status, trigger, actions, "executionCount", "lastExecutionAt", "createdAt", "updatedAt"
+`
+
+type CreateWorkflowParams struct {
+	ID          pgtype.UUID
+	OwnerId     pgtype.UUID
+	Name        string
+	Description string
+	Enabled     bool
+	Status      string
+	Trigger     []byte
+	Actions     []byte
+}
+
+// ================== WORKFLOW QUERIES ==================
+func (q *Queries) CreateWorkflow(ctx context.Context, arg CreateWorkflowParams) (Workflow, error) {
+	row := q.db.QueryRow(ctx, createWorkflow,
+		arg.ID,
+		arg.OwnerId,
+		arg.Name,
+		arg.Description,
+		arg.Enabled,
+		arg.Status,
+		arg.Trigger,
+		arg.Actions,
+	)
+	var i Workflow
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerId,
+		&i.Name,
+		&i.Description,
+		&i.Enabled,
+		&i.Status,
+		&i.Trigger,
+		&i.Actions,
+		&i.ExecutionCount,
+		&i.LastExecutionAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createWorkflowExecution = `-- name: CreateWorkflowExecution :one
+INSERT INTO workflow_executions (
+    id, "workflowId", status, "startedAt", "completedAt",
+    "errorMessage", "triggerData", "actionResults"
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8
+) RETURNING id, "workflowId", status, "startedAt", "completedAt", "errorMessage", "triggerData", "actionResults"
+`
+
+type CreateWorkflowExecutionParams struct {
+	ID            pgtype.UUID
+	WorkflowId    pgtype.UUID
+	Status        string
+	StartedAt     pgtype.Timestamptz
+	CompletedAt   pgtype.Timestamptz
+	ErrorMessage  pgtype.Text
+	TriggerData   []byte
+	ActionResults []byte
+}
+
+func (q *Queries) CreateWorkflowExecution(ctx context.Context, arg CreateWorkflowExecutionParams) (WorkflowExecution, error) {
+	row := q.db.QueryRow(ctx, createWorkflowExecution,
+		arg.ID,
+		arg.WorkflowId,
+		arg.Status,
+		arg.StartedAt,
+		arg.CompletedAt,
+		arg.ErrorMessage,
+		arg.TriggerData,
+		arg.ActionResults,
+	)
+	var i WorkflowExecution
+	err := row.Scan(
+		&i.ID,
+		&i.WorkflowId,
+		&i.Status,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.ErrorMessage,
+		&i.TriggerData,
+		&i.ActionResults,
+	)
 	return i, err
 }
 
@@ -2137,6 +2254,96 @@ func (q *Queries) DeleteSession(ctx context.Context, id pgtype.UUID) error {
 	return err
 }
 
+const deleteSessionsByOAuthId = `-- name: DeleteSessionsByOAuthId :many
+DELETE FROM sessions s
+USING users u
+WHERE s."userId" = u.id
+  AND u."oauthId" = $1
+  AND u."deletedAt" IS NULL
+RETURNING s.id
+`
+
+func (q *Queries) DeleteSessionsByOAuthId(ctx context.Context, oauthid string) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, deleteSessionsByOAuthId, oauthid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const deleteSessionsByOAuthSid = `-- name: DeleteSessionsByOAuthSid :many
+DELETE FROM sessions
+WHERE "oauthSid" = $1
+RETURNING id
+`
+
+func (q *Queries) DeleteSessionsByOAuthSid(ctx context.Context, oauthsid pgtype.Text) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, deleteSessionsByOAuthSid, oauthsid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const deleteSessionsByOAuthSidAndOAuthId = `-- name: DeleteSessionsByOAuthSidAndOAuthId :many
+DELETE FROM sessions s
+USING users u
+WHERE s."userId" = u.id
+  AND s."oauthSid" = $1
+  AND u."oauthId" = $2
+  AND u."deletedAt" IS NULL
+RETURNING s.id
+`
+
+type DeleteSessionsByOAuthSidAndOAuthIdParams struct {
+	OauthSid pgtype.Text
+	OauthId  string
+}
+
+func (q *Queries) DeleteSessionsByOAuthSidAndOAuthId(ctx context.Context, arg DeleteSessionsByOAuthSidAndOAuthIdParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, deleteSessionsByOAuthSidAndOAuthId, arg.OauthSid, arg.OauthId)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const deleteSharedLink = `-- name: DeleteSharedLink :exec
 DELETE FROM shared_links
 WHERE id = $1
@@ -2216,6 +2423,16 @@ WHERE "userId" = $1
 
 func (q *Queries) DeleteUserSessions(ctx context.Context, userid pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deleteUserSessions, userid)
+	return err
+}
+
+const deleteWorkflow = `-- name: DeleteWorkflow :exec
+DELETE FROM workflows
+WHERE id = $1
+`
+
+func (q *Queries) DeleteWorkflow(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteWorkflow, id)
 	return err
 }
 
@@ -5712,7 +5929,7 @@ func (q *Queries) GetRecentlyAddedAssets(ctx context.Context, arg GetRecentlyAdd
 }
 
 const getRefreshToken = `-- name: GetRefreshToken :one
-SELECT id, token, "createdAt", "updatedAt", "userId", "deviceType", "deviceOS", "updateId", "pinExpiresAt", "expiresAt", "parentId", "isPendingSyncReset", "appVersion" FROM sessions
+SELECT id, token, "createdAt", "updatedAt", "userId", "deviceType", "deviceOS", "updateId", "pinExpiresAt", "expiresAt", "parentId", "isPendingSyncReset", "appVersion", "oauthSid" FROM sessions
 WHERE token = $1 AND ("expiresAt" IS NULL OR "expiresAt" > now())
 `
 
@@ -5733,6 +5950,7 @@ func (q *Queries) GetRefreshToken(ctx context.Context, token string) (Session, e
 		&i.ParentId,
 		&i.IsPendingSyncReset,
 		&i.AppVersion,
+		&i.OauthSid,
 	)
 	return i, err
 }
@@ -5829,7 +6047,7 @@ func (q *Queries) GetServerUsageByUser(ctx context.Context) ([]GetServerUsageByU
 }
 
 const getSession = `-- name: GetSession :one
-SELECT id, token, "createdAt", "updatedAt", "userId", "deviceType", "deviceOS", "updateId", "pinExpiresAt", "expiresAt", "parentId", "isPendingSyncReset", "appVersion" FROM sessions
+SELECT id, token, "createdAt", "updatedAt", "userId", "deviceType", "deviceOS", "updateId", "pinExpiresAt", "expiresAt", "parentId", "isPendingSyncReset", "appVersion", "oauthSid" FROM sessions
 WHERE id = $1
 `
 
@@ -5850,12 +6068,13 @@ func (q *Queries) GetSession(ctx context.Context, id pgtype.UUID) (Session, erro
 		&i.ParentId,
 		&i.IsPendingSyncReset,
 		&i.AppVersion,
+		&i.OauthSid,
 	)
 	return i, err
 }
 
 const getSessionByToken = `-- name: GetSessionByToken :one
-SELECT id, token, "createdAt", "updatedAt", "userId", "deviceType", "deviceOS", "updateId", "pinExpiresAt", "expiresAt", "parentId", "isPendingSyncReset", "appVersion" FROM sessions
+SELECT id, token, "createdAt", "updatedAt", "userId", "deviceType", "deviceOS", "updateId", "pinExpiresAt", "expiresAt", "parentId", "isPendingSyncReset", "appVersion", "oauthSid" FROM sessions
 WHERE token = $1
 `
 
@@ -5876,6 +6095,7 @@ func (q *Queries) GetSessionByToken(ctx context.Context, token string) (Session,
 		&i.ParentId,
 		&i.IsPendingSyncReset,
 		&i.AppVersion,
+		&i.OauthSid,
 	)
 	return i, err
 }
@@ -7231,7 +7451,7 @@ func (q *Queries) GetUserRecentViews(ctx context.Context, arg GetUserRecentViews
 }
 
 const getUserSessions = `-- name: GetUserSessions :many
-SELECT id, token, "createdAt", "updatedAt", "userId", "deviceType", "deviceOS", "updateId", "pinExpiresAt", "expiresAt", "parentId", "isPendingSyncReset", "appVersion" FROM sessions
+SELECT id, token, "createdAt", "updatedAt", "userId", "deviceType", "deviceOS", "updateId", "pinExpiresAt", "expiresAt", "parentId", "isPendingSyncReset", "appVersion", "oauthSid" FROM sessions
 WHERE "userId" = $1
 ORDER BY "createdAt" DESC
 `
@@ -7259,6 +7479,7 @@ func (q *Queries) GetUserSessions(ctx context.Context, userid pgtype.UUID) ([]Se
 			&i.ParentId,
 			&i.IsPendingSyncReset,
 			&i.AppVersion,
+			&i.OauthSid,
 		); err != nil {
 			return nil, err
 		}
@@ -7367,6 +7588,31 @@ func (q *Queries) GetUsers(ctx context.Context) ([]User, error) {
 	return items, nil
 }
 
+const getWorkflowByID = `-- name: GetWorkflowByID :one
+SELECT id, "ownerId", name, description, enabled, status, trigger, actions, "executionCount", "lastExecutionAt", "createdAt", "updatedAt" FROM workflows
+WHERE id = $1
+`
+
+func (q *Queries) GetWorkflowByID(ctx context.Context, id pgtype.UUID) (Workflow, error) {
+	row := q.db.QueryRow(ctx, getWorkflowByID, id)
+	var i Workflow
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerId,
+		&i.Name,
+		&i.Description,
+		&i.Enabled,
+		&i.Status,
+		&i.Trigger,
+		&i.Actions,
+		&i.ExecutionCount,
+		&i.LastExecutionAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const hardDeleteUser = `-- name: HardDeleteUser :exec
 DELETE FROM users
 WHERE id = $1
@@ -7389,6 +7635,35 @@ func (q *Queries) HasUserPinCode(ctx context.Context, id pgtype.UUID) (bool, err
 	var has_pin_code bool
 	err := row.Scan(&has_pin_code)
 	return has_pin_code, err
+}
+
+const incrementWorkflowExecutionCount = `-- name: IncrementWorkflowExecutionCount :one
+UPDATE workflows
+SET "executionCount" = "executionCount" + 1,
+    "lastExecutionAt" = NOW(),
+    "updatedAt" = NOW()
+WHERE id = $1
+RETURNING id, "ownerId", name, description, enabled, status, trigger, actions, "executionCount", "lastExecutionAt", "createdAt", "updatedAt"
+`
+
+func (q *Queries) IncrementWorkflowExecutionCount(ctx context.Context, id pgtype.UUID) (Workflow, error) {
+	row := q.db.QueryRow(ctx, incrementWorkflowExecutionCount, id)
+	var i Workflow
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerId,
+		&i.Name,
+		&i.Description,
+		&i.Enabled,
+		&i.Status,
+		&i.Trigger,
+		&i.Actions,
+		&i.ExecutionCount,
+		&i.LastExecutionAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const isSessionElevated = `-- name: IsSessionElevated :one
@@ -7592,6 +7867,132 @@ func (q *Queries) ListVersionHistory(ctx context.Context) ([]VersionHistory, err
 	for rows.Next() {
 		var i VersionHistory
 		if err := rows.Scan(&i.ID, &i.CreatedAt, &i.Version); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listWorkflowExecutions = `-- name: ListWorkflowExecutions :many
+SELECT id, "workflowId", status, "startedAt", "completedAt", "errorMessage", "triggerData", "actionResults" FROM workflow_executions
+WHERE "workflowId" = $1
+  AND ($2::text IS NULL OR status = $2::text)
+ORDER BY "startedAt" DESC
+LIMIT $4 OFFSET $3
+`
+
+type ListWorkflowExecutionsParams struct {
+	WorkflowId pgtype.UUID
+	Status     pgtype.Text
+	Offset     int32
+	Limit      int32
+}
+
+func (q *Queries) ListWorkflowExecutions(ctx context.Context, arg ListWorkflowExecutionsParams) ([]WorkflowExecution, error) {
+	rows, err := q.db.Query(ctx, listWorkflowExecutions,
+		arg.WorkflowId,
+		arg.Status,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []WorkflowExecution
+	for rows.Next() {
+		var i WorkflowExecution
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkflowId,
+			&i.Status,
+			&i.StartedAt,
+			&i.CompletedAt,
+			&i.ErrorMessage,
+			&i.TriggerData,
+			&i.ActionResults,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listWorkflows = `-- name: ListWorkflows :many
+SELECT id, "ownerId", name, description, enabled, status, trigger, actions, "executionCount", "lastExecutionAt", "createdAt", "updatedAt" FROM workflows
+ORDER BY "createdAt" DESC
+`
+
+func (q *Queries) ListWorkflows(ctx context.Context) ([]Workflow, error) {
+	rows, err := q.db.Query(ctx, listWorkflows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Workflow
+	for rows.Next() {
+		var i Workflow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OwnerId,
+			&i.Name,
+			&i.Description,
+			&i.Enabled,
+			&i.Status,
+			&i.Trigger,
+			&i.Actions,
+			&i.ExecutionCount,
+			&i.LastExecutionAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listWorkflowsByOwner = `-- name: ListWorkflowsByOwner :many
+SELECT id, "ownerId", name, description, enabled, status, trigger, actions, "executionCount", "lastExecutionAt", "createdAt", "updatedAt" FROM workflows
+WHERE "ownerId" = $1
+ORDER BY "createdAt" DESC
+`
+
+func (q *Queries) ListWorkflowsByOwner(ctx context.Context, ownerid pgtype.UUID) ([]Workflow, error) {
+	rows, err := q.db.Query(ctx, listWorkflowsByOwner, ownerid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Workflow
+	for rows.Next() {
+		var i Workflow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OwnerId,
+			&i.Name,
+			&i.Description,
+			&i.Enabled,
+			&i.Status,
+			&i.Trigger,
+			&i.Actions,
+			&i.ExecutionCount,
+			&i.LastExecutionAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -9653,7 +10054,7 @@ SET "isPendingSyncReset" = COALESCE($3, "isPendingSyncReset"),
     "updatedAt" = NOW(),
     "updateId" = immich_uuid_v7()
 WHERE id = $1 AND "userId" = $2
-RETURNING id, token, "createdAt", "updatedAt", "userId", "deviceType", "deviceOS", "updateId", "pinExpiresAt", "expiresAt", "parentId", "isPendingSyncReset", "appVersion"
+RETURNING id, token, "createdAt", "updatedAt", "userId", "deviceType", "deviceOS", "updateId", "pinExpiresAt", "expiresAt", "parentId", "isPendingSyncReset", "appVersion", "oauthSid"
 `
 
 type UpdateSessionParams struct {
@@ -9679,6 +10080,7 @@ func (q *Queries) UpdateSession(ctx context.Context, arg UpdateSessionParams) (S
 		&i.ParentId,
 		&i.IsPendingSyncReset,
 		&i.AppVersion,
+		&i.OauthSid,
 	)
 	return i, err
 }
@@ -10023,6 +10425,57 @@ func (q *Queries) UpdateUserPreferencesData(ctx context.Context, arg UpdateUserP
 	var value []byte
 	err := row.Scan(&value)
 	return value, err
+}
+
+const updateWorkflow = `-- name: UpdateWorkflow :one
+UPDATE workflows
+SET name = COALESCE($2, name),
+    description = COALESCE($3, description),
+    enabled = COALESCE($4, enabled),
+    status = COALESCE($5, status),
+    trigger = COALESCE($6, trigger),
+    actions = COALESCE($7, actions),
+    "updatedAt" = NOW()
+WHERE id = $1
+RETURNING id, "ownerId", name, description, enabled, status, trigger, actions, "executionCount", "lastExecutionAt", "createdAt", "updatedAt"
+`
+
+type UpdateWorkflowParams struct {
+	ID          pgtype.UUID
+	Name        pgtype.Text
+	Description pgtype.Text
+	Enabled     pgtype.Bool
+	Status      pgtype.Text
+	Trigger     []byte
+	Actions     []byte
+}
+
+func (q *Queries) UpdateWorkflow(ctx context.Context, arg UpdateWorkflowParams) (Workflow, error) {
+	row := q.db.QueryRow(ctx, updateWorkflow,
+		arg.ID,
+		arg.Name,
+		arg.Description,
+		arg.Enabled,
+		arg.Status,
+		arg.Trigger,
+		arg.Actions,
+	)
+	var i Workflow
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerId,
+		&i.Name,
+		&i.Description,
+		&i.Enabled,
+		&i.Status,
+		&i.Trigger,
+		&i.Actions,
+		&i.ExecutionCount,
+		&i.LastExecutionAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const upsertAssetMetadata = `-- name: UpsertAssetMetadata :one

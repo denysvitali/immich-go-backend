@@ -268,9 +268,32 @@ func (s *Service) UnlinkOAuthAccount(ctx context.Context, userID uuid.UUID) erro
 
 // FindOrCreateUserByOAuth finds or creates a user based on OAuth info
 func (s *Service) FindOrCreateUserByOAuth(ctx context.Context, userInfo *OAuthUserInfo) (*sqlc.User, error) {
-	// First, try to find user by email
+	oauthID := ""
+	if userInfo.Provider != "" && userInfo.ID != "" {
+		oauthID = fmt.Sprintf("%s:%s", userInfo.Provider, userInfo.ID)
+	} else if userInfo.ID != "" {
+		oauthID = userInfo.ID
+	}
+
+	// Prefer lookup by OAuth subject (stable across email changes).
+	if oauthID != "" {
+		if user, err := s.db.GetUserByOAuthId(ctx, oauthID); err == nil {
+			return &user, nil
+		}
+	}
+
+	// Fall back to email match, then link OAuth id when missing.
 	user, err := s.db.GetUserByEmail(ctx, userInfo.Email)
 	if err == nil {
+		if oauthID != "" && user.OauthId == "" {
+			updated, linkErr := s.db.UpdateUserOAuthId(ctx, sqlc.UpdateUserOAuthIdParams{
+				ID:      user.ID,
+				OauthId: oauthID,
+			})
+			if linkErr == nil {
+				return &updated, nil
+			}
+		}
 		return &user, nil
 	}
 
@@ -291,6 +314,15 @@ func (s *Service) FindOrCreateUserByOAuth(ctx context.Context, userInfo *OAuthUs
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create user: %w", err)
+	}
+
+	if oauthID != "" {
+		if updated, linkErr := s.db.UpdateUserOAuthId(ctx, sqlc.UpdateUserOAuthIdParams{
+			ID:      newUser.ID,
+			OauthId: oauthID,
+		}); linkErr == nil {
+			return &updated, nil
+		}
 	}
 
 	return &newUser, nil

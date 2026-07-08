@@ -77,10 +77,28 @@ func (s *Server) CallbackOAuth(ctx context.Context, req *immichv1.CallbackOAuthR
 		return nil, SanitizedInternal(ctx, "failed to find or create user", err)
 	}
 
-	// Generate JWT token for the user
-	token, err := s.authService.GenerateToken(user.ID.String(), user.Email, 24*time.Hour)
-	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to generate token", err)
+	// Prefer a durable session row (with optional OIDC sid) so backchannel
+	// logout can invalidate it. Fall back to a bare JWT when sessions are
+	// unavailable.
+	token := ""
+	if s.sessionsService != nil {
+		session, sessErr := s.sessionsService.CreateOAuthSession(
+			ctx,
+			user.ID.String(),
+			"oauth",
+			req.Provider,
+			"", // sid is filled when ExchangeCodeForToken returns an id_token
+		)
+		if sessErr == nil && session != nil {
+			token = session.Token
+		}
+	}
+	if token == "" {
+		var tokErr error
+		token, tokErr = s.authService.GenerateToken(user.ID.String(), user.Email, 24*time.Hour)
+		if tokErr != nil {
+			return nil, SanitizedInternal(ctx, "failed to generate token", tokErr)
+		}
 	}
 
 	// Set cookie in response metadata
@@ -168,16 +186,74 @@ func (s *Server) UnlinkOAuthAccount(ctx context.Context, _ *emptypb.Empty) (*imm
 	}, nil
 }
 
-// LogoutOAuth handles OIDC backchannel logout requests. Full upstream session
-// invalidation requires verified logout-token claims and OAuth session IDs,
-// neither of which are represented in the current simplified OAuth model.
+// LogoutOAuth handles OIDC backchannel logout requests (RFC / Immich parity).
+// Validates the logout_token JWT, then deletes sessions matching sub and/or sid.
 func (s *Server) LogoutOAuth(ctx context.Context, req *immichv1.OAuthBackchannelLogoutRequest) (*emptypb.Empty, error) {
 	if strings.TrimSpace(req.GetLogoutToken()) == "" {
 		return nil, status.Error(codes.InvalidArgument, "logout_token is required")
 	}
-	if !s.config.Auth.OAuth.Enabled {
+
+	oidcCfg, err := s.oauthOIDCConfig(ctx)
+	if err != nil {
+		return nil, SanitizedInternal(ctx, "failed to load OAuth config", err)
+	}
+	if !oidcCfg.Enabled {
 		return nil, status.Error(codes.InvalidArgument, "received backchannel logout request but OAuth is not enabled")
 	}
 
-	return nil, status.Error(codes.InvalidArgument, "error backchannel logout: token validation failed")
+	sub, sid, err := oauth.ValidateLogoutToken(oidcCfg, req.GetLogoutToken())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "error backchannel logout: token validation failed")
+	}
+
+	if s.db != nil && s.db.Queries != nil {
+		if _, invErr := oauth.InvalidateOAuthSessions(ctx, s.db.Queries, sub, sid); invErr != nil {
+			return nil, SanitizedInternal(ctx, "failed to invalidate OAuth sessions", invErr)
+		}
+	}
+
+	return &emptypb.Empty{}, nil
+}
+
+// oauthOIDCConfig resolves Immich-style OIDC settings from system config when
+// available, falling back to auth.oauth in the process config.
+func (s *Server) oauthOIDCConfig(ctx context.Context) (oauth.OIDCConfig, error) {
+	cfg := oauth.OIDCConfig{
+		Enabled:          s.config != nil && s.config.Auth.OAuth.Enabled,
+		SigningAlgorithm: "RS256",
+	}
+
+	if s.systemConfigService != nil {
+		dto, err := s.systemConfigService.GetConfigDto(ctx)
+		if err != nil {
+			return cfg, err
+		}
+		cfg.Enabled = dto.OAuth.Enabled
+		cfg.IssuerURL = dto.OAuth.IssuerURL
+		cfg.ClientID = dto.OAuth.ClientID
+		cfg.ClientSecret = dto.OAuth.ClientSecret
+		if dto.OAuth.SigningAlgorithm != "" {
+			cfg.SigningAlgorithm = dto.OAuth.SigningAlgorithm
+		}
+		return cfg, nil
+	}
+
+	// Process-level multi-provider config: map first enabled provider for HS
+	// validation when an issuer is not configured via system config.
+	if s.config != nil {
+		o := s.config.Auth.OAuth
+		cfg.Enabled = o.Enabled || o.Google.Enabled || o.GitHub.Enabled || o.Microsoft.Enabled
+		switch {
+		case o.Google.Enabled:
+			cfg.ClientID = o.Google.ClientID
+			cfg.ClientSecret = o.Google.ClientSecret
+		case o.GitHub.Enabled:
+			cfg.ClientID = o.GitHub.ClientID
+			cfg.ClientSecret = o.GitHub.ClientSecret
+		case o.Microsoft.Enabled:
+			cfg.ClientID = o.Microsoft.ClientID
+			cfg.ClientSecret = o.Microsoft.ClientSecret
+		}
+	}
+	return cfg, nil
 }

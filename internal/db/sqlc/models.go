@@ -535,6 +535,7 @@ type Session struct {
 	ParentId           pgtype.UUID
 	IsPendingSyncReset bool
 	AppVersion         pgtype.Text
+	OauthSid           pgtype.Text
 }
 
 type SessionSyncCheckpoint struct {
@@ -636,4 +637,30 @@ type VersionHistory struct {
 	ID        pgtype.UUID
 	CreatedAt pgtype.Timestamptz
 	Version   string
+}
+
+type Workflow struct {
+	ID              pgtype.UUID
+	OwnerId         pgtype.UUID
+	Name            string
+	Description     string
+	Enabled         bool
+	Status          string
+	Trigger         []byte
+	Actions         []byte
+	ExecutionCount  int32
+	LastExecutionAt pgtype.Timestamptz
+	CreatedAt       pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
+}
+
+type WorkflowExecution struct {
+	ID            pgtype.UUID
+	WorkflowId    pgtype.UUID
+	Status        string
+	StartedAt     pgtype.Timestamptz
+	CompletedAt   pgtype.Timestamptz
+	ErrorMessage  pgtype.Text
+	TriggerData   []byte
+	ActionResults []byte
 }

@@ -2174,7 +2174,48 @@ CREATE TRIGGER users_updated_at BEFORE UPDATE ON public.users FOR EACH ROW EXECU
 
 ALTER TABLE public.sessions
     ADD COLUMN "isPendingSyncReset" boolean DEFAULT false NOT NULL,
-    ADD COLUMN "appVersion" character varying;
+    ADD COLUMN "appVersion" character varying,
+    ADD COLUMN "oauthSid" character varying;
+
+CREATE INDEX "IDX_sessions_oauth_sid" ON public.sessions USING btree ("oauthSid");
+
+--
+-- Workflows (persisted automation definitions + execution history)
+--
+
+CREATE TABLE public.workflows (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    "ownerId" uuid NOT NULL,
+    name character varying NOT NULL,
+    description character varying DEFAULT ''::character varying NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    status character varying DEFAULT 'active'::character varying NOT NULL,
+    trigger jsonb NOT NULL,
+    actions jsonb NOT NULL,
+    "executionCount" integer DEFAULT 0 NOT NULL,
+    "lastExecutionAt" timestamp with time zone,
+    "createdAt" timestamp with time zone DEFAULT now() NOT NULL,
+    "updatedAt" timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT workflows_pkey PRIMARY KEY (id),
+    CONSTRAINT "workflows_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES public.users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX "IDX_workflows_ownerId" ON public.workflows USING btree ("ownerId");
+
+CREATE TABLE public.workflow_executions (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    "workflowId" uuid NOT NULL,
+    status character varying DEFAULT 'pending'::character varying NOT NULL,
+    "startedAt" timestamp with time zone DEFAULT now() NOT NULL,
+    "completedAt" timestamp with time zone,
+    "errorMessage" character varying,
+    "triggerData" jsonb,
+    "actionResults" jsonb,
+    CONSTRAINT workflow_executions_pkey PRIMARY KEY (id),
+    CONSTRAINT "workflow_executions_workflowId_fkey" FOREIGN KEY ("workflowId") REFERENCES public.workflows(id) ON DELETE CASCADE
+);
+
+CREATE INDEX "IDX_workflow_executions_workflowId" ON public.workflow_executions USING btree ("workflowId");
 
 CREATE TABLE public.asset_metadata (
     "assetId" uuid NOT NULL,

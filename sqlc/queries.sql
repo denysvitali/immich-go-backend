@@ -1842,9 +1842,9 @@ WHERE "assetId" = $1;
 -- name: CreateSession :one
 INSERT INTO sessions (
     id, token, "userId", "deviceType", "deviceOS",
-    "expiresAt", "createdAt", "updatedAt"
+    "expiresAt", "oauthSid", "createdAt", "updatedAt"
 ) VALUES (
-    gen_uuid_v7(), $1, $2, $3, $4, $5, NOW(), NOW()
+    gen_uuid_v7(), $1, $2, $3, $4, $5, sqlc.narg('oauth_sid'), NOW(), NOW()
 ) RETURNING *;
 
 -- name: GetSession :one
@@ -1888,6 +1888,95 @@ WHERE "expiresAt" < NOW();
 -- name: CountUserSessions :one
 SELECT COUNT(*) FROM sessions
 WHERE "userId" = $1;
+
+-- name: DeleteSessionsByOAuthSid :many
+DELETE FROM sessions
+WHERE "oauthSid" = $1
+RETURNING id;
+
+-- name: DeleteSessionsByOAuthId :many
+DELETE FROM sessions s
+USING users u
+WHERE s."userId" = u.id
+  AND u."oauthId" = $1
+  AND u."deletedAt" IS NULL
+RETURNING s.id;
+
+-- name: DeleteSessionsByOAuthSidAndOAuthId :many
+DELETE FROM sessions s
+USING users u
+WHERE s."userId" = u.id
+  AND s."oauthSid" = $1
+  AND u."oauthId" = $2
+  AND u."deletedAt" IS NULL
+RETURNING s.id;
+
+-- ================== WORKFLOW QUERIES ==================
+
+-- name: CreateWorkflow :one
+INSERT INTO workflows (
+    id, "ownerId", name, description, enabled, status, trigger, actions,
+    "executionCount", "createdAt", "updatedAt"
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, 0, NOW(), NOW()
+) RETURNING *;
+
+-- name: GetWorkflowByID :one
+SELECT * FROM workflows
+WHERE id = $1;
+
+-- name: ListWorkflows :many
+SELECT * FROM workflows
+ORDER BY "createdAt" DESC;
+
+-- name: ListWorkflowsByOwner :many
+SELECT * FROM workflows
+WHERE "ownerId" = $1
+ORDER BY "createdAt" DESC;
+
+-- name: UpdateWorkflow :one
+UPDATE workflows
+SET name = COALESCE(sqlc.narg('name'), name),
+    description = COALESCE(sqlc.narg('description'), description),
+    enabled = COALESCE(sqlc.narg('enabled'), enabled),
+    status = COALESCE(sqlc.narg('status'), status),
+    trigger = COALESCE(sqlc.narg('trigger'), trigger),
+    actions = COALESCE(sqlc.narg('actions'), actions),
+    "updatedAt" = NOW()
+WHERE id = $1
+RETURNING *;
+
+-- name: DeleteWorkflow :exec
+DELETE FROM workflows
+WHERE id = $1;
+
+-- name: IncrementWorkflowExecutionCount :one
+UPDATE workflows
+SET "executionCount" = "executionCount" + 1,
+    "lastExecutionAt" = NOW(),
+    "updatedAt" = NOW()
+WHERE id = $1
+RETURNING *;
+
+-- name: CreateWorkflowExecution :one
+INSERT INTO workflow_executions (
+    id, "workflowId", status, "startedAt", "completedAt",
+    "errorMessage", "triggerData", "actionResults"
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8
+) RETURNING *;
+
+-- name: ListWorkflowExecutions :many
+SELECT * FROM workflow_executions
+WHERE "workflowId" = $1
+  AND (sqlc.narg('status')::text IS NULL OR status = sqlc.narg('status')::text)
+ORDER BY "startedAt" DESC
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
+-- name: CountWorkflowExecutions :one
+SELECT COUNT(*) FROM workflow_executions
+WHERE "workflowId" = $1
+  AND (sqlc.narg('status')::text IS NULL OR status = sqlc.narg('status')::text);
 
 -- PIN Code queries
 

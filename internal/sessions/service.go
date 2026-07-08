@@ -42,6 +42,40 @@ type Session struct {
 	AppVersion         string
 }
 
+// CreateOAuthSession creates a session linked to an OIDC session id (sid) so
+// backchannel logout can target it.
+func (s *Service) CreateOAuthSession(ctx context.Context, userID, deviceType, deviceOS, oauthSid string) (*Session, error) {
+	userUUID, err := pgutil.StringToUUID(userID)
+	if err != nil {
+		return nil, err
+	}
+	user, err := s.queries.GetUser(ctx, userUUID)
+	if err != nil {
+		return nil, err
+	}
+	token, err := s.auth.GenerateToken(userID, user.Email, 30*24*time.Hour)
+	if err != nil {
+		return nil, err
+	}
+	expiresAt := time.Now().Add(30 * 24 * time.Hour)
+	sid := pgtype.Text{}
+	if oauthSid != "" {
+		sid = pgtype.Text{String: oauthSid, Valid: true}
+	}
+	dbSession, err := s.queries.CreateSession(ctx, sqlc.CreateSessionParams{
+		Token:      token,
+		UserId:     userUUID,
+		DeviceType: deviceType,
+		DeviceOS:   deviceOS,
+		ExpiresAt:  pgutil.TimeToTimestamptz(expiresAt),
+		OauthSid:   sid,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create oauth session: %w", err)
+	}
+	return sessionFromDB(dbSession), nil
+}
+
 // CreateSession creates a new session for a user
 func (s *Service) CreateSession(ctx context.Context, userID string, deviceType, deviceOS string) (*Session, error) {
 	// Parse user ID
@@ -71,6 +105,7 @@ func (s *Service) CreateSession(ctx context.Context, userID string, deviceType, 
 		DeviceType: deviceType,
 		DeviceOS:   deviceOS,
 		ExpiresAt:  pgutil.TimeToTimestamptz(expiresAt),
+		OauthSid:   pgtype.Text{}, // set via CreateOAuthSession for OIDC logins
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create session: %w", err)

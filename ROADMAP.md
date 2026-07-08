@@ -41,15 +41,15 @@ flowchart LR
 
 ### v3 RC parity
 
-- [ ] Workflows / plugins parity.
-  Scaffold exists (in-memory registry + sample plugins); not full upstream plugin host / workflow engine.
+- [x] Workflows / plugins parity.
+  Workflows persist in PostgreSQL (`workflows`, `workflow_executions`). Plugins expose builtin methods/templates matching upstream v3 API shapes (WASM third-party host is out of scope).
 - [x] HLS real-time transcoding.
   On-demand HLS via `ensureHLS` + ffmpeg when `Features.VideoTranscodingEnabled`.
 - [x] Integrity-report jobs.
   Admin integrity report endpoints scan storage on demand (checksum mismatch, missing, untracked).
 - [x] "Recently added assets" endpoint behaviour.
-- [ ] OAuth backchannel logout.
-  Route + request parsing exist; full logout-token JWT validation / session invalidation still stubbed.
+- [x] OAuth backchannel logout.
+  Validates OIDC logout tokens (HS*/JWKS), requires backchannel-logout event claim, invalidates sessions by `sub`/`sid` (`sessions.oauthSid` + `users.oauthId`).
 - [x] Full-path search.
   Metadata search (`SearchAssetsFiltered`) and text search (`SearchAssetsByText`) match on `originalPath`.
 - [x] Album map markers.

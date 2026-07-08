@@ -2,14 +2,16 @@ package workflow
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/denysvitali/immich-go-backend/internal/config"
+	"github.com/denysvitali/immich-go-backend/internal/db/pgutil"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/denysvitali/immich-go-backend/internal/telemetry"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
@@ -118,17 +120,11 @@ type ExecutionInfo struct {
 	ActionResults []ActionResult
 }
 
-// Service handles workflow management operations
+// Service handles workflow management operations backed by PostgreSQL.
 type Service struct {
 	db     *sqlc.Queries
 	config *config.Config
 
-	// In-memory workflow registry (in production, would use database)
-	mu         sync.RWMutex
-	workflows  map[string]*WorkflowInfo
-	executions map[string]*ExecutionInfo
-
-	// Metrics
 	workflowCounter   metric.Int64UpDownCounter
 	executionCounter  metric.Int64Counter
 	operationDuration metric.Float64Histogram
@@ -162,105 +158,13 @@ func NewService(queries *sqlc.Queries, cfg *config.Config) (*Service, error) {
 		return nil, fmt.Errorf("failed to create operation duration histogram: %w", err)
 	}
 
-	s := &Service{
+	return &Service{
 		db:                queries,
 		config:            cfg,
-		workflows:         make(map[string]*WorkflowInfo),
-		executions:        make(map[string]*ExecutionInfo),
 		workflowCounter:   workflowCounter,
 		executionCounter:  executionCounter,
 		operationDuration: operationDuration,
-	}
-
-	// Initialize with sample workflows
-	s.initializeSampleWorkflows()
-
-	return s, nil
-}
-
-// initializeSampleWorkflows creates sample workflows for demonstration
-func (s *Service) initializeSampleWorkflows() {
-	now := time.Now()
-
-	// Auto-tag workflow
-	s.workflows["auto-tag-screenshots"] = &WorkflowInfo{
-		ID:          "auto-tag-screenshots",
-		Name:        "Auto-tag Screenshots",
-		Description: "Automatically tag screenshots based on filename pattern",
-		Status:      WorkflowStatusActive,
-		Enabled:     true,
-		Trigger: Trigger{
-			Type: TriggerTypeAssetUploaded,
-			Conditions: map[string]interface{}{
-				"filenamePattern": "(?i)screenshot.*",
-			},
-		},
-		Actions: []Action{
-			{
-				Type: ActionTypeAddTag,
-				Params: map[string]interface{}{
-					"tagName": "Screenshots",
-				},
-				Order: 1,
-			},
-		},
-		CreatedAt:      now,
-		UpdatedAt:      now,
-		ExecutionCount: 0,
-	}
-
-	// Archive old photos workflow
-	s.workflows["archive-old-photos"] = &WorkflowInfo{
-		ID:          "archive-old-photos",
-		Name:        "Archive Old Photos",
-		Description: "Archive photos older than 5 years",
-		Status:      WorkflowStatusDisabled,
-		Enabled:     false,
-		Trigger: Trigger{
-			Type:           TriggerTypeScheduled,
-			CronExpression: "0 0 * * 0", // Every Sunday at midnight
-			Conditions: map[string]interface{}{
-				"olderThanDays": 1825, // 5 years
-			},
-		},
-		Actions: []Action{
-			{
-				Type: ActionTypeSetVisibility,
-				Params: map[string]interface{}{
-					"visibility": "archive",
-				},
-				Order: 1,
-			},
-		},
-		CreatedAt:      now,
-		UpdatedAt:      now,
-		ExecutionCount: 0,
-	}
-
-	// Webhook on duplicate workflow
-	s.workflows["duplicate-webhook"] = &WorkflowInfo{
-		ID:          "duplicate-webhook",
-		Name:        "Duplicate Detection Webhook",
-		Description: "Send webhook notification when duplicate is found",
-		Status:      WorkflowStatusActive,
-		Enabled:     true,
-		Trigger: Trigger{
-			Type: TriggerTypeDuplicateFound,
-		},
-		Actions: []Action{
-			{
-				Type: ActionTypeWebhook,
-				Params: map[string]interface{}{
-					"url":    "https://example.com/webhook/duplicates",
-					"method": "POST",
-				},
-				Order: 1,
-			},
-		},
-		CreatedAt:      now,
-		UpdatedAt:      now,
-		ExecutionCount: 0,
-	}
+	}, nil
 }
 
 // ListWorkflows returns all workflows
@@ -274,15 +178,20 @@ func (s *Service) ListWorkflows(ctx context.Context) ([]*WorkflowInfo, error) {
 			metric.WithAttributes(attribute.String("operation", "list_workflows")))
 	}()
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	workflows := make([]*WorkflowInfo, 0, len(s.workflows))
-	for _, workflow := range s.workflows {
-		workflows = append(workflows, workflow)
+	rows, err := s.db.ListWorkflows(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list workflows: %w", err)
 	}
 
-	return workflows, nil
+	out := make([]*WorkflowInfo, 0, len(rows))
+	for _, row := range rows {
+		info, err := workflowFromDB(row)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, info)
+	}
+	return out, nil
 }
 
 // GetWorkflow returns a specific workflow by ID
@@ -291,15 +200,16 @@ func (s *Service) GetWorkflow(ctx context.Context, workflowID string) (*Workflow
 		trace.WithAttributes(attribute.String("workflow_id", workflowID)))
 	defer span.End()
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	workflow, exists := s.workflows[workflowID]
-	if !exists {
+	id, err := parseWorkflowUUID(workflowID)
+	if err != nil {
 		return nil, fmt.Errorf("workflow not found: %s", workflowID)
 	}
 
-	return workflow, nil
+	row, err := s.db.GetWorkflowByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("workflow not found: %s", workflowID)
+	}
+	return workflowFromDB(row)
 }
 
 // CreateWorkflow creates a new workflow
@@ -314,34 +224,42 @@ func (s *Service) CreateWorkflow(ctx context.Context, name, description string, 
 			metric.WithAttributes(attribute.String("operation", "create_workflow")))
 	}()
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	workflowID := uuid.New().String()
-	now := time.Now()
-
-	workflow := &WorkflowInfo{
-		ID:             workflowID,
-		Name:           name,
-		Description:    description,
-		Status:         WorkflowStatusActive,
-		Enabled:        enabled,
-		Trigger:        trigger,
-		Actions:        actions,
-		CreatedAt:      now,
-		UpdatedAt:      now,
-		CreatedBy:      createdBy,
-		ExecutionCount: 0,
+	ownerID, err := pgutil.StringToUUID(createdBy)
+	if err != nil {
+		return nil, fmt.Errorf("invalid owner id: %w", err)
 	}
 
+	status := WorkflowStatusActive
 	if !enabled {
-		workflow.Status = WorkflowStatusDisabled
+		status = WorkflowStatusDisabled
 	}
 
-	s.workflows[workflowID] = workflow
-	s.workflowCounter.Add(ctx, 1)
+	triggerJSON, err := json.Marshal(trigger)
+	if err != nil {
+		return nil, fmt.Errorf("marshal trigger: %w", err)
+	}
+	actionsJSON, err := json.Marshal(actions)
+	if err != nil {
+		return nil, fmt.Errorf("marshal actions: %w", err)
+	}
 
-	return workflow, nil
+	id := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+	row, err := s.db.CreateWorkflow(ctx, sqlc.CreateWorkflowParams{
+		ID:          id,
+		OwnerId:     ownerID,
+		Name:        name,
+		Description: description,
+		Enabled:     enabled,
+		Status:      string(status),
+		Trigger:     triggerJSON,
+		Actions:     actionsJSON,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create workflow: %w", err)
+	}
+
+	s.workflowCounter.Add(ctx, 1)
+	return workflowFromDB(row)
 }
 
 // UpdateWorkflow updates an existing workflow
@@ -356,29 +274,38 @@ func (s *Service) UpdateWorkflow(ctx context.Context, workflowID string, name, d
 			metric.WithAttributes(attribute.String("operation", "update_workflow")))
 	}()
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	workflow, exists := s.workflows[workflowID]
-	if !exists {
+	id, err := parseWorkflowUUID(workflowID)
+	if err != nil {
 		return nil, fmt.Errorf("workflow not found: %s", workflowID)
 	}
 
+	params := sqlc.UpdateWorkflowParams{ID: id}
 	if name != nil {
-		workflow.Name = *name
+		params.Name = pgtype.Text{String: *name, Valid: true}
 	}
 	if description != nil {
-		workflow.Description = *description
+		params.Description = pgtype.Text{String: *description, Valid: true}
 	}
 	if trigger != nil {
-		workflow.Trigger = *trigger
+		b, err := json.Marshal(trigger)
+		if err != nil {
+			return nil, fmt.Errorf("marshal trigger: %w", err)
+		}
+		params.Trigger = b
 	}
 	if len(actions) > 0 {
-		workflow.Actions = actions
+		b, err := json.Marshal(actions)
+		if err != nil {
+			return nil, fmt.Errorf("marshal actions: %w", err)
+		}
+		params.Actions = b
 	}
-	workflow.UpdatedAt = time.Now()
 
-	return workflow, nil
+	row, err := s.db.UpdateWorkflow(ctx, params)
+	if err != nil {
+		return nil, fmt.Errorf("workflow not found: %s", workflowID)
+	}
+	return workflowFromDB(row)
 }
 
 // DeleteWorkflow deletes a workflow
@@ -393,16 +320,20 @@ func (s *Service) DeleteWorkflow(ctx context.Context, workflowID string) error {
 			metric.WithAttributes(attribute.String("operation", "delete_workflow")))
 	}()
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if _, exists := s.workflows[workflowID]; !exists {
+	id, err := parseWorkflowUUID(workflowID)
+	if err != nil {
 		return fmt.Errorf("workflow not found: %s", workflowID)
 	}
 
-	delete(s.workflows, workflowID)
-	s.workflowCounter.Add(ctx, -1)
+	// Ensure exists first for a clear not-found error.
+	if _, err := s.db.GetWorkflowByID(ctx, id); err != nil {
+		return fmt.Errorf("workflow not found: %s", workflowID)
+	}
 
+	if err := s.db.DeleteWorkflow(ctx, id); err != nil {
+		return fmt.Errorf("delete workflow: %w", err)
+	}
+	s.workflowCounter.Add(ctx, -1)
 	return nil
 }
 
@@ -418,44 +349,48 @@ func (s *Service) TriggerWorkflow(ctx context.Context, workflowID string, trigge
 			metric.WithAttributes(attribute.String("operation", "trigger_workflow")))
 	}()
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	workflow, exists := s.workflows[workflowID]
-	if !exists {
-		return nil, fmt.Errorf("workflow not found: %s", workflowID)
+	workflow, err := s.GetWorkflow(ctx, workflowID)
+	if err != nil {
+		return nil, err
 	}
-
 	if !workflow.Enabled {
 		return nil, fmt.Errorf("workflow is disabled: %s", workflowID)
 	}
 
-	executionID := uuid.New().String()
 	now := time.Now()
-
-	// Simulate workflow execution
 	actionResults := make([]ActionResult, len(workflow.Actions))
 	for i, action := range workflow.Actions {
+		// Built-in actions run as successful no-ops for now; plugin host wires later.
 		actionResults[i] = ActionResult{
 			Type:       action.Type,
 			Success:    true,
-			DurationMs: 50, // Simulated duration
+			DurationMs: 1,
 		}
 	}
 
-	execution := &ExecutionInfo{
-		ID:            executionID,
-		WorkflowID:    workflowID,
-		Status:        ExecutionStatusCompleted,
-		StartedAt:     now,
-		CompletedAt:   &now,
-		TriggerData:   triggerData,
-		ActionResults: actionResults,
+	execID := pgtype.UUID{Bytes: uuid.New(), Valid: true}
+	wfID, _ := parseWorkflowUUID(workflowID)
+
+	triggerJSON, _ := json.Marshal(triggerData)
+	resultsJSON, _ := json.Marshal(actionResults)
+
+	row, err := s.db.CreateWorkflowExecution(ctx, sqlc.CreateWorkflowExecutionParams{
+		ID:            execID,
+		WorkflowId:    wfID,
+		Status:        string(ExecutionStatusCompleted),
+		StartedAt:     pgtype.Timestamptz{Time: now, Valid: true},
+		CompletedAt:   pgtype.Timestamptz{Time: now, Valid: true},
+		ErrorMessage:  pgtype.Text{},
+		TriggerData:   triggerJSON,
+		ActionResults: resultsJSON,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create execution: %w", err)
 	}
 
-	s.executions[executionID] = execution
-	workflow.ExecutionCount++
-	workflow.LastExecutionAt = &now
+	if _, err := s.db.IncrementWorkflowExecutionCount(ctx, wfID); err != nil {
+		return nil, fmt.Errorf("increment execution count: %w", err)
+	}
 
 	s.executionCounter.Add(ctx, 1,
 		metric.WithAttributes(
@@ -463,7 +398,7 @@ func (s *Service) TriggerWorkflow(ctx context.Context, workflowID string, trigge
 			attribute.String("status", string(ExecutionStatusCompleted)),
 		))
 
-	return execution, nil
+	return executionFromDB(row)
 }
 
 // GetWorkflowExecutions returns execution history for a workflow
@@ -472,38 +407,51 @@ func (s *Service) GetWorkflowExecutions(ctx context.Context, workflowID string, 
 		trace.WithAttributes(attribute.String("workflow_id", workflowID)))
 	defer span.End()
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	if _, err := s.GetWorkflow(ctx, workflowID); err != nil {
+		return nil, 0, err
+	}
 
-	// Verify workflow exists
-	if _, exists := s.workflows[workflowID]; !exists {
+	wfID, err := parseWorkflowUUID(workflowID)
+	if err != nil {
 		return nil, 0, fmt.Errorf("workflow not found: %s", workflowID)
 	}
 
-	// Filter executions
-	var filtered []*ExecutionInfo
-	for _, exec := range s.executions {
-		if exec.WorkflowID != workflowID {
-			continue
+	if limit <= 0 {
+		limit = 50
+	}
+
+	var statusText pgtype.Text
+	if statusFilter != nil {
+		statusText = pgtype.Text{String: string(*statusFilter), Valid: true}
+	}
+
+	rows, err := s.db.ListWorkflowExecutions(ctx, sqlc.ListWorkflowExecutionsParams{
+		WorkflowId: wfID,
+		Status:     statusText,
+		Limit:      int32(limit),
+		Offset:     int32(offset),
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("list executions: %w", err)
+	}
+
+	total, err := s.db.CountWorkflowExecutions(ctx, sqlc.CountWorkflowExecutionsParams{
+		WorkflowId: wfID,
+		Status:     statusText,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("count executions: %w", err)
+	}
+
+	out := make([]*ExecutionInfo, 0, len(rows))
+	for _, row := range rows {
+		info, err := executionFromDB(row)
+		if err != nil {
+			return nil, 0, err
 		}
-		if statusFilter != nil && exec.Status != *statusFilter {
-			continue
-		}
-		filtered = append(filtered, exec)
+		out = append(out, info)
 	}
-
-	total := len(filtered)
-
-	// Apply pagination
-	if offset >= len(filtered) {
-		return []*ExecutionInfo{}, total, nil
-	}
-	end := offset + limit
-	if end > len(filtered) {
-		end = len(filtered)
-	}
-
-	return filtered[offset:end], total, nil
+	return out, int(total), nil
 }
 
 // SetWorkflowEnabled enables or disables a workflow
@@ -521,22 +469,84 @@ func (s *Service) SetWorkflowEnabled(ctx context.Context, workflowID string, ena
 			metric.WithAttributes(attribute.String("operation", "set_workflow_enabled")))
 	}()
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	workflow, exists := s.workflows[workflowID]
-	if !exists {
+	id, err := parseWorkflowUUID(workflowID)
+	if err != nil {
 		return nil, fmt.Errorf("workflow not found: %s", workflowID)
 	}
 
-	workflow.Enabled = enabled
-	workflow.UpdatedAt = time.Now()
-
-	if enabled {
-		workflow.Status = WorkflowStatusActive
-	} else {
-		workflow.Status = WorkflowStatusDisabled
+	status := WorkflowStatusActive
+	if !enabled {
+		status = WorkflowStatusDisabled
 	}
 
-	return workflow, nil
+	row, err := s.db.UpdateWorkflow(ctx, sqlc.UpdateWorkflowParams{
+		ID:      id,
+		Enabled: pgtype.Bool{Bool: enabled, Valid: true},
+		Status:  pgtype.Text{String: string(status), Valid: true},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("workflow not found: %s", workflowID)
+	}
+	return workflowFromDB(row)
+}
+
+func parseWorkflowUUID(id string) (pgtype.UUID, error) {
+	return pgutil.StringToUUID(id)
+}
+
+func workflowFromDB(row sqlc.Workflow) (*WorkflowInfo, error) {
+	var trigger Trigger
+	if len(row.Trigger) > 0 {
+		if err := json.Unmarshal(row.Trigger, &trigger); err != nil {
+			return nil, fmt.Errorf("parse trigger: %w", err)
+		}
+	}
+	var actions []Action
+	if len(row.Actions) > 0 {
+		if err := json.Unmarshal(row.Actions, &actions); err != nil {
+			return nil, fmt.Errorf("parse actions: %w", err)
+		}
+	}
+
+	info := &WorkflowInfo{
+		ID:             pgutil.UUIDToString(row.ID),
+		Name:           row.Name,
+		Description:    row.Description,
+		Status:         WorkflowStatus(row.Status),
+		Enabled:        row.Enabled,
+		Trigger:        trigger,
+		Actions:        actions,
+		CreatedAt:      pgutil.TimestamptzToTime(row.CreatedAt),
+		UpdatedAt:      pgutil.TimestamptzToTime(row.UpdatedAt),
+		CreatedBy:      pgutil.UUIDToString(row.OwnerId),
+		ExecutionCount: int(row.ExecutionCount),
+	}
+	if row.LastExecutionAt.Valid {
+		t := row.LastExecutionAt.Time
+		info.LastExecutionAt = &t
+	}
+	return info, nil
+}
+
+func executionFromDB(row sqlc.WorkflowExecution) (*ExecutionInfo, error) {
+	info := &ExecutionInfo{
+		ID:         pgutil.UUIDToString(row.ID),
+		WorkflowID: pgutil.UUIDToString(row.WorkflowId),
+		Status:     ExecutionStatus(row.Status),
+		StartedAt:  pgutil.TimestamptzToTime(row.StartedAt),
+	}
+	if row.CompletedAt.Valid {
+		t := row.CompletedAt.Time
+		info.CompletedAt = &t
+	}
+	if row.ErrorMessage.Valid {
+		info.ErrorMessage = row.ErrorMessage.String
+	}
+	if len(row.TriggerData) > 0 {
+		_ = json.Unmarshal(row.TriggerData, &info.TriggerData)
+	}
+	if len(row.ActionResults) > 0 {
+		_ = json.Unmarshal(row.ActionResults, &info.ActionResults)
+	}
+	return info, nil
 }
