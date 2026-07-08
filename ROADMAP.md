@@ -29,9 +29,11 @@ flowchart LR
 - [x] Rate limiting for login attempts.
 - [x] Profile image upload and management.
 - [x] User license management.
-- [ ] Review shared-link asset removal permissions.
+- [x] Review shared-link asset removal permissions.
+  Link ownership, individual-only mutation, and asset ownership on create/add are enforced; metadata redaction covered by tests.
 - [x] Implement real version-check RPC.
-- [ ] Verify original filename hiding when metadata is disabled.
+- [x] Verify original filename hiding when metadata is disabled.
+  Shared-link responses redact `originalFileName`, `originalPath`, and EXIF when `showMetadata` is false.
 - [x] Verify people search behaviour for short queries.
 - [x] Streaming support for large gRPC operations.
 - [x] Configurable worker pools for background jobs (`JOBS_WORKERS`, default 4).
@@ -40,15 +42,21 @@ flowchart LR
 ### v3 RC parity
 
 - [ ] Workflows / plugins parity.
-- [ ] HLS real-time transcoding.
-- [ ] Integrity-report jobs.
-- [ ] "Recently added assets" endpoint behaviour.
+  Scaffold exists (in-memory registry + sample plugins); not full upstream plugin host / workflow engine.
+- [x] HLS real-time transcoding.
+  On-demand HLS via `ensureHLS` + ffmpeg when `Features.VideoTranscodingEnabled`.
+- [x] Integrity-report jobs.
+  Admin integrity report endpoints scan storage on demand (checksum mismatch, missing, untracked).
+- [x] "Recently added assets" endpoint behaviour.
 - [ ] OAuth backchannel logout.
-- [ ] Full-path search.
-- [ ] Album map markers.
+  Route + request parsing exist; full logout-token JWT validation / session invalidation still stubbed.
+- [x] Full-path search.
+  Metadata search (`SearchAssetsFiltered`) and text search (`SearchAssetsByText`) match on `originalPath`.
+- [x] Album map markers.
 - [x] User upload heatmap.
-- [ ] Assess `pgvecto.rs` removal — vector search is currently on `vector` / `vchord`; check upstream's chosen replacement.
-- [ ] Assess duration-in-milliseconds response changes.
+- [x] Assess `pgvecto.rs` removal — already on `vector` / `vchord` (`vchordrq` indexes for CLIP + face embeddings). Stay on vchord unless upstream picks a different extension.
+- [x] Assess duration-in-milliseconds response changes.
+  Asset `duration` remains a string (Immich HH:MM:SS / human form in DB). No migration to numeric milliseconds required for current OpenAPI shape.
 
 ## Future enhancements
 

@@ -836,6 +836,7 @@ WHERE a."ownerId" = $1
 AND a."deletedAt" IS NULL
 AND (
     a."originalFileName" ILIKE '%' || $2 || '%'
+    OR a."originalPath" ILIKE '%' || $2 || '%'
     OR e.description ILIKE '%' || $2 || '%'
     OR e."imageName" ILIKE '%' || $2 || '%'
     OR e.city ILIKE '%' || $2 || '%'

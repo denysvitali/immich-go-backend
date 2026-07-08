@@ -572,6 +572,67 @@ func TestIntegration_AddAssetsToSharedLinkAccessDenied(t *testing.T) {
 	assert.Contains(t, err.Error(), "access denied")
 }
 
+func TestIntegration_AddAssetsToSharedLinkSkipsForeignAssets(t *testing.T) {
+	testdb.SkipIfNoDocker(t)
+
+	tdb := testdb.SetupTestDB(t)
+	ctx := context.Background()
+
+	service := NewService(tdb.Queries)
+
+	user1ID := createTestUser(t, tdb, "addforeign1@test.com")
+	user2ID := createTestUser(t, tdb, "addforeign2@test.com")
+	ownAssetID := createTestAsset(t, tdb, user1ID, "addforeignown")
+	foreignAssetID := createTestAsset(t, tdb, user2ID, "addforeignother")
+
+	link, err := service.CreateSharedLink(ctx, user1ID, &CreateSharedLinkRequest{
+		Type:     "INDIVIDUAL",
+		AssetIDs: []string{ownAssetID.String()},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 1, link.AssetCount)
+
+	// Owner tries to attach a foreign asset alongside another owned one.
+	// Foreign ID must be skipped; only the caller's asset is added.
+	extraOwnID := createTestAsset(t, tdb, user1ID, "addforeignextra")
+	updated, err := service.AddAssetsToSharedLink(ctx, user1ID, link.ID, []string{
+		foreignAssetID.String(),
+		extraOwnID.String(),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 2, updated.AssetCount)
+	assert.Contains(t, updated.AssetIDs, ownAssetID)
+	assert.Contains(t, updated.AssetIDs, extraOwnID)
+	assert.NotContains(t, updated.AssetIDs, foreignAssetID)
+}
+
+func TestIntegration_CreateSharedLinkSkipsForeignAssets(t *testing.T) {
+	testdb.SkipIfNoDocker(t)
+
+	tdb := testdb.SetupTestDB(t)
+	ctx := context.Background()
+
+	service := NewService(tdb.Queries)
+
+	user1ID := createTestUser(t, tdb, "createforeign1@test.com")
+	user2ID := createTestUser(t, tdb, "createforeign2@test.com")
+	ownAssetID := createTestAsset(t, tdb, user1ID, "createforeignown")
+	foreignAssetID := createTestAsset(t, tdb, user2ID, "createforeignother")
+
+	link, err := service.CreateSharedLink(ctx, user1ID, &CreateSharedLinkRequest{
+		Type:     "INDIVIDUAL",
+		AssetIDs: []string{ownAssetID.String(), foreignAssetID.String()},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 1, link.AssetCount)
+
+	// Confirm only the owned asset is attached in the DB.
+	assets, err := service.GetSharedLinkAssets(ctx, link.Key, "")
+	require.NoError(t, err)
+	require.Len(t, assets, 1)
+	assert.Equal(t, ownAssetID, uuid.UUID(assets[0].ID.Bytes))
+}
+
 func TestIntegration_RemoveAssetsFromSharedLinkAccessDenied(t *testing.T) {
 	testdb.SkipIfNoDocker(t)
 

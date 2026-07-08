@@ -124,11 +124,16 @@ func (s *Service) CreateSharedLink(ctx context.Context, userID uuid.UUID, req *C
 		return nil, fmt.Errorf("failed to create shared link: %w", err)
 	}
 
-	// Add assets to shared link if provided
+	// Add assets to shared link if provided. Only the caller's own assets
+	// may be attached — foreign asset IDs are skipped.
+	added := 0
 	if len(req.AssetIDs) > 0 {
 		for _, assetIDStr := range req.AssetIDs {
 			assetID, err := uuid.Parse(assetIDStr)
 			if err != nil {
+				continue
+			}
+			if err := s.ensureOwnedAsset(ctx, userID, assetID); err != nil {
 				continue
 			}
 
@@ -140,11 +145,12 @@ func (s *Service) CreateSharedLink(ctx context.Context, userID uuid.UUID, req *C
 				// Log error but continue
 				continue
 			}
+			added++
 		}
 	}
 
 	// Convert to response format
-	return convertSharedLink(&link, len(req.AssetIDs)), nil
+	return convertSharedLink(&link, added), nil
 }
 
 // GetSharedLink retrieves a shared link by ID
@@ -349,10 +355,14 @@ func (s *Service) AddAssetsToSharedLink(ctx context.Context, userID uuid.UUID, l
 		return nil, fmt.Errorf("asset modification is only supported for individual shared links")
 	}
 
-	// Add each asset
+	// Add each asset owned by the caller. Foreign assets are skipped so a
+	// user cannot expose someone else's media via their shared link.
 	for _, assetIDStr := range assetIDs {
 		assetID, err := uuid.Parse(assetIDStr)
 		if err != nil {
+			continue
+		}
+		if err := s.ensureOwnedAsset(ctx, userID, assetID); err != nil {
 			continue
 		}
 
@@ -367,6 +377,19 @@ func (s *Service) AddAssetsToSharedLink(ctx context.Context, userID uuid.UUID, l
 	}
 
 	return s.getSharedLinkWithAssets(ctx, existing)
+}
+
+// ensureOwnedAsset verifies that assetID exists, is not deleted, and is owned
+// by userID. Returns a non-nil error when the asset is missing or foreign.
+func (s *Service) ensureOwnedAsset(ctx context.Context, userID, assetID uuid.UUID) error {
+	_, err := s.db.GetAssetByIDAndUser(ctx, sqlc.GetAssetByIDAndUserParams{
+		ID:      pgtype.UUID{Bytes: assetID, Valid: true},
+		OwnerId: pgtype.UUID{Bytes: userID, Valid: true},
+	})
+	if err != nil {
+		return fmt.Errorf("asset not owned by user: %w", err)
+	}
+	return nil
 }
 
 // RemoveAssetsFromSharedLink removes assets from a shared link and returns the updated link.
