@@ -1892,7 +1892,7 @@ func (q *Queries) CreateVersionHistory(ctx context.Context, version string) (Ver
 const createWorkflow = `-- name: CreateWorkflow :one
 
 INSERT INTO workflows (
-    id, "ownerId", name, description, enabled, status, trigger, actions,
+    id, "ownerId", name, description, enabled, status, "trigger", actions,
     "executionCount", "createdAt", "updatedAt"
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, 0, NOW(), NOW()
@@ -10433,7 +10433,7 @@ SET name = COALESCE($2, name),
     description = COALESCE($3, description),
     enabled = COALESCE($4, enabled),
     status = COALESCE($5, status),
-    trigger = COALESCE($6, trigger),
+    "trigger" = COALESCE($6, "trigger"),
     actions = COALESCE($7, actions),
     "updatedAt" = NOW()
 WHERE id = $1

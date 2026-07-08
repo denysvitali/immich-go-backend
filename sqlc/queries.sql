@@ -1915,7 +1915,7 @@ RETURNING s.id;
 
 -- name: CreateWorkflow :one
 INSERT INTO workflows (
-    id, "ownerId", name, description, enabled, status, trigger, actions,
+    id, "ownerId", name, description, enabled, status, "trigger", actions,
     "executionCount", "createdAt", "updatedAt"
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, 0, NOW(), NOW()
@@ -1940,7 +1940,7 @@ SET name = COALESCE(sqlc.narg('name'), name),
     description = COALESCE(sqlc.narg('description'), description),
     enabled = COALESCE(sqlc.narg('enabled'), enabled),
     status = COALESCE(sqlc.narg('status'), status),
-    trigger = COALESCE(sqlc.narg('trigger'), trigger),
+    "trigger" = COALESCE(sqlc.narg('trigger'), "trigger"),
     actions = COALESCE(sqlc.narg('actions'), actions),
     "updatedAt" = NOW()
 WHERE id = $1

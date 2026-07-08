@@ -2190,7 +2190,7 @@ CREATE TABLE public.workflows (
     description character varying DEFAULT ''::character varying NOT NULL,
     enabled boolean DEFAULT true NOT NULL,
     status character varying DEFAULT 'active'::character varying NOT NULL,
-    trigger jsonb NOT NULL,
+    "trigger" jsonb NOT NULL,
     actions jsonb NOT NULL,
     "executionCount" integer DEFAULT 0 NOT NULL,
     "lastExecutionAt" timestamp with time zone,
