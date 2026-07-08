@@ -983,10 +983,6 @@ func (h *Handlers) loadAssetImageBytes(ctx context.Context, asset sqlc.Asset) ([
 	return data, nil
 }
 
-func unsupportedJobError(message string) error {
-	return fmt.Errorf("%s: %w", message, asynq.SkipRetry)
-}
-
 func (h *Handlers) markAssetJobStatus(ctx context.Context, params sqlc.UpdateAssetJobStatusParams) error {
 	if _, err := h.db.UpdateAssetJobStatus(ctx, params); err != nil {
 		if !errors.Is(err, pgx.ErrNoRows) {

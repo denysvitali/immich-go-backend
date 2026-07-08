@@ -159,7 +159,7 @@ func TestIntegration_UnsupportedJobError_LandsInDeadLetter(t *testing.T) {
 
 	svc := newTestService(t, tdb)
 	svc.RegisterHandler(JobTypeFaceDetection, func(_ context.Context, _ *asynq.Task) error {
-		return unsupportedJobError("face detection requires an ML integration, which is not configured")
+		return fmt.Errorf("face detection requires an ML integration, which is not configured: %w", asynq.SkipRetry)
 	})
 
 	payload := FaceDetectionPayload{AssetID: uuid.New().String()}

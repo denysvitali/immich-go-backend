@@ -130,6 +130,7 @@ func TestEncodeTextHTTP(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/predict", r.URL.Path)
 		assert.Equal(t, http.MethodPost, r.Method)
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		require.NoError(t, r.ParseMultipartForm(1<<20))
 		gotEntries = r.FormValue("entries")
 		gotText = r.FormValue("text")
@@ -151,6 +152,7 @@ func TestEncodeTextHTTP(t *testing.T) {
 func TestEncodeImageHTTP(t *testing.T) {
 	var gotImage bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		require.NoError(t, r.ParseMultipartForm(1<<20))
 		file, _, err := r.FormFile("image")
 		require.NoError(t, err)
@@ -171,6 +173,7 @@ func TestEncodeImageHTTP(t *testing.T) {
 
 func TestDetectFacesHTTP(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		require.NoError(t, r.ParseMultipartForm(1<<20))
 		entries := r.FormValue("entries")
 		assert.Contains(t, entries, `"facial-recognition"`)
