@@ -131,7 +131,7 @@ func TestEncodeTextHTTP(t *testing.T) {
 		assert.Equal(t, "/predict", r.URL.Path)
 		assert.Equal(t, http.MethodPost, r.Method)
 		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
-		require.NoError(t, r.ParseMultipartForm(1<<20))
+		require.NoError(t, r.ParseMultipartForm(1<<20)) //nolint:gosec // G120: test handler, body capped via MaxBytesReader
 		gotEntries = r.FormValue("entries")
 		gotText = r.FormValue("text")
 		_, _ = w.Write([]byte(`{"clip":"[0.11,0.22,0.33]"}`))
@@ -153,7 +153,7 @@ func TestEncodeImageHTTP(t *testing.T) {
 	var gotImage bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
-		require.NoError(t, r.ParseMultipartForm(1<<20))
+		require.NoError(t, r.ParseMultipartForm(1<<20)) //nolint:gosec // G120: test handler, body capped via MaxBytesReader
 		file, _, err := r.FormFile("image")
 		require.NoError(t, err)
 		defer file.Close()
@@ -174,7 +174,7 @@ func TestEncodeImageHTTP(t *testing.T) {
 func TestDetectFacesHTTP(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
-		require.NoError(t, r.ParseMultipartForm(1<<20))
+		require.NoError(t, r.ParseMultipartForm(1<<20)) //nolint:gosec // G120: test handler, body capped via MaxBytesReader
 		entries := r.FormValue("entries")
 		assert.Contains(t, entries, `"facial-recognition"`)
 		assert.Contains(t, entries, `"detection"`)
