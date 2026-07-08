@@ -15,6 +15,7 @@
 *.tar.gz
 *.json
 !/e2e/package.json
+!/deploy/monitoring/grafana/dashboards/*.json
 api.swagger.json
 immich-openapi-specs.json
 node_modules/
