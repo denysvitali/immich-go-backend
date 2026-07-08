@@ -1,0 +1,46 @@
+immich-go-backend has been installed as release "{{ .Release.Name }}".
+
+1. REST API (HTTP):
+{{- if .Values.ingress.enabled }}
+{{- range $host := .Values.ingress.hosts }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ $host.host }}/api/server/ping
+{{- end }}
+{{- else if contains "NodePort" .Values.service.type }}
+  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "immich-go-backend.fullname" . }})
+  export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+  curl http://$NODE_IP:$NODE_PORT/api/server/ping
+{{- else if contains "LoadBalancer" .Values.service.type }}
+  NOTE: LoadBalancer IP may take a minute to provision.
+  export SERVICE_IP=$(kubectl get svc --namespace {{ .Release.Namespace }} {{ include "immich-go-backend.fullname" . }} --template "{{"{{ range (index .status.loadBalancer.ingress 0) }}{{.}}{{ end }}"}}")
+  curl http://$SERVICE_IP:{{ .Values.service.http.port }}/api/server/ping
+{{- else }}
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "immich-go-backend.fullname" . }} {{ .Values.service.http.port }}:{{ .Values.service.http.port }}
+  curl http://127.0.0.1:{{ .Values.service.http.port }}/api/server/ping
+{{- end }}
+
+2. gRPC (cluster-internal):
+  {{ include "immich-go-backend.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.grpc.port }}
+
+3. Required configuration (set before production use):
+  - database.url  →  DATABASE_URL  (external PostgreSQL DSN)
+  - auth.jwtSecret → AUTH_JWT_SECRET  (32+ random bytes)
+  - redis.url     →  JOBS_REDIS_URL  (external Redis for asynq jobs)
+
+  Prefer an existing Kubernetes Secret:
+    --set existingSecret=my-immich-secrets
+
+4. Health / version:
+  GET /api/server/ping
+  GET /api/server/version
+  GET {{ .Values.server.metricsPath }}   (Prometheus, if SERVER_METRICS_ENABLED=true)
+
+5. First admin user (after the pod is Ready):
+  curl -X POST http://<host>/api/auth/admin-sign-up \
+    -H 'Content-Type: application/json' \
+    -d '{"email":"admin@example.com","password":"changeme","name":"Admin"}'
+
+6. Notes:
+  - This chart does NOT deploy PostgreSQL or Redis — point at managed services.
+  - Local storage (STORAGE_BACKEND=local) uses a PVC at {{ .Values.persistence.mountPath }};
+    keep replicaCount=1 with ReadWriteOnce, or switch to S3 for multi-replica.
+  - Image runs as uid 1001 (non-root), matching the Dockerfile.

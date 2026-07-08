@@ -21,7 +21,7 @@ func TestSearchPerson_ShortQueries(t *testing.T) {
 	tdb := testdb.SetupTestDB(t)
 	ctx := context.Background()
 
-	service := NewService(tdb.Queries)
+	service := NewService(tdb.Queries, nil, nil)
 	server := NewServer(service)
 
 	// Create two users to verify ownership isolation.

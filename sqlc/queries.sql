@@ -695,13 +695,27 @@ INSERT INTO face_search ("faceId", embedding)
 VALUES ($1, $2)
 RETURNING *;
 
+-- name: UpsertFaceSearch :one
+INSERT INTO face_search ("faceId", embedding)
+VALUES ($1, $2)
+ON CONFLICT ("faceId") DO UPDATE SET embedding = EXCLUDED.embedding
+RETURNING *;
+
 -- name: SearchFacesByEmbedding :many
-SELECT fs.*, p.name as person_name
+SELECT fs."faceId", fs.embedding, p.name as person_name, af."personId" as person_id
 FROM face_search fs
-JOIN person p ON fs."personId" = p.id
-WHERE fs.embedding <-> $1 < $2
-ORDER BY fs.embedding <-> $1
-LIMIT $3;
+JOIN asset_faces af ON af.id = fs."faceId"
+LEFT JOIN person p ON af."personId" = p.id
+WHERE af."deletedAt" IS NULL
+AND af."personId" IS NOT NULL
+AND fs.embedding <-> sqlc.arg(embedding) < sqlc.arg(max_distance)
+ORDER BY fs.embedding <-> sqlc.arg(embedding)
+LIMIT sqlc.arg(result_limit);
+
+-- name: DeleteAssetFacesByAsset :exec
+DELETE FROM asset_faces
+WHERE "assetId" = $1
+AND "sourceType" = 'machine-learning';
 
 -- ============================================================================
 -- LIBRARIES QUERIES
@@ -815,19 +829,41 @@ RETURNING *;
 
 -- name: UpdateSmartSearch :one
 UPDATE smart_search
-SET embedding = $2,
-    "updatedAt" = now()
+SET embedding = $2
 WHERE "assetId" = $1
+RETURNING *;
+
+-- name: UpsertSmartSearch :one
+INSERT INTO smart_search ("assetId", embedding)
+VALUES ($1, $2)
+ON CONFLICT ("assetId") DO UPDATE SET embedding = EXCLUDED.embedding
 RETURNING *;
 
 -- name: SearchAssetsByEmbedding :many
 SELECT ss.*, a.* FROM smart_search ss
 JOIN assets a ON ss."assetId" = a.id
-WHERE a."ownerId" = $1 
+WHERE a."ownerId" = sqlc.arg(owner_id)
 AND a."deletedAt" IS NULL
-AND ss.embedding <-> $2 < $3
-ORDER BY ss.embedding <-> $2
-LIMIT $4;
+AND ss.embedding <-> sqlc.arg(embedding) < sqlc.arg(max_distance)
+ORDER BY ss.embedding <-> sqlc.arg(embedding)
+LIMIT sqlc.arg(result_limit);
+
+-- name: ListSmartSearchByOwner :many
+SELECT ss."assetId", ss.embedding, a."duplicateId"
+FROM smart_search ss
+JOIN assets a ON ss."assetId" = a.id
+WHERE a."ownerId" = $1
+AND a."deletedAt" IS NULL
+ORDER BY a."createdAt" DESC
+LIMIT $2;
+
+-- name: SetAssetDuplicateId :exec
+UPDATE assets
+SET "duplicateId" = $2,
+    "updatedAt" = now(),
+    "updateId" = immich_uuid_v7()
+WHERE id = $1
+AND "deletedAt" IS NULL;
 
 -- name: SearchAssetsByText :many
 SELECT DISTINCT a.* FROM assets a

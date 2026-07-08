@@ -1,0 +1,149 @@
+# Alertmanager-compatible Prometheus recording/alerting rules for immich-go-backend.
+#
+# Metric names are taken from OpenTelemetry instruments created in:
+#   internal/assets, internal/users, internal/admin, internal/faces, internal/stacks,
+#   internal/duplicates, internal/plugin, internal/workflow, internal/view,
+#   internal/systemmetadata
+#
+# OTel → Prometheus naming (go.opentelemetry.io/otel/exporters/prometheus defaults):
+#   - monotonic counters keep/re-gain a `_total` suffix
+#   - histograms export `_bucket` / `_sum` / `_count`
+#   - UpDownCounters export as gauges (no `_total`)
+#   - attributes become labels (e.g. `operation`)
+#   - series may include `otel_scope_name`, `otel_scope_version`, and `target_info`
+#
+# Load with:
+#   rule_files:
+#     - /etc/prometheus/rules/immich-go-backend-alerts.yml
+# (or merge this file into your existing rule_files list)
+
+groups:
+  - name: immich-go-backend.availability
+    rules:
+      - alert: ImmichGoBackendTargetDown
+        expr: up{job=~"immich-go-backend.*"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: immich-go-backend
+        annotations:
+          summary: "immich-go-backend scrape target down"
+          description: >-
+            Prometheus cannot scrape {{ $labels.instance }} (job={{ $labels.job }})
+            for more than 2 minutes. Check process health, network, and the
+            metrics endpoint (app :3001/metrics or OTel Prometheus exporter :9464).
+
+      - alert: ImmichGoBackendAbsentMetrics
+        expr: |
+          absent(up{job=~"immich-go-backend.*"})
+        for: 10m
+        labels:
+          severity: warning
+          service: immich-go-backend
+        annotations:
+          summary: "No immich-go-backend scrape job configured or discovered"
+          description: >-
+            No `up` series exists for job matching immich-go-backend.*.
+            Add a scrape config or ServiceMonitor (see deploy/monitoring/prometheus/).
+
+  - name: immich-go-backend.assets
+    rules:
+      - alert: ImmichGoBackendAssetProcessingLatencyHigh
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(assets_processing_duration_seconds_bucket[5m]))
+          ) > 30
+        for: 10m
+        labels:
+          severity: warning
+          service: immich-go-backend
+        annotations:
+          summary: "Asset processing p95 latency high"
+          description: >-
+            95th percentile of assets_processing_duration_seconds is {{ $value | humanizeDuration }}
+            (threshold 30s) for 10m. Check storage backend and job workers.
+
+      - alert: ImmichGoBackendAssetUploadRateAnomaly
+        # Fires when uploads suddenly stop after recent activity (rate drops to zero
+        # while a non-zero rate existed in the prior hour). Quiet installs stay quiet.
+        expr: |
+          (
+            sum(rate(assets_uploads_total[5m])) == 0
+          )
+          and
+          (
+            sum(rate(assets_uploads_total[1h] offset 5m)) > 0.01
+          )
+        for: 30m
+        labels:
+          severity: warning
+          service: immich-go-backend
+        annotations:
+          summary: "Asset uploads stalled"
+          description: >-
+            assets_uploads_total rate is 0 for 30m after non-zero traffic in the
+            previous hour. Check API reachability, auth, and storage write path.
+
+  - name: immich-go-backend.operations
+    rules:
+      - alert: ImmichGoBackendUserOperationLatencyHigh
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le, operation) (rate(user_operation_duration_seconds_bucket[5m]))
+          ) > 5
+        for: 10m
+        labels:
+          severity: warning
+          service: immich-go-backend
+        annotations:
+          summary: "User operation p95 high ({{ $labels.operation }})"
+          description: >-
+            user_operation_duration_seconds p95 for operation={{ $labels.operation }}
+            is {{ $value | humanizeDuration }} (threshold 5s).
+
+      - alert: ImmichGoBackendAdminOperationLatencyHigh
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le, operation) (rate(admin_operation_duration_seconds_bucket[5m]))
+          ) > 60
+        for: 15m
+        labels:
+          severity: warning
+          service: immich-go-backend
+        annotations:
+          summary: "Admin operation p95 high ({{ $labels.operation }})"
+          description: >-
+            admin_operation_duration_seconds p95 for operation={{ $labels.operation }}
+            is {{ $value | humanizeDuration }} (threshold 60s). Integrity scans may
+            legitimately be slow on large libraries — tune threshold if needed.
+
+      - alert: ImmichGoBackendWorkflowExecutionSpike
+        expr: |
+          sum(rate(workflow_executions_total[5m])) > 10
+        for: 10m
+        labels:
+          severity: info
+          service: immich-go-backend
+        annotations:
+          summary: "Elevated workflow execution rate"
+          description: >-
+            workflow_executions_total rate is {{ $value | humanize }} exec/s
+            (threshold 10/s) for 10m. Verify this matches expected automation load.
+
+  - name: immich-go-backend.capacity
+    rules:
+      - alert: ImmichGoBackendAssetStorageGrowingFast
+        expr: |
+          sum(deriv(assets_storage_bytes[1h])) > 5e9
+        for: 2h
+        labels:
+          severity: info
+          service: immich-go-backend
+        annotations:
+          summary: "Asset storage growing quickly"
+          description: >-
+            assets_storage_bytes derivative exceeds ~5 GiB/h sustained for 2h
+            (value={{ $value | humanize1024 }}B/s). Confirm disk/S3 capacity planning.

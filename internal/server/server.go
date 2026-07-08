@@ -39,6 +39,7 @@ import (
 	"github.com/denysvitali/immich-go-backend/internal/maintenance"
 	mapservice "github.com/denysvitali/immich-go-backend/internal/map"
 	"github.com/denysvitali/immich-go-backend/internal/memories"
+	"github.com/denysvitali/immich-go-backend/internal/ml"
 	"github.com/denysvitali/immich-go-backend/internal/notifications"
 	"github.com/denysvitali/immich-go-backend/internal/partners"
 	"github.com/denysvitali/immich-go-backend/internal/people"
@@ -190,10 +191,28 @@ func NewServer(cfg *config.Config, db *db.Conn) (*Server, error) {
 		return nil, err
 	}
 
+	// Machine learning client (disabled unless feature flags + URL set).
+	mlClient := ml.NewClient(ml.Config{
+		Enabled:              cfg.MLActive(),
+		URL:                  cfg.MachineLearning.URL,
+		Timeout:              cfg.MachineLearning.Timeout,
+		CLIPModel:            cfg.MachineLearning.Clip.ModelName,
+		FaceModel:            cfg.MachineLearning.FacialRecognition.ModelName,
+		FaceMinScore:         cfg.MachineLearning.FacialRecognition.MinScore,
+		FaceMaxDistance:      cfg.MachineLearning.FacialRecognition.MaxDistance,
+		CLIPMaxDistance:      cfg.MachineLearning.Clip.MaxDistance,
+		DuplicateMaxDistance: cfg.MachineLearning.DuplicateDetection.MaxDistance,
+	})
+	if mlClient.Enabled() {
+		logrus.WithField("url", cfg.MachineLearning.URL).Info("Machine learning client enabled")
+	} else {
+		logrus.Info("Machine learning client disabled (enable Features.MachineLearningEnabled + machine_learning)")
+	}
+
 	albumService := albums.NewService(db.Queries)
 	apiKeyService := apikeys.NewService(db.Queries)
 	libraryService := libraries.NewService(db.Queries, cfg, storageService)
-	searchService := search.NewService(db.Queries)
+	searchService := search.NewService(db.Queries, mlClient, cfg)
 	downloadService := download.NewService(db.Queries, storageService)
 	sharedLinksService := sharedlinks.NewService(db.Queries)
 	systemConfigService := systemconfig.NewService(db.Queries)
@@ -301,7 +320,7 @@ func NewServer(cfg *config.Config, db *db.Conn) (*Server, error) {
 			logrus.WithError(err).Warn("Failed to initialize job service, background processing disabled")
 		} else {
 			// Register real job handlers so enqueued jobs are processed
-			jobHandlers := jobs.NewHandlers(db.Queries, assetService, libraryService, storageService)
+			jobHandlers := jobs.NewHandlers(db.Queries, assetService, libraryService, storageService, mlClient, cfg)
 			jobHandlers.RegisterAllHandlers(jobService)
 		}
 	} else {

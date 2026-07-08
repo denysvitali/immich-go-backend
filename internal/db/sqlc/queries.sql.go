@@ -2053,6 +2053,17 @@ func (q *Queries) DeleteAssetFace(ctx context.Context, id pgtype.UUID) error {
 	return err
 }
 
+const deleteAssetFacesByAsset = `-- name: DeleteAssetFacesByAsset :exec
+DELETE FROM asset_faces
+WHERE "assetId" = $1
+AND "sourceType" = 'machine-learning'
+`
+
+func (q *Queries) DeleteAssetFacesByAsset(ctx context.Context, assetid pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteAssetFacesByAsset, assetid)
+	return err
+}
+
 const deleteAssetFile = `-- name: DeleteAssetFile :exec
 DELETE FROM asset_files
 WHERE "assetId" = $1 AND "type" = $2
@@ -7797,6 +7808,47 @@ func (q *Queries) ListJobFailures(ctx context.Context, arg ListJobFailuresParams
 	return items, nil
 }
 
+const listSmartSearchByOwner = `-- name: ListSmartSearchByOwner :many
+SELECT ss."assetId", ss.embedding, a."duplicateId"
+FROM smart_search ss
+JOIN assets a ON ss."assetId" = a.id
+WHERE a."ownerId" = $1
+AND a."deletedAt" IS NULL
+ORDER BY a."createdAt" DESC
+LIMIT $2
+`
+
+type ListSmartSearchByOwnerParams struct {
+	OwnerId pgtype.UUID
+	Limit   int32
+}
+
+type ListSmartSearchByOwnerRow struct {
+	AssetId     pgtype.UUID
+	Embedding   interface{}
+	DuplicateId pgtype.UUID
+}
+
+func (q *Queries) ListSmartSearchByOwner(ctx context.Context, arg ListSmartSearchByOwnerParams) ([]ListSmartSearchByOwnerRow, error) {
+	rows, err := q.db.Query(ctx, listSmartSearchByOwner, arg.OwnerId, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSmartSearchByOwnerRow
+	for rows.Next() {
+		var i ListSmartSearchByOwnerRow
+		if err := rows.Scan(&i.AssetId, &i.Embedding, &i.DuplicateId); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUsers = `-- name: ListUsers :many
 SELECT id, email, password, "createdAt", "profileImagePath", "isAdmin", "shouldChangePassword", "deletedAt", "oauthId", "updatedAt", "storageLabel", name, "quotaSizeInBytes", "quotaUsageInBytes", status, "profileChangedAt", "updateId", "avatarColor", "pinCode", "isOnboarded" FROM users
 WHERE "deletedAt" IS NULL
@@ -8469,7 +8521,7 @@ func (q *Queries) SearchAssets(ctx context.Context, arg SearchAssetsParams) ([]A
 const searchAssetsByEmbedding = `-- name: SearchAssetsByEmbedding :many
 SELECT ss."assetId", ss.embedding, a.id, a."deviceAssetId", a."ownerId", a."deviceId", a.type, a."originalPath", a."fileCreatedAt", a."fileModifiedAt", a."isFavorite", a.duration, a."encodedVideoPath", a.checksum, a."livePhotoVideoId", a."updatedAt", a."createdAt", a."originalFileName", a."sidecarPath", a.thumbhash, a."isOffline", a."libraryId", a."isExternal", a."deletedAt", a."localDateTime", a."stackId", a."duplicateId", a.status, a."updateId", a.visibility FROM smart_search ss
 JOIN assets a ON ss."assetId" = a.id
-WHERE a."ownerId" = $1 
+WHERE a."ownerId" = $1
 AND a."deletedAt" IS NULL
 AND ss.embedding <-> $2 < $3
 ORDER BY ss.embedding <-> $2
@@ -8477,10 +8529,10 @@ LIMIT $4
 `
 
 type SearchAssetsByEmbeddingParams struct {
-	OwnerId     pgtype.UUID
+	OwnerID     pgtype.UUID
 	Embedding   interface{}
-	Embedding_2 interface{}
-	Limit       int32
+	MaxDistance interface{}
+	ResultLimit int32
 }
 
 type SearchAssetsByEmbeddingRow struct {
@@ -8518,10 +8570,10 @@ type SearchAssetsByEmbeddingRow struct {
 
 func (q *Queries) SearchAssetsByEmbedding(ctx context.Context, arg SearchAssetsByEmbeddingParams) ([]SearchAssetsByEmbeddingRow, error) {
 	rows, err := q.db.Query(ctx, searchAssetsByEmbedding,
-		arg.OwnerId,
+		arg.OwnerID,
 		arg.Embedding,
-		arg.Embedding_2,
-		arg.Limit,
+		arg.MaxDistance,
+		arg.ResultLimit,
 	)
 	if err != nil {
 		return nil, err
@@ -8780,28 +8832,32 @@ func (q *Queries) SearchAssetsFiltered(ctx context.Context, arg SearchAssetsFilt
 }
 
 const searchFacesByEmbedding = `-- name: SearchFacesByEmbedding :many
-SELECT fs."faceId", fs.embedding, p.name as person_name
+SELECT fs."faceId", fs.embedding, p.name as person_name, af."personId" as person_id
 FROM face_search fs
-JOIN person p ON fs."personId" = p.id
-WHERE fs.embedding <-> $1 < $2
+JOIN asset_faces af ON af.id = fs."faceId"
+LEFT JOIN person p ON af."personId" = p.id
+WHERE af."deletedAt" IS NULL
+AND af."personId" IS NOT NULL
+AND fs.embedding <-> $1 < $2
 ORDER BY fs.embedding <-> $1
 LIMIT $3
 `
 
 type SearchFacesByEmbeddingParams struct {
 	Embedding   interface{}
-	Embedding_2 interface{}
-	Limit       int32
+	MaxDistance interface{}
+	ResultLimit int32
 }
 
 type SearchFacesByEmbeddingRow struct {
 	FaceId     pgtype.UUID
 	Embedding  interface{}
-	PersonName string
+	PersonName pgtype.Text
+	PersonID   pgtype.UUID
 }
 
 func (q *Queries) SearchFacesByEmbedding(ctx context.Context, arg SearchFacesByEmbeddingParams) ([]SearchFacesByEmbeddingRow, error) {
-	rows, err := q.db.Query(ctx, searchFacesByEmbedding, arg.Embedding, arg.Embedding_2, arg.Limit)
+	rows, err := q.db.Query(ctx, searchFacesByEmbedding, arg.Embedding, arg.MaxDistance, arg.ResultLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -8809,7 +8865,12 @@ func (q *Queries) SearchFacesByEmbedding(ctx context.Context, arg SearchFacesByE
 	var items []SearchFacesByEmbeddingRow
 	for rows.Next() {
 		var i SearchFacesByEmbeddingRow
-		if err := rows.Scan(&i.FaceId, &i.Embedding, &i.PersonName); err != nil {
+		if err := rows.Scan(
+			&i.FaceId,
+			&i.Embedding,
+			&i.PersonName,
+			&i.PersonID,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -9214,6 +9275,25 @@ func (q *Queries) SearchUsersAdmin(ctx context.Context, arg SearchUsersAdminPara
 		return nil, err
 	}
 	return items, nil
+}
+
+const setAssetDuplicateId = `-- name: SetAssetDuplicateId :exec
+UPDATE assets
+SET "duplicateId" = $2,
+    "updatedAt" = now(),
+    "updateId" = immich_uuid_v7()
+WHERE id = $1
+AND "deletedAt" IS NULL
+`
+
+type SetAssetDuplicateIdParams struct {
+	ID          pgtype.UUID
+	DuplicateId pgtype.UUID
+}
+
+func (q *Queries) SetAssetDuplicateId(ctx context.Context, arg SetAssetDuplicateIdParams) error {
+	_, err := q.db.Exec(ctx, setAssetDuplicateId, arg.ID, arg.DuplicateId)
+	return err
 }
 
 const setSessionPinElevation = `-- name: SetSessionPinElevation :exec
@@ -10148,8 +10228,7 @@ func (q *Queries) UpdateSharedLink(ctx context.Context, arg UpdateSharedLinkPara
 
 const updateSmartSearch = `-- name: UpdateSmartSearch :one
 UPDATE smart_search
-SET embedding = $2,
-    "updatedAt" = now()
+SET embedding = $2
 WHERE "assetId" = $1
 RETURNING "assetId", embedding
 `
@@ -10540,5 +10619,43 @@ func (q *Queries) UpsertDatabaseBackup(ctx context.Context, arg UpsertDatabaseBa
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
+	return i, err
+}
+
+const upsertFaceSearch = `-- name: UpsertFaceSearch :one
+INSERT INTO face_search ("faceId", embedding)
+VALUES ($1, $2)
+ON CONFLICT ("faceId") DO UPDATE SET embedding = EXCLUDED.embedding
+RETURNING "faceId", embedding
+`
+
+type UpsertFaceSearchParams struct {
+	FaceId    pgtype.UUID
+	Embedding interface{}
+}
+
+func (q *Queries) UpsertFaceSearch(ctx context.Context, arg UpsertFaceSearchParams) (FaceSearch, error) {
+	row := q.db.QueryRow(ctx, upsertFaceSearch, arg.FaceId, arg.Embedding)
+	var i FaceSearch
+	err := row.Scan(&i.FaceId, &i.Embedding)
+	return i, err
+}
+
+const upsertSmartSearch = `-- name: UpsertSmartSearch :one
+INSERT INTO smart_search ("assetId", embedding)
+VALUES ($1, $2)
+ON CONFLICT ("assetId") DO UPDATE SET embedding = EXCLUDED.embedding
+RETURNING "assetId", embedding
+`
+
+type UpsertSmartSearchParams struct {
+	AssetId   pgtype.UUID
+	Embedding interface{}
+}
+
+func (q *Queries) UpsertSmartSearch(ctx context.Context, arg UpsertSmartSearchParams) (SmartSearch, error) {
+	row := q.db.QueryRow(ctx, upsertSmartSearch, arg.AssetId, arg.Embedding)
+	var i SmartSearch
+	err := row.Scan(&i.AssetId, &i.Embedding)
 	return i, err
 }

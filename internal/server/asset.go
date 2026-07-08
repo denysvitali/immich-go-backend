@@ -219,6 +219,9 @@ func (s *Server) UploadAsset(ctx context.Context, request *immichv1.UploadAssetR
 				logrus.WithError(enqErr).Warn("UploadAsset: failed to enqueue video transcode job")
 			}
 		}
+
+		// ML jobs no-op inside handlers when feature flags / ML URL disabled.
+		s.enqueueMLJobsForAsset(ctx, assetIDStr, assetType)
 	} else if len(fileContent) > 0 {
 		// No job queue configured — trigger in-process background processing.
 		// Only runs when the file was actually stored so processAsset can read it.
@@ -734,11 +737,35 @@ func (s *Server) ReplaceAsset(ctx context.Context, request *immichv1.ReplaceAsse
 				logrus.WithError(enqErr).Warn("ReplaceAsset: failed to enqueue video transcode job")
 			}
 		}
+		s.enqueueMLJobsForAsset(ctx, assetIDStr, updatedAsset.Type)
 	} else {
 		s.assetService.TriggerProcessing(assetUUID)
 	}
 
 	return s.convertAssetToProto(updatedAsset), nil
+}
+
+// enqueueMLJobsForAsset queues face detection + CLIP indexing when those
+// features are active. Handlers themselves no-op if ML is later disabled.
+func (s *Server) enqueueMLJobsForAsset(ctx context.Context, assetID, assetType string) {
+	if s.jobService == nil || s.config == nil {
+		return
+	}
+	if !strings.EqualFold(assetType, "IMAGE") {
+		return
+	}
+	if s.config.FaceRecognitionActive() {
+		payload := jobs.FaceDetectionPayload{AssetID: assetID}
+		if err := s.jobService.EnqueueJobWithPriority(ctx, jobs.JobTypeFaceDetection, payload, jobs.PriorityNormal); err != nil {
+			logrus.WithError(err).Warn("failed to enqueue face detection job")
+		}
+	}
+	if s.config.CLIPActive() {
+		payload := jobs.SmartSearchIndexPayload{AssetID: assetID}
+		if err := s.jobService.EnqueueJobWithPriority(ctx, jobs.JobTypeSmartSearch, payload, jobs.PriorityLow); err != nil {
+			logrus.WithError(err).Warn("failed to enqueue smart search indexing job")
+		}
+	}
 }
 
 func (s *Server) GetAssetThumbnail(ctx context.Context, request *immichv1.GetAssetThumbnailRequest) (*immichv1.GetAssetThumbnailResponse, error) {

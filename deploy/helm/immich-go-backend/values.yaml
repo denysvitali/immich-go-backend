@@ -1,0 +1,270 @@
+# Default values for immich-go-backend.
+# This is a YAML-formatted file.
+
+## Number of backend replicas.
+## For local storage backend, keep at 1 unless using ReadWriteMany PVC or S3.
+replicaCount: 1
+
+image:
+  repository: ghcr.io/denysvitali/immich-go-backend
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+## Service account
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+## Pod annotations / labels
+podAnnotations: {}
+podLabels: {}
+
+## Security context — matches Dockerfile USER appuser (uid 1001)
+podSecurityContext:
+  fsGroup: 1001
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: false
+  runAsNonRoot: true
+  runAsUser: 1001
+  runAsGroup: 1001
+
+## Service — REST (http) on 3001, gRPC on 3002
+service:
+  type: ClusterIP
+  annotations: {}
+  http:
+    port: 3001
+    # Optional nodePort when type is NodePort / LoadBalancer
+    nodePort: null
+  grpc:
+    port: 3002
+    nodePort: null
+  # Expose gRPC service port (set false to hide gRPC from the Service)
+  grpcEnabled: true
+
+## Ingress (HTTP/REST only; gRPC typically stays cluster-internal)
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+    # kubernetes.ingress.kubernetes.io/proxy-body-size: "0"
+    # nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    # nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    # nginx.ingress.kubernetes.io/websocket-services: "{{ include \"immich-go-backend.fullname\" . }}"
+  hosts:
+    - host: photos.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: immich-tls
+  #    hosts:
+  #      - photos.example.com
+
+## Resource requests / limits
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: "2"
+    memory: 2Gi
+
+## Autoscaling (optional)
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: null
+
+## Local storage persistence for uploads (when STORAGE_BACKEND=local)
+persistence:
+  enabled: true
+  storageClass: ""
+  accessModes:
+    - ReadWriteOnce
+  size: 50Gi
+  # Existing claim name — if set, chart will not create a PVC
+  existingClaim: ""
+  annotations: {}
+  # Mount path for the volume (STORAGE_LOCAL_ROOT parent)
+  mountPath: /data
+
+## Probes — Immich REST liveness: GET /api/server/ping
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /api/server/ping
+    port: http
+  initialDelaySeconds: 15
+  periodSeconds: 15
+  timeoutSeconds: 5
+  failureThreshold: 3
+  successThreshold: 1
+
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /api/server/ping
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+  successThreshold: 1
+
+startupProbe:
+  enabled: true
+  httpGet:
+    path: /api/server/ping
+    port: http
+  initialDelaySeconds: 0
+  periodSeconds: 5
+  timeoutSeconds: 5
+  failureThreshold: 30
+  successThreshold: 1
+
+## Node scheduling
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+## Extra pod volumes / mounts
+extraVolumes: []
+extraVolumeMounts: []
+
+## Extra env vars (list of {name, value} or valueFrom)
+extraEnv: []
+
+## Extra env from ConfigMap / Secret refs
+envFrom: []
+
+## Container command / args (Dockerfile ENTRYPOINT is the binary; CMD is serve)
+args:
+  - serve
+
+## Priority class
+priorityClassName: ""
+
+## Topology spread
+topologySpreadConstraints: []
+
+# ---------------------------------------------------------------------------
+# Application configuration
+# Non-secret settings land in a ConfigMap; secrets in a Secret (or existingSecret).
+# ---------------------------------------------------------------------------
+
+## External PostgreSQL (required). Chart does NOT deploy Postgres.
+## Provide full DSN, or leave database.url empty and set via existingSecret.
+database:
+  # postgres://user:pass@host:5432/immich?sslmode=require
+  url: ""
+  maxOpenConns: "25"
+  maxIdleConns: "5"
+  maxConnLifetime: "1h"
+  connectTimeout: "30s"
+  # Run migrations on serve. Prefer true for single-replica; use Job/init for multi-replica.
+  autoMigrate: "true"
+
+## External Redis for asynq job queue (required for background jobs).
+## Chart does NOT deploy Redis.
+redis:
+  # redis://[:password@]host:6379/0
+  url: "redis://redis:6379/0"
+
+## Auth — AUTH_JWT_SECRET is required. Prefer existingSecret in production.
+auth:
+  jwtSecret: ""
+  jwtExpiry: "24h"
+  jwtRefreshExpiry: "168h"
+  jwtIssuer: "immich-go-backend"
+  registrationEnabled: "true"
+
+## Use an existing Secret instead of creating one from values.
+## Keys expected: DATABASE_URL, AUTH_JWT_SECRET (and optionally JOBS_REDIS_URL, S3_*).
+existingSecret: ""
+# Map secret keys if your secret uses different key names
+existingSecretKeys:
+  databaseUrl: DATABASE_URL
+  authJwtSecret: AUTH_JWT_SECRET
+  jobsRedisUrl: JOBS_REDIS_URL
+
+## Storage backend: local | s3 | rclone
+storage:
+  backend: local
+  localRoot: /data/uploads
+  uploadTempDir: /data/tmp
+  # S3 / S3-compatible (when backend=s3)
+  s3:
+    enabled: false
+    bucket: ""
+    endpoint: ""
+    region: "us-east-1"
+    accessKeyId: ""
+    secretAccessKey: ""
+    useSSL: "true"
+    forcePathStyle: "false"
+    directUpload: "false"
+    pathPrefix: ""
+    presignedUrlExpiry: "15m"
+
+## Server bind addresses (must match service ports)
+server:
+  address: "0.0.0.0:3001"
+  grpcAddress: "0.0.0.0:3002"
+  metricsEnabled: "true"
+  metricsPath: "/metrics"
+  corsEnabled: "true"
+  requestLogging: "true"
+
+## Logging
+logging:
+  level: info
+  format: json
+  output: stdout
+
+## Feature flags (string booleans for env injection)
+features:
+  machineLearningEnabled: "false"
+  faceRecognitionEnabled: "false"
+  clipSearchEnabled: "false"
+  videoTranscodingEnabled: "true"
+  thumbnailGenerationEnabled: "true"
+  exifExtractionEnabled: "true"
+  duplicateDetectionEnabled: "false"
+  sharingEnabled: "true"
+
+## Jobs / asynq workers
+jobs:
+  enabled: "true"
+  workers: "4"
+
+## Optional static Immich web UI directory inside the image (if baked in)
+webuiDir: ""
+
+## Extra non-secret key/value pairs merged into the ConfigMap env
+config:
+  extra: {}
+  # LOG_LEVEL: debug
+
+## Pod disruption budget
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+  # maxUnavailable: 1

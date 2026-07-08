@@ -1,0 +1,61 @@
+# Example Prometheus scrape configuration for immich-go-backend.
+#
+# Merge the `scrape_configs` entries into your prometheus.yml, or include this
+# file via scrape_config_files (Prometheus ≥ 2.43):
+#   scrape_config_files:
+#     - /etc/prometheus/scrape.d/*.yml
+#
+# Two scrape strategies are shown. Prefer ONE of them per process.
+
+# ---------------------------------------------------------------------------
+# A) App HTTP metrics path (config: server.metrics_path, default `/metrics`)
+#    REST listener: server.address (default 0.0.0.0:3001)
+# ---------------------------------------------------------------------------
+scrape_configs:
+  - job_name: immich-go-backend
+    metrics_path: /metrics
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    static_configs:
+      - targets:
+          - immich-go-backend:3001   # replace with host:port of the REST listener
+        labels:
+          service: immich-go-backend
+          env: production
+
+  # Kubernetes / multi-replica example using DNS service discovery:
+  # - job_name: immich-go-backend-dns
+  #   metrics_path: /metrics
+  #   scrape_interval: 15s
+  #   dns_sd_configs:
+  #     - names:
+  #         - immich-go-backend.immich.svc.cluster.local
+  #       type: A
+  #       port: 3001
+
+# ---------------------------------------------------------------------------
+# B) OpenTelemetry autoexport Prometheus exporter (optional separate port)
+#
+# When telemetry.NewProvider runs with:
+#   OTEL_METRICS_EXPORTER=prometheus
+# autoexport binds a dedicated server (defaults: localhost:9464, path /metrics).
+# Override with OTEL_EXPORTER_PROMETHEUS_HOST / OTEL_EXPORTER_PROMETHEUS_PORT.
+# Bind host to 0.0.0.0 if Prometheus scrapes remotely.
+# ---------------------------------------------------------------------------
+# scrape_configs:
+#   - job_name: immich-go-backend-otel-prometheus
+#     metrics_path: /metrics
+#     scrape_interval: 15s
+#     static_configs:
+#       - targets:
+#           - immich-go-backend:9464
+#         labels:
+#           service: immich-go-backend
+#           exporter: otel-prometheus
+
+# ---------------------------------------------------------------------------
+# OTLP path (no Prometheus scrape of the binary)
+#
+# If metrics leave via OTLP (OTEL_EXPORTER_OTLP_ENDPOINT / OTEL_METRICS_EXPORTER=otlp),
+# scrape the collector or backend that receives them instead of the app.
+# ---------------------------------------------------------------------------

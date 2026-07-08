@@ -1,0 +1,54 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "immich-go-backend.fullname" . }}
+  labels:
+    {{- include "immich-go-backend.labels" . | nindent 4 }}
+data:
+  SERVER_ADDRESS: {{ .Values.server.address | quote }}
+  SERVER_GRPC_ADDRESS: {{ .Values.server.grpcAddress | quote }}
+  SERVER_METRICS_ENABLED: {{ .Values.server.metricsEnabled | quote }}
+  SERVER_METRICS_PATH: {{ .Values.server.metricsPath | quote }}
+  SERVER_CORS_ENABLED: {{ .Values.server.corsEnabled | quote }}
+  SERVER_REQUEST_LOGGING: {{ .Values.server.requestLogging | quote }}
+  IMMICH_DATABASE_AUTO_MIGRATE: {{ .Values.database.autoMigrate | quote }}
+  DATABASE_MAX_OPEN_CONNS: {{ .Values.database.maxOpenConns | quote }}
+  DATABASE_MAX_IDLE_CONNS: {{ .Values.database.maxIdleConns | quote }}
+  DATABASE_MAX_CONN_LIFETIME: {{ .Values.database.maxConnLifetime | quote }}
+  DATABASE_CONNECT_TIMEOUT: {{ .Values.database.connectTimeout | quote }}
+  STORAGE_BACKEND: {{ .Values.storage.backend | quote }}
+  STORAGE_LOCAL_ROOT: {{ .Values.storage.localRoot | quote }}
+  UPLOAD_TEMP_DIR: {{ .Values.storage.uploadTempDir | quote }}
+  AUTH_JWT_EXPIRY: {{ .Values.auth.jwtExpiry | quote }}
+  AUTH_JWT_REFRESH_EXPIRY: {{ .Values.auth.jwtRefreshExpiry | quote }}
+  AUTH_JWT_ISSUER: {{ .Values.auth.jwtIssuer | quote }}
+  AUTH_REGISTRATION_ENABLED: {{ .Values.auth.registrationEnabled | quote }}
+  JOBS_ENABLED: {{ .Values.jobs.enabled | quote }}
+  JOBS_WORKERS: {{ .Values.jobs.workers | quote }}
+  LOG_LEVEL: {{ .Values.logging.level | quote }}
+  LOG_FORMAT: {{ .Values.logging.format | quote }}
+  LOG_OUTPUT: {{ .Values.logging.output | quote }}
+  FEATURE_MACHINE_LEARNING_ENABLED: {{ .Values.features.machineLearningEnabled | quote }}
+  FEATURE_FACE_RECOGNITION_ENABLED: {{ .Values.features.faceRecognitionEnabled | quote }}
+  FEATURE_CLIP_SEARCH_ENABLED: {{ .Values.features.clipSearchEnabled | quote }}
+  FEATURE_VIDEO_TRANSCODING_ENABLED: {{ .Values.features.videoTranscodingEnabled | quote }}
+  FEATURE_THUMBNAIL_GENERATION_ENABLED: {{ .Values.features.thumbnailGenerationEnabled | quote }}
+  FEATURE_EXIF_EXTRACTION_ENABLED: {{ .Values.features.exifExtractionEnabled | quote }}
+  FEATURE_DUPLICATE_DETECTION_ENABLED: {{ .Values.features.duplicateDetectionEnabled | quote }}
+  FEATURE_SHARING_ENABLED: {{ .Values.features.sharingEnabled | quote }}
+  {{- if .Values.webuiDir }}
+  IMMICH_WEBUI_DIR: {{ .Values.webuiDir | quote }}
+  {{- end }}
+  {{- if and .Values.storage.s3.enabled (eq .Values.storage.backend "s3") }}
+  S3_BUCKET: {{ .Values.storage.s3.bucket | quote }}
+  S3_ENDPOINT: {{ .Values.storage.s3.endpoint | quote }}
+  S3_REGION: {{ .Values.storage.s3.region | quote }}
+  S3_USE_SSL: {{ .Values.storage.s3.useSSL | quote }}
+  S3_FORCE_PATH_STYLE: {{ .Values.storage.s3.forcePathStyle | quote }}
+  S3_DIRECT_UPLOAD: {{ .Values.storage.s3.directUpload | quote }}
+  S3_PATH_PREFIX: {{ .Values.storage.s3.pathPrefix | quote }}
+  S3_PRESIGNED_URL_EXPIRY: {{ .Values.storage.s3.presignedUrlExpiry | quote }}
+  {{- end }}
+  {{- range $key, $value := .Values.config.extra }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}

@@ -63,3 +63,41 @@ func newTask(t *testing.T, jobType JobType, payload any) *asynq.Task {
 
 	return asynq.NewTask(string(jobType), payloadBytes)
 }
+
+func TestMLJobsSkipWhenDisabled(t *testing.T) {
+	// Handlers with nil ML client / config must succeed (skip), not hard-fail.
+	h := NewHandlers(nil, nil, nil, nil, nil, nil)
+
+	faceTask := newTask(t, JobTypeFaceDetection, FaceDetectionPayload{AssetID: uuid.NewString()})
+	// GetAsset will not be reached because we skip before DB access when disabled...
+	// actually we parse UUID then check config — nil config → skip. No DB needed.
+	require.NoError(t, h.HandleFaceDetection(t.Context(), faceTask))
+
+	smartTask := newTask(t, JobTypeSmartSearch, SmartSearchIndexPayload{AssetID: uuid.NewString()})
+	require.NoError(t, h.HandleSmartSearchIndex(t.Context(), smartTask))
+
+	recogTask := newTask(t, JobTypeFaceRecognition, FaceRecognitionPayload{FaceID: uuid.NewString()})
+	require.NoError(t, h.HandleFaceRecognition(t.Context(), recogTask))
+}
+
+func TestCosineDistance(t *testing.T) {
+	a := []float32{1, 0}
+	b := []float32{1, 0}
+	assert.InDelta(t, 0, cosineDistance(a, b), 1e-6)
+
+	c := []float32{0, 1}
+	assert.InDelta(t, 1, cosineDistance(a, c), 1e-6)
+
+	assert.Equal(t, float64(1), cosineDistance(nil, a))
+}
+
+func TestParseVectorString(t *testing.T) {
+	emb, err := parseVectorString("[0.1,0.2]")
+	require.NoError(t, err)
+	require.Len(t, emb, 2)
+	assert.InDelta(t, 0.1, emb[0], 1e-6)
+
+	emb, err = parseVectorString("{0.5,0.6}")
+	require.NoError(t, err)
+	require.Len(t, emb, 2)
+}

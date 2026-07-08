@@ -62,19 +62,23 @@ flowchart LR
 
 ### Performance & reliability
 
-- [ ] Load testing in CI.
-- [ ] Storage performance tests.
-- [ ] Database performance tests.
+- [x] Load testing scaffolding (`scripts/perf/load-smoke.sh`, optional k6; `make perf-load`).
+- [x] Storage performance tests (`make perf-storage`, `//go:build bench`).
+- [x] Database performance tests (`make perf-db`, testcontainers when Docker available).
 - [ ] Memory usage optimisation.
-- [ ] Configurable worker pools.
+- [x] Configurable worker pools (`JOBS_WORKERS`, default 4).
 - [x] Advanced retry / dead-letter handling for background jobs.
 
 ### ML integration (optional, off by default)
 
-- [ ] Face recognition (when the external ML service is reachable).
+- [x] Face recognition (when the external ML service is reachable).
+  Job handlers call Immich ML `/predict`; results land in `asset_faces` / `face_search`.
 - [ ] Object detection.
-- [ ] CLIP-based smart search.
-- [ ] ML-based duplicate detection.
+  Immich ML has no general object-detect API yet; flag stays off.
+- [x] CLIP-based smart search.
+  Text/image embeddings via ML client; smart search uses `SearchAssetsByEmbedding` with metadata fallback.
+- [x] ML-based duplicate detection.
+  Checksum path always; near-dupe pairing via CLIP distances when CLIP is enabled.
 
 ### Video processing
 
@@ -84,9 +88,9 @@ flowchart LR
 
 ### Operations
 
-- [ ] Grafana dashboards (against `/metrics` + OTel).
-- [ ] Alerting rules (Prometheus / Alertmanager).
-- [ ] Helm chart for Kubernetes.
+- [x] Grafana dashboards (against `/metrics` + OTel) — `deploy/monitoring/grafana/`.
+- [x] Alerting rules (Prometheus / Alertmanager) — `deploy/monitoring/prometheus/`.
+- [x] Helm chart for Kubernetes — `deploy/helm/immich-go-backend/`.
 
 ## Non-goals
 

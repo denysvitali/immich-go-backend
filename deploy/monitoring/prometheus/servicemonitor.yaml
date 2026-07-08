@@ -1,0 +1,67 @@
+# Optional Prometheus Operator ServiceMonitor for immich-go-backend.
+# Requires a Prometheus Operator / kube-prometheus-stack install.
+#
+# Adjust namespace, labels (release selector), and service name to match your
+# chart / manifests. The monitor selects Services with
+#   app.kubernetes.io/name: immich-go-backend
+#
+# Port names must match the Service port `name` field.
+
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: immich-go-backend
+  namespace: immich
+  labels:
+    app.kubernetes.io/name: immich-go-backend
+    # Uncomment / set to match your Prometheus Operator serviceMonitorSelector:
+    # release: kube-prometheus-stack
+spec:
+  jobLabel: app.kubernetes.io/name
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: immich-go-backend
+  namespaceSelector:
+    matchNames:
+      - immich
+  endpoints:
+    # REST listener — config server.metrics_path default `/metrics`
+    - port: http
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s
+      scheme: http
+      # honorLabels: true
+      # relabelings: []
+      # metricRelabelings: []
+
+    # Optional second endpoint if OTEL_METRICS_EXPORTER=prometheus is used
+    # on a dedicated Service port named `metrics` (9464 by default):
+    # - port: metrics
+    #   path: /metrics
+    #   interval: 15s
+    #   scrapeTimeout: 10s
+    #   scheme: http
+
+---
+# Example companion Service (only if you do not already expose the HTTP port).
+# Safe to omit when your existing Service already publishes port `http`.
+apiVersion: v1
+kind: Service
+metadata:
+  name: immich-go-backend
+  namespace: immich
+  labels:
+    app.kubernetes.io/name: immich-go-backend
+spec:
+  selector:
+    app.kubernetes.io/name: immich-go-backend
+  ports:
+    - name: http
+      port: 3001
+      targetPort: 3001
+      protocol: TCP
+    # - name: metrics
+    #   port: 9464
+    #   targetPort: 9464
+    #   protocol: TCP

@@ -382,6 +382,8 @@ curl -fsS http://localhost:3001/api/server/version  # build metadata
 
 `/metrics` is exposed by default (Prometheus exposition — `server.metrics_enabled` defaults to `true`). Disable with `server.metrics_enabled: false`. Scrape with Prometheus or any OTLP-compatible collector.
 
+Ready-made scrape configs, Prometheus/Alertmanager rules, and a Grafana dashboard live under [`deploy/monitoring/`](deploy/monitoring/) (see that directory’s `README.md` for metric names and import steps).
+
 ### Logs
 
 Structured JSON via logrus. Pipe through `jq` for ad-hoc inspection:
@@ -424,3 +426,24 @@ If you're on S3, use the bucket's native versioning / lifecycle rules.
 | Upload 413 | `client_max_body_size` (nginx) or `--data-proxy-body-size` (Caddy) too small. |
 | Embedded-PG demo fails to start | `/data/pg` is unwritable or the volume isn't mounted — check `fly ssh console -C "ls -la /data"`. |
 | `asynq: redis is not configured` | Set `jobs.enabled: true` and `jobs.redis_url: redis://...`; otherwise background work degrades silently. |
+
+---
+
+## Kubernetes (Helm)
+
+A production Helm chart lives at [`deploy/helm/immich-go-backend/`](deploy/helm/immich-go-backend/). It deploys only the Go backend; PostgreSQL and Redis remain external.
+
+```bash
+helm install immich ./deploy/helm/immich-go-backend \
+  --namespace immich --create-namespace \
+  --set database.url='postgres://immich:SECRET@postgres:5432/immich?sslmode=require' \
+  --set auth.jwtSecret="$(openssl rand -hex 32)" \
+  --set redis.url='redis://redis:6379/0'
+```
+
+- **REST** Service port `3001`, **gRPC** `3002`
+- Probes: `GET /api/server/ping`
+- Local media: optional PVC mounted at `/data` (`STORAGE_LOCAL_ROOT=/data/uploads`)
+- Prefer `--set existingSecret=...` for credentials in production
+
+See the chart [README](deploy/helm/immich-go-backend/README.md) for values, S3 storage, Ingress, and HPA.

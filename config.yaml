@@ -33,13 +33,16 @@ storage:
   video_location: "./encoded-video"
 
 features:
-  oauth_enabled: false
-  facial_recognition: true
-  smart_search: true
-  trash: true
-  sidecar: true
-  map: true
-  duplicate_detection: true
+  # ML feature flags are off by default. Flip these (and machine_learning.enabled)
+  # once an Immich ML container is reachable.
+  machine_learning_enabled: false
+  face_recognition_enabled: false
+  clip_search_enabled: false
+  object_detection_enabled: false
+  duplicate_detection_enabled: false
+  video_transcoding_enabled: false
+  thumbnail_generation_enabled: true
+  exif_extraction_enabled: true
 
 mail:
   enabled: false
@@ -68,13 +71,21 @@ redis:
   password: ""
   db: 0
   
+# Immich ML service (https://docs.immich.app). Off by default.
 machine_learning:
-  enabled: true
+  enabled: false
   url: "http://localhost:3003"
+  timeout: 60s
   clip:
     enabled: true
     model_name: "ViT-B-32__openai"
+    max_distance: 0.6
   facial_recognition:
     enabled: true
     model_name: "buffalo_l"
     min_score: 0.7
+    max_distance: 0.5
+    min_faces: 3
+  duplicate_detection:
+    enabled: true
+    max_distance: 0.01

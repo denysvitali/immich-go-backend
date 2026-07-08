@@ -39,10 +39,52 @@ type Config struct {
 	// Feature flags
 	Features FeatureConfig `yaml:"features"`
 
+	// MachineLearning configures the external Immich ML service.
+	// Off by default; also gated by Features.MachineLearningEnabled.
+	MachineLearning MachineLearningConfig `yaml:"machine_learning"`
+
 	// WebUIDir is the directory containing a static frontend build (e.g.
 	// the Immich web dist). When empty, the API is exposed directly with
 	// no HTML UI. Set via IMMICH_WEBUI_DIR or `webui_dir` in YAML.
 	WebUIDir string `yaml:"webui_dir" env:"IMMICH_WEBUI_DIR" default:""`
+}
+
+// MachineLearningConfig controls the external Immich ML container.
+type MachineLearningConfig struct {
+	// Enabled allows the backend to call the ML service when feature flags permit.
+	Enabled bool `yaml:"enabled" env:"MACHINE_LEARNING_ENABLED" default:"false"`
+
+	// URL is the Immich ML base URL (e.g. http://immich-machine-learning:3003).
+	URL string `yaml:"url" env:"MACHINE_LEARNING_URL" default:""`
+
+	// Timeout for each ML HTTP request.
+	Timeout time.Duration `yaml:"timeout" env:"MACHINE_LEARNING_TIMEOUT" default:"60s"`
+
+	Clip               ClipMLConfig               `yaml:"clip"`
+	FacialRecognition  FacialRecognitionMLConfig  `yaml:"facial_recognition"`
+	DuplicateDetection DuplicateDetectionMLConfig `yaml:"duplicate_detection"`
+}
+
+// ClipMLConfig configures CLIP smart search.
+type ClipMLConfig struct {
+	Enabled     bool    `yaml:"enabled" default:"true"`
+	ModelName   string  `yaml:"model_name" default:"ViT-B-32__openai"`
+	MaxDistance float64 `yaml:"max_distance" default:"0.6"`
+}
+
+// FacialRecognitionMLConfig configures face detection/recognition.
+type FacialRecognitionMLConfig struct {
+	Enabled     bool    `yaml:"enabled" default:"true"`
+	ModelName   string  `yaml:"model_name" default:"buffalo_l"`
+	MinScore    float64 `yaml:"min_score" default:"0.7"`
+	MaxDistance float64 `yaml:"max_distance" default:"0.5"`
+	MinFaces    int     `yaml:"min_faces" default:"3"`
+}
+
+// DuplicateDetectionMLConfig configures CLIP-based near-duplicate grouping.
+type DuplicateDetectionMLConfig struct {
+	Enabled     bool    `yaml:"enabled" default:"true"`
+	MaxDistance float64 `yaml:"max_distance" default:"0.01"`
 }
 
 // ServerConfig represents server configuration
@@ -396,10 +438,38 @@ func setDefaults(config *Config) {
 	}
 
 	config.Features = FeatureConfig{
+		// ML-related features stay off until explicitly enabled.
+		MachineLearningEnabled:     false,
+		FaceRecognitionEnabled:     false,
+		ObjectDetectionEnabled:     false,
+		CLIPSearchEnabled:          false,
+		DuplicateDetectionEnabled:  false,
 		ThumbnailGenerationEnabled: true,
 		EXIFExtractionEnabled:      true,
 		BackupSyncEnabled:          true,
 		SharingEnabled:             true,
+	}
+
+	config.MachineLearning = MachineLearningConfig{
+		Enabled: false,
+		URL:     "",
+		Timeout: 60 * time.Second,
+		Clip: ClipMLConfig{
+			Enabled:     true,
+			ModelName:   "ViT-B-32__openai",
+			MaxDistance: 0.6,
+		},
+		FacialRecognition: FacialRecognitionMLConfig{
+			Enabled:     true,
+			ModelName:   "buffalo_l",
+			MinScore:    0.7,
+			MaxDistance: 0.5,
+			MinFaces:    3,
+		},
+		DuplicateDetection: DuplicateDetectionMLConfig{
+			Enabled:     true,
+			MaxDistance: 0.01,
+		},
 	}
 }
 
@@ -466,9 +536,72 @@ func loadFromEnv(config *Config) error {
 		}
 	}
 
-	// Add more environment variable mappings as needed
+	// Machine learning
+	if val := os.Getenv("MACHINE_LEARNING_ENABLED"); val != "" {
+		if b, err := strconv.ParseBool(val); err == nil {
+			config.MachineLearning.Enabled = b
+		}
+	}
+	if val := os.Getenv("MACHINE_LEARNING_URL"); val != "" {
+		config.MachineLearning.URL = val
+	}
+	if val := os.Getenv("MACHINE_LEARNING_TIMEOUT"); val != "" {
+		if d, err := time.ParseDuration(val); err == nil {
+			config.MachineLearning.Timeout = d
+		}
+	}
+	if val := os.Getenv("FEATURE_MACHINE_LEARNING_ENABLED"); val != "" {
+		if b, err := strconv.ParseBool(val); err == nil {
+			config.Features.MachineLearningEnabled = b
+		}
+	}
+	if val := os.Getenv("FEATURE_FACE_RECOGNITION_ENABLED"); val != "" {
+		if b, err := strconv.ParseBool(val); err == nil {
+			config.Features.FaceRecognitionEnabled = b
+		}
+	}
+	if val := os.Getenv("FEATURE_CLIP_SEARCH_ENABLED"); val != "" {
+		if b, err := strconv.ParseBool(val); err == nil {
+			config.Features.CLIPSearchEnabled = b
+		}
+	}
+	if val := os.Getenv("FEATURE_DUPLICATE_DETECTION_ENABLED"); val != "" {
+		if b, err := strconv.ParseBool(val); err == nil {
+			config.Features.DuplicateDetectionEnabled = b
+		}
+	}
 
 	return nil
+}
+
+// MLActive reports whether the external ML service should be used at all.
+func (c *Config) MLActive() bool {
+	if c == nil {
+		return false
+	}
+	return c.Features.MachineLearningEnabled && c.MachineLearning.Enabled && c.MachineLearning.URL != ""
+}
+
+// CLIPActive reports whether CLIP smart search / encoding should run.
+func (c *Config) CLIPActive() bool {
+	return c.MLActive() && c.Features.CLIPSearchEnabled && c.MachineLearning.Clip.Enabled
+}
+
+// FaceRecognitionActive reports whether face detection/recognition should run.
+func (c *Config) FaceRecognitionActive() bool {
+	return c.MLActive() && c.Features.FaceRecognitionEnabled && c.MachineLearning.FacialRecognition.Enabled
+}
+
+// DuplicateDetectionActive reports whether duplicate detection jobs should run.
+func (c *Config) DuplicateDetectionActive() bool {
+	if c == nil {
+		return false
+	}
+	if c.Features.DuplicateDetectionEnabled {
+		return true
+	}
+	// CLIP-based near-duplicates also require CLIP.
+	return c.CLIPActive() && c.MachineLearning.DuplicateDetection.Enabled
 }
 
 // validateConfig validates the configuration

@@ -2,24 +2,33 @@ package search
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/denysvitali/immich-go-backend/internal/config"
 	"github.com/denysvitali/immich-go-backend/internal/db/pgutil"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
+	"github.com/denysvitali/immich-go-backend/internal/ml"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/sirupsen/logrus"
 )
 
 // Service handles search operations
 type Service struct {
-	db *sqlc.Queries
+	db       *sqlc.Queries
+	mlClient *ml.Client
+	config   *config.Config
 }
 
-// NewService creates a new search service
-func NewService(db *sqlc.Queries) *Service {
+// NewService creates a new search service. mlClient may be nil (smart search
+// falls back to metadata search).
+func NewService(db *sqlc.Queries, mlClient *ml.Client, cfg *config.Config) *Service {
 	return &Service{
-		db: db,
+		db:       db,
+		mlClient: mlClient,
+		config:   cfg,
 	}
 }
 
@@ -276,9 +285,96 @@ func (s *Service) GetSearchSuggestions(ctx context.Context, userID uuid.UUID, re
 	return suggestions, nil
 }
 
-// SearchSmart falls back to metadata search until embedding search is available.
+// SearchSmart performs CLIP embedding search when ML is enabled and reachable.
+// On any ML failure it degrades to metadata search so the API stays useful.
 func (s *Service) SearchSmart(ctx context.Context, userID uuid.UUID, req SmartSearchRequest) (*SearchResult, error) {
-	return s.SearchMetadata(ctx, userID, req)
+	if req.Query == "" || s.mlClient == nil || s.config == nil || !s.config.CLIPActive() {
+		return s.SearchMetadata(ctx, userID, req)
+	}
+
+	result, err := s.searchByCLIP(ctx, userID, req)
+	if err != nil {
+		if errors.Is(err, ml.ErrDisabled) || errors.Is(err, ml.ErrUnavailable) || errors.Is(err, ml.ErrEmptyInput) {
+			logrus.WithError(err).Debug("smart search: ML unavailable, falling back to metadata search")
+		} else {
+			logrus.WithError(err).Warn("smart search: CLIP search failed, falling back to metadata search")
+		}
+		return s.SearchMetadata(ctx, userID, req)
+	}
+	return result, nil
+}
+
+func (s *Service) searchByCLIP(ctx context.Context, userID uuid.UUID, req SmartSearchRequest) (*SearchResult, error) {
+	if req.Size <= 0 {
+		req.Size = 30
+	}
+	if req.Page < 0 {
+		req.Page = 0
+	}
+
+	model := s.config.MachineLearning.Clip.ModelName
+	embedding, err := s.mlClient.EncodeText(ctx, req.Query, model)
+	if err != nil {
+		return nil, err
+	}
+
+	maxDistance := s.config.MachineLearning.Clip.MaxDistance
+	if maxDistance <= 0 {
+		maxDistance = ml.DefaultMaxDistance
+	}
+
+	// Fetch a page of nearest neighbors. Offset is approximated by over-fetching
+	// because the vector index query is ranked by distance only.
+	limit := int32(req.Size * (req.Page + 1))
+	if limit <= 0 {
+		limit = int32(req.Size)
+	}
+
+	rows, err := s.db.SearchAssetsByEmbedding(ctx, sqlc.SearchAssetsByEmbeddingParams{
+		OwnerID:     pgutil.UUIDToPgtype(userID),
+		Embedding:   ml.FormatVector(embedding),
+		MaxDistance: maxDistance,
+		ResultLimit: limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("embedding search: %w", err)
+	}
+
+	start := req.Page * req.Size
+	if start > len(rows) {
+		start = len(rows)
+	}
+	end := start + req.Size
+	if end > len(rows) {
+		end = len(rows)
+	}
+	page := rows[start:end]
+
+	items := make([]*SearchResultItem, len(page))
+	for i, row := range page {
+		var duration *string
+		if row.Duration.Valid {
+			d := row.Duration.String
+			duration = &d
+		}
+		items[i] = &SearchResultItem{
+			ID:           pgutil.PgtypeToUUID(row.ID).String(),
+			Type:         row.Type,
+			OriginalPath: row.OriginalPath,
+			OriginalName: row.OriginalFileName,
+			CreatedAt:    pgutil.TimestamptzToTime(row.CreatedAt),
+			UpdatedAt:    pgutil.TimestamptzToTime(row.UpdatedAt),
+			IsFavorite:   row.IsFavorite,
+			Duration:     duration,
+		}
+	}
+
+	return &SearchResult{
+		Items: items,
+		Total: len(rows),
+		Page:  req.Page,
+		Size:  req.Size,
+	}, nil
 }
 
 // SearchExplore returns explore/discovery results
@@ -491,8 +587,8 @@ type SuggestionsResult struct {
 	FileTypes []string `json:"fileTypes"`
 }
 
-// SmartSearchRequest reuses metadata filters while smart search is implemented
-// as a metadata fallback.
+// SmartSearchRequest reuses metadata filters; when CLIP is active the Query
+// field is encoded as a text embedding.
 type SmartSearchRequest = MetadataSearchRequest
 
 type ExploreResult struct {

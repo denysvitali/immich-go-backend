@@ -1,0 +1,17 @@
+apiVersion: v2
+name: immich-go-backend
+description: Production Helm chart for immich-go-backend (REST :3001, gRPC :3002)
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/denysvitali/immich-go-backend
+sources:
+  - https://github.com/denysvitali/immich-go-backend
+keywords:
+  - immich
+  - photos
+  - grpc
+  - self-hosted
+maintainers:
+  - name: immich-go-backend
+    url: https://github.com/denysvitali/immich-go-backend

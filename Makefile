@@ -1,7 +1,7 @@
 # Immich Go Backend Makefile
 # Requires Nix development environment
 
-.PHONY: help proto-gen proto-clean proto-check setup dev-shell build test clean all
+.PHONY: help proto-gen proto-clean proto-check setup dev-shell build test clean all perf-load perf-storage perf-db
 
 # Default target
 help: ## Show this help message
@@ -103,3 +103,17 @@ ci-check: proto-gen lint test ## Run all CI checks
 
 all: clean setup build test ## Clean, setup, build, and test everything
 	@echo "🎉 All tasks completed successfully!"
+
+# Performance / load (optional; not part of default CI)
+# See scripts/perf/README.md
+perf-load: ## Smoke load against IMMICH_URL (health + read-only; needs running server)
+	@echo "📈 Running load smoke (IMMICH_URL=$${IMMICH_URL:-http://localhost:3001})..."
+	@./scripts/perf/load-smoke.sh
+
+perf-storage: ## Local storage Go benchmarks (-tags bench; no Docker)
+	@echo "📈 Running storage benchmarks..."
+	@go test -tags bench -bench=BenchmarkStorage -benchmem -count=1 -run='^$$' ./scripts/perf/
+
+perf-db: ## DB/SQLC Go benchmarks (-tags bench; skips without Docker)
+	@echo "📈 Running DB benchmarks (skips if Docker unavailable)..."
+	@go test -tags bench -bench=BenchmarkDB -benchmem -count=1 -run='^$$' ./scripts/perf/

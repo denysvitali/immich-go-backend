@@ -148,7 +148,7 @@ func TestIntegration_HandleThumbnailGeneration(t *testing.T) {
 	// ------------------------------------------------------------------
 	// 6. Create the Handlers instance and invoke the handler directly.
 	// ------------------------------------------------------------------
-	handlers := NewHandlers(tdb.Queries, nil, nil, storageService)
+	handlers := NewHandlers(tdb.Queries, nil, nil, storageService, nil, nil)
 	err = handlers.HandleThumbnailGeneration(ctx, task)
 	require.NoError(t, err, "HandleThumbnailGeneration returned an error")
 
@@ -263,7 +263,7 @@ func TestIntegration_HandleMetadataExtraction_PlainJPEG(t *testing.T) {
 	require.NoError(t, err, "failed to create asset_job_status row")
 
 	// 6. Build the Handlers with a real DB and real storage service.
-	handlers := NewHandlers(tdb.Queries, nil, nil, storageSvc)
+	handlers := NewHandlers(tdb.Queries, nil, nil, storageSvc, nil, nil)
 
 	// 7. Build and dispatch the asynq task.
 	assetIDStr := uuid.UUID(pgAssetID.Bytes).String()
@@ -296,7 +296,7 @@ func TestIntegration_HandleMetadataExtraction_InvalidAssetID(t *testing.T) {
 	t.Cleanup(func() { os.RemoveAll(tmpDir) })
 
 	storageSvc := newLocalStorageService(t, tmpDir)
-	handlers := NewHandlers(tdb.Queries, nil, nil, storageSvc)
+	handlers := NewHandlers(tdb.Queries, nil, nil, storageSvc, nil, nil)
 
 	// Test with an invalid asset ID in the typed payload.
 	payload := MetadataExtractionPayload{AssetID: "not-a-valid-uuid"}
@@ -321,7 +321,7 @@ func TestIntegration_HandleMetadataExtraction_MissingAssetID(t *testing.T) {
 	t.Cleanup(func() { os.RemoveAll(tmpDir) })
 
 	storageSvc := newLocalStorageService(t, tmpDir)
-	handlers := NewHandlers(tdb.Queries, nil, nil, storageSvc)
+	handlers := NewHandlers(tdb.Queries, nil, nil, storageSvc, nil, nil)
 
 	// Test with an empty asset ID (zero value of the typed payload).
 	payload := MetadataExtractionPayload{AssetID: ""}
@@ -346,7 +346,7 @@ func TestIntegration_HandleMetadataExtraction_AssetNotInDB(t *testing.T) {
 	t.Cleanup(func() { os.RemoveAll(tmpDir) })
 
 	storageSvc := newLocalStorageService(t, tmpDir)
-	handlers := NewHandlers(tdb.Queries, nil, nil, storageSvc)
+	handlers := NewHandlers(tdb.Queries, nil, nil, storageSvc, nil, nil)
 
 	nonExistentAssetID := uuid.New()
 	payload := MetadataExtractionPayload{AssetID: nonExistentAssetID.String()}
@@ -412,7 +412,7 @@ func TestIntegration_HandleThumbnailGeneration_NonImageAsset(t *testing.T) {
 	payload := ThumbnailGenerationPayload{AssetID: assetID.String()}
 	task := newTestTask(t, JobTypeThumbnailGeneration, payload)
 
-	handlers := NewHandlers(tdb.Queries, nil, nil, storageService)
+	handlers := NewHandlers(tdb.Queries, nil, nil, storageService, nil, nil)
 	err = handlers.HandleThumbnailGeneration(ctx, task)
 	require.NoError(t, err, "HandleThumbnailGeneration should not error for non-image asset")
 

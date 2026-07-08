@@ -2,9 +2,11 @@ package jobs
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"mime"
 	"os"
 	"path/filepath"
@@ -18,9 +20,11 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/denysvitali/immich-go-backend/internal/assets"
+	"github.com/denysvitali/immich-go-backend/internal/config"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/denysvitali/immich-go-backend/internal/ffmpeg"
 	"github.com/denysvitali/immich-go-backend/internal/libraries"
+	"github.com/denysvitali/immich-go-backend/internal/ml"
 	"github.com/denysvitali/immich-go-backend/internal/storage"
 )
 
@@ -30,21 +34,27 @@ type Handlers struct {
 	assetService   *assets.Service
 	libraryService *libraries.Service
 	storageService *storage.Service
+	mlClient       *ml.Client
+	config         *config.Config
 	logger         *logrus.Logger
 }
 
-// NewHandlers creates new job handlers
+// NewHandlers creates new job handlers. mlClient and cfg may be nil (ML jobs skip).
 func NewHandlers(
 	db *sqlc.Queries,
 	assetService *assets.Service,
 	libraryService *libraries.Service,
 	storageService *storage.Service,
+	mlClient *ml.Client,
+	cfg *config.Config,
 ) *Handlers {
 	return &Handlers{
 		db:             db,
 		assetService:   assetService,
 		libraryService: libraryService,
 		storageService: storageService,
+		mlClient:       mlClient,
+		config:         cfg,
 		logger:         logrus.StandardLogger(),
 	}
 }
@@ -497,7 +507,9 @@ type FaceDetectionPayload struct {
 	AssetID string `json:"asset_id"`
 }
 
-// HandleFaceDetection processes face detection jobs
+// HandleFaceDetection processes face detection jobs via the Immich ML service.
+// When ML/face recognition is disabled the job is skipped (success).
+// When ML is enabled but unreachable the error is returned so asynq can retry.
 func (h *Handlers) HandleFaceDetection(ctx context.Context, task *asynq.Task) error {
 	var payload FaceDetectionPayload
 	if err := unmarshalTypedPayload(task, &payload); err != nil {
@@ -513,7 +525,13 @@ func (h *Handlers) HandleFaceDetection(ctx context.Context, task *asynq.Task) er
 		"asset_id": assetID,
 	}).Info("Detecting faces")
 
-	asset, err := h.db.GetAsset(ctx, pgtype.UUID{Bytes: assetID, Valid: true})
+	if h.config == nil || !h.config.FaceRecognitionActive() || h.mlClient == nil || !h.mlClient.Enabled() {
+		h.logger.WithField("asset_id", assetID).Info("Skipping face detection: ML/face recognition disabled")
+		return nil
+	}
+
+	assetUUID := pgtype.UUID{Bytes: assetID, Valid: true}
+	asset, err := h.db.GetAsset(ctx, assetUUID)
 	if err != nil {
 		return fmt.Errorf("failed to get asset %s: %w", assetID, err)
 	}
@@ -525,7 +543,147 @@ func (h *Handlers) HandleFaceDetection(ctx context.Context, task *asynq.Task) er
 		return nil
 	}
 
-	return unsupportedJobError("face detection requires an ML integration, which is not configured")
+	imageBytes, err := h.loadAssetImageBytes(ctx, asset)
+	if err != nil {
+		return err
+	}
+
+	fr := h.config.MachineLearning.FacialRecognition
+	detection, err := h.mlClient.DetectFaces(ctx, imageBytes, fr.ModelName, fr.MinScore)
+	if err != nil {
+		if errors.Is(err, ml.ErrDisabled) {
+			return nil
+		}
+		return fmt.Errorf("face detection ML call: %w", err)
+	}
+
+	// Replace previous ML-sourced faces for this asset.
+	if err := h.db.DeleteAssetFacesByAsset(ctx, assetUUID); err != nil {
+		return fmt.Errorf("clear existing faces: %w", err)
+	}
+
+	imgW := int32(detection.ImageWidth)
+	imgH := int32(detection.ImageHeight)
+	for _, face := range detection.Faces {
+		created, err := h.db.CreateAssetFace(ctx, sqlc.CreateAssetFaceParams{
+			AssetId:       assetUUID,
+			PersonId:      pgtype.UUID{}, // unassigned until recognition
+			ImageWidth:    imgW,
+			ImageHeight:   imgH,
+			BoundingBoxX1: face.BoundingBox.X1,
+			BoundingBoxY1: face.BoundingBox.Y1,
+			BoundingBoxX2: face.BoundingBox.X2,
+			BoundingBoxY2: face.BoundingBox.Y2,
+		})
+		if err != nil {
+			return fmt.Errorf("create asset face: %w", err)
+		}
+
+		vector := face.EmbeddingRaw
+		if vector == "" {
+			vector = ml.FormatVector(face.Embedding)
+		}
+		if _, err := h.db.UpsertFaceSearch(ctx, sqlc.UpsertFaceSearchParams{
+			FaceId:    created.ID,
+			Embedding: vector,
+		}); err != nil {
+			return fmt.Errorf("store face embedding: %w", err)
+		}
+
+		// Best-effort immediate person match against existing labeled faces.
+		if err := h.tryAssignPersonByEmbedding(ctx, created.ID, vector, fr.MaxDistance); err != nil {
+			h.logger.WithError(err).WithField("face_id", created.ID).Debug("face person match skipped")
+		}
+	}
+
+	now := pgtype.Timestamptz{Time: time.Now(), Valid: true}
+	if err := h.markAssetJobStatus(ctx, sqlc.UpdateAssetJobStatusParams{
+		AssetId:           assetUUID,
+		FacesRecognizedAt: now,
+	}); err != nil {
+		return fmt.Errorf("update face job status: %w", err)
+	}
+
+	h.logger.WithFields(logrus.Fields{
+		"asset_id":    assetID,
+		"face_count":  len(detection.Faces),
+		"image_width": detection.ImageWidth,
+	}).Info("Face detection complete")
+	return nil
+}
+
+// FaceRecognitionPayload contains data for recognizing a single face.
+type FaceRecognitionPayload struct {
+	FaceID string `json:"face_id"`
+}
+
+// HandleFaceRecognition assigns an unassigned face to a person by embedding
+// similarity when a close match already has a person label.
+func (h *Handlers) HandleFaceRecognition(ctx context.Context, task *asynq.Task) error {
+	var payload FaceRecognitionPayload
+	if err := unmarshalTypedPayload(task, &payload); err != nil {
+		return err
+	}
+	if payload.FaceID == "" {
+		return fmt.Errorf("face_id is required")
+	}
+
+	if h.config == nil || !h.config.FaceRecognitionActive() || h.mlClient == nil {
+		h.logger.WithField("face_id", payload.FaceID).Info("Skipping face recognition: disabled")
+		return nil
+	}
+
+	faceID, err := uuid.Parse(payload.FaceID)
+	if err != nil {
+		return fmt.Errorf("invalid face UUID: %w", err)
+	}
+	faceUUID := pgtype.UUID{Bytes: faceID, Valid: true}
+
+	rows, err := h.db.GetFaceSearch(ctx, faceUUID)
+	if err != nil {
+		return fmt.Errorf("get face embedding: %w", err)
+	}
+	if len(rows) == 0 {
+		h.logger.WithField("face_id", faceID).Info("No embedding for face, skipping recognition")
+		return nil
+	}
+
+	maxDistance := h.config.MachineLearning.FacialRecognition.MaxDistance
+	return h.tryAssignPersonByEmbedding(ctx, faceUUID, rows[0].Embedding, maxDistance)
+}
+
+func (h *Handlers) tryAssignPersonByEmbedding(ctx context.Context, faceID pgtype.UUID, embedding any, maxDistance float64) error {
+	if maxDistance <= 0 {
+		maxDistance = 0.5
+	}
+	matches, err := h.db.SearchFacesByEmbedding(ctx, sqlc.SearchFacesByEmbeddingParams{
+		Embedding:   embedding,
+		MaxDistance: maxDistance,
+		ResultLimit: 5,
+	})
+	if err != nil {
+		return err
+	}
+	for _, match := range matches {
+		if match.FaceId == faceID {
+			continue
+		}
+		if !match.PersonID.Valid {
+			continue
+		}
+		if _, err := h.db.UpdateAssetFace(ctx, sqlc.UpdateAssetFaceParams{
+			ID:       faceID,
+			PersonID: match.PersonID,
+		}); err != nil {
+			return fmt.Errorf("assign person to face: %w", err)
+		}
+		h.logger.WithFields(logrus.Fields{
+			"face_id":   faceID,
+			"person_id": match.PersonID,
+		}).Info("Assigned face to person by embedding match")
+		return nil
+	}
+	return nil
 }
 
 // SmartSearchIndexPayload contains data for smart search indexing
@@ -533,7 +691,7 @@ type SmartSearchIndexPayload struct {
 	AssetID string `json:"asset_id"`
 }
 
-// HandleSmartSearchIndex processes smart search indexing jobs
+// HandleSmartSearchIndex encodes an asset with CLIP and upserts smart_search.
 func (h *Handlers) HandleSmartSearchIndex(ctx context.Context, task *asynq.Task) error {
 	var payload SmartSearchIndexPayload
 	if err := unmarshalTypedPayload(task, &payload); err != nil {
@@ -549,11 +707,50 @@ func (h *Handlers) HandleSmartSearchIndex(ctx context.Context, task *asynq.Task)
 		"asset_id": assetID,
 	}).Info("Indexing for smart search")
 
-	if _, err := h.db.GetAsset(ctx, pgtype.UUID{Bytes: assetID, Valid: true}); err != nil {
-		return fmt.Errorf("failed to get asset %s: %w", assetID, err)
+	if h.config == nil || !h.config.CLIPActive() || h.mlClient == nil || !h.mlClient.Enabled() {
+		h.logger.WithField("asset_id", assetID).Info("Skipping smart search index: CLIP/ML disabled")
+		return nil
 	}
 
-	return unsupportedJobError("smart search indexing requires a CLIP/ML integration, which is not configured")
+	assetUUID := pgtype.UUID{Bytes: assetID, Valid: true}
+	asset, err := h.db.GetAsset(ctx, assetUUID)
+	if err != nil {
+		return fmt.Errorf("failed to get asset %s: %w", assetID, err)
+	}
+	if !strings.EqualFold(asset.Type, string(assets.AssetTypeImage)) {
+		h.logger.WithFields(logrus.Fields{
+			"asset_id":   asset.ID,
+			"asset_type": asset.Type,
+		}).Info("Skipping smart search for non-image asset")
+		return nil
+	}
+
+	imageBytes, err := h.loadAssetImageBytes(ctx, asset)
+	if err != nil {
+		return err
+	}
+
+	model := h.config.MachineLearning.Clip.ModelName
+	embedding, err := h.mlClient.EncodeImage(ctx, imageBytes, model)
+	if err != nil {
+		if errors.Is(err, ml.ErrDisabled) {
+			return nil
+		}
+		return fmt.Errorf("CLIP encode image: %w", err)
+	}
+
+	if _, err := h.db.UpsertSmartSearch(ctx, sqlc.UpsertSmartSearchParams{
+		AssetId:   assetUUID,
+		Embedding: ml.FormatVector(embedding),
+	}); err != nil {
+		return fmt.Errorf("upsert smart search embedding: %w", err)
+	}
+
+	h.logger.WithFields(logrus.Fields{
+		"asset_id":       assetID,
+		"embedding_dims": len(embedding),
+	}).Info("Smart search indexing complete")
+	return nil
 }
 
 // DuplicateDetectionPayload contains data for duplicate detection
@@ -561,7 +758,9 @@ type DuplicateDetectionPayload struct {
 	UserID string `json:"user_id"`
 }
 
-// HandleDuplicateDetection processes duplicate detection jobs
+// HandleDuplicateDetection processes duplicate detection jobs.
+// Always runs checksum-based pairing; when CLIP is active also groups near-
+// duplicate embeddings under MachineLearning.DuplicateDetection.MaxDistance.
 func (h *Handlers) HandleDuplicateDetection(ctx context.Context, task *asynq.Task) error {
 	var payload DuplicateDetectionPayload
 	if err := unmarshalTypedPayload(task, &payload); err != nil {
@@ -586,6 +785,8 @@ func (h *Handlers) HandleDuplicateDetection(ctx context.Context, task *asynq.Tas
 	now := pgtype.Timestamptz{Time: time.Now(), Valid: true}
 	seen := make(map[pgtype.UUID]struct{}, len(duplicates)*2)
 	for _, duplicate := range duplicates {
+		// Share a group id (first asset id) across checksum pairs.
+		groupID := duplicate.ID
 		for _, assetID := range []pgtype.UUID{duplicate.ID, duplicate.DuplicateID} {
 			if !assetID.Valid {
 				continue
@@ -594,6 +795,10 @@ func (h *Handlers) HandleDuplicateDetection(ctx context.Context, task *asynq.Tas
 				continue
 			}
 			seen[assetID] = struct{}{}
+			_ = h.db.SetAssetDuplicateId(ctx, sqlc.SetAssetDuplicateIdParams{
+				ID:          assetID,
+				DuplicateId: groupID,
+			})
 			if err := h.markAssetJobStatus(ctx, sqlc.UpdateAssetJobStatusParams{
 				AssetId:              assetID,
 				DuplicatesDetectedAt: now,
@@ -603,12 +808,179 @@ func (h *Handlers) HandleDuplicateDetection(ctx context.Context, task *asynq.Tas
 		}
 	}
 
+	embeddingPairs := 0
+	if h.config != nil && h.config.CLIPActive() && h.config.MachineLearning.DuplicateDetection.Enabled {
+		n, err := h.detectEmbeddingDuplicates(ctx, userUUID)
+		if err != nil {
+			h.logger.WithError(err).Warn("embedding-based duplicate detection failed; checksum results kept")
+		} else {
+			embeddingPairs = n
+		}
+	}
+
 	h.logger.WithFields(logrus.Fields{
 		"user_id":          userID,
 		"duplicate_pairs":  len(duplicates),
 		"duplicate_assets": len(seen),
+		"embedding_pairs":  embeddingPairs,
 	}).Info("Duplicate detection complete")
 	return nil
+}
+
+// detectEmbeddingDuplicates groups assets whose CLIP embeddings are closer than
+// the configured max distance. Returns the number of pairs linked.
+func (h *Handlers) detectEmbeddingDuplicates(ctx context.Context, owner pgtype.UUID) (int, error) {
+	const maxAssets = 5000
+	rows, err := h.db.ListSmartSearchByOwner(ctx, sqlc.ListSmartSearchByOwnerParams{
+		OwnerId: owner,
+		Limit:   maxAssets,
+	})
+	if err != nil {
+		return 0, err
+	}
+	if len(rows) < 2 {
+		return 0, nil
+	}
+
+	maxDist := h.config.MachineLearning.DuplicateDetection.MaxDistance
+	if maxDist <= 0 {
+		maxDist = 0.01
+	}
+
+	// O(n²) over a capped list — fine for modest libraries; large libraries
+	// should use the vector index via SearchAssetsByEmbedding per asset.
+	type item struct {
+		id  pgtype.UUID
+		emb []float32
+	}
+	items := make([]item, 0, len(rows))
+	for _, row := range rows {
+		emb, err := embeddingFromDB(row.Embedding)
+		if err != nil || len(emb) == 0 {
+			continue
+		}
+		items = append(items, item{id: row.AssetId, emb: emb})
+	}
+
+	pairs := 0
+	now := pgtype.Timestamptz{Time: time.Now(), Valid: true}
+	for i := 0; i < len(items); i++ {
+		for j := i + 1; j < len(items); j++ {
+			if cosineDistance(items[i].emb, items[j].emb) > maxDist {
+				continue
+			}
+			groupID := items[i].id
+			for _, id := range []pgtype.UUID{items[i].id, items[j].id} {
+				if err := h.db.SetAssetDuplicateId(ctx, sqlc.SetAssetDuplicateIdParams{
+					ID:          id,
+					DuplicateId: groupID,
+				}); err != nil {
+					return pairs, err
+				}
+				_ = h.markAssetJobStatus(ctx, sqlc.UpdateAssetJobStatusParams{
+					AssetId:              id,
+					DuplicatesDetectedAt: now,
+				})
+			}
+			pairs++
+		}
+	}
+	return pairs, nil
+}
+
+func embeddingFromDB(v any) ([]float32, error) {
+	switch t := v.(type) {
+	case []float32:
+		return t, nil
+	case []float64:
+		out := make([]float32, len(t))
+		for i, x := range t {
+			out[i] = float32(x)
+		}
+		return out, nil
+	case string:
+		return parseVectorString(t)
+	case []byte:
+		return parseVectorString(string(t))
+	default:
+		// pgvector may surface as a typed string via fmt
+		return parseVectorString(fmt.Sprint(v))
+	}
+}
+
+func parseVectorString(s string) ([]float32, error) {
+	s = strings.TrimSpace(s)
+	if s == "" || s == "[]" {
+		return nil, fmt.Errorf("empty vector")
+	}
+	// Accept both "[1,2]" and pgvector's "{1,2}" styles.
+	s = strings.ReplaceAll(s, "{", "[")
+	s = strings.ReplaceAll(s, "}", "]")
+	var floats []float64
+	if err := json.Unmarshal([]byte(s), &floats); err != nil {
+		return nil, err
+	}
+	out := make([]float32, len(floats))
+	for i, f := range floats {
+		out[i] = float32(f)
+	}
+	return out, nil
+}
+
+func cosineDistance(a, b []float32) float64 {
+	if len(a) == 0 || len(a) != len(b) {
+		return 1
+	}
+	var dot, na, nb float64
+	for i := range a {
+		av := float64(a[i])
+		bv := float64(b[i])
+		dot += av * bv
+		na += av * av
+		nb += bv * bv
+	}
+	if na == 0 || nb == 0 {
+		return 1
+	}
+	// cosine distance = 1 - cosine similarity
+	return 1 - (dot / (math.Sqrt(na) * math.Sqrt(nb)))
+}
+
+// loadAssetImageBytes prefers the preview thumbnail, then falls back to original.
+func (h *Handlers) loadAssetImageBytes(ctx context.Context, asset sqlc.Asset) ([]byte, error) {
+	if h.storageService == nil {
+		return nil, fmt.Errorf("storage service not configured")
+	}
+
+	// Prefer preview thumbnail when available (matches Immich ML pipeline).
+	previews, err := h.db.GetAssetFilesByType(ctx, sqlc.GetAssetFilesByTypeParams{
+		AssetId: asset.ID,
+		Type:    string(assets.ThumbnailTypePreview),
+	})
+	if err == nil && len(previews) > 0 {
+		reader, err := h.storageService.Download(ctx, previews[0].Path)
+		if err == nil {
+			defer reader.Close()
+			data, readErr := io.ReadAll(reader)
+			if readErr == nil && len(data) > 0 {
+				return data, nil
+			}
+		}
+	}
+
+	reader, err := h.storageService.Download(ctx, asset.OriginalPath)
+	if err != nil {
+		return nil, fmt.Errorf("download asset for ML: %w", err)
+	}
+	defer reader.Close()
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, fmt.Errorf("read asset for ML: %w", err)
+	}
+	if len(data) == 0 {
+		return nil, fmt.Errorf("empty asset data for ML")
+	}
+	return data, nil
 }
 
 func unsupportedJobError(message string) error {
@@ -699,6 +1071,7 @@ func (h *Handlers) RegisterAllHandlers(service *Service) {
 
 	// Machine learning
 	service.RegisterHandler(JobTypeFaceDetection, h.HandleFaceDetection)
+	service.RegisterHandler(JobTypeFaceRecognition, h.HandleFaceRecognition)
 	service.RegisterHandler(JobTypeSmartSearch, h.HandleSmartSearchIndex)
 
 	// Library management
