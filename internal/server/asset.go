@@ -168,9 +168,11 @@ func (s *Server) UploadAsset(ctx context.Context, request *immichv1.UploadAssetR
 			int64(len(fileContent)),
 		)
 		if uploadErr != nil {
-			// Log but continue — the asset will be created with the client-supplied
-			// path so that the DB record is not lost.
-			logrus.WithError(uploadErr).Warn("UploadAsset: failed to store file in storage backend")
+			// Do not create a database record for an asset whose media was not
+			// persisted. A successful response here leaves the UI with a broken
+			// asset and makes the original upload failure impossible to recover.
+			logrus.WithError(uploadErr).Error("UploadAsset: failed to store file in storage backend")
+			return nil, SanitizedInternal(ctx, "failed to store uploaded asset", uploadErr)
 		} else {
 			originalPath = uploadResult.Path
 		}

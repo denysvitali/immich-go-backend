@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/google/uuid"
 	"golang.org/x/sys/unix"
@@ -228,10 +230,23 @@ func (s *Server) GetTheme(ctx context.Context, empty *emptypb.Empty) (*immichv1.
 }
 
 func (s *Server) GetServerVersion(ctx context.Context, empty *emptypb.Empty) (*immichv1.ServerVersionResponse, error) {
+	version := strings.TrimPrefix(strings.TrimSpace(Version), "v")
+	parts := strings.SplitN(version, ".", 3)
+	major, minor, patch := 0, 0, 0
+	if len(parts) >= 1 {
+		major, _ = strconv.Atoi(parts[0])
+	}
+	if len(parts) >= 2 {
+		minor, _ = strconv.Atoi(parts[1])
+	}
+	if len(parts) == 3 {
+		patchPart := strings.SplitN(parts[2], "-", 2)[0]
+		patch, _ = strconv.Atoi(patchPart)
+	}
 	return &immichv1.ServerVersionResponse{
-		Major: 1,
-		Minor: 95,
-		Patch: 0,
+		Major: int32(major),
+		Minor: int32(minor),
+		Patch: int32(patch),
 	}, nil
 }
 

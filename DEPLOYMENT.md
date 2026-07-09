@@ -141,14 +141,14 @@ The first deploy takes a few minutes:
 
 1. `Dockerfile.fly` stage 0 pulls `ghcr.io/immich-app/immich-server:${IMMICH_VERSION}` and copies `/build/www` → `/app/web`.
 2. Stage 1 builds a static Go binary on Go 1.24-alpine.
-3. Stage 2 assembles the Fly runtime image (alpine 3.20 + ca-certificates + tini + curl + non-root user).
-4. On first `serve`, the binary downloads the ~30 MB embedded-postgres binary, initialises a cluster under `/data/pg`, runs migrations, then starts listening.
+3. Stage 2 assembles the Fly runtime image (Debian + bundled PostgreSQL libraries + ca-certificates + tini + curl + non-root user).
+4. On first `serve`, the binary initialises the bundled PostgreSQL cluster under `/data/pg`, runs migrations, then starts listening.
 
 > **Which Dockerfile?** `Dockerfile.fly` is for the Fly demo (embedded Postgres, baked-in web bundle, tini). The base `Dockerfile` is leaner and targets external-DB deployments (Docker Compose, Kubernetes, plain Docker) — it doesn't bake in the web bundle and runs the binary directly without tini. Pick via `fly.toml` `[build].dockerfile` or `docker build -f Dockerfile.fly .`.
 
 ### Health checks and URLs
 
-- Health: `GET /api/server/ping` (configured in `fly.toml` with a 120 s grace period).
+- Health: `GET /api/server/ping` (configured in `fly.toml` with a 60 s grace period).
 - REST API: `https://<app>.fly.dev/api/...`
 - Web UI: `https://<app>.fly.dev/`
 - gRPC: the backend binds `fly-local-6pn:3002` only on the Fly private 6PN interface. Clients in the same Fly org should connect to `<app>.internal:3002`. There is intentionally no `[[services]]` mapping for port `3002`, so Fly Proxy does not expose it publicly.
@@ -173,10 +173,10 @@ Override with `fly env set KEY=VALUE` or directly in `fly.toml`.
 ### Customising the frontend version
 
 ```bash
-fly deploy --build-arg IMMICH_VERSION=v2.5.0
+fly deploy --build-arg IMMICH_VERSION=v2.7.5
 ```
 
-The Dockerfile defaults to `v2.4.0`. Pick a release whose proto schema this backend implements.
+The Dockerfile defaults to `v2.7.5`. Pick a release whose proto schema this backend implements.
 
 ### Limitations
 
@@ -195,6 +195,20 @@ fly logs
 Look for `embedded postgres ready` followed by `Starting HTTP server on 0.0.0.0:3001`.
 
 **`AUTH_JWT_SECRET is required`.** Set it via `fly secrets set AUTH_JWT_SECRET=...` and redeploy.
+
+**Storage shows `NaN` or uploads fail.** The web client requires an explicit
+`null` quota field, and the Fly app must have its `/data` volume mounted. A
+volume that already exists is not resized by changing `initial_size`; inspect
+it with `fly volumes list -a immich-go-backend` and extend it explicitly when
+needed:
+
+```bash
+fly volumes extend <volume-id> --app immich-go-backend --size 10
+fly deploy
+```
+
+After deployment, `/api/server/storage` should report the mounted volume's
+capacity rather than the container root filesystem.
 
 **Frontend shows 404 on `/`.** Confirm the bundle exists:
 

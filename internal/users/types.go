@@ -21,7 +21,7 @@ type UserInfo struct {
 	OAuthID              string     `json:"oauthId"`
 	ProfileImagePath     *string    `json:"profileImagePath,omitempty"`
 	StorageLabel         *string    `json:"storageLabel,omitempty"`
-	QuotaSizeInBytes     *int64     `json:"quotaSizeInBytes,omitempty"`
+	QuotaSizeInBytes     *int64     `json:"quotaSizeInBytes"`
 	AvatarColor          *string    `json:"avatarColor,omitempty"`
 	ProfileChangedAt     *time.Time `json:"profileChangedAt,omitempty"`
 	DeletedAt            *time.Time `json:"deletedAt,omitempty"`

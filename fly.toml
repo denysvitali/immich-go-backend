@@ -10,7 +10,7 @@
 # Persistent state lives on the `immich_data` volume mounted at /data,
 # which holds:
 #   /data/pg       — the embedded Postgres cluster
-#   /data/pg-bin   — cached Postgres binaries (downloaded once)
+#   /data/pg-bin   — reserved for compatibility with older volumes
 #   /data/uploads  — uploaded media
 #   /data/library  — library imports
 #   /data/thumbs   — generated thumbnails
@@ -28,8 +28,12 @@ kill_timeout = "30s"
   dockerfile = "Dockerfile.fly"
   # Pin the frontend version baked into the image. Override with
   # `fly deploy --build-arg IMMICH_VERSION=v2.x.y`.
-  [build.args]
-    IMMICH_VERSION = "v2.4.0"
+[build.args]
+    IMMICH_VERSION = "v2.7.5"
+    VERSION = "v2.7.5"
+    SOURCE_COMMIT = "v2.7.5"
+    SOURCE_REF = "v2.7.5"
+    SOURCE_URL = "https://github.com/denysvitali/immich-go-backend"
 
 # ---- Env (non-secret) ----
 # The backend ships NO config.yaml in the image; a missing config file is
@@ -59,6 +63,8 @@ kill_timeout = "30s"
 [[mounts]]
   source = "immich_data"
   destination = "/data"
+  # Create the volume during `fly deploy` when it does not exist yet.
+  initial_size = "10GB"
 
 # ---- Single machine ----
 # Demo workloads don't need horizontal scale. A single shared machine
@@ -103,9 +109,9 @@ kill_timeout = "30s"
     handlers = ["tls", "http"]
 
   # Health check against the standard Immich /api/server/ping endpoint.
-  # First start can take 30-60s while embedded-postgres downloads the
-  # Postgres binary (~30 MB) and initialises a cluster, so we give the
-  # machine plenty of grace before declaring it unhealthy.
+  # First start can take 30-60s while embedded-postgres initialises the
+  # bundled cluster, so we give the machine plenty of grace before declaring
+  # it unhealthy.
   [services.concurrency]
     type = "connections"
     hard_limit = 250

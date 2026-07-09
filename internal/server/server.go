@@ -575,6 +575,12 @@ func (s *Server) HTTPHandler() http.Handler {
 	if err := immichv1.RegisterJobServiceHandlerServer(ctx, mux, s); err != nil {
 		logrus.WithError(err).Error("Failed to register JobService handler")
 	}
+	if err := immichv1.RegisterQueueServiceHandlerServer(ctx, mux, s); err != nil {
+		logrus.WithError(err).Error("Failed to register QueueService handler")
+	}
+	if err := immichv1.RegisterMaintenanceServiceHandlerServer(ctx, mux, s); err != nil {
+		logrus.WithError(err).Error("Failed to register MaintenanceService handler")
+	}
 	// Register new services
 	if err := immichv1.RegisterTrashServiceHandlerServer(ctx, mux, s.trashService); err != nil {
 		logrus.WithError(err).Error("Failed to register TrashService handler")
@@ -660,7 +666,7 @@ func (s *Server) handleWs(mux *runtime.ServeMux) http.Handler {
 				runtime.HTTPError(ctx, mux, marshaler, w, r, err)
 				return
 			}
-			writeProtoJSON(w, marshaler, resp)
+			writeUserAdminJSON(w, marshaler, resp)
 			return
 		}
 		if r.Method == http.MethodPut && r.URL.Path == "/api/tags/assets" {
@@ -670,6 +676,9 @@ func (s *Server) handleWs(mux *runtime.ServeMux) http.Handler {
 			return
 		}
 		if s.handleActivityRoutes(w, r) {
+			return
+		}
+		if s.handleQueueListShape(w, r) {
 			return
 		}
 		if s.handleFrontendShape(w, r) {

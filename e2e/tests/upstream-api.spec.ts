@@ -832,6 +832,14 @@ test.describe('jobs', () => {
       expect(body, `missing job queue ${key}`).toHaveProperty(key);
       expect(body[key].queueStatus).toBeDefined();
     }
+
+    const queues = await request.get('/api/queues', { headers: admin.headers });
+    await expectOk(queues);
+    const queueList = await queues.json();
+    expect(Array.isArray(queueList)).toBe(true);
+    expect(queueList).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'thumbnailGeneration', statistics: expect.any(Object) }),
+    ]));
   });
 });
 

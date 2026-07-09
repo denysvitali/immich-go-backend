@@ -17,15 +17,15 @@
 
 # ---------- Stage 0a: web bundle ----------
 # The official Immich server image bundles the SvelteKit web build at
-# /build/www (see immich-app/immich v2.4.0 server/Dockerfile). We pull the
+# /build/www (see immich-app/immich v2.7.5 server/Dockerfile). We pull the
 # matching tag so the frontend API surface stays in sync with the backend's
 # gRPC services. Override with `--build-arg IMMICH_VERSION=v2.x.y`.
-ARG IMMICH_VERSION=v2.4.0
+ARG IMMICH_VERSION=v2.7.5
 FROM ghcr.io/immich-app/immich-server:${IMMICH_VERSION} AS web
 
 # ---------- Stage 0b: bundled Postgres ----------
 # fergusstrange/embedded-postgres (the library we use for the single-machine
-# demo) downloads a vanilla PostgreSQL binary from Maven on first start.
+# demo) normally downloads a vanilla PostgreSQL binary from Maven on first start.
 # That vanilla binary ships no pgvector / vchord / cube / earthdistance /
 # pg_trgm extensions — and our 001_initial_schema.sql opens with
 # `CREATE EXTENSION IF NOT EXISTS vector / vchord / cube / earthdistance /
@@ -43,6 +43,11 @@ FROM docker.io/tensorchord/vchord-suite:pg17-latest AS pgbin
 
 # ---------- Stage 1: build ----------
 FROM golang:1.24-alpine AS builder
+
+ARG VERSION=v2.7.5
+ARG SOURCE_COMMIT=unknown
+ARG SOURCE_REF=v2.7.5
+ARG SOURCE_URL=https://github.com/denysvitali/immich-go-backend
 
 # Build deps in one layer. git is needed by `go mod` for some modules;
 # ca-certificates is needed for `go install` to talk to proxy.golang.org / github.com.
@@ -92,7 +97,7 @@ RUN if [ -d "internal/proto/gen" ] && \
     fi && \
     CGO_ENABLED=0 GOOS=linux go build \
       -a -installsuffix cgo \
-      -ldflags "-extldflags \"-static\" -s -w" \
+      -ldflags "-extldflags \"-static\" -s -w -X github.com/denysvitali/immich-go-backend/internal/server.Version=${VERSION} -X github.com/denysvitali/immich-go-backend/internal/server.SourceCommit=${SOURCE_COMMIT} -X github.com/denysvitali/immich-go-backend/internal/server.SourceRef=${SOURCE_REF} -X github.com/denysvitali/immich-go-backend/internal/server.SourceUrl=${SOURCE_URL}" \
       -o /out/immich-go-backend \
       ./cmd
 
