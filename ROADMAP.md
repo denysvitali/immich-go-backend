@@ -1,12 +1,12 @@
 # Roadmap
 
-The active target is **API parity** with upstream Immich so the official web UI and mobile apps work against this backend without modification. We track upstream's `v2.7.x` stable line and watch `v3.0.0-rc.x` for forward-looking changes.
+The active target is **API parity** with upstream Immich so the official web UI and mobile apps work against this backend without modification. We track upstream's `v3.0.x` stable line.
 
 ## Tracking upstream
 
 | Stream | Latest | Notes |
 |--------|--------|-------|
-| Stable | v2.7.5 | The behaviour we aim for in the short term. |
+| Stable | v3.0.2 | The behaviour we aim for in the short term. |
 | Preview | v3.0.0-rc.0 | Reviewed for upcoming shape; nothing users rely on yet. |
 
 Sources: [Immich releases](https://github.com/immich-app/immich/releases), the [OpenAPI spec](https://github.com/immich-app/immich/blob/main/open-api/immich-openapi-specs.json), and the [OAuth docs](https://docs.immich.app/administration/oauth).

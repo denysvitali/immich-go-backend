@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expectOk, gpsJpeg, png1x1, signUpAdmin, signUpUser, uniqueId, uploadAsset } from './helpers';
 
-// Covers the upstream Immich v2.4.0 API surface added for the web UI:
+// Covers the upstream Immich v3.0.2 API surface used by the web UI:
 // system-config CRUD, multipart asset upload, download info/archive and the
 // jobs status endpoint.
 

@@ -1,6 +1,6 @@
 package systemconfig
 
-// This file mirrors the upstream Immich v2.4.0 SystemConfigDto
+// This file mirrors the upstream Immich v3.0.2 SystemConfigDto
 // (server/src/config.ts + open-api SystemConfigDto). The web UI reads every
 // key of this object on the admin settings page, so the JSON shape must match
 // upstream exactly — all sections present, camelCase keys, no omissions.
@@ -276,7 +276,7 @@ type UserDto struct {
 	DeleteDelay int `json:"deleteDelay"`
 }
 
-// DefaultDto returns the upstream v2.4.0 default configuration
+// DefaultDto returns the upstream v3.0.2 default configuration
 // (server/src/config.ts `defaults`).
 func DefaultDto() Dto {
 	return Dto{

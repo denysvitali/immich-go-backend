@@ -207,7 +207,7 @@ The base image produces a static binary; the Fly image adds the embedded Postgre
 
 ## Roadmap
 
-The project tracks upstream Immich (`v2.7.5` stable, `v3.0.0-rc.0` preview) for parity. See [ROADMAP.md](ROADMAP.md) for the current backlog and what's tracking upstream changes.
+The project tracks upstream Immich (`v3.0.2` stable) for parity. See [ROADMAP.md](ROADMAP.md) for the current backlog and what's tracking upstream changes.
 
 ## Contributing
 

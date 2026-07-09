@@ -173,10 +173,10 @@ Override with `fly env set KEY=VALUE` or directly in `fly.toml`.
 ### Customising the frontend version
 
 ```bash
-fly deploy --build-arg IMMICH_VERSION=v2.7.5
+fly deploy --build-arg IMMICH_VERSION=v3.0.2
 ```
 
-The Dockerfile defaults to `v2.7.5`. Pick a release whose proto schema this backend implements.
+The Dockerfile defaults to `v3.0.2`. Pick a release whose proto schema this backend implements.
 
 ### Limitations
 

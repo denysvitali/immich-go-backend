@@ -17,10 +17,10 @@
 
 # ---------- Stage 0a: web bundle ----------
 # The official Immich server image bundles the SvelteKit web build at
-# /build/www (see immich-app/immich v2.7.5 server/Dockerfile). We pull the
+# /build/www (see immich-app/immich v3.0.2 server/Dockerfile). We pull the
 # matching tag so the frontend API surface stays in sync with the backend's
 # gRPC services. Override with `--build-arg IMMICH_VERSION=v2.x.y`.
-ARG IMMICH_VERSION=v2.7.5
+ARG IMMICH_VERSION=v3.0.2
 FROM ghcr.io/immich-app/immich-server:${IMMICH_VERSION} AS web
 
 # ---------- Stage 0b: bundled Postgres ----------
@@ -44,9 +44,9 @@ FROM docker.io/tensorchord/vchord-suite:pg17-latest AS pgbin
 # ---------- Stage 1: build ----------
 FROM golang:1.24-alpine AS builder
 
-ARG VERSION=v2.7.5
+ARG VERSION=v3.0.2
 ARG SOURCE_COMMIT=unknown
-ARG SOURCE_REF=v2.7.5
+ARG SOURCE_REF=v3.0.2
 ARG SOURCE_URL=https://github.com/denysvitali/immich-go-backend
 
 # Build deps in one layer. git is needed by `go mod` for some modules;
