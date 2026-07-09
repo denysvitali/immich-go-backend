@@ -669,6 +669,9 @@ func (s *Server) handleWs(mux *runtime.ServeMux) http.Handler {
 			})(w, r, nil)
 			return
 		}
+		if s.handleActivityRoutes(w, r) {
+			return
+		}
 		if s.handleFrontendShape(w, r) {
 			return
 		}

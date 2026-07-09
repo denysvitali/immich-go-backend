@@ -695,6 +695,90 @@ test.describe('albums', () => {
   });
 });
 
+test.describe('activities', () => {
+  test('activity CRUD, filters, statistics, and HTTP shapes match upstream', async ({ request }) => {
+    const unauthenticated = await request.get('/api/activities');
+    expect(unauthenticated.status()).toBe(401);
+
+    const owner = await signUpAdmin(request, 'activities-owner');
+    const createAlbum = await request.post('/api/albums', {
+      headers: owner.headers,
+      data: {
+        albumName: `Activity Album ${uniqueId('album')}`,
+        description: 'Activity API E2E coverage',
+        assetIds: [],
+      },
+    });
+    await expectOk(createAlbum);
+    const album = await createAlbum.json();
+
+    const comment = await request.post('/api/activities', {
+      headers: owner.headers,
+      data: { albumId: album.id, comment: 'An upstream-compatible comment', type: 'comment' },
+    });
+    expect(comment.status()).toBe(201);
+    const commentBody = await comment.json();
+    expect(commentBody).toMatchObject({
+      id: expect.any(String),
+      assetId: null,
+      comment: 'An upstream-compatible comment',
+      type: 'comment',
+      user: { id: owner.userId },
+    });
+
+    const like = await request.post('/api/activities', {
+      headers: owner.headers,
+      data: { albumId: album.id, type: 'like' },
+    });
+    expect(like.status()).toBe(201);
+    const likeBody = await like.json();
+    expect(likeBody).toMatchObject({ id: expect.any(String), assetId: null, comment: null, type: 'like' });
+
+    const duplicateLike = await request.post('/api/activities', {
+      headers: owner.headers,
+      data: { albumId: album.id, type: 'like' },
+    });
+    expect(duplicateLike.status()).toBe(201);
+    expect((await duplicateLike.json()).id).toBe(likeBody.id);
+
+    const list = await request.get(`/api/activities?albumId=${album.id}`, { headers: owner.headers });
+    await expectOk(list);
+    const activities = await list.json();
+    expect(Array.isArray(activities)).toBe(true);
+    expect(activities.map((activity: { id: string }) => activity.id)).toEqual([commentBody.id, likeBody.id]);
+
+    const likes = await request.get(`/api/activities?albumId=${album.id}&type=like&level=album`, {
+      headers: owner.headers,
+    });
+    await expectOk(likes);
+    expect(await likes.json()).toEqual([expect.objectContaining({ id: likeBody.id, type: 'like' })]);
+
+    const byUser = await request.get(`/api/activities?albumId=${album.id}&userId=${owner.userId}`, {
+      headers: owner.headers,
+    });
+    await expectOk(byUser);
+    expect(await byUser.json()).toHaveLength(2);
+
+    const statistics = await request.get(`/api/activities/statistics?albumId=${album.id}`, {
+      headers: owner.headers,
+    });
+    await expectOk(statistics);
+    expect(await statistics.json()).toEqual({ comments: 1, likes: 1 });
+
+    const invalidType = await request.get(`/api/activities?albumId=${album.id}&type=unknown`, {
+      headers: owner.headers,
+    });
+    expect(invalidType.status()).toBe(400);
+
+    const remove = await request.delete(`/api/activities/${commentBody.id}`, { headers: owner.headers });
+    expect(remove.status()).toBe(204);
+
+    const afterDelete = await request.get(`/api/activities?albumId=${album.id}`, { headers: owner.headers });
+    await expectOk(afterDelete);
+    expect(await afterDelete.json()).toEqual([expect.objectContaining({ id: likeBody.id })]);
+  });
+});
+
 test.describe('download', () => {
   test('download info and archive for an uploaded asset', async ({ request }) => {
     const admin = await signUpAdmin(request, 'download');

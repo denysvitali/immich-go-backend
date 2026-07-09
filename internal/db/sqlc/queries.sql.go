@@ -2473,6 +2473,65 @@ func (q *Queries) GetActivity(ctx context.Context, id pgtype.UUID) (Activity, er
 	return i, err
 }
 
+const getActivityLike = `-- name: GetActivityLike :one
+SELECT id, "createdAt", "updatedAt", "albumId", "userId", "assetId", comment, "isLiked", "updateId" FROM activity
+WHERE "userId" = $1
+  AND "albumId" = $2
+  AND "assetId" IS NOT DISTINCT FROM $3::uuid
+  AND "isLiked" = true
+LIMIT 1
+`
+
+type GetActivityLikeParams struct {
+	UserID  pgtype.UUID
+	AlbumID pgtype.UUID
+	AssetID pgtype.UUID
+}
+
+func (q *Queries) GetActivityLike(ctx context.Context, arg GetActivityLikeParams) (Activity, error) {
+	row := q.db.QueryRow(ctx, getActivityLike, arg.UserID, arg.AlbumID, arg.AssetID)
+	var i Activity
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.AlbumId,
+		&i.UserId,
+		&i.AssetId,
+		&i.Comment,
+		&i.IsLiked,
+		&i.UpdateId,
+	)
+	return i, err
+}
+
+const getActivityStatistics = `-- name: GetActivityStatistics :one
+SELECT
+  COUNT(*) FILTER (WHERE NOT a."isLiked")::integer AS comments,
+  COUNT(*) FILTER (WHERE a."isLiked")::integer AS likes
+FROM activity a
+JOIN users u ON a."userId" = u.id AND u."deletedAt" IS NULL
+WHERE a."albumId" = $1
+  AND ($2::uuid IS NULL OR a."assetId" = $2::uuid)
+`
+
+type GetActivityStatisticsParams struct {
+	AlbumID pgtype.UUID
+	AssetID pgtype.UUID
+}
+
+type GetActivityStatisticsRow struct {
+	Comments int32
+	Likes    int32
+}
+
+func (q *Queries) GetActivityStatistics(ctx context.Context, arg GetActivityStatisticsParams) (GetActivityStatisticsRow, error) {
+	row := q.db.QueryRow(ctx, getActivityStatistics, arg.AlbumID, arg.AssetID)
+	var i GetActivityStatisticsRow
+	err := row.Scan(&i.Comments, &i.Likes)
+	return i, err
+}
+
 const getAlbum = `-- name: GetAlbum :one
 SELECT id, "ownerId", "albumName", "createdAt", "albumThumbnailAssetId", "updatedAt", description, "deletedAt", "isActivityEnabled", "order", "updateId" FROM albums
 WHERE id = $1 AND "deletedAt" IS NULL
@@ -2496,66 +2555,6 @@ func (q *Queries) GetAlbum(ctx context.Context, id pgtype.UUID) (Album, error) {
 		&i.UpdateId,
 	)
 	return i, err
-}
-
-const getAlbumActivity = `-- name: GetAlbumActivity :many
-SELECT a.id, a."createdAt", a."updatedAt", a."albumId", a."userId", a."assetId", a.comment, a."isLiked", a."updateId", u.name as user_name, u.email as user_email FROM activity a
-JOIN users u ON a."userId" = u.id
-WHERE a."albumId" = $1
-ORDER BY a."createdAt" DESC
-LIMIT $2 OFFSET $3
-`
-
-type GetAlbumActivityParams struct {
-	AlbumId pgtype.UUID
-	Limit   int32
-	Offset  int32
-}
-
-type GetAlbumActivityRow struct {
-	ID        pgtype.UUID
-	CreatedAt pgtype.Timestamptz
-	UpdatedAt pgtype.Timestamptz
-	AlbumId   pgtype.UUID
-	UserId    pgtype.UUID
-	AssetId   pgtype.UUID
-	Comment   pgtype.Text
-	IsLiked   bool
-	UpdateId  pgtype.UUID
-	UserName  string
-	UserEmail string
-}
-
-func (q *Queries) GetAlbumActivity(ctx context.Context, arg GetAlbumActivityParams) ([]GetAlbumActivityRow, error) {
-	rows, err := q.db.Query(ctx, getAlbumActivity, arg.AlbumId, arg.Limit, arg.Offset)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []GetAlbumActivityRow
-	for rows.Next() {
-		var i GetAlbumActivityRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.AlbumId,
-			&i.UserId,
-			&i.AssetId,
-			&i.Comment,
-			&i.IsLiked,
-			&i.UpdateId,
-			&i.UserName,
-			&i.UserEmail,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const getAlbumAssets = `-- name: GetAlbumAssets :many
@@ -8389,6 +8388,79 @@ func (q *Queries) RestoreUser(ctx context.Context, id pgtype.UUID) (User, error)
 		&i.IsOnboarded,
 	)
 	return i, err
+}
+
+const searchActivity = `-- name: SearchActivity :many
+SELECT a.id, a."createdAt", a."updatedAt", a."albumId", a."userId", a."assetId", a.comment, a."isLiked", a."updateId", u.name as user_name, u.email as user_email FROM activity a
+JOIN users u ON a."userId" = u.id AND u."deletedAt" IS NULL
+WHERE a."albumId" = $1
+  AND ($2::uuid IS NULL OR a."userId" = $2::uuid)
+  AND (
+    NOT $3::boolean
+    OR a."assetId" IS NOT DISTINCT FROM $4::uuid
+  )
+  AND ($5::boolean IS NULL OR a."isLiked" = $5::boolean)
+ORDER BY a."createdAt" ASC
+`
+
+type SearchActivityParams struct {
+	AlbumID     pgtype.UUID
+	UserID      pgtype.UUID
+	FilterAsset bool
+	AssetID     pgtype.UUID
+	IsLiked     pgtype.Bool
+}
+
+type SearchActivityRow struct {
+	ID        pgtype.UUID
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+	AlbumId   pgtype.UUID
+	UserId    pgtype.UUID
+	AssetId   pgtype.UUID
+	Comment   pgtype.Text
+	IsLiked   bool
+	UpdateId  pgtype.UUID
+	UserName  string
+	UserEmail string
+}
+
+func (q *Queries) SearchActivity(ctx context.Context, arg SearchActivityParams) ([]SearchActivityRow, error) {
+	rows, err := q.db.Query(ctx, searchActivity,
+		arg.AlbumID,
+		arg.UserID,
+		arg.FilterAsset,
+		arg.AssetID,
+		arg.IsLiked,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SearchActivityRow
+	for rows.Next() {
+		var i SearchActivityRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.AlbumId,
+			&i.UserId,
+			&i.AssetId,
+			&i.Comment,
+			&i.IsLiked,
+			&i.UpdateId,
+			&i.UserName,
+			&i.UserEmail,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const searchAlbums = `-- name: SearchAlbums :many

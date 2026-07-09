@@ -2,12 +2,15 @@ package activity
 
 import (
 	"context"
+	"errors"
+	"strings"
 
 	"github.com/denysvitali/immich-go-backend/internal/auth"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/denysvitali/immich-go-backend/internal/grpcutil"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -31,9 +34,13 @@ func NewServer(queries *sqlc.Queries) *Server {
 // GetActivities gets activities for albums/assets
 func (s *Server) GetActivities(ctx context.Context, request *immichv1.GetActivitiesRequest) (*immichv1.GetActivitiesResponse, error) {
 	// Get user from context
-	_, ok := auth.GetClaimsFromStdContext(ctx)
+	claims, ok := auth.GetClaimsFromStdContext(ctx)
 	if !ok {
 		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	}
+	userID, err := uuid.Parse(claims.UserID)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "invalid user ID")
 	}
 
 	// Parse album ID
@@ -48,16 +55,55 @@ func (s *Server) GetActivities(ctx context.Context, request *immichv1.GetActivit
 
 	albumUUID := pgtype.UUID{Bytes: albumID, Valid: true}
 
-	// Set default limit and offset
-	limit := int32(20)
-	offset := int32(0)
+	params := sqlc.SearchActivityParams{AlbumID: albumUUID}
+	if request.UserId != nil && *request.UserId != "" {
+		filterUserID, err := uuid.Parse(*request.UserId)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, "invalid user ID")
+		}
+		params.UserID = pgtype.UUID{Bytes: filterUserID, Valid: true}
+	}
+	if request.Type != nil {
+		switch request.GetType() {
+		case immichv1.ReactionType_REACTION_TYPE_COMMENT:
+			params.IsLiked = pgtype.Bool{Bool: false, Valid: true}
+		case immichv1.ReactionType_REACTION_TYPE_LIKE:
+			params.IsLiked = pgtype.Bool{Bool: true, Valid: true}
+		default:
+			return nil, status.Error(codes.InvalidArgument, "invalid activity type")
+		}
+	}
+
+	switch request.GetLevel() {
+	case immichv1.ReactionLevel_REACTION_LEVEL_UNSPECIFIED:
+		if request.AssetId != nil && *request.AssetId != "" {
+			assetID, err := uuid.Parse(*request.AssetId)
+			if err != nil {
+				return nil, status.Error(codes.InvalidArgument, "invalid asset ID")
+			}
+			params.FilterAsset = true
+			params.AssetID = pgtype.UUID{Bytes: assetID, Valid: true}
+		}
+	case immichv1.ReactionLevel_REACTION_LEVEL_ALBUM:
+		params.FilterAsset = true
+	case immichv1.ReactionLevel_REACTION_LEVEL_ASSET:
+		if request.AssetId != nil && *request.AssetId != "" {
+			assetID, err := uuid.Parse(*request.AssetId)
+			if err != nil {
+				return nil, status.Error(codes.InvalidArgument, "invalid asset ID")
+			}
+			params.FilterAsset = true
+			params.AssetID = pgtype.UUID{Bytes: assetID, Valid: true}
+		}
+	default:
+		return nil, status.Error(codes.InvalidArgument, "invalid activity level")
+	}
+	if err := s.requireAlbumAccess(ctx, userID, albumUUID); err != nil {
+		return nil, err
+	}
 
 	// Get activities from database
-	activities, err := s.queries.GetAlbumActivity(ctx, sqlc.GetAlbumActivityParams{
-		AlbumId: albumUUID,
-		Limit:   limit,
-		Offset:  offset,
-	})
+	activities, err := s.queries.SearchActivity(ctx, params)
 	if err != nil {
 		return nil, grpcutil.SanitizedInternal(ctx, "failed to get activities", err)
 	}
@@ -139,11 +185,38 @@ func (s *Server) CreateActivity(ctx context.Context, request *immichv1.CreateAct
 		assetUUID = pgtype.UUID{Bytes: assetID, Valid: true}
 	}
 
-	// Determine if this is a like or comment
-	isLiked := request.GetType() == immichv1.ReactionType_REACTION_TYPE_LIKE
+	// Determine if this is a like or comment.
+	isLiked := false
+	switch request.GetType() {
+	case immichv1.ReactionType_REACTION_TYPE_COMMENT:
+		if strings.TrimSpace(request.Comment) == "" {
+			return nil, status.Error(codes.InvalidArgument, "comment is required for comment activities")
+		}
+	case immichv1.ReactionType_REACTION_TYPE_LIKE:
+		isLiked = true
+	default:
+		return nil, status.Error(codes.InvalidArgument, "invalid activity type")
+	}
+	if err := s.requireAlbumAccess(ctx, userID, albumUUID); err != nil {
+		return nil, err
+	}
 	var comment pgtype.Text
-	if request.Comment != "" {
+	if !isLiked {
 		comment = pgtype.Text{String: request.Comment, Valid: true}
+	}
+
+	if isLiked {
+		existing, err := s.queries.GetActivityLike(ctx, sqlc.GetActivityLikeParams{
+			UserID:  userUUID,
+			AlbumID: albumUUID,
+			AssetID: assetUUID,
+		})
+		if err == nil {
+			return s.activityResponse(ctx, existing, claims)
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return nil, grpcutil.SanitizedInternal(ctx, "failed to check existing activity", err)
+		}
 	}
 
 	// Create activity in database
@@ -158,39 +231,19 @@ func (s *Server) CreateActivity(ctx context.Context, request *immichv1.CreateAct
 		return nil, grpcutil.SanitizedInternal(ctx, "failed to create activity", err)
 	}
 
-	// Get user info for response
-	user, err := s.queries.GetUserByID(ctx, userUUID)
-	if err != nil {
-		// Use claims if user lookup fails
-		user.Email = claims.Email
-		user.Name = claims.Email
-	}
-
-	var assetIdStr string
-	if createdActivity.AssetId.Valid {
-		assetIdStr = uuid.UUID(createdActivity.AssetId.Bytes).String()
-	}
-
-	return &immichv1.ActivityResponseDto{
-		Id:        uuid.UUID(createdActivity.ID.Bytes).String(),
-		CreatedAt: timestamppb.New(createdActivity.CreatedAt.Time),
-		Type:      request.GetType(),
-		Comment:   comment.String,
-		AssetId:   assetIdStr,
-		User: &immichv1.User{
-			Id:    claims.UserID,
-			Email: user.Email,
-			Name:  user.Name,
-		},
-	}, nil
+	return s.activityResponse(ctx, createdActivity, claims)
 }
 
 // GetActivityStatistics gets statistics for activities
 func (s *Server) GetActivityStatistics(ctx context.Context, request *immichv1.GetActivityStatisticsRequest) (*immichv1.ActivityStatisticsResponseDto, error) {
 	// Get user from context
-	_, ok := auth.GetClaimsFromStdContext(ctx)
+	claims, ok := auth.GetClaimsFromStdContext(ctx)
 	if !ok {
 		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	}
+	userID, err := uuid.Parse(claims.UserID)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "invalid user ID")
 	}
 
 	// Parse album ID
@@ -205,27 +258,29 @@ func (s *Server) GetActivityStatistics(ctx context.Context, request *immichv1.Ge
 
 	albumUUID := pgtype.UUID{Bytes: albumID, Valid: true}
 
-	// Get all activities for the album to count them
-	// In a real implementation, we would have a dedicated count query
-	activities, err := s.queries.GetAlbumActivity(ctx, sqlc.GetAlbumActivityParams{
-		AlbumId: albumUUID,
-		Limit:   1000, // Get up to 1000 activities
-		Offset:  0,
+	var assetUUID pgtype.UUID
+	if request.AssetId != nil && *request.AssetId != "" {
+		assetID, err := uuid.Parse(*request.AssetId)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, "invalid asset ID")
+		}
+		assetUUID = pgtype.UUID{Bytes: assetID, Valid: true}
+	}
+	if err := s.requireAlbumAccess(ctx, userID, albumUUID); err != nil {
+		return nil, err
+	}
+
+	statistics, err := s.queries.GetActivityStatistics(ctx, sqlc.GetActivityStatisticsParams{
+		AlbumID: albumUUID,
+		AssetID: assetUUID,
 	})
 	if err != nil {
 		return nil, grpcutil.SanitizedInternal(ctx, "failed to get activity statistics", err)
 	}
 
-	// Count comments (activities that are not likes)
-	commentCount := int32(0)
-	for _, activity := range activities {
-		if !activity.IsLiked && activity.Comment.Valid {
-			commentCount++
-		}
-	}
-
 	return &immichv1.ActivityStatisticsResponseDto{
-		Comments: commentCount,
+		Comments: statistics.Comments,
+		Likes:    statistics.Likes,
 	}, nil
 }
 
@@ -252,7 +307,10 @@ func (s *Server) DeleteActivity(ctx context.Context, request *immichv1.DeleteAct
 	}
 
 	// Verify the user owns this activity
-	userID, _ := uuid.Parse(claims.UserID)
+	userID, err := uuid.Parse(claims.UserID)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "invalid user ID")
+	}
 	if activity.UserId.Bytes != userID {
 		return nil, status.Error(codes.PermissionDenied, "not authorized to delete this activity")
 	}
@@ -264,4 +322,58 @@ func (s *Server) DeleteActivity(ctx context.Context, request *immichv1.DeleteAct
 	}
 
 	return &emptypb.Empty{}, nil
+}
+
+func (s *Server) requireAlbumAccess(ctx context.Context, userID uuid.UUID, albumID pgtype.UUID) error {
+	album, err := s.queries.GetAlbum(ctx, albumID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return status.Error(codes.NotFound, "album not found")
+		}
+		return grpcutil.SanitizedInternal(ctx, "failed to get album", err)
+	}
+	if album.OwnerId.Valid && album.OwnerId.Bytes == userID {
+		return nil
+	}
+
+	sharedUsers, err := s.queries.GetAlbumSharedUsers(ctx, albumID)
+	if err != nil {
+		return grpcutil.SanitizedInternal(ctx, "failed to check album access", err)
+	}
+	for _, sharedUser := range sharedUsers {
+		if sharedUser.ID.Valid && sharedUser.ID.Bytes == userID {
+			return nil
+		}
+	}
+	return status.Error(codes.PermissionDenied, "not authorized to access this album")
+}
+
+func (s *Server) activityResponse(ctx context.Context, activity sqlc.Activity, claims *auth.Claims) (*immichv1.ActivityResponseDto, error) {
+	user, err := s.queries.GetUserByID(ctx, activity.UserId)
+	if err != nil {
+		user.Email = claims.Email
+		user.Name = claims.Email
+	}
+
+	activityType := immichv1.ReactionType_REACTION_TYPE_COMMENT
+	if activity.IsLiked {
+		activityType = immichv1.ReactionType_REACTION_TYPE_LIKE
+	}
+	assetID := ""
+	if activity.AssetId.Valid {
+		assetID = uuid.UUID(activity.AssetId.Bytes).String()
+	}
+
+	return &immichv1.ActivityResponseDto{
+		Id:        uuid.UUID(activity.ID.Bytes).String(),
+		CreatedAt: timestamppb.New(activity.CreatedAt.Time),
+		Type:      activityType,
+		Comment:   activity.Comment.String,
+		AssetId:   assetID,
+		User: &immichv1.User{
+			Id:    uuid.UUID(activity.UserId.Bytes).String(),
+			Email: user.Email,
+			Name:  user.Name,
+		},
+	}, nil
 }

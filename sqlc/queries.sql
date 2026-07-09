@@ -986,12 +986,34 @@ WHERE "sharedLinksId" = $1 AND "assetsId" = $2;
 SELECT * FROM activity
 WHERE id = $1;
 
--- name: GetAlbumActivity :many
+-- name: SearchActivity :many
 SELECT a.*, u.name as user_name, u.email as user_email FROM activity a
-JOIN users u ON a."userId" = u.id
-WHERE a."albumId" = $1
-ORDER BY a."createdAt" DESC
-LIMIT $2 OFFSET $3;
+JOIN users u ON a."userId" = u.id AND u."deletedAt" IS NULL
+WHERE a."albumId" = sqlc.arg('album_id')
+  AND (sqlc.narg('user_id')::uuid IS NULL OR a."userId" = sqlc.narg('user_id')::uuid)
+  AND (
+    NOT sqlc.arg('filter_asset')::boolean
+    OR a."assetId" IS NOT DISTINCT FROM sqlc.narg('asset_id')::uuid
+  )
+  AND (sqlc.narg('is_liked')::boolean IS NULL OR a."isLiked" = sqlc.narg('is_liked')::boolean)
+ORDER BY a."createdAt" ASC;
+
+-- name: GetActivityStatistics :one
+SELECT
+  COUNT(*) FILTER (WHERE NOT a."isLiked")::integer AS comments,
+  COUNT(*) FILTER (WHERE a."isLiked")::integer AS likes
+FROM activity a
+JOIN users u ON a."userId" = u.id AND u."deletedAt" IS NULL
+WHERE a."albumId" = sqlc.arg('album_id')
+  AND (sqlc.narg('asset_id')::uuid IS NULL OR a."assetId" = sqlc.narg('asset_id')::uuid);
+
+-- name: GetActivityLike :one
+SELECT * FROM activity
+WHERE "userId" = sqlc.arg('user_id')
+  AND "albumId" = sqlc.arg('album_id')
+  AND "assetId" IS NOT DISTINCT FROM sqlc.narg('asset_id')::uuid
+  AND "isLiked" = true
+LIMIT 1;
 
 -- name: CreateActivity :one
 INSERT INTO activity ("userId", "albumId", "assetId", comment, "isLiked")

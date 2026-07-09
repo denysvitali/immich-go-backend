@@ -54,6 +54,7 @@ message ActivityResponseDto {
 // Activity statistics response DTO
 message ActivityStatisticsResponseDto {
   int32 comments = 1;
+  int32 likes = 2;
 }
 
 // Reaction type enum
