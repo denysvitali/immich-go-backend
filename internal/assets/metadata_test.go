@@ -4,16 +4,47 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"fmt"
 	"image"
 	"image/color"
 	"image/jpeg"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func jpegWithExifDate(jpegData []byte, dateTimeOriginal string) []byte {
+	value := append([]byte(dateTimeOriginal), 0)
+	tiff := make([]byte, 64)
+	copy(tiff, "II")
+	binary.LittleEndian.PutUint16(tiff[2:], 42)
+	binary.LittleEndian.PutUint32(tiff[4:], 8)
+	binary.LittleEndian.PutUint16(tiff[8:], 1)
+	binary.LittleEndian.PutUint16(tiff[10:], 0x8769)
+	binary.LittleEndian.PutUint16(tiff[12:], 4)
+	binary.LittleEndian.PutUint32(tiff[14:], 1)
+	binary.LittleEndian.PutUint32(tiff[18:], 26)
+	binary.LittleEndian.PutUint16(tiff[26:], 1)
+	binary.LittleEndian.PutUint16(tiff[28:], 0x9003)
+	binary.LittleEndian.PutUint16(tiff[30:], 2)
+	binary.LittleEndian.PutUint32(tiff[32:], uint32(len(value)))
+	binary.LittleEndian.PutUint32(tiff[36:], 44)
+	copy(tiff[44:], value)
+
+	payload := append([]byte("Exif\x00\x00"), tiff...)
+	segment := make([]byte, 4+len(payload))
+	binary.BigEndian.PutUint16(segment, 0xffe1)
+	binary.BigEndian.PutUint16(segment[2:], uint16(len(payload)+2))
+	copy(segment[4:], payload)
+
+	result := append([]byte{}, jpegData[:2]...)
+	result = append(result, segment...)
+	return append(result, jpegData[2:]...)
+}
 
 // createTestJPEG creates a synthetic JPEG image for testing purposes.
 func createTestJPEG(width, height int) []byte {
@@ -66,6 +97,17 @@ func TestExtractMetadata_PlainJPEG(t *testing.T) {
 	assert.Nil(t, meta.ExposureTime, "ExposureTime should be nil when no EXIF is present")
 	assert.Nil(t, meta.Latitude, "Latitude should be nil when no EXIF is present")
 	assert.Nil(t, meta.Longitude, "Longitude should be nil when no EXIF is present")
+}
+
+func TestExtractMetadata_DateTimeOriginal(t *testing.T) {
+	imgBytes := jpegWithExifDate(createTestJPEG(64, 48), "2017:07:22 22:14:34")
+
+	meta, err := NewMetadataExtractor().ExtractMetadata(
+		context.Background(), bytes.NewReader(imgBytes), "dated.jpg", "image/jpeg", int64(len(imgBytes)),
+	)
+	require.NoError(t, err)
+	require.NotNil(t, meta.DateTaken)
+	assert.Equal(t, time.Date(2017, time.July, 22, 22, 14, 34, 0, time.UTC), *meta.DateTaken)
 }
 
 // TestExtractMetadata_EmptyReader verifies that an empty reader does not cause
