@@ -80,9 +80,9 @@ func TestPartnerIDFromPath(t *testing.T) {
 
 func TestNormalizePartnerDirectionQuery(t *testing.T) {
 	tests := []struct {
-		name string
+		name  string
 		input string
-		want string
+		want  string
 	}{
 		{name: "shared by", input: "shared-by", want: "PARTNER_DIRECTION_SHARED_BY"},
 		{name: "shared with", input: "shared-with", want: "PARTNER_DIRECTION_SHARED_WITH"},
