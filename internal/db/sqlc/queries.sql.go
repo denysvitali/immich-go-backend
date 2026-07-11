@@ -10008,6 +10008,24 @@ func (q *Queries) UpdateAssetJobStatus(ctx context.Context, arg UpdateAssetJobSt
 	return i, err
 }
 
+const updateAssetLocalDateTime = `-- name: UpdateAssetLocalDateTime :exec
+UPDATE assets
+SET "localDateTime" = $2,
+    "updatedAt" = now(),
+    "updateId" = immich_uuid_v7()
+WHERE id = $1 AND "deletedAt" IS NULL
+`
+
+type UpdateAssetLocalDateTimeParams struct {
+	ID            pgtype.UUID
+	LocalDateTime pgtype.Timestamptz
+}
+
+func (q *Queries) UpdateAssetLocalDateTime(ctx context.Context, arg UpdateAssetLocalDateTimeParams) error {
+	_, err := q.db.Exec(ctx, updateAssetLocalDateTime, arg.ID, arg.LocalDateTime)
+	return err
+}
+
 const updateAssetStatus = `-- name: UpdateAssetStatus :one
 UPDATE assets
 SET status = $2,

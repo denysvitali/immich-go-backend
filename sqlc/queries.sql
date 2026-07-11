@@ -573,6 +573,13 @@ ON CONFLICT ("assetId") DO UPDATE SET
     "updateId" = immich_uuid_v7()
 RETURNING *;
 
+-- name: UpdateAssetLocalDateTime :exec
+UPDATE assets
+SET "localDateTime" = $2,
+    "updatedAt" = now(),
+    "updateId" = immich_uuid_v7()
+WHERE id = $1 AND "deletedAt" IS NULL;
+
 -- API Key queries
 -- name: GetApiKey :one
 SELECT * FROM api_keys

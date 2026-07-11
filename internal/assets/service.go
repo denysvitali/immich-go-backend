@@ -547,6 +547,16 @@ func (s *Service) updateAssetMetadata(ctx context.Context, assetID pgtype.UUID, 
 		return fmt.Errorf("failed to update metadata: %w", err)
 	}
 
+	if metadata.DateTaken != nil {
+		if err := s.db.UpdateAssetLocalDateTime(ctx, sqlc.UpdateAssetLocalDateTimeParams{
+			ID:            assetID,
+			LocalDateTime: pgutil.TimeToTimestamptz(*metadata.DateTaken),
+		}); err != nil {
+			span.RecordError(err)
+			return fmt.Errorf("failed to update asset timeline date: %w", err)
+		}
+	}
+
 	return nil
 }
 
