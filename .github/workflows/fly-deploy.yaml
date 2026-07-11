@@ -1,0 +1,102 @@
+# Deploy the demo instance to Fly.io and verify it end-to-end.
+#
+# Runs after "CI Pipeline" succeeds on master (never deploys red code),
+# or manually via workflow_dispatch. The deploy produces a fresh instance:
+# entrypoint.sh wipes /data once per new image (IMMICH_DEMO_FRESH_ON_DEPLOY),
+# so the E2E suite always starts against an empty database and registers
+# the root admin itself via /api/auth/admin-sign-up.
+name: Fly Deploy
+
+on:
+  workflow_run:
+    workflows: ["CI Pipeline"]
+    types: [completed]
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deploy at a time; queued pushes wait instead of racing the builder.
+concurrency:
+  group: fly-deploy
+  cancel-in-progress: false
+
+env:
+  DEMO_URL: https://immich-go-backend.fly.dev
+
+jobs:
+  deploy:
+    name: Deploy to Fly.io
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Deploy exactly the commit CI validated, not whatever master
+          # moved to in the meantime.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy
+        run: flyctl deploy --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+  e2e:
+    name: E2E against demo instance
+    runs-on: ubuntu-latest
+    needs: deploy
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Wait for demo instance to be healthy
+        run: |
+          # Fresh deploys wipe /data and re-init embedded Postgres, which
+          # can take a minute or two on a shared-cpu-1x machine.
+          for i in $(seq 1 60); do
+            if curl -fsS --max-time 5 "$DEMO_URL/api/server/ping" | grep -q pong; then
+              echo "Demo instance healthy after ${i} attempts."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::Demo instance did not become healthy within 5 minutes"
+          exit 1
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Enable pnpm
+        run: |
+          corepack enable pnpm
+          corepack prepare pnpm@10.33.2 --activate
+
+      - name: Install E2E dependencies
+        run: |
+          pnpm --dir e2e install --frozen-lockfile
+          pnpm --dir e2e exec playwright install --with-deps chromium
+
+      - name: Run E2E suite
+        run: pnpm --dir e2e exec playwright test
+        env:
+          CI: 'true'
+          E2E_REMOTE: 'true'
+          IMMICH_WEB_URL: ${{ env.DEMO_URL }}
+          IMMICH_SERVER_URL: ${{ env.DEMO_URL }}
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fly-e2e-report
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          retention-days: 7

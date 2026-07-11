@@ -3,12 +3,13 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: './tests',
   outputDir: 'test-results',
-  timeout: 30_000,
+  timeout: process.env.E2E_REMOTE ? 60_000 : 30_000,
   expect: {
-    timeout: 10_000,
+    timeout: process.env.E2E_REMOTE ? 20_000 : 10_000,
   },
   forbidOnly: !!process.env.CI,
-  retries: 0,
+  // Remote (WAN) targets need a retry cushion; local runs stay strict.
+  retries: process.env.E2E_REMOTE ? 2 : 0,
   workers: 1,
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',
   use: {

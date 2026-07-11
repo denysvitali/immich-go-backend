@@ -22,6 +22,23 @@
 # missing-extension problem that crashed 001_initial_schema.sql.
 set -e
 
+# Demo-instance fresh start: when IMMICH_DEMO_FRESH_ON_DEPLOY=true, wipe
+# all persistent state exactly once per new image release. Fly sets
+# FLY_IMAGE_REF to the deployed image reference; we stamp it into
+# /data/.deploy-stamp after a wipe. A machine *restart* (OOM, host
+# migration) keeps the same image ref and therefore keeps its data —
+# only a `fly deploy` with a new image triggers the reset.
+if [ "$IMMICH_DEMO_FRESH_ON_DEPLOY" = "true" ] && [ -n "$FLY_IMAGE_REF" ]; then
+	stamp_file=/data/.deploy-stamp
+	current_stamp="$(cat "$stamp_file" 2>/dev/null || true)"
+	if [ "$current_stamp" != "$FLY_IMAGE_REF" ]; then
+		echo "entrypoint: new release ($FLY_IMAGE_REF), wiping demo state" >&2
+		rm -rf /data/pg /data/uploads /data/tmp /data/thumbs \
+		       /data/profile /data/library /data/video
+		printf '%s' "$FLY_IMAGE_REF" > "$stamp_file"
+	fi
+fi
+
 mkdir -p /data/pg /data/uploads /data/tmp \
          /data/thumbs /data/profile /data/library /data/video
 
@@ -30,5 +47,11 @@ mkdir -p /data/pg /data/uploads /data/tmp \
 if [ "$(stat -c %u /data)" != "1001" ]; then
 	chown -R appuser:appuser /data
 fi
+
+# The recursive chown above is skipped when /data itself is already
+# appuser-owned, but a demo wipe recreates the subdirectories as root.
+# Non-recursive chown of the top-level dirs is cheap and always safe.
+chown appuser:appuser /data/pg /data/uploads /data/tmp \
+	/data/thumbs /data/profile /data/library /data/video
 
 exec gosu appuser /app/immich-go-backend "$@"

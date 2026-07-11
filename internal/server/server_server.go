@@ -232,16 +232,16 @@ func (s *Server) GetTheme(ctx context.Context, empty *emptypb.Empty) (*immichv1.
 func (s *Server) GetServerVersion(ctx context.Context, empty *emptypb.Empty) (*immichv1.ServerVersionResponse, error) {
 	version := strings.TrimPrefix(strings.TrimSpace(Version), "v")
 	parts := strings.SplitN(version, ".", 3)
-	major, minor, patch := 0, 0, 0
+	var major, minor, patch int64
 	if len(parts) >= 1 {
-		major, _ = strconv.Atoi(parts[0])
+		major, _ = strconv.ParseInt(parts[0], 10, 32)
 	}
 	if len(parts) >= 2 {
-		minor, _ = strconv.Atoi(parts[1])
+		minor, _ = strconv.ParseInt(parts[1], 10, 32)
 	}
 	if len(parts) == 3 {
 		patchPart := strings.SplitN(parts[2], "-", 2)[0]
-		patch, _ = strconv.Atoi(patchPart)
+		patch, _ = strconv.ParseInt(patchPart, 10, 32)
 	}
 	return &immichv1.ServerVersionResponse{
 		Major: int32(major),

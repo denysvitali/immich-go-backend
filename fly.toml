@@ -41,6 +41,9 @@ kill_timeout = "30s"
 # the AUTH_JWT_SECRET secret set via `fly secrets set`). config.go's
 # loadFromEnv maps each of the keys below.
 [env]
+  # Demo semantics: wipe /data exactly once per new image release so every
+  # deploy starts from an empty database (see entrypoint.sh deploy-stamp).
+  IMMICH_DEMO_FRESH_ON_DEPLOY = "true"
   IMMICH_WEBUI_DIR = "/app/web"
   IMMICH_EMBEDDED_DB = "true"
   IMMICH_DATABASE_AUTO_MIGRATE = "true"

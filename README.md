@@ -97,6 +97,15 @@ fly deploy
 
 The image bundles the official Immich web build and starts an embedded PostgreSQL inside the binary, so the only persistent state is a single Fly volume.
 
+### Live demo
+
+A demo instance runs at **<https://immich-go-backend.fly.dev>**. It is redeployed from `master` on every green CI run and wiped on each deploy (`IMMICH_DEMO_FRESH_ON_DEPLOY`), then verified by the Playwright E2E suite. The suite registers the root admin on the fresh instance:
+
+- Email: `e2e-root-admin@example.com`
+- Password: `E2ePassword123!`
+
+Anything you upload there is public and disappears on the next deploy.
+
 ### Local development
 
 ```bash

@@ -1,7 +1,7 @@
 import { expect, type APIRequestContext, type APIResponse, type Page } from '@playwright/test';
 
-export const password = 'E2ePassword123!';
-const rootAdminEmail = 'e2e-root-admin@example.com';
+export const password = process.env.E2E_ADMIN_PASSWORD ?? 'E2ePassword123!';
+const rootAdminEmail = process.env.E2E_ADMIN_EMAIL ?? 'e2e-root-admin@example.com';
 
 let userCounter = 0;
 let rootAdmin: TestUser | undefined;
