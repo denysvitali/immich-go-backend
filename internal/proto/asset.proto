@@ -481,7 +481,9 @@ message ReplaceAssetRequest {
 message GetAssetThumbnailRequest {
   string asset_id = 1;
   optional ImageFormat format = 2;
-  optional int32 size = 3;
+  // Upstream AssetMediaSize enum: "thumbnail", "preview" or "fullsize".
+  // The web UI requests e.g. ?size=thumbnail, so this must be a string.
+  optional string size = 3;
 }
 
 // Get asset thumbnail response

@@ -786,7 +786,9 @@ func (s *Server) GetAssetThumbnail(ctx context.Context, request *immichv1.GetAss
 		return nil, err
 	}
 
-	// Determine thumbnail type based on format parameter
+	// Determine thumbnail type. The upstream clients select via
+	// ?size=thumbnail|preview|fullsize (AssetMediaSize); format is a
+	// secondary hint used by older callers.
 	thumbnailType := assets.ThumbnailTypeWebp
 	if request.Format != nil {
 		switch *request.Format {
@@ -795,6 +797,14 @@ func (s *Server) GetAssetThumbnail(ctx context.Context, request *immichv1.GetAss
 		case immichv1.ImageFormat_IMAGE_FORMAT_WEBP:
 			thumbnailType = assets.ThumbnailTypeWebp
 		default:
+			thumbnailType = assets.ThumbnailTypePreview
+		}
+	}
+	if request.Size != nil {
+		switch *request.Size {
+		case "thumbnail":
+			thumbnailType = assets.ThumbnailTypeThumb
+		case "preview", "fullsize":
 			thumbnailType = assets.ThumbnailTypePreview
 		}
 	}
