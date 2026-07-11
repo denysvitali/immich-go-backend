@@ -71,7 +71,10 @@ message QueueStatusDto {
 
 // Job command DTO
 message JobCommandDto {
-  JobCommand command = 1;
+  // Upstream JobCommand enum: "start", "pause", "resume", "empty" or
+  // "clear-failed". The web UI sends e.g. {"command":"start"}, so this must
+  // be a string rather than the proto enum (which the gateway would reject).
+  string command = 1;
   bool force = 2;
 }
 

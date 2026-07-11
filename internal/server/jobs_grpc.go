@@ -181,28 +181,28 @@ func (s *Server) SendJobCommand(ctx context.Context, request *immichv1.SendJobCo
 	queue := jobNameQueues[jobName]
 
 	switch cmd := request.GetCommand().GetCommand(); cmd {
-	case immichv1.JobCommand_JOB_COMMAND_START:
+	case "start":
 		if err := s.startJob(ctx, claims, jobName); err != nil {
 			return nil, err
 		}
-	case immichv1.JobCommand_JOB_COMMAND_PAUSE:
+	case "pause":
 		if err := s.jobService.PauseQueue(ctx, queue); err != nil {
 			return nil, SanitizedInternal(ctx, "failed to pause queue", err)
 		}
-	case immichv1.JobCommand_JOB_COMMAND_RESUME:
+	case "resume":
 		if err := s.jobService.ResumeQueue(ctx, queue); err != nil {
 			return nil, SanitizedInternal(ctx, "failed to resume queue", err)
 		}
-	case immichv1.JobCommand_JOB_COMMAND_EMPTY:
+	case "empty":
 		if err := s.jobService.ClearQueue(ctx, queue); err != nil {
 			return nil, SanitizedInternal(ctx, "failed to empty queue", err)
 		}
-	case immichv1.JobCommand_JOB_COMMAND_CLEAR_FAILED:
+	case "clear-failed":
 		if err := s.jobService.ClearFailed(ctx, queue); err != nil {
 			return nil, SanitizedInternal(ctx, "failed to clear failed jobs", err)
 		}
 	default:
-		return nil, status.Errorf(codes.InvalidArgument, "unknown job command: %v", cmd)
+		return nil, status.Errorf(codes.InvalidArgument, "unknown job command: %q", cmd)
 	}
 
 	return s.jobStatusForQueue(ctx, queue)

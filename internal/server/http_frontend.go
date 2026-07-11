@@ -560,7 +560,7 @@ func (s *Server) handleAlbum(w http.ResponseWriter, r *http.Request, albumID str
 		return
 	}
 
-	writeJSON(w, http.StatusOK, frontendAlbumResponse(album))
+	writeJSON(w, http.StatusOK, s.frontendAlbumResponse(r.Context(), album))
 }
 
 // handleAlbums honors the upstream GetAlbumsDto filters. The v3 albums page
@@ -613,7 +613,7 @@ func (s *Server) handleAlbums(w http.ResponseWriter, r *http.Request) {
 
 	resp := make([]map[string]any, len(albums))
 	for i, album := range albums {
-		resp[i] = frontendAlbumResponse(album)
+		resp[i] = s.frontendAlbumResponse(r.Context(), album)
 	}
 
 	writeJSON(w, http.StatusOK, resp)
@@ -626,7 +626,7 @@ func pgOptionalBool(v *bool) pgtype.Bool {
 	return pgtype.Bool{Bool: *v, Valid: true}
 }
 
-func frontendAlbumResponse(album sqlc.Album) map[string]any {
+func (s *Server) frontendAlbumResponse(ctx context.Context, album sqlc.Album) map[string]any {
 	item := map[string]any{
 		"id":                    album.ID.String(),
 		"albumName":             album.AlbumName,
@@ -650,5 +650,62 @@ func frontendAlbumResponse(album sqlc.Album) map[string]any {
 	if album.AlbumThumbnailAssetId.Valid {
 		item["albumThumbnailAssetId"] = album.AlbumThumbnailAssetId.String()
 	}
+
+	// The v3 web derives album ownership from albumUsers: the first entry
+	// must always be the owner (album.albumUsers[0].user.id). An empty list
+	// crashes the album detail page and every ownership check.
+	albumUsers := []map[string]any{}
+	if owner, err := s.db.GetUser(ctx, album.OwnerId); err == nil {
+		user := frontendAlbumUser(owner.ID, owner.Email, owner.Name, owner.ProfileImagePath,
+			owner.AvatarColor, owner.ProfileChangedAt, owner.CreatedAt)
+		item["owner"] = user
+		albumUsers = append(albumUsers, map[string]any{"role": "owner", "user": user})
+	}
+	if shared, err := s.db.GetAlbumSharedUsers(ctx, album.ID); err == nil {
+		for _, su := range shared {
+			role := su.Role
+			if role == "" {
+				role = "editor"
+			}
+			albumUsers = append(albumUsers, map[string]any{
+				"role": role,
+				"user": frontendAlbumUser(su.ID, su.Email, su.Name, su.ProfileImagePath,
+					su.AvatarColor, su.ProfileChangedAt, su.CreatedAt),
+			})
+		}
+		if len(shared) > 0 {
+			item["shared"] = true
+		}
+	}
+	item["albumUsers"] = albumUsers
+
+	if assets, err := s.db.GetAlbumAssets(ctx, album.ID); err == nil {
+		item["assetCount"] = len(assets)
+	}
+
 	return item
+}
+
+// frontendAlbumUser builds the UserResponseDto shape embedded in album
+// responses. avatarColor and profileChangedAt are required by the upstream
+// DTO, so they fall back to upstream defaults when unset.
+func frontendAlbumUser(id pgtype.UUID, email, name, profileImagePath string,
+	avatarColor pgtype.Text, profileChangedAt, createdAt pgtype.Timestamptz,
+) map[string]any {
+	color := "primary"
+	if avatarColor.Valid && avatarColor.String != "" {
+		color = avatarColor.String
+	}
+	changedAt := createdAt.Time
+	if profileChangedAt.Valid {
+		changedAt = profileChangedAt.Time
+	}
+	return map[string]any{
+		"id":               id.String(),
+		"email":            email,
+		"name":             name,
+		"profileImagePath": profileImagePath,
+		"avatarColor":      color,
+		"profileChangedAt": changedAt.Format(time.RFC3339Nano),
+	}
 }
