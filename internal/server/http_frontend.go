@@ -14,6 +14,7 @@ import (
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 	"github.com/denysvitali/immich-go-backend/internal/timeline"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -544,6 +545,10 @@ func (s *Server) handleAlbum(w http.ResponseWriter, r *http.Request, albumID str
 	writeJSON(w, http.StatusOK, frontendAlbumResponse(album))
 }
 
+// handleAlbums honors the upstream GetAlbumsDto filters. The v3 albums page
+// loads isOwned=true and isShared=true lists separately and renders both in
+// one keyed {#each}; ignoring the filters returns identical lists and the
+// duplicate keys crash the page (svelte each_key_duplicate → blank /albums).
 func (s *Server) handleAlbums(w http.ResponseWriter, r *http.Request) {
 	claims, ok := s.requireAuth(w, r)
 	if !ok {
@@ -556,10 +561,36 @@ func (s *Server) handleAlbums(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	albums, err := s.db.GetAlbumsByOwner(r.Context(), userUUID)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
-		return
+	var albums []sqlc.Album
+	if assetID := r.URL.Query().Get("assetId"); assetID != "" {
+		assetUUID, err := pgutil.StringToUUID(assetID)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid asset id"})
+			return
+		}
+		albums, err = s.db.GetAlbumsByAssetIdForUser(r.Context(), sqlc.GetAlbumsByAssetIdForUserParams{
+			AssetID: assetUUID,
+			UserID:  userUUID,
+		})
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+			return
+		}
+	} else {
+		isShared := optionalBoolQuery(r, "isShared")
+		if isShared == nil {
+			// v2 web sends ?shared= instead of ?isShared=.
+			isShared = optionalBoolQuery(r, "shared")
+		}
+		albums, err = s.db.GetAlbumsForUser(r.Context(), sqlc.GetAlbumsForUserParams{
+			UserID:   userUUID,
+			IsOwned:  pgOptionalBool(optionalBoolQuery(r, "isOwned")),
+			IsShared: pgOptionalBool(isShared),
+		})
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+			return
+		}
 	}
 
 	resp := make([]map[string]any, len(albums))
@@ -568,6 +599,13 @@ func (s *Server) handleAlbums(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func pgOptionalBool(v *bool) pgtype.Bool {
+	if v == nil {
+		return pgtype.Bool{}
+	}
+	return pgtype.Bool{Bool: *v, Valid: true}
 }
 
 func frontendAlbumResponse(album sqlc.Album) map[string]any {

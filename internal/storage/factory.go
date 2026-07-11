@@ -122,12 +122,12 @@ func GetDefaultStorageConfig() StorageConfig {
 		Upload: UploadConfig{
 			MaxFileSize: 104857600, // 100MB
 			AllowedExtensions: []string{
-				".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".webp",
+				".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".webp", ".avif",
 				".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v",
 				".heic", ".heif", ".dng", ".raw", ".cr2", ".nef", ".arw",
 			},
 			AllowedMimeTypes: []string{
-				"image/jpeg", "image/png", "image/gif", "image/bmp", "image/tiff", "image/webp",
+				"image/jpeg", "image/png", "image/gif", "image/bmp", "image/tiff", "image/webp", "image/avif",
 				"video/mp4", "video/quicktime", "video/x-msvideo", "video/x-matroska", "video/webm",
 				"image/heic", "image/heif", "image/x-adobe-dng", "image/x-canon-cr2", "image/x-nikon-nef",
 			},

@@ -13,6 +13,47 @@ SELECT * FROM albums
 WHERE "ownerId" = $1 AND "deletedAt" IS NULL
 ORDER BY "createdAt" DESC;
 
+-- name: GetAlbumsForUser :many
+-- Mirrors upstream album.repository getAll: albums the user participates in
+-- (owner or shared member), optionally filtered by ownership and shared
+-- state. A "shared" album has at least one non-owner member or a shared link.
+SELECT a.* FROM albums a
+WHERE a."deletedAt" IS NULL
+  AND (
+    a."ownerId" = sqlc.arg(user_id)
+    OR EXISTS (
+      SELECT 1 FROM albums_shared_users_users su
+      WHERE su."albumsId" = a.id AND su."usersId" = sqlc.arg(user_id)
+    )
+  )
+  AND (
+    sqlc.narg(is_owned)::boolean IS NULL
+    OR (a."ownerId" = sqlc.arg(user_id)) = sqlc.narg(is_owned)::boolean
+  )
+  AND (
+    sqlc.narg(is_shared)::boolean IS NULL
+    OR (
+      EXISTS (SELECT 1 FROM albums_shared_users_users su2 WHERE su2."albumsId" = a.id)
+      OR EXISTS (SELECT 1 FROM shared_links sl WHERE sl."albumId" = a.id)
+    ) = sqlc.narg(is_shared)::boolean
+  )
+ORDER BY a."createdAt" DESC;
+
+-- name: GetAlbumsByAssetIdForUser :many
+-- Albums containing the asset that the user owns or participates in.
+SELECT a.* FROM albums a
+JOIN albums_assets_assets aa ON aa."albumsId" = a.id
+WHERE a."deletedAt" IS NULL
+  AND aa."assetsId" = sqlc.arg(asset_id)
+  AND (
+    a."ownerId" = sqlc.arg(user_id)
+    OR EXISTS (
+      SELECT 1 FROM albums_shared_users_users su
+      WHERE su."albumsId" = a.id AND su."usersId" = sqlc.arg(user_id)
+    )
+  )
+ORDER BY a."createdAt" DESC;
+
 -- name: CreateAlbum :one
 INSERT INTO albums ("ownerId", "albumName", description)
 VALUES ($1, $2, $3)

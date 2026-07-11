@@ -90,6 +90,15 @@ func TestStorageServiceValidationErrorsUseStorageError(t *testing.T) {
 	assertStorageError(t, err, "upload asset", "asset.jpg", "local", "file size 11 exceeds maximum allowed size 10")
 }
 
+func TestDefaultStorageConfigAcceptsAVIFUploads(t *testing.T) {
+	config := GetDefaultStorageConfig()
+	svc := &Service{config: config}
+
+	_, err := svc.validateUpload("asset.avif", "")
+
+	require.NoError(t, err)
+}
+
 func TestGetAssetUploadURLUnsupportedBackendUsesStorageError(t *testing.T) {
 	backend, err := NewLocalBackend(LocalConfig{RootPath: t.TempDir()})
 	require.NoError(t, err)

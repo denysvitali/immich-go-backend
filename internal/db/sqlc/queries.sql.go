@@ -2847,6 +2847,59 @@ func (q *Queries) GetAlbums(ctx context.Context) ([]Album, error) {
 	return items, nil
 }
 
+const getAlbumsByAssetIdForUser = `-- name: GetAlbumsByAssetIdForUser :many
+SELECT a.id, a."ownerId", a."albumName", a."createdAt", a."albumThumbnailAssetId", a."updatedAt", a.description, a."deletedAt", a."isActivityEnabled", a."order", a."updateId" FROM albums a
+JOIN albums_assets_assets aa ON aa."albumsId" = a.id
+WHERE a."deletedAt" IS NULL
+  AND aa."assetsId" = $1
+  AND (
+    a."ownerId" = $2
+    OR EXISTS (
+      SELECT 1 FROM albums_shared_users_users su
+      WHERE su."albumsId" = a.id AND su."usersId" = $2
+    )
+  )
+ORDER BY a."createdAt" DESC
+`
+
+type GetAlbumsByAssetIdForUserParams struct {
+	AssetID pgtype.UUID
+	UserID  pgtype.UUID
+}
+
+// Albums containing the asset that the user owns or participates in.
+func (q *Queries) GetAlbumsByAssetIdForUser(ctx context.Context, arg GetAlbumsByAssetIdForUserParams) ([]Album, error) {
+	rows, err := q.db.Query(ctx, getAlbumsByAssetIdForUser, arg.AssetID, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Album
+	for rows.Next() {
+		var i Album
+		if err := rows.Scan(
+			&i.ID,
+			&i.OwnerId,
+			&i.AlbumName,
+			&i.CreatedAt,
+			&i.AlbumThumbnailAssetId,
+			&i.UpdatedAt,
+			&i.Description,
+			&i.DeletedAt,
+			&i.IsActivityEnabled,
+			&i.Order,
+			&i.UpdateId,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getAlbumsByOwner = `-- name: GetAlbumsByOwner :many
 SELECT id, "ownerId", "albumName", "createdAt", "albumThumbnailAssetId", "updatedAt", description, "deletedAt", "isActivityEnabled", "order", "updateId" FROM albums
 WHERE "ownerId" = $1 AND "deletedAt" IS NULL
@@ -2855,6 +2908,71 @@ ORDER BY "createdAt" DESC
 
 func (q *Queries) GetAlbumsByOwner(ctx context.Context, ownerid pgtype.UUID) ([]Album, error) {
 	rows, err := q.db.Query(ctx, getAlbumsByOwner, ownerid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Album
+	for rows.Next() {
+		var i Album
+		if err := rows.Scan(
+			&i.ID,
+			&i.OwnerId,
+			&i.AlbumName,
+			&i.CreatedAt,
+			&i.AlbumThumbnailAssetId,
+			&i.UpdatedAt,
+			&i.Description,
+			&i.DeletedAt,
+			&i.IsActivityEnabled,
+			&i.Order,
+			&i.UpdateId,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAlbumsForUser = `-- name: GetAlbumsForUser :many
+SELECT a.id, a."ownerId", a."albumName", a."createdAt", a."albumThumbnailAssetId", a."updatedAt", a.description, a."deletedAt", a."isActivityEnabled", a."order", a."updateId" FROM albums a
+WHERE a."deletedAt" IS NULL
+  AND (
+    a."ownerId" = $1
+    OR EXISTS (
+      SELECT 1 FROM albums_shared_users_users su
+      WHERE su."albumsId" = a.id AND su."usersId" = $1
+    )
+  )
+  AND (
+    $2::boolean IS NULL
+    OR (a."ownerId" = $1) = $2::boolean
+  )
+  AND (
+    $3::boolean IS NULL
+    OR (
+      EXISTS (SELECT 1 FROM albums_shared_users_users su2 WHERE su2."albumsId" = a.id)
+      OR EXISTS (SELECT 1 FROM shared_links sl WHERE sl."albumId" = a.id)
+    ) = $3::boolean
+  )
+ORDER BY a."createdAt" DESC
+`
+
+type GetAlbumsForUserParams struct {
+	UserID   pgtype.UUID
+	IsOwned  pgtype.Bool
+	IsShared pgtype.Bool
+}
+
+// Mirrors upstream album.repository getAll: albums the user participates in
+// (owner or shared member), optionally filtered by ownership and shared
+// state. A "shared" album has at least one non-owner member or a shared link.
+func (q *Queries) GetAlbumsForUser(ctx context.Context, arg GetAlbumsForUserParams) ([]Album, error) {
+	rows, err := q.db.Query(ctx, getAlbumsForUser, arg.UserID, arg.IsOwned, arg.IsShared)
 	if err != nil {
 		return nil, err
 	}
