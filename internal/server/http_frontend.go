@@ -31,6 +31,8 @@ func (s *Server) handleFrontendShape(w http.ResponseWriter, r *http.Request) (ha
 	switch r.Method {
 	case http.MethodGet:
 		switch r.URL.Path {
+		case "/api/partners":
+			normalizePartnerDirectionQuery(r)
 		case "/system-metadata/version-check-state", "/api/system-metadata/version-check-state":
 			s.handleVersionCheckState(w, r)
 			return true
@@ -182,6 +184,22 @@ func partnerIDFromPath(path string) (string, bool) {
 		return "", false
 	}
 	return partnerID, true
+}
+
+// normalizePartnerDirectionQuery accepts the kebab-case values sent by the
+// upstream web client. grpc-gateway otherwise only accepts protobuf enum
+// identifiers for this field.
+func normalizePartnerDirectionQuery(r *http.Request) {
+	query := r.URL.Query()
+	switch query.Get("direction") {
+	case "shared-by":
+		query.Set("direction", "PARTNER_DIRECTION_SHARED_BY")
+	case "shared-with":
+		query.Set("direction", "PARTNER_DIRECTION_SHARED_WITH")
+	default:
+		return
+	}
+	r.URL.RawQuery = query.Encode()
 }
 
 func (s *Server) requireAuth(w http.ResponseWriter, r *http.Request) (*auth.Claims, bool) {

@@ -77,3 +77,25 @@ func TestPartnerIDFromPath(t *testing.T) {
 		})
 	}
 }
+
+func TestNormalizePartnerDirectionQuery(t *testing.T) {
+	tests := []struct {
+		name string
+		input string
+		want string
+	}{
+		{name: "shared by", input: "shared-by", want: "PARTNER_DIRECTION_SHARED_BY"},
+		{name: "shared with", input: "shared-with", want: "PARTNER_DIRECTION_SHARED_WITH"},
+		{name: "unchanged", input: "PARTNER_DIRECTION_SHARED_WITH", want: "PARTNER_DIRECTION_SHARED_WITH"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/api/partners?direction="+tt.input, nil)
+
+			normalizePartnerDirectionQuery(req)
+
+			assert.Equal(t, tt.want, req.URL.Query().Get("direction"))
+		})
+	}
+}
