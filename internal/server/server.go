@@ -322,6 +322,13 @@ func NewServer(cfg *config.Config, db *db.Conn) (*Server, error) {
 			// Register real job handlers so enqueued jobs are processed
 			jobHandlers := jobs.NewHandlers(db.Queries, assetService, libraryService, storageService, mlClient, cfg)
 			jobHandlers.RegisterAllHandlers(jobService)
+			// Start the asynq worker server; without this, enqueued jobs
+			// (thumbnails, metadata extraction, transcodes) sit in Redis
+			// forever.
+			if err := jobService.Start(); err != nil {
+				logrus.WithError(err).Warn("Failed to start job workers, background processing disabled")
+				jobService = nil
+			}
 		}
 	} else {
 		logrus.Warn("Job service not configured, background processing disabled")
@@ -886,6 +893,9 @@ func (s *Server) SetGRPCConn(conn *grpc.ClientConn) {
 
 func (s *Server) Stop() {
 	logrus.Info("Stopping gRPC server...")
+	if s.jobService != nil {
+		s.jobService.Stop()
+	}
 	s.grpcServer.GracefulStop()
 	if s.grpcClientConn != nil {
 		if err := s.grpcClientConn.Close(); err != nil {

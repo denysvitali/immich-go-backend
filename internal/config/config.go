@@ -515,6 +515,16 @@ func loadFromEnv(config *Config) error {
 	if val := os.Getenv("AUTH_JWT_SECRET"); val != "" {
 		config.Auth.JWTSecret = val
 	}
+	if val := os.Getenv("AUTH_LOGIN_RATE_LIMIT"); val != "" {
+		if n, err := strconv.Atoi(val); err == nil {
+			config.Auth.LoginRateLimit = n
+		}
+	}
+	if val := os.Getenv("AUTH_LOGIN_RATE_WINDOW"); val != "" {
+		if d, err := time.ParseDuration(val); err == nil {
+			config.Auth.LoginRateWindow = d
+		}
+	}
 
 	if val := os.Getenv("STORAGE_BACKEND"); val != "" {
 		config.Storage.Backend = val
