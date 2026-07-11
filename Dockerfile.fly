@@ -123,7 +123,7 @@ FROM debian:bookworm-slim
 # libgssapi pull in nss/nsswitch config that the bookworm base also needs.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      ca-certificates tini curl gosu \
+      ca-certificates tini curl gosu redis-server \
       libgcc-s1 libstdc++6 libpq5 \
       libicu72 libssl3 libldap-2.5-0 libxml2 libxslt1.1 \
       libsasl2-2 libgssapi-krb5-2 libpam0g libsystemd0 libnss3 \

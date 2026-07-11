@@ -45,6 +45,10 @@ kill_timeout = "30s"
   # deploy starts from an empty database (see entrypoint.sh deploy-stamp).
   IMMICH_DEMO_FRESH_ON_DEPLOY = "true"
   IMMICH_WEBUI_DIR = "/app/web"
+  # Match the E2E suite's expectations (20 failed logins per minute per
+  # email before 429) — same values as the in-repo CI e2e config.
+  AUTH_LOGIN_RATE_LIMIT = "20"
+  AUTH_LOGIN_RATE_WINDOW = "1m"
   IMMICH_EMBEDDED_DB = "true"
   IMMICH_DATABASE_AUTO_MIGRATE = "true"
   # Storage paths — point local filesystem backend at /data so uploads
@@ -80,14 +84,14 @@ kill_timeout = "30s"
 [processes]
   app = "serve"
 
-# Free-tier size: shared-cpu-1x with 256 MB RAM. On legacy Hobby plans
-# this maps to the no-charge allocation; on new paid plans it's ~$1.94/mo
-# before any free trial credit. Tight for the embedded Postgres' default
-# 128 MB shared_buffers — see StartParameters in internal/embedded which
-# sets shared_buffers to 64 MB to keep within budget.
+# shared-cpu-1x with 512 MB RAM (~$3.89/mo on current paid plans). The
+# machine hosts the Go backend, embedded Postgres (shared_buffers pinned
+# to 64 MB in internal/embedded), a local Redis for the job queue
+# (maxmemory 48 MB, see entrypoint.sh) and image-decode work in the job
+# workers — 256 MB OOMed under E2E load once thumbnails actually ran.
 [[vm]]
   size = "shared-cpu-1x"
-  memory = "256mb"
+  memory = "512mb"
   cpu_kind = "shared"
   cpus = 1
 

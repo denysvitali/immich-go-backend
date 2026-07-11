@@ -54,4 +54,15 @@ fi
 chown appuser:appuser /data/pg /data/uploads /data/tmp \
 	/data/thumbs /data/profile /data/library /data/video
 
+# The job queue (asynq) and its enqueue path need a Redis on
+# localhost:6379 (JOBS_REDIS_URL default). Queue contents are transient
+# job state, so no persistence: an instance restart just drops pending
+# jobs. noeviction keeps asynq's bookkeeping keys intact under pressure.
+if command -v redis-server >/dev/null 2>&1; then
+	gosu appuser redis-server --bind 127.0.0.1 --port 6379 \
+		--save '' --appendonly no \
+		--maxmemory 48mb --maxmemory-policy noeviction \
+		--daemonize yes
+fi
+
 exec gosu appuser /app/immich-go-backend "$@"
