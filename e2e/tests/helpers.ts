@@ -6,8 +6,11 @@ const rootAdminEmail = process.env.E2E_ADMIN_EMAIL ?? 'e2e-root-admin@example.co
 let userCounter = 0;
 let rootAdmin: TestUser | undefined;
 
+// Valid 1x1 grayscale PNG. The previous fixture had a corrupt IDAT CRC:
+// browsers ignore chunk checksums but Go's image/png rejects the file, so
+// server-side thumbnail generation failed for every uploaded test asset.
 export const png1x1 = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGNoAAAAggCBd81ytgAAAABJRU5ErkJggg==',
   'base64',
 );
 

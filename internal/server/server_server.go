@@ -67,25 +67,30 @@ func (s *Server) GetServerConfig(ctx context.Context, empty *emptypb.Empty) (*im
 		MapDarkStyleUrl:  "https://tiles.immich.cloud/v1/style/dark.json",
 		MapLightStyleUrl: "https://tiles.immich.cloud/v1/style/light.json",
 		MaintenanceMode:  false,
+		// Upstream default for the minimum faces needed before a person is
+		// surfaced; required by the v3 web ServerConfigDto.
+		MinFaces: 3,
 	}, nil
 }
 
 func (s *Server) GetServerFeatures(ctx context.Context, empty *emptypb.Empty) (*immichv1.ServerFeaturesResponse, error) {
 	return &immichv1.ServerFeaturesResponse{
-		SmartSearch:        true,
-		FacialRecognition:  true,
-		DuplicateDetection: true,
-		Map:                true,
-		ReverseGeocoding:   true,
-		ImportFaces:        false,
-		Sidecar:            true,
-		Search:             true,
-		Trash:              true,
-		Oauth:              false,
-		OauthAutoLaunch:    false,
-		PasswordLogin:      true,
-		ConfigFile:         false,
-		Email:              false,
+		SmartSearch:         true,
+		FacialRecognition:   true,
+		DuplicateDetection:  true,
+		Map:                 true,
+		ReverseGeocoding:    true,
+		ImportFaces:         false,
+		Sidecar:             true,
+		Search:              true,
+		Trash:               true,
+		Oauth:               false,
+		OauthAutoLaunch:     false,
+		PasswordLogin:       true,
+		ConfigFile:          false,
+		Email:               false,
+		Ocr:                 false,
+		RealtimeTranscoding: s.config.Features.VideoTranscodingEnabled,
 	}, nil
 }
 
@@ -112,22 +117,27 @@ func (s *Server) DeleteServerLicense(ctx context.Context, empty *emptypb.Empty) 
 	return &emptypb.Empty{}, nil
 }
 
+// GetSupportedMediaTypes returns file extensions (not MIME types): the web
+// uploader filters picked files with file.name.endsWith(<entry>), so anything
+// other than upstream's extension lists silently rejects every upload.
+// Lists mirror upstream server/src/utils/mime-types.ts.
 func (s *Server) GetSupportedMediaTypes(ctx context.Context, empty *emptypb.Empty) (*immichv1.ServerMediaTypesResponse, error) {
 	return &immichv1.ServerMediaTypesResponse{
 		Image: []string{
-			"image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp",
-			"image/tiff", "image/svg+xml", "image/heic", "image/heif",
-			"image/x-adobe-dng", "image/x-canon-cr2", "image/x-canon-crw",
-			"image/x-nikon-nef", "image/x-sony-arw",
+			".avif", ".bmp", ".gif", ".jpeg", ".jpg", ".png", ".webp",
+			".3fr", ".ari", ".arw", ".cap", ".cin", ".cr2", ".cr3", ".crw",
+			".dcr", ".dng", ".erf", ".fff", ".iiq", ".k25", ".kdc", ".mrw",
+			".nef", ".nrw", ".orf", ".ori", ".pef", ".psd", ".raf", ".raw",
+			".rw2", ".rwl", ".sr2", ".srf", ".srw", ".x3f",
+			".heic", ".heif", ".hif", ".insp", ".jp2", ".jpe", ".jxl",
+			".svg", ".tif", ".tiff",
 		},
 		Video: []string{
-			"video/mp4", "video/webm", "video/quicktime", "video/x-msvideo",
-			"video/x-matroska", "video/mpeg", "video/3gpp", "video/MP2T",
-			"video/avi", "video/x-flv", "video/x-ms-wmv",
+			".3gp", ".3gpp", ".avi", ".flv", ".insv", ".m2t", ".m2ts",
+			".m4v", ".mkv", ".mov", ".mp4", ".mpe", ".mpeg", ".mpg",
+			".mts", ".mxf", ".ts", ".vob", ".webm", ".wmv",
 		},
-		Sidecar: []string{
-			"application/xml", "text/xml", "application/json",
-		},
+		Sidecar: []string{".xmp"},
 	}, nil
 }
 

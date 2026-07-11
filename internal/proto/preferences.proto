@@ -7,6 +7,7 @@ option go_package = "github.com/denysvitali/immich-go-backend/gen/immich/v1;immi
 // User download preferences response
 message UserDownloadPreferencesResponse {
   bool include_embedded_videos = 1;
+  int64 archive_size = 2;
 }
 
 // Email notifications response
@@ -19,10 +20,27 @@ message EmailNotificationsResponse {
 // Memories response
 message MemoriesResponse {
   bool enabled = 1;
+  int32 duration = 2;
 }
 
 // Purchase response
 message PurchaseResponse {
   bool hide_banner = 1;
   bool show_support_badge = 2;
+  string hide_buy_button_until = 3;
+}
+
+// Albums preferences response
+message AlbumsPreferencesResponse {
+  string default_asset_order = 1;
+}
+
+// Cast preferences response
+message CastPreferencesResponse {
+  bool g_cast_enabled = 1;
+}
+
+// Recently-added preferences response
+message RecentlyAddedPreferencesResponse {
+  bool sidebar_web = 1;
 }

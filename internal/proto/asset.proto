@@ -383,14 +383,31 @@ message CheckExistingAssetsResponse {
   map<string, bool> existing_ids = 1;
 }
 
-// Bulk upload check request
+// Bulk upload check request (upstream AssetBulkUploadCheckDto)
 message CheckBulkUploadRequest {
-  repeated CreateAssetRequest assets = 1;
+  repeated AssetBulkUploadCheckItem assets = 1;
 }
 
-// Bulk upload check response
+// Single item of a bulk upload check: an opaque client-side id (the file
+// name on web) plus the file checksum as hex or base64.
+message AssetBulkUploadCheckItem {
+  string id = 1;
+  string checksum = 2;
+}
+
+// Bulk upload check response (upstream AssetBulkUploadCheckResponseDto)
 message CheckBulkUploadResponse {
-  repeated Asset results = 1;
+  repeated AssetBulkUploadCheckResult results = 1;
+}
+
+// Per-item verdict: action is "accept" or "reject"; reject carries reason
+// "duplicate" plus the id of the already-uploaded asset.
+message AssetBulkUploadCheckResult {
+  string id = 1;
+  string action = 2;
+  optional string reason = 3;
+  optional string asset_id = 4;
+  optional bool is_trashed = 5;
 }
 
 // Asset statistics request

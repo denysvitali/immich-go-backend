@@ -61,9 +61,12 @@ test('server media, version, theme, and storage endpoints stay JSON compatible',
   const mediaTypes = await request.get('/api/server/media-types');
   await expectOk(mediaTypes);
   const mediaTypesBody = await mediaTypes.json();
-  expect(mediaTypesBody.image).toContain('image/jpeg');
-  expect(mediaTypesBody.video).toContain('video/mp4');
-  expect(mediaTypesBody.sidecar).toContain('application/json');
+  // Extensions, not MIME types: the web uploader matches file names against
+  // these entries, so `image/jpeg`-style values reject every upload.
+  expect(mediaTypesBody.image).toContain('.jpg');
+  expect(mediaTypesBody.image).toContain('.png');
+  expect(mediaTypesBody.video).toContain('.mp4');
+  expect(mediaTypesBody.sidecar).toContain('.xmp');
 
   const version = await request.get('/api/server/version');
   await expectOk(version);

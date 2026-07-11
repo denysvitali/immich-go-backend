@@ -3882,6 +3882,44 @@ func (q *Queries) GetAssetsByChecksum(ctx context.Context, checksum []byte) ([]A
 	return items, nil
 }
 
+const getAssetsByChecksumsAndOwner = `-- name: GetAssetsByChecksumsAndOwner :many
+SELECT id, checksum, status FROM assets
+WHERE "ownerId" = $1 AND checksum = ANY($2::bytea[])
+`
+
+type GetAssetsByChecksumsAndOwnerParams struct {
+	OwnerID   pgtype.UUID
+	Checksums [][]byte
+}
+
+type GetAssetsByChecksumsAndOwnerRow struct {
+	ID       pgtype.UUID
+	Checksum []byte
+	Status   AssetsStatusEnum
+}
+
+// Bulk-upload duplicate check: includes trashed assets so the client can
+// surface "duplicate (in trash)" like upstream.
+func (q *Queries) GetAssetsByChecksumsAndOwner(ctx context.Context, arg GetAssetsByChecksumsAndOwnerParams) ([]GetAssetsByChecksumsAndOwnerRow, error) {
+	rows, err := q.db.Query(ctx, getAssetsByChecksumsAndOwner, arg.OwnerID, arg.Checksums)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetAssetsByChecksumsAndOwnerRow
+	for rows.Next() {
+		var i GetAssetsByChecksumsAndOwnerRow
+		if err := rows.Scan(&i.ID, &i.Checksum, &i.Status); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getAssetsByDateRange = `-- name: GetAssetsByDateRange :many
 SELECT id, "deviceAssetId", "ownerId", "deviceId", type, "originalPath", "fileCreatedAt", "fileModifiedAt", "isFavorite", duration, "encodedVideoPath", checksum, "livePhotoVideoId", "updatedAt", "createdAt", "originalFileName", "sidecarPath", thumbhash, "isOffline", "libraryId", "isExternal", "deletedAt", "localDateTime", "stackId", "duplicateId", status, "updateId", visibility FROM assets
 WHERE "ownerId" = $1 

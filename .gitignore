@@ -29,3 +29,5 @@ TODO.md
 immich-upstream
 frontend-e2e-artifacts.zip
 *.test
+e2e/test-results/
+e2e/playwright-report/

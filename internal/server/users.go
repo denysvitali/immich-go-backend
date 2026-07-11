@@ -223,14 +223,29 @@ func (s *Server) UpdateMyPreferences(ctx context.Context, request *immichv1.User
 	return userPreferencesToProto(prefs), nil
 }
 
+// userPreferencesToProto must emit every section of the upstream
+// UserPreferencesResponseDto: the web app reads fields like
+// cast.gCastEnabled and recentlyAdded.sidebarWeb without guarding, so a
+// missing section crashes client-side routing (blank page). Defaults mirror
+// upstream getDefaultPreferences().
 func userPreferencesToProto(prefs *users.UserPreferences) *immichv1.UserPreferencesResponse {
 	if prefs == nil {
 		prefs = &users.UserPreferences{}
 	}
 
 	return &immichv1.UserPreferencesResponse{
+		Albums: &immichv1.AlbumsPreferencesResponse{
+			DefaultAssetOrder: "desc",
+		},
+		Cast: &immichv1.CastPreferencesResponse{
+			GCastEnabled: false,
+		},
+		RecentlyAdded: &immichv1.RecentlyAddedPreferencesResponse{
+			SidebarWeb: false,
+		},
 		Download: &immichv1.UserDownloadPreferencesResponse{
 			IncludeEmbeddedVideos: boolValue(prefs.DownloadIncludeEmbeddedVideos),
+			ArchiveSize:           4 << 30,
 		},
 		EmailNotifications: &immichv1.EmailNotificationsResponse{
 			Enabled:     boolValue(prefs.EmailNotifications),
@@ -242,14 +257,16 @@ func userPreferencesToProto(prefs *users.UserPreferences) *immichv1.UserPreferen
 			SizeThreshold: int32Value(prefs.FoldersSizeThreshold),
 		},
 		Memories: &immichv1.MemoriesResponse{
-			Enabled: boolValue(prefs.MemoriesEnabled),
+			Enabled:  boolValue(prefs.MemoriesEnabled),
+			Duration: 5,
 		},
 		People: &immichv1.PeopleResponse{
 			Enabled:       boolValue(prefs.PeopleEnabled),
 			SizeThreshold: int32Value(prefs.PeopleSizeThreshold),
 		},
 		Purchase: &immichv1.PurchaseResponse{
-			ShowSupportBadge: boolValue(prefs.PurchaseShowSupportBadge),
+			ShowSupportBadge:   boolValue(prefs.PurchaseShowSupportBadge),
+			HideBuyButtonUntil: "2022-02-12T00:00:00.000Z",
 		},
 		Ratings: &immichv1.RatingsResponse{
 			Enabled: boolValue(prefs.RatingsEnabled),

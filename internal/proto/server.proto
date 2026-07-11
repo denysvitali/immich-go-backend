@@ -156,6 +156,7 @@ message ServerConfigResponse {
   int32 trash_days = 9;
   int32 user_delete_delay = 10;
   bool maintenance_mode = 11;
+  int32 min_faces = 12;
 }
 
 // Server features response
@@ -174,6 +175,8 @@ message ServerFeaturesResponse {
   bool sidecar = 12;
   bool smart_search = 13;
   bool trash = 14;
+  bool ocr = 15;
+  bool realtime_transcoding = 16;
 }
 
 // License key request

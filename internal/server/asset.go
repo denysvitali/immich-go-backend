@@ -3,6 +3,9 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto/sha1" //nolint:gosec // Immich uses SHA-1 asset checksums; not for crypto.
+	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -371,6 +374,9 @@ func (s *Server) CheckExistingAssets(ctx context.Context, request *immichv1.Chec
 	}, nil
 }
 
+// CheckBulkUpload mirrors upstream bulkUploadCheck: clients send a checksum
+// per file before uploading; known checksums come back as action "reject"
+// with reason "duplicate" so the client can skip the upload.
 func (s *Server) CheckBulkUpload(ctx context.Context, request *immichv1.CheckBulkUploadRequest) (*immichv1.CheckBulkUploadResponse, error) {
 	claims, err := s.claimsFromContext(ctx)
 	if err != nil {
@@ -382,75 +388,79 @@ func (s *Server) CheckBulkUpload(ctx context.Context, request *immichv1.CheckBul
 		return nil, SanitizedInternal(ctx, "invalid user ID", err)
 	}
 
-	type assetKey struct {
-		deviceID      string
-		deviceAssetID string
-	}
-
-	requested := make([]assetKey, 0, len(request.GetAssets()))
-	idsByDevice := make(map[string][]string)
-	seenByDevice := make(map[string]map[string]struct{})
-	for _, asset := range request.GetAssets() {
-		if asset == nil || asset.GetDeviceId() == "" || asset.GetDeviceAssetId() == "" {
+	items := request.GetAssets()
+	normalized := make([]string, len(items))
+	checksums := make([][]byte, 0, len(items))
+	seen := make(map[string]struct{}, len(items))
+	for i, item := range items {
+		hexSum := normalizeUploadChecksum(item.GetChecksum())
+		normalized[i] = hexSum
+		if hexSum == "" {
 			continue
 		}
-		key := assetKey{
-			deviceID:      asset.GetDeviceId(),
-			deviceAssetID: asset.GetDeviceAssetId(),
-		}
-		requested = append(requested, key)
-
-		deviceSeen := seenByDevice[key.deviceID]
-		if deviceSeen == nil {
-			deviceSeen = make(map[string]struct{})
-			seenByDevice[key.deviceID] = deviceSeen
-		}
-		if _, ok := deviceSeen[key.deviceAssetID]; ok {
+		if _, ok := seen[hexSum]; ok {
 			continue
 		}
-		deviceSeen[key.deviceAssetID] = struct{}{}
-		idsByDevice[key.deviceID] = append(idsByDevice[key.deviceID], key.deviceAssetID)
+		seen[hexSum] = struct{}{}
+		// Checksums are stored as the bytes of the hex string (same
+		// convention as UploadAsset).
+		checksums = append(checksums, []byte(hexSum))
 	}
 
-	if len(requested) == 0 {
-		return &immichv1.CheckBulkUploadResponse{Results: []*immichv1.Asset{}}, nil
+	type duplicate struct {
+		assetID   string
+		isTrashed bool
 	}
-
-	existingByKey := make(map[assetKey]sqlc.Asset)
-	for deviceID, deviceAssetIDs := range idsByDevice {
-		foundAssets, err := s.db.GetAssetsByDeviceAssetIDs(ctx, sqlc.GetAssetsByDeviceAssetIDsParams{
-			OwnerID:        userID,
-			DeviceID:       deviceID,
-			DeviceAssetIds: deviceAssetIDs,
+	duplicates := make(map[string]duplicate)
+	if len(checksums) > 0 {
+		rows, err := s.db.GetAssetsByChecksumsAndOwner(ctx, sqlc.GetAssetsByChecksumsAndOwnerParams{
+			OwnerID:   userID,
+			Checksums: checksums,
 		})
 		if err != nil {
 			return nil, SanitizedInternal(ctx, "failed to check bulk upload assets", err)
 		}
-		for _, asset := range foundAssets {
-			existingByKey[assetKey{
-				deviceID:      asset.DeviceId,
-				deviceAssetID: asset.DeviceAssetId,
-			}] = asset
+		for _, row := range rows {
+			duplicates[string(row.Checksum)] = duplicate{
+				assetID:   row.ID.String(),
+				isTrashed: row.Status == sqlc.AssetsStatusEnumTrashed,
+			}
 		}
 	}
 
-	results := make([]*immichv1.Asset, 0, len(existingByKey))
-	emitted := make(map[assetKey]struct{}, len(existingByKey))
-	for _, key := range requested {
-		asset, ok := existingByKey[key]
-		if !ok {
-			continue
+	results := make([]*immichv1.AssetBulkUploadCheckResult, len(items))
+	for i, item := range items {
+		result := &immichv1.AssetBulkUploadCheckResult{
+			Id:     item.GetId(),
+			Action: "accept",
 		}
-		if _, ok := emitted[key]; ok {
-			continue
+		if dup, ok := duplicates[normalized[i]]; ok {
+			reason := "duplicate"
+			result.Action = "reject"
+			result.Reason = &reason
+			result.AssetId = &dup.assetID
+			result.IsTrashed = &dup.isTrashed
 		}
-		emitted[key] = struct{}{}
-		results = append(results, s.convertAssetToProto(asset))
+		results[i] = result
 	}
 
-	return &immichv1.CheckBulkUploadResponse{
-		Results: results,
-	}, nil
+	return &immichv1.CheckBulkUploadResponse{Results: results}, nil
+}
+
+// normalizeUploadChecksum accepts the SHA-1 forms Immich clients send —
+// 40-char hex (web) or base64 (mobile) — and returns lowercase hex, or ""
+// when the value is unusable.
+func normalizeUploadChecksum(v string) string {
+	v = strings.TrimSpace(v)
+	if len(v) == 2*sha1.Size {
+		if _, err := hex.DecodeString(v); err == nil {
+			return strings.ToLower(v)
+		}
+	}
+	if raw, err := base64.StdEncoding.DecodeString(v); err == nil && len(raw) == sha1.Size {
+		return hex.EncodeToString(raw)
+	}
+	return ""
 }
 
 func (s *Server) GetAssetStatistics(ctx context.Context, request *immichv1.GetAssetStatisticsRequest) (*immichv1.AssetStatisticsResponse, error) {

@@ -209,6 +209,9 @@ message UserPreferencesResponse {
   RatingsResponse ratings = 7;
   SharedLinksResponse shared_links = 8;
   TagsResponse tags = 9;
+  AlbumsPreferencesResponse albums = 10;
+  CastPreferencesResponse cast = 11;
+  RecentlyAddedPreferencesResponse recently_added = 12;
 }
 
 // User preferences update request
@@ -235,11 +238,13 @@ message GetMyCalendarHeatmapRequest {
 message FoldersResponse {
   bool enabled = 1;
   int32 size_threshold = 2;
+  bool sidebar_web = 3;
 }
 
 message PeopleResponse {
   bool enabled = 1;
   int32 size_threshold = 2;
+  bool sidebar_web = 3;
 }
 
 message RatingsResponse {
@@ -250,11 +255,13 @@ message SharedLinksResponse {
   bool enabled = 1;
   bool show_metadata = 2;
   string password_options = 3;
+  bool sidebar_web = 4;
 }
 
 message TagsResponse {
   bool enabled = 1;
   int32 size_threshold = 2;
+  bool sidebar_web = 3;
 }
 
 // Update sub-messages for preferences

@@ -1261,6 +1261,12 @@ ORDER BY a1."localDateTime" DESC;
 SELECT * FROM assets
 WHERE checksum = $1 AND "deletedAt" IS NULL;
 
+-- name: GetAssetsByChecksumsAndOwner :many
+-- Bulk-upload duplicate check: includes trashed assets so the client can
+-- surface "duplicate (in trash)" like upstream.
+SELECT id, checksum, status FROM assets
+WHERE "ownerId" = sqlc.arg(owner_id) AND checksum = ANY(sqlc.arg(checksums)::bytea[]);
+
 -- name: TrashAssetsByIDsAndOwner :exec
 UPDATE assets
 SET status = 'trashed',

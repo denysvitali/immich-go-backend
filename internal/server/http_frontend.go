@@ -442,9 +442,14 @@ func (s *Server) handleTimelineBucket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := map[string]any{
-		"id":               make([]string, len(assets)),
-		"city":             make([]*string, len(assets)),
-		"country":          make([]*string, len(assets)),
+		"id":      make([]string, len(assets)),
+		"city":    make([]*string, len(assets)),
+		"country": make([]*string, len(assets)),
+		// createdAt and visibility are required by the upstream v3 DTO;
+		// the v3 web timeline indexes these arrays per asset and dies on
+		// undefined, leaving the page stuck on the splash screen.
+		"createdAt":        make([]string, len(assets)),
+		"visibility":       make([]string, len(assets)),
 		"duration":         make([]*string, len(assets)),
 		"fileCreatedAt":    make([]string, len(assets)),
 		"isFavorite":       make([]bool, len(assets)),
@@ -475,6 +480,10 @@ func (s *Server) handleTimelineBucket(w http.ResponseWriter, r *http.Request) {
 		resp["country"].([]*string)[i] = a.Country
 		resp["duration"].([]*string)[i] = a.Duration
 		resp["fileCreatedAt"].([]string)[i] = a.FileCreatedAt.Format(time.RFC3339)
+		// Bucket rows don't carry the DB row-creation time; fileCreatedAt is
+		// the closest real value and keeps the required field non-null.
+		resp["createdAt"].([]string)[i] = a.FileCreatedAt.Format(time.RFC3339)
+		resp["visibility"].([]string)[i] = a.Visibility
 		resp["isFavorite"].([]bool)[i] = a.IsFavorite
 		resp["isImage"].([]bool)[i] = a.Type == "IMAGE"
 		resp["isTrashed"].([]bool)[i] = a.Status == "trashed"
