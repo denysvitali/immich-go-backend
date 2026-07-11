@@ -31,6 +31,37 @@ export const gpsJpeg = Buffer.from(
   'base64',
 );
 
+export function jpegWithExifDate(dateTimeOriginal: string) {
+  const value = `${dateTimeOriginal}\0`;
+  if (value.length !== 20) {
+    throw new Error('EXIF DateTimeOriginal must use YYYY:MM:DD HH:mm:ss');
+  }
+
+  const tiff = Buffer.alloc(64);
+  tiff.write('II', 0, 'ascii');
+  tiff.writeUInt16LE(42, 2);
+  tiff.writeUInt32LE(8, 4);
+  tiff.writeUInt16LE(1, 8);
+  tiff.writeUInt16LE(0x8769, 10); // ExifIFDPointer
+  tiff.writeUInt16LE(4, 12); // LONG
+  tiff.writeUInt32LE(1, 14);
+  tiff.writeUInt32LE(26, 18);
+  tiff.writeUInt32LE(0, 22);
+  tiff.writeUInt16LE(1, 26);
+  tiff.writeUInt16LE(0x9003, 28); // DateTimeOriginal
+  tiff.writeUInt16LE(2, 30); // ASCII
+  tiff.writeUInt32LE(value.length, 32);
+  tiff.writeUInt32LE(44, 36);
+  tiff.writeUInt32LE(0, 40);
+  tiff.write(value, 44, 'ascii');
+
+  const payload = Buffer.concat([Buffer.from('Exif\0\0', 'ascii'), tiff]);
+  const app1Header = Buffer.alloc(4);
+  app1Header.writeUInt16BE(0xffe1, 0);
+  app1Header.writeUInt16BE(payload.length + 2, 2);
+  return Buffer.concat([gpsJpeg.subarray(0, 2), app1Header, payload, gpsJpeg.subarray(2)]);
+}
+
 export type TestUser = {
   email: string;
   password: string;
