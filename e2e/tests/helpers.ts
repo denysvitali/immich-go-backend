@@ -59,7 +59,13 @@ export function jpegWithExifDate(dateTimeOriginal: string) {
   const app1Header = Buffer.alloc(4);
   app1Header.writeUInt16BE(0xffe1, 0);
   app1Header.writeUInt16BE(payload.length + 2, 2);
-  return Buffer.concat([gpsJpeg.subarray(0, 2), app1Header, payload, gpsJpeg.subarray(2)]);
+
+  // The base JPEG already has a GPS EXIF APP1 segment. Replace it instead of
+  // adding a second EXIF block, since metadata readers differ on which block
+  // wins when a JPEG contains duplicates.
+  const originalApp1Length = gpsJpeg.readUInt16BE(4);
+  const imageDataOffset = 4 + originalApp1Length;
+  return Buffer.concat([gpsJpeg.subarray(0, 2), app1Header, payload, gpsJpeg.subarray(imageDataOffset)]);
 }
 
 export type TestUser = {
