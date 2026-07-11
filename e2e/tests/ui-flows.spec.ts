@@ -2,7 +2,11 @@ import { expect, test } from '@playwright/test';
 
 import { authenticatePage, expectOk, signUpAdmin, uniqueId, uploadAsset } from './helpers';
 
-const assetMonthLabel = 'Jun 2026';
+// Day-group title for the asset below ("Mon, Jun 1" this year, with a
+// trailing ", 2026" once the clock rolls into 2027). The old assertion on
+// the skeleton placeholder "Jun 2026" only matched while the timeline
+// failed to load past its skeleton.
+const assetDayLabel = /Mon, Jun 1/;
 const assetTimestamp = '2026-06-01T12:00:00Z';
 
 test('user can log in through the login form and reach the timeline', async ({ page, request }) => {
@@ -23,7 +27,7 @@ test('uploaded asset appears on the timeline', async ({ page, request }) => {
 
   await authenticatePage(page, user);
   await page.goto('/photos');
-  await expect(page.getByText(assetMonthLabel).first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(assetDayLabel).first()).toBeVisible({ timeout: 15_000 });
 });
 
 test('album created via API shows up on the albums page', async ({ page, request }) => {
@@ -58,7 +62,7 @@ test('favorited asset appears on the favorites page', async ({ page, request }) 
 
   await authenticatePage(page, user);
   await page.goto('/favorites');
-  await expect(page.getByText(assetMonthLabel).first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(assetDayLabel).first()).toBeVisible({ timeout: 15_000 });
 });
 
 test('trashed asset is exposed through the trash timeline and page renders', async ({ page, request }) => {
