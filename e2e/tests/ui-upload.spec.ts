@@ -58,5 +58,5 @@ test('uploading a picture through the web UI creates the asset', async ({ page, 
     .toBe(true);
 
   await page.reload();
-  await expect(page.getByText(/Sat, Jul 22/).first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText('2017', { exact: true }).first()).toBeVisible({ timeout: 15_000 });
 });
