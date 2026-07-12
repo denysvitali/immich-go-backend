@@ -281,6 +281,19 @@ func (h *Handlers) HandleMetadataExtraction(ctx context.Context, task *asynq.Tas
 		return fmt.Errorf("failed to persist EXIF data for asset %s: %w", assetID, err)
 	}
 
+	// Mirror assets.Service.updateAssetMetadata: the timeline buckets group
+	// by assets."localDateTime", so the EXIF capture date must be written
+	// there too. This handler and the inline TriggerProcessing path are
+	// parallel implementations — date handling must stay in sync.
+	if meta.DateTaken != nil {
+		if err := h.db.UpdateAssetLocalDateTime(ctx, sqlc.UpdateAssetLocalDateTimeParams{
+			ID:            pgAssetID,
+			LocalDateTime: pgtype.Timestamptz{Time: *meta.DateTaken, Valid: true},
+		}); err != nil {
+			return fmt.Errorf("failed to update asset timeline date for asset %s: %w", assetID, err)
+		}
+	}
+
 	log.WithFields(logrus.Fields{
 		"make":       meta.Make,
 		"model":      meta.Model,
