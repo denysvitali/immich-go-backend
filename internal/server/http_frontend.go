@@ -111,6 +111,11 @@ func (s *Server) handleFrontendShape(w http.ResponseWriter, r *http.Request) (ha
 			return true
 		}
 
+		if assetID, kind := assetMediaRouteFromPath(r.URL.Path); kind != assetMediaNone {
+			s.handleAssetMedia(w, r, assetID, kind)
+			return true
+		}
+
 		if albumID, ok := albumMapMarkersIDFromPath(r.URL.Path); ok {
 			s.handleAlbumMapMarkers(w, r, albumID)
 			return true
