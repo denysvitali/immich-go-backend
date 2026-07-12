@@ -97,4 +97,9 @@ test('admin can upload an image, create an album, and retrieve the image', async
   expect(downloaded.headers()['content-type']).toBe('image/png');
   expect(downloaded.headers()['content-disposition']).toBe(`inline; filename="${filename}"`);
   expect(await downloaded.body()).toEqual(png1x1);
+
+  const thumbnail = await request.get(`/api/assets/${asset.id}/thumbnail`, { headers });
+  await expectOk(thumbnail);
+  expect(thumbnail.headers()['content-type']).toBe('image/jpeg');
+  expect((await thumbnail.body()).subarray(0, 2)).toEqual(Buffer.from([0xff, 0xd8]));
 });

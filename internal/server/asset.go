@@ -870,8 +870,10 @@ func (s *Server) getThumbnailContentType(thumbnailType assets.ThumbnailType) str
 
 var thumbnailContentTypes = map[assets.ThumbnailType]string{
 	assets.ThumbnailTypePreview: "image/jpeg",
-	assets.ThumbnailTypeWebp:    "image/webp",
-	assets.ThumbnailTypeThumb:   "image/jpeg",
+	// The generator currently falls back to JPEG for WebP thumbnails, so the
+	// response must describe the bytes that are actually served.
+	assets.ThumbnailTypeWebp:  "image/jpeg",
+	assets.ThumbnailTypeThumb: "image/jpeg",
 }
 
 func (s *Server) PlayAssetVideo(ctx context.Context, request *immichv1.PlayAssetVideoRequest) (*immichv1.PlayAssetVideoResponse, error) {

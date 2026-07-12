@@ -42,7 +42,7 @@ func TestGetThumbnailContentType(t *testing.T) {
 		want          string
 	}{
 		{"preview", assets.ThumbnailTypePreview, "image/jpeg"},
-		{"webp", assets.ThumbnailTypeWebp, "image/webp"},
+		{"webp fallback", assets.ThumbnailTypeWebp, "image/jpeg"},
 		{"thumb", assets.ThumbnailTypeThumb, "image/jpeg"},
 		{"unknown", assets.ThumbnailType("unknown"), "image/jpeg"},
 	}
