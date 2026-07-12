@@ -94,8 +94,7 @@ test('admin can upload an image, create an album, and retrieve the image', async
 
   const downloaded = await request.get(`/api/assets/${asset.id}/original`, { headers });
   await expectOk(downloaded);
-  const downloadedBody = await downloaded.json();
-  expect(downloadedBody.contentType).toBe('image/png');
-  expect(downloadedBody.filename).toBe(filename);
-  expect(Buffer.from(downloadedBody.data, 'base64')).toEqual(png1x1);
+  expect(downloaded.headers()['content-type']).toBe('image/png');
+  expect(downloaded.headers()['content-disposition']).toBe(`inline; filename="${filename}"`);
+  expect(await downloaded.body()).toEqual(png1x1);
 });
