@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/denysvitali/immich-go-backend/internal/grpcutil"
+
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 	"github.com/denysvitali/immich-go-backend/internal/timeline"
 	"google.golang.org/grpc/codes"
@@ -34,7 +36,7 @@ func (s *Server) GetTimeBucket(ctx context.Context, request *immichv1.GetTimeBuc
 
 	assets, err := s.timelineService.GetBucketAssets(ctx, opts)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to get time bucket assets", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to get time bucket assets", err)
 	}
 
 	protoAssets := make([]*immichv1.Asset, len(assets))
@@ -65,7 +67,7 @@ func (s *Server) GetTimeBuckets(ctx context.Context, request *immichv1.GetTimeBu
 
 	buckets, err := s.timelineService.GetTimeBuckets(ctx, opts)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to get time buckets", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to get time buckets", err)
 	}
 
 	protoBuckets := make([]*immichv1.TimeBucketsResponseDto, len(buckets))

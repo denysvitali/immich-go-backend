@@ -4,6 +4,8 @@ import (
 	"context"
 	"math"
 
+	"github.com/denysvitali/immich-go-backend/internal/grpcutil"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -116,7 +118,7 @@ func jobStatusFromQueueInfo(info *jobs.QueueInfo) *immichv1.JobStatusDto {
 func (s *Server) jobStatusForQueue(ctx context.Context, queue string) (*immichv1.JobStatusDto, error) {
 	stats, err := s.jobService.GetQueueStats(ctx)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to get queue stats", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to get queue stats", err)
 	}
 	return jobStatusFromQueueInfo(stats.Queues[queue]), nil
 }
@@ -137,7 +139,7 @@ func (s *Server) GetAllJobStatuses(ctx context.Context, _ *emptypb.Empty) (*immi
 	} else {
 		stats, err := s.jobService.GetQueueStats(ctx)
 		if err != nil {
-			return nil, SanitizedInternal(ctx, "failed to get queue stats", err)
+			return nil, grpcutil.SanitizedInternal(ctx, "failed to get queue stats", err)
 		}
 		for name, queue := range jobNameQueues {
 			statuses[name] = jobStatusFromQueueInfo(stats.Queues[queue])
@@ -187,19 +189,19 @@ func (s *Server) SendJobCommand(ctx context.Context, request *immichv1.SendJobCo
 		}
 	case "pause":
 		if err := s.jobService.PauseQueue(ctx, queue); err != nil {
-			return nil, SanitizedInternal(ctx, "failed to pause queue", err)
+			return nil, grpcutil.SanitizedInternal(ctx, "failed to pause queue", err)
 		}
 	case "resume":
 		if err := s.jobService.ResumeQueue(ctx, queue); err != nil {
-			return nil, SanitizedInternal(ctx, "failed to resume queue", err)
+			return nil, grpcutil.SanitizedInternal(ctx, "failed to resume queue", err)
 		}
 	case "empty":
 		if err := s.jobService.ClearQueue(ctx, queue); err != nil {
-			return nil, SanitizedInternal(ctx, "failed to empty queue", err)
+			return nil, grpcutil.SanitizedInternal(ctx, "failed to empty queue", err)
 		}
 	case "clear-failed":
 		if err := s.jobService.ClearFailed(ctx, queue); err != nil {
-			return nil, SanitizedInternal(ctx, "failed to clear failed jobs", err)
+			return nil, grpcutil.SanitizedInternal(ctx, "failed to clear failed jobs", err)
 		}
 	default:
 		return nil, status.Errorf(codes.InvalidArgument, "unknown job command: %q", cmd)
@@ -216,7 +218,7 @@ func (s *Server) startJob(ctx context.Context, claims *auth.Claims, jobName immi
 	case immichv1.JobName_JOB_NAME_DUPLICATE_DETECTION:
 		payload := jobs.DuplicateDetectionPayload{UserID: claims.UserID}
 		if err := s.jobService.EnqueueJobWithPriority(ctx, jobs.JobTypeDuplicateDetect, payload, jobs.PriorityNormal); err != nil {
-			return SanitizedInternal(ctx, "failed to enqueue duplicate detection job", err)
+			return grpcutil.SanitizedInternal(ctx, "failed to enqueue duplicate detection job", err)
 		}
 		return nil
 	default:
@@ -241,7 +243,7 @@ func (s *Server) ClearJob(ctx context.Context, request *immichv1.ClearJobRequest
 	}
 
 	if err := s.jobService.ClearQueue(ctx, queue); err != nil {
-		return nil, SanitizedInternal(ctx, "failed to clear queue", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to clear queue", err)
 	}
 
 	return s.jobStatusForQueue(ctx, queue)

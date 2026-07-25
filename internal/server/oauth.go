@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/denysvitali/immich-go-backend/internal/grpcutil"
+
 	"github.com/denysvitali/immich-go-backend/internal/oauth"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 	"google.golang.org/grpc"
@@ -32,7 +34,7 @@ func (s *Server) AuthorizeOAuth(ctx context.Context, req *immichv1.AuthorizeOAut
 	// Generate state for CSRF protection
 	state, err := oauthService.GenerateState()
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to generate state", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to generate state", err)
 	}
 
 	// Store state in session/cache (simplified - should use proper session storage)
@@ -62,19 +64,19 @@ func (s *Server) CallbackOAuth(ctx context.Context, req *immichv1.CallbackOAuthR
 	// Exchange code for token
 	accessToken, err := oauthService.ExchangeCodeForToken(req.Provider, req.Code)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to exchange code", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to exchange code", err)
 	}
 
 	// Get user info from provider
 	userInfo, err := oauthService.GetUserInfo(req.Provider, accessToken)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to get user info", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to get user info", err)
 	}
 
 	// Find or create user
 	user, err := oauthService.FindOrCreateUserByOAuth(ctx, userInfo)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to find or create user", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to find or create user", err)
 	}
 
 	// Prefer a durable session row (with optional OIDC sid) so backchannel
@@ -97,7 +99,7 @@ func (s *Server) CallbackOAuth(ctx context.Context, req *immichv1.CallbackOAuthR
 		var tokErr error
 		token, tokErr = s.authService.GenerateToken(user.ID.String(), user.Email, 24*time.Hour)
 		if tokErr != nil {
-			return nil, SanitizedInternal(ctx, "failed to generate token", tokErr)
+			return nil, grpcutil.SanitizedInternal(ctx, "failed to generate token", tokErr)
 		}
 	}
 
@@ -107,7 +109,7 @@ func (s *Server) CallbackOAuth(ctx context.Context, req *immichv1.CallbackOAuthR
 			token, int(24*time.Hour.Seconds())),
 	)
 	if err := grpc.SetHeader(ctx, md); err != nil {
-		return nil, SanitizedInternal(ctx, "failed to set cookie", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to set cookie", err)
 	}
 
 	return &immichv1.CallbackOAuthResponse{
@@ -157,7 +159,7 @@ func (s *Server) LinkOAuthAccount(ctx context.Context, req *immichv1.LinkOAuthAc
 
 	// Link the OAuth account
 	if err := oauthService.LinkOAuthAccount(ctx, userID, req.Provider, req.ProviderId); err != nil {
-		return nil, SanitizedInternal(ctx, "failed to link account", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to link account", err)
 	}
 
 	return &immichv1.LinkOAuthAccountResponse{
@@ -178,7 +180,7 @@ func (s *Server) UnlinkOAuthAccount(ctx context.Context, _ *emptypb.Empty) (*imm
 
 	// Unlink the OAuth account
 	if err := oauthService.UnlinkOAuthAccount(ctx, userID); err != nil {
-		return nil, SanitizedInternal(ctx, "failed to unlink account", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to unlink account", err)
 	}
 
 	return &immichv1.UnlinkOAuthAccountResponse{
@@ -195,7 +197,7 @@ func (s *Server) LogoutOAuth(ctx context.Context, req *immichv1.OAuthBackchannel
 
 	oidcCfg, err := s.oauthOIDCConfig(ctx)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to load OAuth config", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to load OAuth config", err)
 	}
 	if !oidcCfg.Enabled {
 		return nil, status.Error(codes.InvalidArgument, "received backchannel logout request but OAuth is not enabled")
@@ -208,7 +210,7 @@ func (s *Server) LogoutOAuth(ctx context.Context, req *immichv1.OAuthBackchannel
 
 	if s.db != nil && s.db.Queries != nil {
 		if _, invErr := oauth.InvalidateOAuthSessions(ctx, s.db.Queries, sub, sid); invErr != nil {
-			return nil, SanitizedInternal(ctx, "failed to invalidate OAuth sessions", invErr)
+			return nil, grpcutil.SanitizedInternal(ctx, "failed to invalidate OAuth sessions", invErr)
 		}
 	}
 

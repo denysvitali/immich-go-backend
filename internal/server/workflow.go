@@ -4,6 +4,8 @@ import (
 	"context"
 	"maps"
 
+	"github.com/denysvitali/immich-go-backend/internal/grpcutil"
+
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 	"github.com/denysvitali/immich-go-backend/internal/workflow"
 	"google.golang.org/grpc/codes"
@@ -32,7 +34,7 @@ func (s *Server) ListWorkflows(ctx context.Context, _ *emptypb.Empty) (*immichv1
 
 	workflows, err := s.workflowService.ListWorkflows(ctx)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to list workflows", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to list workflows", err)
 	}
 
 	protoWorkflows := make([]*immichv1.WorkflowInfo, 0, len(workflows))
@@ -87,7 +89,7 @@ func (s *Server) GetWorkflowForShare(ctx context.Context, req *immichv1.GetWorkf
 
 	resp, err := workflowShareToProto(w)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to convert workflow share response", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to convert workflow share response", err)
 	}
 	return resp, nil
 }
@@ -117,7 +119,7 @@ func (s *Server) CreateWorkflow(ctx context.Context, req *immichv1.CreateWorkflo
 
 	w, err := s.workflowService.CreateWorkflow(ctx, req.Name, description, trigger, actions, enabled, claims.UserID)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to create workflow", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to create workflow", err)
 	}
 
 	return workflowToProto(w), nil
@@ -145,7 +147,7 @@ func (s *Server) UpdateWorkflow(ctx context.Context, req *immichv1.UpdateWorkflo
 
 	w, err := s.workflowService.UpdateWorkflow(ctx, req.WorkflowId, req.Name, req.Description, trigger, actions)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to update workflow", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to update workflow", err)
 	}
 
 	return workflowToProto(w), nil
@@ -159,7 +161,7 @@ func (s *Server) DeleteWorkflow(ctx context.Context, req *immichv1.DeleteWorkflo
 
 	err := s.workflowService.DeleteWorkflow(ctx, req.WorkflowId)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to delete workflow", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to delete workflow", err)
 	}
 
 	return &emptypb.Empty{}, nil
@@ -178,7 +180,7 @@ func (s *Server) TriggerWorkflow(ctx context.Context, req *immichv1.TriggerWorkf
 
 	exec, err := s.workflowService.TriggerWorkflow(ctx, req.WorkflowId, triggerData)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to trigger workflow", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to trigger workflow", err)
 	}
 
 	return executionToProto(exec), nil
@@ -207,7 +209,7 @@ func (s *Server) GetWorkflowExecutions(ctx context.Context, req *immichv1.GetWor
 
 	executions, total, err := s.workflowService.GetWorkflowExecutions(ctx, req.WorkflowId, limit, offset, statusFilter)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to get workflow executions", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to get workflow executions", err)
 	}
 
 	protoExecutions := make([]*immichv1.WorkflowExecutionInfo, 0, len(executions))
@@ -229,7 +231,7 @@ func (s *Server) SetWorkflowEnabled(ctx context.Context, req *immichv1.SetWorkfl
 
 	w, err := s.workflowService.SetWorkflowEnabled(ctx, req.WorkflowId, req.Enabled)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to update workflow", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to update workflow", err)
 	}
 
 	return workflowToProto(w), nil

@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 
+	"github.com/denysvitali/immich-go-backend/internal/grpcutil"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"google.golang.org/grpc/codes"
@@ -52,7 +54,7 @@ func (s *Server) buildDownloadRequest(ctx context.Context, assetIDs []string, al
 			OwnerId: ownerUUID,
 		})
 		if err != nil {
-			return nil, SanitizedInternal(ctx, "failed to list user assets", err)
+			return nil, grpcutil.SanitizedInternal(ctx, "failed to list user assets", err)
 		}
 
 		for _, asset := range ownedAssets {
@@ -77,7 +79,7 @@ func (s *Server) GetDownloadInfo(ctx context.Context, request *immichv1.Download
 
 	userID, err := pgutil.ParseUserID(claims.UserID)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "invalid user ID", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "invalid user ID", err)
 	}
 
 	req, err := s.buildDownloadRequest(ctx, request.GetAssetIds(), request.AlbumId, request.UserId)
@@ -87,7 +89,7 @@ func (s *Server) GetDownloadInfo(ctx context.Context, request *immichv1.Download
 
 	info, err := s.downloadService.GetDownloadInfo(ctx, uuid.UUID(userID.Bytes), req)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to get download info", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to get download info", err)
 	}
 
 	return &immichv1.DownloadInfoResponse{
@@ -111,7 +113,7 @@ func (s *Server) DownloadArchive(ctx context.Context, request *immichv1.Download
 
 	userID, err := pgutil.ParseUserID(claims.UserID)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "invalid user ID", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "invalid user ID", err)
 	}
 
 	req, err := s.buildDownloadRequest(ctx, request.GetAssetIds(), request.AlbumId, request.UserId)
@@ -123,7 +125,7 @@ func (s *Server) DownloadArchive(ctx context.Context, request *immichv1.Download
 	// assets the caller owns or has shared access to are returned.
 	info, err := s.downloadService.GetDownloadInfo(ctx, uuid.UUID(userID.Bytes), req)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to resolve download archive", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to resolve download archive", err)
 	}
 
 	archives := make([]*immichv1.DownloadArchiveInfo, 0, len(info.AssetIDs))

@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/denysvitali/immich-go-backend/internal/grpcutil"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -21,7 +23,7 @@ func (s *Server) GetSystemConfig(ctx context.Context, _ *emptypb.Empty) (*immich
 
 	cfg, err := s.systemConfigService.GetConfigDto(ctx)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to load system config", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to load system config", err)
 	}
 	return systemConfigToProto(cfg), nil
 }
@@ -42,13 +44,13 @@ func (s *Server) UpdateSystemConfig(ctx context.Context, req *immichv1.SystemCon
 	// the result as a full document (the same contract the web UI uses).
 	cfg, err := s.systemConfigService.GetConfigDto(ctx)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to load system config", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to load system config", err)
 	}
 	applyProtoToSystemConfig(&cfg, req)
 
 	raw, err := json.Marshal(cfg)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to encode system config", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to encode system config", err)
 	}
 
 	updated, err := s.systemConfigService.UpdateConfigDto(ctx, raw)

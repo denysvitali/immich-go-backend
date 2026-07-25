@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/denysvitali/immich-go-backend/internal/grpcutil"
+
 	"github.com/jackc/pgx/v5/pgtype"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -99,7 +101,7 @@ func (s *Server) CopyAsset(ctx context.Context, request *immichv1.CopyAssetReque
 			AssetsId:   sourceUUID,
 			AssetsId_2: targetUUID,
 		}); err != nil {
-			return nil, SanitizedInternal(ctx, "failed to copy album associations", err)
+			return nil, grpcutil.SanitizedInternal(ctx, "failed to copy album associations", err)
 		}
 	}
 
@@ -108,7 +110,7 @@ func (s *Server) CopyAsset(ctx context.Context, request *immichv1.CopyAssetReque
 			ID:   sourceUUID,
 			ID_2: targetUUID,
 		}); err != nil {
-			return nil, SanitizedInternal(ctx, "failed to copy favorite status", err)
+			return nil, grpcutil.SanitizedInternal(ctx, "failed to copy favorite status", err)
 		}
 	}
 
@@ -117,7 +119,7 @@ func (s *Server) CopyAsset(ctx context.Context, request *immichv1.CopyAssetReque
 			AssetsId:   sourceUUID,
 			AssetsId_2: targetUUID,
 		}); err != nil {
-			return nil, SanitizedInternal(ctx, "failed to copy shared links", err)
+			return nil, grpcutil.SanitizedInternal(ctx, "failed to copy shared links", err)
 		}
 	}
 
@@ -126,7 +128,7 @@ func (s *Server) CopyAsset(ctx context.Context, request *immichv1.CopyAssetReque
 			ID:   sourceUUID,
 			ID_2: targetUUID,
 		}); err != nil {
-			return nil, SanitizedInternal(ctx, "failed to copy sidecar", err)
+			return nil, grpcutil.SanitizedInternal(ctx, "failed to copy sidecar", err)
 		}
 	}
 
@@ -135,7 +137,7 @@ func (s *Server) CopyAsset(ctx context.Context, request *immichv1.CopyAssetReque
 			ID:   sourceUUID,
 			ID_2: targetUUID,
 		}); err != nil {
-			return nil, SanitizedInternal(ctx, "failed to copy stack association", err)
+			return nil, grpcutil.SanitizedInternal(ctx, "failed to copy stack association", err)
 		}
 	}
 
@@ -143,7 +145,7 @@ func (s *Server) CopyAsset(ctx context.Context, request *immichv1.CopyAssetReque
 		AssetId:   sourceUUID,
 		AssetId_2: targetUUID,
 	}); err != nil {
-		return nil, SanitizedInternal(ctx, "failed to copy asset metadata", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to copy asset metadata", err)
 	}
 
 	return &emptypb.Empty{}, nil
@@ -158,14 +160,14 @@ func (s *Server) GetAssetMetadata(ctx context.Context, request *immichv1.GetAsse
 
 	rows, err := s.db.ListAssetMetadata(ctx, assetUUID)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to list asset metadata", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to list asset metadata", err)
 	}
 
 	items := make([]*immichv1.AssetMetadataResponse, 0, len(rows))
 	for _, row := range rows {
 		item, err := assetMetadataToProto(row)
 		if err != nil {
-			return nil, SanitizedInternal(ctx, "failed to decode asset metadata", err)
+			return nil, grpcutil.SanitizedInternal(ctx, "failed to decode asset metadata", err)
 		}
 		items = append(items, item)
 	}
@@ -196,12 +198,12 @@ func (s *Server) UpdateAssetMetadata(ctx context.Context, request *immichv1.Upda
 			Value:   value,
 		})
 		if err != nil {
-			return nil, SanitizedInternal(ctx, "failed to upsert asset metadata", err)
+			return nil, grpcutil.SanitizedInternal(ctx, "failed to upsert asset metadata", err)
 		}
 
 		item, err := assetMetadataToProto(row)
 		if err != nil {
-			return nil, SanitizedInternal(ctx, "failed to decode asset metadata", err)
+			return nil, grpcutil.SanitizedInternal(ctx, "failed to decode asset metadata", err)
 		}
 		items = append(items, item)
 	}
@@ -226,7 +228,7 @@ func (s *Server) GetAssetMetadataByKey(ctx context.Context, request *immichv1.Ge
 
 	item, err := assetMetadataToProto(row)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to decode asset metadata", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to decode asset metadata", err)
 	}
 	return item, nil
 }
@@ -242,7 +244,7 @@ func (s *Server) DeleteAssetMetadata(ctx context.Context, request *immichv1.Dele
 		AssetId: assetUUID,
 		Key:     request.GetKey(),
 	}); err != nil {
-		return nil, SanitizedInternal(ctx, "failed to delete asset metadata", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to delete asset metadata", err)
 	}
 
 	return &emptypb.Empty{}, nil
@@ -270,12 +272,12 @@ func (s *Server) UpdateBulkAssetMetadata(ctx context.Context, request *immichv1.
 			Value:   value,
 		})
 		if err != nil {
-			return nil, SanitizedInternal(ctx, "failed to upsert asset metadata", err)
+			return nil, grpcutil.SanitizedInternal(ctx, "failed to upsert asset metadata", err)
 		}
 
 		protoValue, err := jsonToStruct(row.Value)
 		if err != nil {
-			return nil, SanitizedInternal(ctx, "failed to decode asset metadata", err)
+			return nil, grpcutil.SanitizedInternal(ctx, "failed to decode asset metadata", err)
 		}
 		items = append(items, &immichv1.AssetMetadataBulkResponse{
 			AssetId:   upsert.GetAssetId(),
@@ -300,7 +302,7 @@ func (s *Server) DeleteBulkAssetMetadata(ctx context.Context, request *immichv1.
 			AssetId: assetUUID,
 			Key:     item.GetKey(),
 		}); err != nil {
-			return nil, SanitizedInternal(ctx, "failed to delete asset metadata", err)
+			return nil, grpcutil.SanitizedInternal(ctx, "failed to delete asset metadata", err)
 		}
 	}
 
@@ -311,14 +313,14 @@ func (s *Server) DeleteBulkAssetMetadata(ctx context.Context, request *immichv1.
 func (s *Server) assetEditsResponse(ctx context.Context, assetID string, assetUUID pgtype.UUID) (*immichv1.AssetEditsResponse, error) {
 	rows, err := s.db.GetAssetEdits(ctx, assetUUID)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to list asset edits", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to list asset edits", err)
 	}
 
 	edits := make([]*immichv1.AssetEditActionItemResponse, 0, len(rows))
 	for _, row := range rows {
 		parameters, err := jsonToStruct(row.Parameters)
 		if err != nil {
-			return nil, SanitizedInternal(ctx, "failed to decode asset edit parameters", err)
+			return nil, grpcutil.SanitizedInternal(ctx, "failed to decode asset edit parameters", err)
 		}
 		edits = append(edits, &immichv1.AssetEditActionItemResponse{
 			Id:         pgutil.UUIDToString(row.ID),
@@ -348,7 +350,7 @@ func (s *Server) EditAsset(ctx context.Context, request *immichv1.EditAssetReque
 
 	// Replace the whole edit stack, mirroring upstream semantics.
 	if err := s.db.DeleteAssetEdits(ctx, assetUUID); err != nil {
-		return nil, SanitizedInternal(ctx, "failed to clear asset edits", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to clear asset edits", err)
 	}
 
 	for i, edit := range request.GetEdits() {
@@ -366,7 +368,7 @@ func (s *Server) EditAsset(ctx context.Context, request *immichv1.EditAssetReque
 			Parameters: parameters,
 			Position:   int32(i), //nolint:gosec // edit count fits in int32
 		}); err != nil {
-			return nil, SanitizedInternal(ctx, "failed to store asset edit", err)
+			return nil, grpcutil.SanitizedInternal(ctx, "failed to store asset edit", err)
 		}
 	}
 
@@ -381,7 +383,7 @@ func (s *Server) RemoveAssetEdits(ctx context.Context, request *immichv1.RemoveA
 	}
 
 	if err := s.db.DeleteAssetEdits(ctx, assetUUID); err != nil {
-		return nil, SanitizedInternal(ctx, "failed to remove asset edits", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to remove asset edits", err)
 	}
 
 	return &emptypb.Empty{}, nil
@@ -396,7 +398,7 @@ func (s *Server) GetAssetOcr(ctx context.Context, request *immichv1.GetAssetOcrR
 
 	rows, err := s.db.GetAssetOcr(ctx, assetUUID)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to list asset OCR entries", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to list asset OCR entries", err)
 	}
 
 	items := make([]*immichv1.AssetOcrResponse, 0, len(rows))

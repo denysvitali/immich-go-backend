@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/denysvitali/immich-go-backend/internal/grpcutil"
+
 	"github.com/google/uuid"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc/codes"
@@ -49,7 +51,7 @@ func (s *Server) GetServerConfig(ctx context.Context, empty *emptypb.Empty) (*im
 	// admin account from the UI.
 	isInitialized, err := s.authService.IsInitialized(ctx)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to check initialization state", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to check initialization state", err)
 	}
 
 	return &immichv1.ServerConfigResponse{

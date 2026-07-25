@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/denysvitali/immich-go-backend/internal/grpcutil"
+
 	"go.opentelemetry.io/otel"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -17,7 +19,7 @@ func TestSanitizedInternal_DoesNotLeakErrorMessage(t *testing.T) {
 		publicMsg = "operation failed"
 	)
 
-	err := SanitizedInternal(context.Background(), publicMsg, errors.New("database blew up: "+sensitive))
+	err := grpcutil.SanitizedInternal(context.Background(), publicMsg, errors.New("database blew up: "+sensitive))
 
 	st, ok := status.FromError(err)
 	if !ok {
@@ -34,7 +36,7 @@ func TestSanitizedInternal_DoesNotLeakErrorMessage(t *testing.T) {
 }
 
 func TestSanitizedInternal_PreservesCode(t *testing.T) {
-	err := SanitizedInternal(context.Background(), "operation failed", errors.New("boom"))
+	err := grpcutil.SanitizedInternal(context.Background(), "operation failed", errors.New("boom"))
 
 	st, ok := status.FromError(err)
 	if !ok {
@@ -57,7 +59,7 @@ func TestSanitizedInternal_RecordsSpanError(t *testing.T) {
 		}
 	}()
 
-	err := SanitizedInternal(ctx, "operation failed", errors.New("internal detail"))
+	err := grpcutil.SanitizedInternal(ctx, "operation failed", errors.New("internal detail"))
 
 	st, ok := status.FromError(err)
 	if !ok {
@@ -72,7 +74,7 @@ func TestSanitizedInternal_RecordsSpanError(t *testing.T) {
 }
 
 func TestPublicError_RoundTrip(t *testing.T) {
-	err := PublicError(context.Background(), codes.NotFound, "user not found")
+	err := grpcutil.PublicError(context.Background(), codes.NotFound, "user not found")
 
 	st, ok := status.FromError(err)
 	if !ok {

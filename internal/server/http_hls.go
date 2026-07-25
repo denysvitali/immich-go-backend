@@ -15,6 +15,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/denysvitali/immich-go-backend/internal/grpcutil"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/sirupsen/logrus"
@@ -80,7 +82,7 @@ func (s *Server) EndSession(ctx context.Context, req *immichv1.EndSessionRequest
 	}
 
 	if err := os.RemoveAll(hlsSessionDir(req.GetSessionId())); err != nil {
-		return nil, SanitizedInternal(ctx, "failed to remove HLS session", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to remove HLS session", err)
 	}
 	return &emptypb.Empty{}, nil
 }
@@ -103,7 +105,7 @@ func (s *Server) GetMediaPlaylist(ctx context.Context, req *immichv1.GetMediaPla
 	playlistPath := filepath.Join(hlsVariantDir(req.GetSessionId(), req.GetVariantIndex()), "playlist.m3u8")
 	data, err := os.ReadFile(playlistPath)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to read HLS media playlist", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to read HLS media playlist", err)
 	}
 
 	return &immichv1.HLSPlaylistResponse{
@@ -120,7 +122,7 @@ func (s *Server) GetSegment(ctx context.Context, req *immichv1.GetSegmentRequest
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to read HLS segment", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to read HLS segment", err)
 	}
 	return &immichv1.HLSSegmentResponse{
 		Data:        data,
@@ -241,17 +243,17 @@ func (s *Server) ensureHLS(ctx context.Context, asset sqlc.Asset, sessionID stri
 	if _, err := os.Stat(playlistPath); err == nil {
 		return nil
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return SanitizedInternal(ctx, "failed to inspect HLS playlist", err)
+		return grpcutil.SanitizedInternal(ctx, "failed to inspect HLS playlist", err)
 	}
 
 	root := hlsRootDir()
 	if err := os.MkdirAll(root, 0o750); err != nil {
-		return SanitizedInternal(ctx, "failed to create HLS root directory", err)
+		return grpcutil.SanitizedInternal(ctx, "failed to create HLS root directory", err)
 	}
 
 	stagingDir, err := os.MkdirTemp(root, sessionID+"-*")
 	if err != nil {
-		return SanitizedInternal(ctx, "failed to create HLS staging directory", err)
+		return grpcutil.SanitizedInternal(ctx, "failed to create HLS staging directory", err)
 	}
 	defer os.RemoveAll(stagingDir)
 
@@ -277,18 +279,18 @@ func (s *Server) ensureHLS(ctx context.Context, asset sqlc.Asset, sessionID stri
 		if errors.Is(err, ffmpeg.ErrFFmpegNotFound) {
 			return status.Error(codes.Unavailable, "ffmpeg/ffprobe not available")
 		}
-		return SanitizedInternal(ctx, "failed to generate HLS stream", err)
+		return grpcutil.SanitizedInternal(ctx, "failed to generate HLS stream", err)
 	}
 	if err := writeHLSMetadata(stagingDir, metadata); err != nil {
-		return SanitizedInternal(ctx, "failed to write HLS metadata", err)
+		return grpcutil.SanitizedInternal(ctx, "failed to write HLS metadata", err)
 	}
 
 	sessionDir := hlsSessionDir(sessionID)
 	if err := os.RemoveAll(sessionDir); err != nil {
-		return SanitizedInternal(ctx, "failed to replace HLS session", err)
+		return grpcutil.SanitizedInternal(ctx, "failed to replace HLS session", err)
 	}
 	if err := os.Rename(stagingDir, sessionDir); err != nil {
-		return SanitizedInternal(ctx, "failed to publish HLS session", err)
+		return grpcutil.SanitizedInternal(ctx, "failed to publish HLS session", err)
 	}
 	return nil
 }
@@ -317,7 +319,7 @@ func (s *Server) hlsSegmentFilePath(ctx context.Context, assetID, sessionID stri
 		if errors.Is(err, os.ErrNotExist) {
 			return "", status.Error(codes.NotFound, "HLS segment not found")
 		}
-		return "", SanitizedInternal(ctx, "failed to inspect HLS segment", err)
+		return "", grpcutil.SanitizedInternal(ctx, "failed to inspect HLS segment", err)
 	}
 	return path, nil
 }
@@ -333,7 +335,7 @@ func downloadAssetVideoToTemp(ctx context.Context, storage interface {
 
 	reader, err := storage.Download(ctx, videoPath)
 	if err != nil {
-		return "", SanitizedInternal(ctx, "failed to retrieve video", err)
+		return "", grpcutil.SanitizedInternal(ctx, "failed to retrieve video", err)
 	}
 	defer reader.Close()
 
@@ -343,14 +345,14 @@ func downloadAssetVideoToTemp(ctx context.Context, storage interface {
 	}
 	tmpFile, err := os.CreateTemp("", "immich-hls-input-*"+ext)
 	if err != nil {
-		return "", SanitizedInternal(ctx, "failed to create HLS input file", err)
+		return "", grpcutil.SanitizedInternal(ctx, "failed to create HLS input file", err)
 	}
 	tmpPath := tmpFile.Name()
 	defer tmpFile.Close()
 
 	if _, err := io.Copy(tmpFile, reader); err != nil {
 		_ = os.Remove(tmpPath)
-		return "", SanitizedInternal(ctx, "failed to write HLS input file", err)
+		return "", grpcutil.SanitizedInternal(ctx, "failed to write HLS input file", err)
 	}
 	return tmpPath, nil
 }

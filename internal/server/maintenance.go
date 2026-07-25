@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/denysvitali/immich-go-backend/internal/grpcutil"
+
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -30,7 +32,7 @@ func (s *Server) SetMaintenanceMode(ctx context.Context, req *immichv1.SetMainte
 	case immichv1.MaintenanceAction_MAINTENANCE_ACTION_START:
 		token, err := s.maintenanceService.StartMaintenance(ctx, claims.Email)
 		if err != nil {
-			return nil, SanitizedInternal(ctx, "failed to start maintenance mode", err)
+			return nil, grpcutil.SanitizedInternal(ctx, "failed to start maintenance mode", err)
 		}
 		return &immichv1.SetMaintenanceModeResponse{
 			IsMaintenanceMode: true,
@@ -40,7 +42,7 @@ func (s *Server) SetMaintenanceMode(ctx context.Context, req *immichv1.SetMainte
 	case immichv1.MaintenanceAction_MAINTENANCE_ACTION_STOP:
 		err := s.maintenanceService.StopMaintenance(ctx)
 		if err != nil {
-			return nil, SanitizedInternal(ctx, "failed to stop maintenance mode", err)
+			return nil, grpcutil.SanitizedInternal(ctx, "failed to stop maintenance mode", err)
 		}
 		return &immichv1.SetMaintenanceModeResponse{
 			IsMaintenanceMode: false,
@@ -56,7 +58,7 @@ func (s *Server) MaintenanceLogin(ctx context.Context, req *immichv1.Maintenance
 	// Check if we're in maintenance mode
 	state, err := s.maintenanceService.GetMaintenanceMode(ctx)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to get maintenance mode state", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to get maintenance mode state", err)
 	}
 
 	if !state.IsMaintenanceMode {
@@ -88,7 +90,7 @@ func (s *Server) MaintenanceLogin(ctx context.Context, req *immichv1.Maintenance
 func (s *Server) GetMaintenanceStatus(ctx context.Context, _ *emptypb.Empty) (*immichv1.MaintenanceStatusResponse, error) {
 	state, err := s.maintenanceService.GetMaintenanceMode(ctx)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to get maintenance mode state", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to get maintenance mode state", err)
 	}
 
 	response := &immichv1.MaintenanceStatusResponse{

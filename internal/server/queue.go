@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/denysvitali/immich-go-backend/internal/grpcutil"
+
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 	"github.com/denysvitali/immich-go-backend/internal/queue"
 	"google.golang.org/grpc/codes"
@@ -19,7 +21,7 @@ func (s *Server) ListQueues(ctx context.Context, _ *emptypb.Empty) (*immichv1.Li
 
 	queues, err := s.queueService.GetAllQueues(ctx)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to get queues", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to get queues", err)
 	}
 
 	var protoQueues []*immichv1.QueueInfo

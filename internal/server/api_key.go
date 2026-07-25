@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/denysvitali/immich-go-backend/internal/grpcutil"
+
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 	"github.com/google/uuid"
@@ -31,7 +33,7 @@ func (s *Server) GetApiKeys(ctx context.Context, _ *emptypb.Empty) (*immichv1.Ge
 
 	keys, err := s.apiKeyService.GetAPIKeysByUser(ctx, userID)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to get API keys", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to get API keys", err)
 	}
 
 	// Convert to response format
@@ -66,7 +68,7 @@ func (s *Server) CreateApiKey(ctx context.Context, req *immichv1.CreateApiKeyReq
 
 	apiKey, rawKey, err := s.apiKeyService.CreateAPIKey(ctx, userID, req.Name)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to create API key", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to create API key", err)
 	}
 
 	// Return response with the raw key (only shown once)
@@ -96,7 +98,7 @@ func (s *Server) DeleteApiKey(ctx context.Context, req *immichv1.DeleteApiKeyReq
 	}
 
 	if err := s.apiKeyService.DeleteAPIKey(ctx, keyID, userID); err != nil {
-		return nil, SanitizedInternal(ctx, "failed to delete API key", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to delete API key", err)
 	}
 
 	return &emptypb.Empty{}, nil
@@ -129,7 +131,7 @@ func (s *Server) UpdateApiKey(ctx context.Context, req *immichv1.UpdateApiKeyReq
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, status.Error(codes.NotFound, "API key not found")
 		}
-		return nil, SanitizedInternal(ctx, "failed to update API key", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to update API key", err)
 	}
 
 	return &immichv1.ApiKeyResponseDto{
@@ -194,7 +196,7 @@ func (s *Server) GetApiKey(ctx context.Context, req *immichv1.GetApiKeyRequest) 
 
 	keys, err := s.queries.GetApiKeysByUser(ctx, pgUserID)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to get API keys", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to get API keys", err)
 	}
 
 	// Find the specific key

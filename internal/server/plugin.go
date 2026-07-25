@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 
+	"github.com/denysvitali/immich-go-backend/internal/grpcutil"
+
 	"github.com/denysvitali/immich-go-backend/internal/plugin"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 	"google.golang.org/grpc/codes"
@@ -20,7 +22,7 @@ func (s *Server) ListPlugins(ctx context.Context, _ *emptypb.Empty) (*immichv1.L
 
 	plugins, err := s.pluginService.ListPlugins(ctx)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to list plugins", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to list plugins", err)
 	}
 
 	protoPlugins := make([]*immichv1.PluginInfo, 0, len(plugins))
@@ -51,14 +53,14 @@ func (s *Server) SearchPluginMethods(ctx context.Context, req *immichv1.SearchPl
 		Type:          req.Type,
 	})
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to search plugin methods", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to search plugin methods", err)
 	}
 
 	protoMethods := make([]*immichv1.PluginMethodResponseDto, 0, len(methods))
 	for _, method := range methods {
 		protoMethod, err := pluginMethodToProto(method)
 		if err != nil {
-			return nil, SanitizedInternal(ctx, "failed to convert plugin method", err)
+			return nil, grpcutil.SanitizedInternal(ctx, "failed to convert plugin method", err)
 		}
 		protoMethods = append(protoMethods, protoMethod)
 	}
@@ -74,14 +76,14 @@ func (s *Server) SearchPluginTemplates(ctx context.Context, _ *emptypb.Empty) (*
 
 	templates, err := s.pluginService.SearchPluginTemplates(ctx)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to search plugin templates", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to search plugin templates", err)
 	}
 
 	protoTemplates := make([]*immichv1.PluginTemplateResponseDto, 0, len(templates))
 	for _, template := range templates {
 		protoTemplate, err := pluginTemplateToProto(template)
 		if err != nil {
-			return nil, SanitizedInternal(ctx, "failed to convert plugin template", err)
+			return nil, grpcutil.SanitizedInternal(ctx, "failed to convert plugin template", err)
 		}
 		protoTemplates = append(protoTemplates, protoTemplate)
 	}
@@ -111,7 +113,7 @@ func (s *Server) InstallPlugin(ctx context.Context, req *immichv1.InstallPluginR
 
 	p, err := s.pluginService.InstallPlugin(ctx, req.Source, req.Version)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to install plugin", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to install plugin", err)
 	}
 
 	return pluginToProto(p), nil
@@ -130,7 +132,7 @@ func (s *Server) UninstallPlugin(ctx context.Context, req *immichv1.UninstallPlu
 
 	err := s.pluginService.UninstallPlugin(ctx, req.PluginId, removeData)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to uninstall plugin", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to uninstall plugin", err)
 	}
 
 	return &emptypb.Empty{}, nil
@@ -166,7 +168,7 @@ func (s *Server) UpdatePluginConfig(ctx context.Context, req *immichv1.UpdatePlu
 	config := req.Config.AsMap()
 	updatedConfig, err := s.pluginService.UpdatePluginConfig(ctx, req.PluginId, config)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to update plugin config", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to update plugin config", err)
 	}
 
 	configStruct, _ := structpb.NewStruct(updatedConfig)
@@ -190,7 +192,7 @@ func (s *Server) SetPluginEnabled(ctx context.Context, req *immichv1.SetPluginEn
 
 	p, err := s.pluginService.SetPluginEnabled(ctx, req.PluginId, req.Enabled)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to update plugin", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to update plugin", err)
 	}
 
 	return pluginToProto(p), nil

@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/denysvitali/immich-go-backend/internal/grpcutil"
+
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -33,12 +35,12 @@ func (s *Server) GetAllSharedLinks(ctx context.Context, _ *immichv1.GetAllShared
 
 	userID, err := uuid.Parse(claims.UserID)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "invalid user ID", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "invalid user ID", err)
 	}
 
 	links, err := s.sharedLinksService.GetSharedLinks(ctx, userID)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to get shared links", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to get shared links", err)
 	}
 
 	protoLinks := make([]*immichv1.SharedLinkResponse, len(links))
@@ -95,7 +97,7 @@ func (s *Server) GetSharedLinkById(ctx context.Context, request *immichv1.GetSha
 
 	userID, err := uuid.Parse(claims.UserID)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "invalid user ID", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "invalid user ID", err)
 	}
 
 	linkID, err := uuid.Parse(request.GetId())
@@ -120,7 +122,7 @@ func (s *Server) CreateSharedLink(ctx context.Context, request *immichv1.CreateS
 
 	userID, err := uuid.Parse(claims.UserID)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "invalid user ID", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "invalid user ID", err)
 	}
 
 	var linkType string
@@ -195,7 +197,7 @@ func (s *Server) UpdateSharedLink(ctx context.Context, request *immichv1.UpdateS
 
 	userID, err := uuid.Parse(claims.UserID)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "invalid user ID", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "invalid user ID", err)
 	}
 
 	linkID, err := uuid.Parse(request.GetId())
@@ -233,7 +235,7 @@ func (s *Server) RemoveSharedLink(ctx context.Context, request *immichv1.RemoveS
 
 	userID, err := uuid.Parse(claims.UserID)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "invalid user ID", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "invalid user ID", err)
 	}
 
 	linkID, err := uuid.Parse(request.GetId())
@@ -257,7 +259,7 @@ func (s *Server) AddSharedLinkAssets(ctx context.Context, request *immichv1.AddS
 
 	userID, err := uuid.Parse(claims.UserID)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "invalid user ID", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "invalid user ID", err)
 	}
 
 	linkID, err := uuid.Parse(request.GetId())
@@ -286,7 +288,7 @@ func (s *Server) RemoveSharedLinkAssets(ctx context.Context, request *immichv1.R
 
 	userID, err := uuid.Parse(claims.UserID)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "invalid user ID", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "invalid user ID", err)
 	}
 
 	linkID, err := uuid.Parse(request.GetId())
@@ -383,7 +385,7 @@ func sharedLinkError(ctx context.Context, err error) error {
 	case strings.Contains(msg, "asset modification is only supported for individual shared links"):
 		return status.Error(codes.InvalidArgument, "asset modification is only supported for individual shared links")
 	default:
-		return SanitizedInternal(ctx, "shared link operation failed", err)
+		return grpcutil.SanitizedInternal(ctx, "shared link operation failed", err)
 	}
 }
 

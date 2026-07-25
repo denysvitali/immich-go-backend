@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/denysvitali/immich-go-backend/internal/grpcutil"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/sirupsen/logrus"
@@ -36,7 +38,7 @@ func (s *Server) GetAssets(ctx context.Context, request *immichv1.GetAssetsReque
 
 	userID, err := pgutil.ParseUserID(claims.UserID)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "invalid user ID", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "invalid user ID", err)
 	}
 
 	// Calculate offset for pagination
@@ -67,7 +69,7 @@ func (s *Server) GetAssets(ctx context.Context, request *immichv1.GetAssetsReque
 		IsTrashed:  isTrashed,
 	})
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to get assets", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to get assets", err)
 	}
 
 	// Get total count for pagination
@@ -79,7 +81,7 @@ func (s *Server) GetAssets(ctx context.Context, request *immichv1.GetAssetsReque
 		IsTrashed:  isTrashed,
 	})
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to count assets", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to count assets", err)
 	}
 
 	// Convert to proto
@@ -116,7 +118,7 @@ func (s *Server) UploadAsset(ctx context.Context, request *immichv1.UploadAssetR
 
 	userID, err := pgutil.ParseUserID(claims.UserID)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "invalid user ID", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "invalid user ID", err)
 	}
 
 	assetData := request.AssetData
@@ -175,7 +177,7 @@ func (s *Server) UploadAsset(ctx context.Context, request *immichv1.UploadAssetR
 			// persisted. A successful response here leaves the UI with a broken
 			// asset and makes the original upload failure impossible to recover.
 			logrus.WithError(uploadErr).Error("UploadAsset: failed to store file in storage backend")
-			return nil, SanitizedInternal(ctx, "failed to store uploaded asset", uploadErr)
+			return nil, grpcutil.SanitizedInternal(ctx, "failed to store uploaded asset", uploadErr)
 		} else {
 			originalPath = uploadResult.Path
 		}
@@ -197,7 +199,7 @@ func (s *Server) UploadAsset(ctx context.Context, request *immichv1.UploadAssetR
 		Status:           sqlc.AssetsStatusEnumActive,
 	})
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to create asset", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to create asset", err)
 	}
 
 	// Enqueue background jobs for thumbnail generation and metadata extraction.
@@ -256,7 +258,7 @@ func (s *Server) UpdateAsset(ctx context.Context, request *immichv1.UpdateAssetR
 		IsArchived: isArchived,
 	})
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to update asset", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to update asset", err)
 	}
 
 	return s.convertAssetToProto(asset), nil
@@ -292,7 +294,7 @@ func (s *Server) UpdateAssets(ctx context.Context, request *immichv1.UpdateAsset
 			IsArchived: isArchived,
 		})
 		if err != nil {
-			return nil, SanitizedInternal(ctx, "failed to update assets", err)
+			return nil, grpcutil.SanitizedInternal(ctx, "failed to update assets", err)
 		}
 	}
 
@@ -316,10 +318,10 @@ func (s *Server) DeleteAssets(ctx context.Context, request *immichv1.DeleteAsset
 				ID:     asset.ID,
 				Status: sqlc.AssetsStatusEnumDeleted,
 			}); err != nil {
-				return nil, SanitizedInternal(ctx, "failed to delete assets", err)
+				return nil, grpcutil.SanitizedInternal(ctx, "failed to delete assets", err)
 			}
 			if err := s.db.PermanentlyDeleteAsset(ctx, asset.ID); err != nil {
-				return nil, SanitizedInternal(ctx, "failed to delete assets", err)
+				return nil, grpcutil.SanitizedInternal(ctx, "failed to delete assets", err)
 			}
 			continue
 		}
@@ -328,7 +330,7 @@ func (s *Server) DeleteAssets(ctx context.Context, request *immichv1.DeleteAsset
 			ID:     asset.ID,
 			Status: sqlc.AssetsStatusEnumTrashed,
 		}); err != nil {
-			return nil, SanitizedInternal(ctx, "failed to delete assets", err)
+			return nil, grpcutil.SanitizedInternal(ctx, "failed to delete assets", err)
 		}
 	}
 
@@ -344,7 +346,7 @@ func (s *Server) CheckExistingAssets(ctx context.Context, request *immichv1.Chec
 
 	userID, err := pgutil.ParseUserID(claims.UserID)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "invalid user ID", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "invalid user ID", err)
 	}
 
 	existingAssets, err := s.db.CheckExistingAssets(ctx, sqlc.CheckExistingAssetsParams{
@@ -353,7 +355,7 @@ func (s *Server) CheckExistingAssets(ctx context.Context, request *immichv1.Chec
 		Column3:  request.DeviceAssetIds,
 	})
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to check existing assets", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to check existing assets", err)
 	}
 
 	// Create map of existing IDs
@@ -385,7 +387,7 @@ func (s *Server) CheckBulkUpload(ctx context.Context, request *immichv1.CheckBul
 
 	userID, err := pgutil.ParseUserID(claims.UserID)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "invalid user ID", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "invalid user ID", err)
 	}
 
 	items := request.GetAssets()
@@ -418,7 +420,7 @@ func (s *Server) CheckBulkUpload(ctx context.Context, request *immichv1.CheckBul
 			Checksums: checksums,
 		})
 		if err != nil {
-			return nil, SanitizedInternal(ctx, "failed to check bulk upload assets", err)
+			return nil, grpcutil.SanitizedInternal(ctx, "failed to check bulk upload assets", err)
 		}
 		for _, row := range rows {
 			duplicates[string(row.Checksum)] = duplicate{
@@ -472,12 +474,12 @@ func (s *Server) GetAssetStatistics(ctx context.Context, request *immichv1.GetAs
 
 	userID, err := pgutil.ParseUserID(claims.UserID)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "invalid user ID", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "invalid user ID", err)
 	}
 
 	stats, err := s.db.GetAssetStatistics(ctx, userID)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to get asset statistics", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to get asset statistics", err)
 	}
 
 	return &immichv1.AssetStatisticsResponse{
@@ -496,7 +498,7 @@ func (s *Server) GetAllUserAssetsByDeviceId(ctx context.Context, request *immich
 
 	userID, err := pgutil.ParseUserID(claims.UserID)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "invalid user ID", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "invalid user ID", err)
 	}
 
 	assetIDs, err := s.db.GetAssetsByDeviceId(ctx, sqlc.GetAssetsByDeviceIdParams{
@@ -504,7 +506,7 @@ func (s *Server) GetAllUserAssetsByDeviceId(ctx context.Context, request *immich
 		DeviceId: request.DeviceId,
 	})
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to get assets by device ID", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to get assets by device ID", err)
 	}
 
 	// Convert UUIDs to strings
@@ -527,7 +529,7 @@ func (s *Server) GetRandom(ctx context.Context, request *immichv1.GetRandomReque
 
 	userID, err := pgutil.ParseUserID(claims.UserID)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "invalid user ID", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "invalid user ID", err)
 	}
 
 	count := int32(10) // Default count
@@ -540,7 +542,7 @@ func (s *Server) GetRandom(ctx context.Context, request *immichv1.GetRandomReque
 		Limit:   count,
 	})
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to get random assets", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to get random assets", err)
 	}
 
 	protoAssets := make([]*immichv1.Asset, len(assets))
@@ -562,7 +564,7 @@ func (s *Server) GetRecentlyAddedAssets(ctx context.Context, request *immichv1.G
 
 	userID, err := pgutil.ParseUserID(claims.UserID)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "invalid user ID", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "invalid user ID", err)
 	}
 
 	// Default to 12 when limit is 0, cap at 100 to prevent abuse
@@ -579,7 +581,7 @@ func (s *Server) GetRecentlyAddedAssets(ctx context.Context, request *immichv1.G
 		Limit:   int32(limit),
 	})
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to get recently added assets", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to get recently added assets", err)
 	}
 
 	protoAssets := make([]*immichv1.Asset, len(assets))
@@ -613,7 +615,7 @@ func (s *Server) RunAssetJobs(ctx context.Context, request *immichv1.RunAssetJob
 	case immichv1.AssetJobName_ASSET_JOB_NAME_DUPLICATE_DETECTION:
 		payload := jobs.DuplicateDetectionPayload{UserID: userID.String()}
 		if err := s.jobService.EnqueueJobWithPriority(ctx, jobs.JobTypeDuplicateDetect, payload, jobs.PriorityNormal); err != nil {
-			return nil, SanitizedInternal(ctx, "failed to enqueue duplicate detection job", err)
+			return nil, grpcutil.SanitizedInternal(ctx, "failed to enqueue duplicate detection job", err)
 		}
 	case immichv1.AssetJobName_ASSET_JOB_NAME_VIDEO_CONVERSION:
 		if err := s.enqueueAssetJobsForAssets(ctx, userID, request.GetAssetIds(), jobs.JobTypeVideoTranscode, jobs.PriorityHigh); err != nil {
@@ -656,7 +658,7 @@ func (s *Server) enqueueAssetJobsForAssets(
 		}
 
 		if err := s.jobService.EnqueueJobWithPriority(ctx, jobType, payload, priority); err != nil {
-			return SanitizedInternal(ctx, "failed to enqueue asset job", err)
+			return grpcutil.SanitizedInternal(ctx, "failed to enqueue asset job", err)
 		}
 	}
 
@@ -675,14 +677,14 @@ func (s *Server) DownloadAsset(ctx context.Context, request *immichv1.DownloadAs
 	// Download the asset
 	assetData, err := storageService.Download(ctx, asset.OriginalPath)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to retrieve asset", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to retrieve asset", err)
 	}
 	defer assetData.Close()
 
 	// Read asset data
 	data, err := io.ReadAll(assetData)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to read asset data", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to read asset data", err)
 	}
 
 	return &immichv1.DownloadAssetResponse{
@@ -717,7 +719,7 @@ func (s *Server) ReplaceAsset(ctx context.Context, request *immichv1.ReplaceAsse
 
 	storageService := s.assetService.GetStorageService()
 	if err := storageService.Upload(ctx, existingAsset.OriginalPath, bytes.NewReader(fileContent), assetDownloadContentType(existingAsset.OriginalFileName)); err != nil {
-		return nil, SanitizedInternal(ctx, "failed to replace asset file", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to replace asset file", err)
 	}
 
 	updatedAsset, err := s.db.ReplaceAssetFile(ctx, sqlc.ReplaceAssetFileParams{
@@ -727,7 +729,7 @@ func (s *Server) ReplaceAsset(ctx context.Context, request *immichv1.ReplaceAsse
 		OwnerID:        existingAsset.OwnerId,
 	})
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to update asset after replacement", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to update asset after replacement", err)
 	}
 
 	assetUUID := uuid.UUID(updatedAsset.ID.Bytes)
@@ -820,13 +822,13 @@ func (s *Server) GetAssetThumbnail(ctx context.Context, request *immichv1.GetAss
 		// If thumbnail doesn't exist, try to generate it
 		originalData, err := storageService.Download(ctx, asset.OriginalPath)
 		if err != nil {
-			return nil, SanitizedInternal(ctx, "failed to retrieve original asset", err)
+			return nil, grpcutil.SanitizedInternal(ctx, "failed to retrieve original asset", err)
 		}
 
 		// Generate thumbnails
 		thumbnails, err := generator.GenerateThumbnails(ctx, originalData, asset.OriginalFileName)
 		if err != nil {
-			return nil, SanitizedInternal(ctx, "failed to generate thumbnail", err)
+			return nil, grpcutil.SanitizedInternal(ctx, "failed to generate thumbnail", err)
 		}
 
 		// Get the requested thumbnail type
@@ -851,7 +853,7 @@ func (s *Server) GetAssetThumbnail(ctx context.Context, request *immichv1.GetAss
 	// Read thumbnail data
 	thumbData, err := io.ReadAll(thumbnailData)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to read thumbnail data", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to read thumbnail data", err)
 	}
 
 	return &immichv1.GetAssetThumbnailResponse{
@@ -898,14 +900,14 @@ func (s *Server) PlayAssetVideo(ctx context.Context, request *immichv1.PlayAsset
 
 	videoStream, err := storageService.Download(ctx, videoPath)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to retrieve video", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to retrieve video", err)
 	}
 	defer videoStream.Close()
 
 	// Read video data (this is simplified - in production you'd want streaming)
 	videoData, err := io.ReadAll(videoStream)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to read video data", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to read video data", err)
 	}
 
 	return &immichv1.PlayAssetVideoResponse{

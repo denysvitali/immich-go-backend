@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/denysvitali/immich-go-backend/internal/grpcutil"
+
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -26,7 +28,7 @@ func (s *Server) Login(ctx context.Context, req *immichv1.LoginRequest) (*immich
 		if grpcErr, ok := publicAuthError(ctx, err, codes.OK); ok {
 			return nil, grpcErr
 		}
-		return nil, SanitizedInternal(ctx, "login failed", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "login failed", err)
 	}
 
 	// Set HTTP headers for web compatibility
@@ -67,7 +69,7 @@ func (s *Server) Logout(ctx context.Context, req *emptypb.Empty) (*immichv1.Logo
 	// Invalidate the session
 	err = s.authService.Logout(ctx, userID.String())
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "logout failed", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "logout failed", err)
 	}
 
 	// Clear cookies
@@ -95,7 +97,7 @@ func (s *Server) AdminSignUp(ctx context.Context, req *immichv1.AdminSignUpReque
 		if grpcErr, ok := publicAuthError(ctx, err, codes.InvalidArgument); ok {
 			return nil, grpcErr
 		}
-		return nil, SanitizedInternal(ctx, "admin registration failed", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "admin registration failed", err)
 	}
 
 	// The Register method already returns the token in AuthResponse
@@ -122,7 +124,7 @@ func (s *Server) ValidateToken(ctx context.Context, req *emptypb.Empty) (*immich
 	// Get user details - just validate that the user exists
 	_, err = s.userService.GetUser(ctx, userID)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to get user", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to get user", err)
 	}
 
 	return &immichv1.ValidateTokenResponse{
@@ -147,7 +149,7 @@ func (s *Server) ChangePassword(ctx context.Context, req *immichv1.ChangePasswor
 		if grpcErr, ok := publicAuthError(ctx, err, codes.InvalidArgument); ok {
 			return nil, grpcErr
 		}
-		return nil, SanitizedInternal(ctx, "failed to change password", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to change password", err)
 	}
 
 	return &emptypb.Empty{}, nil
@@ -164,13 +166,13 @@ func (s *Server) GetAuthStatus(ctx context.Context, req *emptypb.Empty) (*immich
 	// Get user details to check if they have a password set
 	_, err = s.userService.GetUser(ctx, userID)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to get user", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to get user", err)
 	}
 
 	// Check if user has a PIN code set
 	hasPinCode, err := s.authService.HasPinCode(ctx, userID.String())
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to check PIN code status", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to check PIN code status", err)
 	}
 
 	// Check if session is elevated
@@ -203,7 +205,7 @@ func (s *Server) SetupPinCode(ctx context.Context, req *immichv1.PinCodeSetupReq
 		if grpcErr, ok := publicAuthError(ctx, err, codes.InvalidArgument); ok {
 			return nil, grpcErr
 		}
-		return nil, SanitizedInternal(ctx, "failed to setup PIN code", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to setup PIN code", err)
 	}
 
 	return &emptypb.Empty{}, nil
@@ -221,7 +223,7 @@ func (s *Server) ChangePinCode(ctx context.Context, req *immichv1.PinCodeChangeR
 		if grpcErr, ok := publicAuthError(ctx, err, codes.InvalidArgument); ok {
 			return nil, grpcErr
 		}
-		return nil, SanitizedInternal(ctx, "failed to change PIN code", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to change PIN code", err)
 	}
 
 	return &emptypb.Empty{}, nil
@@ -239,7 +241,7 @@ func (s *Server) ResetPinCode(ctx context.Context, req *immichv1.PinCodeResetReq
 		if grpcErr, ok := publicAuthError(ctx, err, codes.InvalidArgument); ok {
 			return nil, grpcErr
 		}
-		return nil, SanitizedInternal(ctx, "failed to reset PIN code", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to reset PIN code", err)
 	}
 
 	return &emptypb.Empty{}, nil
@@ -262,7 +264,7 @@ func (s *Server) UnlockSession(ctx context.Context, req *immichv1.SessionUnlockR
 		if grpcErr, ok := publicAuthError(ctx, err, codes.InvalidArgument); ok {
 			return nil, grpcErr
 		}
-		return nil, SanitizedInternal(ctx, "failed to unlock session", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to unlock session", err)
 	}
 
 	return &emptypb.Empty{}, nil
@@ -287,7 +289,7 @@ func publicAuthError(ctx context.Context, err error, invalidCredentialsCode code
 		message = authErr.Err.Error()
 	}
 
-	return PublicError(ctx, code, message), true
+	return grpcutil.PublicError(ctx, code, message), true
 }
 
 // LockSession locks the session to revoke elevated access
@@ -307,7 +309,7 @@ func (s *Server) LockSession(ctx context.Context, req *emptypb.Empty) (*emptypb.
 		if grpcErr, ok := publicAuthError(ctx, err, codes.InvalidArgument); ok {
 			return nil, grpcErr
 		}
-		return nil, SanitizedInternal(ctx, "failed to lock session", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to lock session", err)
 	}
 
 	return &emptypb.Empty{}, nil

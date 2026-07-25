@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 
+	"github.com/denysvitali/immich-go-backend/internal/grpcutil"
+
 	"github.com/jackc/pgx/v5/pgtype"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -24,13 +26,13 @@ func (s *Server) GetAllAlbums(ctx context.Context, request *immichv1.GetAllAlbum
 
 	userID, err := pgutil.ParseUserID(claims.UserID)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "invalid user ID", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "invalid user ID", err)
 	}
 
 	// Get albums owned by the user
 	albums, err := s.db.GetAlbumsByOwner(ctx, userID)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to get albums", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to get albums", err)
 	}
 
 	immichAlbums := make([]*immichv1.Album, len(albums))
@@ -49,7 +51,7 @@ func (s *Server) CreateAlbum(ctx context.Context, request *immichv1.CreateAlbumR
 
 	userID, err := pgutil.ParseUserID(claims.UserID)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "invalid user ID", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "invalid user ID", err)
 	}
 
 	album, err := s.db.CreateAlbum(ctx, sqlc.CreateAlbumParams{
@@ -58,7 +60,7 @@ func (s *Server) CreateAlbum(ctx context.Context, request *immichv1.CreateAlbumR
 		Description: request.Description,
 	})
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to create album", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to create album", err)
 	}
 
 	// Add assets to album if provided
@@ -98,7 +100,7 @@ func (s *Server) GetAlbumMapMarkers(ctx context.Context, request *immichv1.GetAl
 
 	userID, err := pgutil.StringToUUID(claims.UserID)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "invalid user ID", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "invalid user ID", err)
 	}
 
 	albumID, err := pgutil.StringToUUID(request.Id)
@@ -113,7 +115,7 @@ func (s *Server) GetAlbumMapMarkers(ctx context.Context, request *immichv1.GetAl
 	if album.OwnerId != userID {
 		sharedUsers, err := s.db.GetAlbumSharedUsers(ctx, albumID)
 		if err != nil {
-			return nil, SanitizedInternal(ctx, "failed to check album access", err)
+			return nil, grpcutil.SanitizedInternal(ctx, "failed to check album access", err)
 		}
 
 		allowed := false
@@ -130,7 +132,7 @@ func (s *Server) GetAlbumMapMarkers(ctx context.Context, request *immichv1.GetAl
 
 	rows, err := s.db.GetAlbumMapMarkers(ctx, albumID)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to get album map markers", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to get album map markers", err)
 	}
 
 	markers := make([]*immichv1.MapMarker, 0, len(rows))
@@ -166,7 +168,7 @@ func (s *Server) UpdateAlbumInfo(ctx context.Context, request *immichv1.UpdateAl
 		IsActivityEnabled:     isActivityEnabled,
 	})
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to update album", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to update album", err)
 	}
 
 	return s.convertAlbumToProto(album), nil
@@ -179,7 +181,7 @@ func (s *Server) DeleteAlbum(ctx context.Context, request *immichv1.DeleteAlbumR
 	}
 
 	if err := s.db.DeleteAlbum(ctx, albumID); err != nil {
-		return nil, SanitizedInternal(ctx, "failed to delete album", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to delete album", err)
 	}
 
 	return &emptypb.Empty{}, nil
@@ -276,7 +278,7 @@ func (s *Server) AddUsersToAlbum(ctx context.Context, request *immichv1.AddUsers
 	// Return updated album
 	album, err := s.db.GetAlbum(ctx, albumID)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to get updated album", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to get updated album", err)
 	}
 
 	return s.convertAlbumToProto(album), nil
@@ -297,7 +299,7 @@ func (s *Server) RemoveUserFromAlbum(ctx context.Context, request *immichv1.Remo
 		AlbumsId: albumID,
 		UsersId:  userID,
 	}); err != nil {
-		return nil, SanitizedInternal(ctx, "failed to remove user from album", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to remove user from album", err)
 	}
 
 	return &emptypb.Empty{}, nil
@@ -324,7 +326,7 @@ func (s *Server) UpdateAlbumUser(ctx context.Context, request *immichv1.UpdateAl
 		UsersId:  userID,
 		Role:     role,
 	}); err != nil {
-		return nil, SanitizedInternal(ctx, "failed to update album user", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to update album user", err)
 	}
 
 	return &emptypb.Empty{}, nil
@@ -339,12 +341,12 @@ func (s *Server) GetAlbumStatistics(ctx context.Context, request *immichv1.GetAl
 
 	userID, err := pgutil.ParseUserID(claims.UserID)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "invalid user ID", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "invalid user ID", err)
 	}
 
 	stats, err := s.db.GetAlbumStatistics(ctx, userID)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to get album statistics", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to get album statistics", err)
 	}
 
 	return &immichv1.AlbumStatisticsResponse{

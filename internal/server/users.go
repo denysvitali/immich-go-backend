@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/denysvitali/immich-go-backend/internal/grpcutil"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -43,7 +45,7 @@ func (s *Server) GetMyUser(ctx context.Context, empty *emptypb.Empty) (*immichv1
 		if users.IsNotFoundError(err) {
 			return nil, status.Errorf(codes.NotFound, "user not found: %v", err)
 		}
-		return nil, SanitizedInternal(ctx, "failed to get user", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to get user", err)
 	}
 
 	return s.convertUserToAdminProto(user), nil
@@ -77,7 +79,7 @@ func (s *Server) UpdateMyUser(ctx context.Context, request *immichv1.UserUpdateM
 		if users.IsValidationError(err) {
 			return nil, status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
 		}
-		return nil, SanitizedInternal(ctx, "failed to update user", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to update user", err)
 	}
 
 	return s.convertUserToAdminProto(user), nil
@@ -94,12 +96,12 @@ func (s *Server) GetUserLicense(ctx context.Context, empty *emptypb.Empty) (*imm
 		if errors.Is(err, pgx.ErrNoRows) {
 			return &immichv1.UserLicenseResponse{}, nil
 		}
-		return nil, SanitizedInternal(ctx, "failed to get user license", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to get user license", err)
 	}
 
 	license, err := parseUserLicense(data)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to parse user license", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to parse user license", err)
 	}
 
 	return userLicenseToProto(license), nil
@@ -118,7 +120,7 @@ func (s *Server) SetUserLicense(ctx context.Context, request *immichv1.UserLicen
 	}
 	data, err := json.Marshal(license)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to encode user license", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to encode user license", err)
 	}
 
 	data, err = s.db.SetUserLicenseData(ctx, sqlc.SetUserLicenseDataParams{
@@ -126,12 +128,12 @@ func (s *Server) SetUserLicense(ctx context.Context, request *immichv1.UserLicen
 		Value:  data,
 	})
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to set user license", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to set user license", err)
 	}
 
 	license, err = parseUserLicense(data)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to parse user license", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to parse user license", err)
 	}
 
 	return userLicenseToProto(license), nil
@@ -144,7 +146,7 @@ func (s *Server) DeleteUserLicense(ctx context.Context, empty *emptypb.Empty) (*
 	}
 
 	if err := s.db.DeleteUserLicenseData(ctx, userUUID); err != nil {
-		return nil, SanitizedInternal(ctx, "failed to delete user license", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to delete user license", err)
 	}
 
 	return &emptypb.Empty{}, nil
@@ -162,7 +164,7 @@ func (s *Server) userIDFromContext(ctx context.Context) (uuid.UUID, error) {
 
 	userID, err := uuid.Parse(claims.UserID)
 	if err != nil {
-		return uuid.Nil, SanitizedInternal(ctx, "invalid user ID", err)
+		return uuid.Nil, grpcutil.SanitizedInternal(ctx, "invalid user ID", err)
 	}
 
 	return userID, nil
@@ -203,7 +205,7 @@ func (s *Server) GetMyPreferences(ctx context.Context, empty *emptypb.Empty) (*i
 
 	prefs, err := s.userService.GetUserPreferences(ctx, userID)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to get user preferences", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to get user preferences", err)
 	}
 
 	return userPreferencesToProto(prefs), nil
@@ -217,7 +219,7 @@ func (s *Server) UpdateMyPreferences(ctx context.Context, request *immichv1.User
 
 	prefs, err := s.userService.UpdateUserPreferences(ctx, userID, userPreferencesUpdateFromProto(request))
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to update user preferences", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to update user preferences", err)
 	}
 
 	return userPreferencesToProto(prefs), nil
@@ -356,7 +358,7 @@ func (s *Server) GetMyCalendarHeatmap(ctx context.Context, request *immichv1.Get
 		if calendarheatmap.IsInvalidArgument(err) {
 			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
-		return nil, SanitizedInternal(ctx, "failed to get calendar heatmap", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to get calendar heatmap", err)
 	}
 
 	return response, nil
@@ -371,7 +373,7 @@ func (s *Server) CreateProfileImage(ctx context.Context, request *immichv1.Creat
 
 	userID, err := uuid.Parse(claims.UserID)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "invalid user ID", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "invalid user ID", err)
 	}
 	userUUID := pgtype.UUID{Bytes: userID, Valid: true}
 
@@ -400,7 +402,7 @@ func (s *Server) CreateProfileImage(ctx context.Context, request *immichv1.Creat
 
 	// Upload the profile image
 	if err := storageService.Upload(ctx, profilePath, bytes.NewReader(request.File), contentType); err != nil {
-		return nil, SanitizedInternal(ctx, "failed to upload profile image", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to upload profile image", err)
 	}
 
 	// Update user record with profile image path
@@ -410,7 +412,7 @@ func (s *Server) CreateProfileImage(ctx context.Context, request *immichv1.Creat
 	})
 	if err != nil {
 		// Profile image cleanup on failure would go here
-		return nil, SanitizedInternal(ctx, "failed to update user profile", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to update user profile", err)
 	}
 
 	return &immichv1.CreateProfileImageResponse{
@@ -428,7 +430,7 @@ func (s *Server) DeleteProfileImage(ctx context.Context, empty *emptypb.Empty) (
 
 	userID, err := uuid.Parse(claims.UserID)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "invalid user ID", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "invalid user ID", err)
 	}
 	userUUID := pgtype.UUID{Bytes: userID, Valid: true}
 
@@ -443,11 +445,11 @@ func (s *Server) DeleteProfileImage(ctx context.Context, empty *emptypb.Empty) (
 
 	storageService := s.assetService.GetStorageService()
 	if err := storageService.DeleteAsset(ctx, user.ProfileImagePath); err != nil {
-		return nil, SanitizedInternal(ctx, "failed to delete profile image", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to delete profile image", err)
 	}
 
 	if _, err := s.db.ClearUserProfileImage(ctx, userUUID); err != nil {
-		return nil, SanitizedInternal(ctx, "failed to update user profile", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to update user profile", err)
 	}
 
 	return &emptypb.Empty{}, nil
@@ -464,7 +466,7 @@ func (s *Server) GetUser(ctx context.Context, request *immichv1.GetUserRequest) 
 		if users.IsNotFoundError(err) {
 			return nil, status.Errorf(codes.NotFound, "user not found: %v", err)
 		}
-		return nil, SanitizedInternal(ctx, "failed to get user", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to get user", err)
 	}
 
 	return s.convertUserToProto(user), nil
@@ -497,14 +499,14 @@ func (s *Server) GetProfileImage(ctx context.Context, request *immichv1.GetProfi
 	// Download the profile image
 	imageData, err := storageService.Download(ctx, user.ProfileImagePath)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to retrieve profile image", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to retrieve profile image", err)
 	}
 	defer imageData.Close()
 
 	// Read image data
 	data, err := io.ReadAll(imageData)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to read image data", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to read image data", err)
 	}
 
 	// Determine content type from file extension
@@ -618,7 +620,7 @@ func (s *Server) ListUsers(ctx context.Context, _ *emptypb.Empty) (*immichv1.Lis
 	// Get all users from service
 	usersList, err := s.userService.GetAllUsers(ctx)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to list users", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to list users", err)
 	}
 
 	// Convert to proto
@@ -641,7 +643,7 @@ func (s *Server) GetOnboarding(ctx context.Context, _ *emptypb.Empty) (*immichv1
 
 	onboarding, err := s.userService.GetUserOnboarding(ctx, userID)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to get onboarding status", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to get onboarding status", err)
 	}
 
 	return &immichv1.OnboardingResponse{
@@ -658,7 +660,7 @@ func (s *Server) UpdateOnboarding(ctx context.Context, req *immichv1.OnboardingU
 
 	onboarding, err := s.userService.UpdateUserOnboarding(ctx, userID, req.IsOnboarded)
 	if err != nil {
-		return nil, SanitizedInternal(ctx, "failed to update onboarding status", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to update onboarding status", err)
 	}
 
 	return &immichv1.OnboardingResponse{
@@ -674,7 +676,7 @@ func (s *Server) DeleteOnboarding(ctx context.Context, _ *emptypb.Empty) (*empty
 	}
 
 	if _, err := s.userService.UpdateUserOnboarding(ctx, userID, false); err != nil {
-		return nil, SanitizedInternal(ctx, "failed to delete onboarding status", err)
+		return nil, grpcutil.SanitizedInternal(ctx, "failed to delete onboarding status", err)
 	}
 
 	return &emptypb.Empty{}, nil
