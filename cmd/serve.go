@@ -70,7 +70,10 @@ func runServer(_ *cobra.Command, _ []string) error {
 	}
 	srv.SetGRPCConn(grpcClientConn)
 
-	httpServer := startHTTP(srv, cfg.Server.Address)
+	httpServer, err := startHTTP(srv, cfg.Server.Address)
+	if err != nil {
+		return err
+	}
 
 	<-sigCh
 	shutdown(httpServer, srv)
@@ -174,11 +177,18 @@ func dialLocalGRPC(ctx context.Context, addr string) (*grpc.ClientConn, error) {
 }
 
 // startHTTP serves the REST gateway in the background and returns the server so
-// the caller can drain it on shutdown.
-func startHTTP(srv *server.Server, addr string) *http.Server {
+// the caller can drain it on shutdown. Building the handler can fail when a
+// service's gateway registration is rejected, which would leave that service
+// unreachable over REST — so it aborts startup instead.
+func startHTTP(srv *server.Server, addr string) (*http.Server, error) {
+	handler, err := srv.HTTPHandler()
+	if err != nil {
+		return nil, fmt.Errorf("build HTTP handler: %w", err)
+	}
+
 	httpServer := &http.Server{
 		Addr:         addr,
-		Handler:      srv.HTTPHandler(),
+		Handler:      handler,
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 30 * time.Second,
 	}
@@ -190,7 +200,7 @@ func startHTTP(srv *server.Server, addr string) *http.Server {
 		}
 	}()
 
-	return httpServer
+	return httpServer, nil
 }
 
 // shutdown drains HTTP first so in-flight requests can finish against a still

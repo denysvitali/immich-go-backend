@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"net/http"
 	"testing"
 
 	"github.com/denysvitali/immich-go-backend/internal/auth"
@@ -46,4 +47,16 @@ func TestRequireAdminReturnsAdminClaims(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Same(t, want, got)
+}
+
+// mustHTTPHandler builds the REST handler and fails the test if any gateway
+// registration is rejected.
+func mustHTTPHandler(t *testing.T, srv *Server) http.Handler {
+	t.Helper()
+
+	handler, err := srv.HTTPHandler()
+	if err != nil {
+		t.Fatalf("HTTPHandler: %v", err)
+	}
+	return handler
 }

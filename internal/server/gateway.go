@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -70,7 +72,7 @@ func httpResponseModifier(ctx context.Context, w http.ResponseWriter, p proto.Me
 }
 
 // HTTPHandler creates and returns the HTTP handler with grpc-gateway
-func (s *Server) HTTPHandler() http.Handler {
+func (s *Server) HTTPHandler() (http.Handler, error) {
 	mux := runtime.NewServeMux(
 		runtime.WithMarshalerOption(runtime.MIMEWildcard, &runtime.JSONPb{
 			MarshalOptions: protojson.MarshalOptions{
@@ -83,119 +85,100 @@ func (s *Server) HTTPHandler() http.Handler {
 		runtime.WithForwardResponseOption(httpResponseModifier),
 	)
 
-	ctx := context.Background()
-
-	if err := immichv1.RegisterAuthServiceHandlerServer(ctx, mux, s); err != nil {
-		logrus.WithError(err).Error("Failed to register AuthService handler")
-	}
-	if err := immichv1.RegisterAlbumServiceHandlerServer(ctx, mux, s); err != nil {
-		logrus.WithError(err).Error("Failed to register AlbumService handler")
-	}
-	if err := immichv1.RegisterApiKeyServiceHandlerServer(ctx, mux, s); err != nil {
-		logrus.WithError(err).Error("Failed to register ApiKeyService handler")
-	}
-	if err := immichv1.RegisterLibrariesServiceHandlerServer(ctx, mux, s.librariesServer); err != nil {
-		logrus.WithError(err).Error("Failed to register LibrariesService handler")
-	}
-	if err := immichv1.RegisterSearchServiceHandlerServer(ctx, mux, s.searchServer); err != nil {
-		logrus.WithError(err).Error("Failed to register SearchService handler")
-	}
-	if err := immichv1.RegisterAssetServiceHandlerServer(ctx, mux, s); err != nil {
-		logrus.WithError(err).Error("Failed to register AssetService handler")
-	}
-	if err := immichv1.RegisterMemoryServiceHandlerServer(ctx, mux, s.memoriesServer); err != nil {
-		logrus.WithError(err).Error("Failed to register MemoryService handler")
-	}
-	if err := immichv1.RegisterNotificationsServiceHandlerServer(ctx, mux, s.notificationsServer); err != nil {
-		logrus.WithError(err).Error("Failed to register NotificationsService handler")
-	}
-	if err := immichv1.RegisterOAuthServiceHandlerServer(ctx, mux, s); err != nil {
-		logrus.WithError(err).Error("Failed to register OAuthService handler")
-	}
-	if err := immichv1.RegisterServerServiceHandlerServer(ctx, mux, s); err != nil {
-		logrus.WithError(err).Error("Failed to register ServerService handler")
-	}
-	if err := immichv1.RegisterTimelineServiceHandlerServer(ctx, mux, s.timelineServer); err != nil {
-		logrus.WithError(err).Error("Failed to register TimelineService handler")
-	}
-	if err := immichv1.RegisterUsersServiceHandlerServer(ctx, mux, s); err != nil {
-		logrus.WithError(err).Error("Failed to register UsersService handler")
-	}
-	if err := immichv1.RegisterDownloadServiceHandlerServer(ctx, mux, s); err != nil {
-		logrus.WithError(err).Error("Failed to register DownloadService handler")
-	}
-	if err := immichv1.RegisterSharedLinksServiceHandlerServer(ctx, mux, s); err != nil {
-		logrus.WithError(err).Error("Failed to register SharedLinksService handler")
-	}
-	if err := immichv1.RegisterSystemConfigServiceHandlerServer(ctx, mux, s); err != nil {
-		logrus.WithError(err).Error("Failed to register SystemConfigService handler")
-	}
-	if err := immichv1.RegisterJobServiceHandlerServer(ctx, mux, s); err != nil {
-		logrus.WithError(err).Error("Failed to register JobService handler")
-	}
-	if err := immichv1.RegisterQueueServiceHandlerServer(ctx, mux, s); err != nil {
-		logrus.WithError(err).Error("Failed to register QueueService handler")
-	}
-	if err := immichv1.RegisterMaintenanceServiceHandlerServer(ctx, mux, s); err != nil {
-		logrus.WithError(err).Error("Failed to register MaintenanceService handler")
+	if err := s.registerGatewayHandlers(context.Background(), mux); err != nil {
+		return nil, err
 	}
 
-	if err := immichv1.RegisterTrashServiceHandlerServer(ctx, mux, s.trashService); err != nil {
-		logrus.WithError(err).Error("Failed to register TrashService handler")
+	return webui.Handler(s.config.WebUIDir, httpLoggingHandler(s.handleWs(mux))), nil
+}
+
+// gatewayRegistration names one generated grpc-gateway registrar so a failure
+// can be reported against the service it belongs to.
+type gatewayRegistration struct {
+	service  string
+	register func(context.Context, *runtime.ServeMux) error
+}
+
+// gatewayHandler adapts a generated Register…HandlerServer function into a
+// gatewayRegistration. It is applied in two stages — gatewayHandler(name, fn)
+// then (impl) — so that T is inferred from the registrar alone; the
+// implementation is then checked for assignability against the service
+// interface. A mismatch is a compile error rather than a service that 404s at
+// runtime.
+func gatewayHandler[T any](service string, fn func(context.Context, *runtime.ServeMux, T) error) func(T) gatewayRegistration {
+	return func(impl T) gatewayRegistration {
+		return gatewayRegistration{
+			service: service,
+			register: func(ctx context.Context, mux *runtime.ServeMux) error {
+				return fn(ctx, mux, impl)
+			},
+		}
 	}
-	if err := immichv1.RegisterTagsServiceHandlerServer(ctx, mux, s.tagsService); err != nil {
-		logrus.WithError(err).Error("Failed to register TagsService handler")
+}
+
+// registerGatewayHandlers wires every service's REST surface onto mux.
+//
+// A failure here means an entire service returns 404 over REST. That is
+// precisely the regression the OPENAPI_COVERAGE_FAIL_UNDER=100 gate exists to
+// prevent, and the gate cannot see it because it reads the AST rather than the
+// running mux — so registration failure is fatal, not logged. Every failure is
+// reported, not just the first.
+func (s *Server) registerGatewayHandlers(ctx context.Context, mux *runtime.ServeMux) error {
+	registrations := []gatewayRegistration{
+		gatewayHandler("ActivityService", immichv1.RegisterActivityServiceHandlerServer)(s.activityService),
+		gatewayHandler("AdminService", immichv1.RegisterAdminServiceHandlerServer)(s.adminServer),
+		gatewayHandler("AlbumService", immichv1.RegisterAlbumServiceHandlerServer)(s),
+		gatewayHandler("ApiKeyService", immichv1.RegisterApiKeyServiceHandlerServer)(s),
+		gatewayHandler("AssetService", immichv1.RegisterAssetServiceHandlerServer)(s),
+		gatewayHandler("AuthService", immichv1.RegisterAuthServiceHandlerServer)(s),
+		gatewayHandler("DownloadService", immichv1.RegisterDownloadServiceHandlerServer)(s),
+		gatewayHandler("DuplicatesService", immichv1.RegisterDuplicatesServiceHandlerServer)(s.duplicatesServer),
+		gatewayHandler("FacesService", immichv1.RegisterFacesServiceHandlerServer)(s.facesServer),
+		gatewayHandler("JobService", immichv1.RegisterJobServiceHandlerServer)(s),
+		gatewayHandler("LibrariesService", immichv1.RegisterLibrariesServiceHandlerServer)(s.librariesServer),
+		gatewayHandler("MaintenanceService", immichv1.RegisterMaintenanceServiceHandlerServer)(s),
+		gatewayHandler("MapService", immichv1.RegisterMapServiceHandlerServer)(s.mapService),
+		gatewayHandler("MemoryService", immichv1.RegisterMemoryServiceHandlerServer)(s.memoriesServer),
+		gatewayHandler("NotificationsService", immichv1.RegisterNotificationsServiceHandlerServer)(s.notificationsServer),
+		gatewayHandler("OAuthService", immichv1.RegisterOAuthServiceHandlerServer)(s),
+		gatewayHandler("PartnersService", immichv1.RegisterPartnersServiceHandlerServer)(s.partnersService),
+		gatewayHandler("PeopleService", immichv1.RegisterPeopleServiceHandlerServer)(s.peopleService),
+		gatewayHandler("PluginService", immichv1.RegisterPluginServiceHandlerServer)(s),
+		gatewayHandler("SearchService", immichv1.RegisterSearchServiceHandlerServer)(s.searchServer),
+		gatewayHandler("ServerService", immichv1.RegisterServerServiceHandlerServer)(s),
+		gatewayHandler("SessionsService", immichv1.RegisterSessionsServiceHandlerServer)(s.sessionsServer),
+		gatewayHandler("SharedLinksService", immichv1.RegisterSharedLinksServiceHandlerServer)(s),
+		gatewayHandler("StacksService", immichv1.RegisterStacksServiceHandlerServer)(s.stacksServer),
+		gatewayHandler("SystemConfigService", immichv1.RegisterSystemConfigServiceHandlerServer)(s),
+		gatewayHandler("SystemMetadataService", immichv1.RegisterSystemMetadataServiceHandlerServer)(s.systemMetadataServer),
+		gatewayHandler("TagsService", immichv1.RegisterTagsServiceHandlerServer)(s.tagsService),
+		gatewayHandler("TimelineService", immichv1.RegisterTimelineServiceHandlerServer)(s.timelineServer),
+		gatewayHandler("TrashService", immichv1.RegisterTrashServiceHandlerServer)(s.trashService),
+		gatewayHandler("UsersService", immichv1.RegisterUsersServiceHandlerServer)(s),
+		gatewayHandler("ViewService", immichv1.RegisterViewServiceHandlerServer)(s.viewServer),
+		gatewayHandler("WorkflowService", immichv1.RegisterWorkflowServiceHandlerServer)(s),
+		s.syncGatewayRegistration(),
+		gatewayHandler("QueueService", immichv1.RegisterQueueServiceHandlerServer)(s),
 	}
-	if err := immichv1.RegisterMapServiceHandlerServer(ctx, mux, s.mapService); err != nil {
-		logrus.WithError(err).Error("Failed to register MapService handler")
+
+	var errs []error
+	for _, r := range registrations {
+		if err := r.register(ctx, mux); err != nil {
+			errs = append(errs, fmt.Errorf("register %s gateway handler: %w", r.service, err))
+		}
 	}
-	if err := immichv1.RegisterPeopleServiceHandlerServer(ctx, mux, s.peopleService); err != nil {
-		logrus.WithError(err).Error("Failed to register PeopleService handler")
-	}
-	if err := immichv1.RegisterPartnersServiceHandlerServer(ctx, mux, s.partnersService); err != nil {
-		logrus.WithError(err).Error("Failed to register PartnersService handler")
-	}
-	if err := immichv1.RegisterActivityServiceHandlerServer(ctx, mux, s.activityService); err != nil {
-		logrus.WithError(err).Error("Failed to register ActivityService handler")
-	}
-	if err := immichv1.RegisterAdminServiceHandlerServer(ctx, mux, s.adminServer); err != nil {
-		logrus.WithError(err).Error("Failed to register AdminService handler")
-	}
-	if err := immichv1.RegisterDuplicatesServiceHandlerServer(ctx, mux, s.duplicatesServer); err != nil {
-		logrus.WithError(err).Error("Failed to register DuplicatesService handler")
-	}
-	if err := immichv1.RegisterFacesServiceHandlerServer(ctx, mux, s.facesServer); err != nil {
-		logrus.WithError(err).Error("Failed to register FacesService handler")
-	}
-	if err := immichv1.RegisterStacksServiceHandlerServer(ctx, mux, s.stacksServer); err != nil {
-		logrus.WithError(err).Error("Failed to register StacksService handler")
-	}
-	if err := immichv1.RegisterSystemMetadataServiceHandlerServer(ctx, mux, s.systemMetadataServer); err != nil {
-		logrus.WithError(err).Error("Failed to register SystemMetadataService handler")
-	}
-	if err := immichv1.RegisterViewServiceHandlerServer(ctx, mux, s.viewServer); err != nil {
-		logrus.WithError(err).Error("Failed to register ViewService handler")
-	}
-	if err := immichv1.RegisterSessionsServiceHandlerServer(ctx, mux, s.sessionsServer); err != nil {
-		logrus.WithError(err).Error("Failed to register SessionsService handler")
-	}
+	return errors.Join(errs...)
+}
+
+// syncGatewayRegistration prefers the client-connection form so SyncService's
+// server-streaming RPCs are forwarded over a real gRPC connection; without a
+// connection the gateway falls back to the in-process server, which cannot
+// stream.
+func (s *Server) syncGatewayRegistration() gatewayRegistration {
 	if s.grpcClientConn != nil {
-		if err := immichv1.RegisterSyncServiceHandler(ctx, mux, s.grpcClientConn); err != nil {
-			logrus.WithError(err).Error("Failed to register SyncService handler")
-		}
-	} else {
-		if err := immichv1.RegisterSyncServiceHandlerServer(ctx, mux, s.syncServer); err != nil {
-			logrus.WithError(err).Error("Failed to register SyncService handler")
-		}
+		return gatewayHandler("SyncService", immichv1.RegisterSyncServiceHandler)(s.grpcClientConn)
 	}
-	if err := immichv1.RegisterPluginServiceHandlerServer(ctx, mux, s); err != nil {
-		logrus.WithError(err).Error("Failed to register PluginService handler")
-	}
-	if err := immichv1.RegisterWorkflowServiceHandlerServer(ctx, mux, s); err != nil {
-		logrus.WithError(err).Error("Failed to register WorkflowService handler")
-	}
-
-	return webui.Handler(s.config.WebUIDir, httpLoggingHandler(s.handleWs(mux)))
+	return gatewayHandler("SyncService", immichv1.RegisterSyncServiceHandlerServer)(s.syncServer)
 }
 
 func (s *Server) handleWs(mux *runtime.ServeMux) http.Handler {

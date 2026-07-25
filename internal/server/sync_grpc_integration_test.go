@@ -150,7 +150,7 @@ func TestSyncServiceHandlerUsesClientConn(t *testing.T) {
 
 	srv.SetGRPCConn(conn)
 
-	server := httptest.NewServer(srv.HTTPHandler())
+	server := httptest.NewServer(mustHTTPHandler(t, srv))
 	defer server.Close()
 
 	_, token := createSyncTestUser(t, context.Background(), database)
@@ -185,7 +185,7 @@ func TestSyncServiceHandlerFallsBackToServer(t *testing.T) {
 	// the in-process RegisterSyncServiceHandlerServer, which reports streaming
 	// RPCs as unimplemented.
 
-	server := httptest.NewServer(srv.HTTPHandler())
+	server := httptest.NewServer(mustHTTPHandler(t, srv))
 	defer server.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

@@ -37,7 +37,7 @@ func TestSetGRPCConnChangesSyncRegistration(t *testing.T) {
 
 	// Without SetGRPCConn the in-process gateway registration is used, and
 	// streaming RPCs are reported as unimplemented.
-	serverWithoutConn := httptest.NewServer(srv.HTTPHandler())
+	serverWithoutConn := httptest.NewServer(mustHTTPHandler(t, srv))
 	defer serverWithoutConn.Close()
 
 	resp, err := http.Post(serverWithoutConn.URL+"/api/sync/stream", "application/json", nil)
@@ -55,7 +55,7 @@ func TestSetGRPCConnChangesSyncRegistration(t *testing.T) {
 
 	srv.SetGRPCConn(conn)
 
-	serverWithConn := httptest.NewServer(srv.HTTPHandler())
+	serverWithConn := httptest.NewServer(mustHTTPHandler(t, srv))
 	defer serverWithConn.Close()
 
 	resp, err = http.Post(serverWithConn.URL+"/api/sync/stream", "application/json", nil)
