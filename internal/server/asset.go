@@ -26,7 +26,6 @@ import (
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/denysvitali/immich-go-backend/internal/jobs"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
-	"github.com/denysvitali/immich-go-backend/internal/util"
 )
 
 func (s *Server) GetAssets(ctx context.Context, request *immichv1.GetAssetsRequest) (*immichv1.GetAssetsResponse, error) {
@@ -42,7 +41,7 @@ func (s *Server) GetAssets(ctx context.Context, request *immichv1.GetAssetsReque
 	}
 
 	// Calculate offset for pagination
-	offset := util.Offset(request.GetPage(), request.GetSize())
+	offset := paginationOffset(request.GetPage(), request.GetSize())
 
 	// Build query parameters
 	var assetType pgtype.Text
@@ -55,9 +54,9 @@ func (s *Server) GetAssets(ctx context.Context, request *immichv1.GetAssetsReque
 		}
 	}
 
-	isFavorite := util.OptionalBool(request.IsFavorite)
-	isArchived := util.OptionalBool(request.IsArchived)
-	isTrashed := util.OptionalBool(request.IsTrashed)
+	isFavorite := pgutil.OptionalBool(request.IsFavorite)
+	isArchived := pgutil.OptionalBool(request.IsArchived)
+	isTrashed := pgutil.OptionalBool(request.IsTrashed)
 
 	assets, err := s.db.GetAssets(ctx, sqlc.GetAssetsParams{
 		OwnerId:    userID,

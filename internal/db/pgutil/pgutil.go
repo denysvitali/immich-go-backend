@@ -69,3 +69,23 @@ func Text(s string) pgtype.Text {
 		Valid:  true,
 	}
 }
+
+// OptionalBool returns a valid pgtype.Bool when b is non-nil, and the zero
+// (NULL) value when it is nil. Use it to map an optional request field onto a
+// nullable column without an if-statement at every call site.
+func OptionalBool(b *bool) pgtype.Bool {
+	if b == nil {
+		return pgtype.Bool{}
+	}
+	return pgtype.Bool{Bool: *b, Valid: true}
+}
+
+// OptionalText returns a valid pgtype.Text when s is non-nil, and the zero
+// (NULL) value when it is nil. Note that a non-nil pointer to "" produces a
+// valid empty string, not NULL.
+func OptionalText(s *string) pgtype.Text {
+	if s == nil {
+		return pgtype.Text{}
+	}
+	return pgtype.Text{String: *s, Valid: true}
+}

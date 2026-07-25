@@ -14,7 +14,7 @@ import (
 	"github.com/denysvitali/immich-go-backend/internal/db/pgutil"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
-	"github.com/denysvitali/immich-go-backend/internal/util"
+	"github.com/denysvitali/immich-go-backend/internal/ptr"
 )
 
 func (s *Server) GetAllAlbums(ctx context.Context, request *immichv1.GetAllAlbumsRequest) (*immichv1.GetAllAlbumsResponse, error) {
@@ -149,9 +149,9 @@ func (s *Server) UpdateAlbumInfo(ctx context.Context, request *immichv1.UpdateAl
 		return nil, status.Errorf(codes.InvalidArgument, "invalid album ID: %v", err)
 	}
 
-	albumName := util.OptionalText(request.AlbumName)
-	description := util.OptionalText(request.Description)
-	isActivityEnabled := util.OptionalBool(request.IsActivityEnabled)
+	albumName := pgutil.OptionalText(request.AlbumName)
+	description := pgutil.OptionalText(request.Description)
+	isActivityEnabled := pgutil.OptionalBool(request.IsActivityEnabled)
 
 	var thumbnailAssetID pgtype.UUID
 	if request.AlbumThumbnailAssetId != nil {
@@ -200,7 +200,7 @@ func (s *Server) AddAssetsToAlbum(ctx context.Context, request *immichv1.AddAsse
 			results[i] = &immichv1.BulkIdResponse{
 				Id:      assetID,
 				Success: false,
-				Error:   util.Ptr("invalid asset ID"),
+				Error:   ptr.To("invalid asset ID"),
 			}
 			continue
 		}
@@ -235,7 +235,7 @@ func (s *Server) RemoveAssetFromAlbum(ctx context.Context, request *immichv1.Rem
 			results[i] = &immichv1.BulkIdResponse{
 				Id:      assetID,
 				Success: false,
-				Error:   util.Ptr("invalid asset ID"),
+				Error:   ptr.To("invalid asset ID"),
 			}
 			continue
 		}
@@ -417,7 +417,7 @@ func (s *Server) AddAssetsToAlbums(ctx context.Context, request *immichv1.AddAss
 	failure := func(reason string) (*immichv1.AlbumsAddAssetsResponseDto, error) {
 		return &immichv1.AlbumsAddAssetsResponseDto{
 			Success: false,
-			Error:   util.Ptr(reason),
+			Error:   ptr.To(reason),
 		}, nil
 	}
 

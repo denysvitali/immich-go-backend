@@ -17,7 +17,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/denysvitali/immich-go-backend/internal/util"
+	"github.com/denysvitali/immich-go-backend/internal/ptr"
 )
 
 var tracer = telemetry.GetTracer("users")
@@ -241,11 +241,11 @@ func (s *Service) UpdateUser(ctx context.Context, userID uuid.UUID, req UpdateUs
 		ID: userUUID,
 	}
 
-	updateParams.Name = util.OptionalText(req.Name)
-	updateParams.Email = util.OptionalText(req.Email)
-	updateParams.AvatarColor = util.OptionalText(req.AvatarColor)
-	updateParams.ProfileImagePath = util.OptionalText(req.ProfileImagePath)
-	updateParams.StorageLabel = util.OptionalText(req.StorageLabel)
+	updateParams.Name = pgutil.OptionalText(req.Name)
+	updateParams.Email = pgutil.OptionalText(req.Email)
+	updateParams.AvatarColor = pgutil.OptionalText(req.AvatarColor)
+	updateParams.ProfileImagePath = pgutil.OptionalText(req.ProfileImagePath)
+	updateParams.StorageLabel = pgutil.OptionalText(req.StorageLabel)
 
 	if req.QuotaSizeInBytes != nil {
 		updateParams.QuotaSizeInBytes = pgtype.Int8{Int64: *req.QuotaSizeInBytes, Valid: true}
@@ -627,18 +627,18 @@ func (s *Service) dbUserToUserInfo(user sqlc.User) *UserInfo {
 func (s *Service) getDefaultUserPreferences(userID uuid.UUID) *UserPreferences {
 	return &UserPreferences{
 		UserID:                        userID,
-		EmailNotifications:            util.Ptr(true),
-		EmailAlbumInvite:              util.Ptr(true),
-		EmailAlbumUpdate:              util.Ptr(true),
-		DownloadIncludeEmbeddedVideos: util.Ptr(false),
-		FoldersEnabled:                util.Ptr(true),
-		MemoriesEnabled:               util.Ptr(true),
-		PeopleEnabled:                 util.Ptr(true),
-		PeopleSizeThreshold:           util.Ptr(int32(10)),
-		PurchaseShowSupportBadge:      util.Ptr(true),
-		SharedLinksEnabled:            util.Ptr(true),
-		TagsEnabled:                   util.Ptr(true),
-		TagsSizeThreshold:             util.Ptr(int32(10)),
+		EmailNotifications:            ptr.To(true),
+		EmailAlbumInvite:              ptr.To(true),
+		EmailAlbumUpdate:              ptr.To(true),
+		DownloadIncludeEmbeddedVideos: ptr.To(false),
+		FoldersEnabled:                ptr.To(true),
+		MemoriesEnabled:               ptr.To(true),
+		PeopleEnabled:                 ptr.To(true),
+		PeopleSizeThreshold:           ptr.To(int32(10)),
+		PurchaseShowSupportBadge:      ptr.To(true),
+		SharedLinksEnabled:            ptr.To(true),
+		TagsEnabled:                   ptr.To(true),
+		TagsSizeThreshold:             ptr.To(int32(10)),
 	}
 }
 

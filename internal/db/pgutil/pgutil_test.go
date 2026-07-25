@@ -54,3 +54,54 @@ func TestText(t *testing.T) {
 	assert.True(t, got.Valid)
 	assert.Equal(t, "hello", got.String)
 }
+
+func TestOptionalBool(t *testing.T) {
+	tests := map[string]struct {
+		in        *bool
+		wantValid bool
+		wantBool  bool
+	}{
+		"nil":   {in: nil, wantValid: false},
+		"true":  {in: boolPtr(true), wantValid: true, wantBool: true},
+		"false": {in: boolPtr(false), wantValid: true, wantBool: false},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			got := OptionalBool(tc.in)
+			if got.Valid != tc.wantValid {
+				t.Errorf("Valid = %v, want %v", got.Valid, tc.wantValid)
+			}
+			if got.Bool != tc.wantBool {
+				t.Errorf("Bool = %v, want %v", got.Bool, tc.wantBool)
+			}
+		})
+	}
+}
+
+func TestOptionalText(t *testing.T) {
+	tests := map[string]struct {
+		in         *string
+		wantValid  bool
+		wantString string
+	}{
+		"nil":          {in: nil, wantValid: false},
+		"value":        {in: stringPtr("hello"), wantValid: true, wantString: "hello"},
+		"empty string": {in: stringPtr(""), wantValid: true, wantString: ""},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			got := OptionalText(tc.in)
+			if got.Valid != tc.wantValid {
+				t.Errorf("Valid = %v, want %v", got.Valid, tc.wantValid)
+			}
+			if got.String != tc.wantString {
+				t.Errorf("String = %q, want %q", got.String, tc.wantString)
+			}
+		})
+	}
+}
+
+func boolPtr(b bool) *bool       { return &b }
+func stringPtr(s string) *string { return &s }

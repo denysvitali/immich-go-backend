@@ -16,7 +16,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	assetdomain "github.com/denysvitali/immich-go-backend/internal/assets"
-	"github.com/denysvitali/immich-go-backend/internal/util"
 )
 
 var tracer = telemetry.GetTracer("view")
@@ -95,8 +94,8 @@ func (s *Service) GetAssetsByOriginalPath(ctx context.Context, req GetAssetsByOr
 	}
 
 	// Add optional filters
-	params.IsArchived = util.OptionalBool(req.IsArchived)
-	params.IsFavorite = util.OptionalBool(req.IsFavorite)
+	params.IsArchived = pgutil.OptionalBool(req.IsArchived)
+	params.IsFavorite = pgutil.OptionalBool(req.IsFavorite)
 
 	// Get assets from database
 	assets, err := s.db.GetAssetsByOriginalPathPrefix(ctx, params)
