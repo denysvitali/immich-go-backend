@@ -2,12 +2,8 @@ package auth
 
 import (
 	"context"
-	"net/http"
-	"strings"
 
 	"github.com/denysvitali/immich-go-backend/internal/db/pgutil"
-	"github.com/gin-gonic/gin"
-	"go.opentelemetry.io/otel/attribute"
 )
 
 // ContextKey represents a context key for authentication
@@ -20,10 +16,14 @@ const (
 	ClaimsContextKey ContextKey = "claims"
 )
 
-// LoadUserInfo looks up the user identified by claims and builds the
-// UserInfo consumed by RequireUser/RequireAdmin. Shared by the Gin
-// AuthMiddleware and the grpc-gateway authContextMiddleware so both entry
-// points populate the same std-context UserContextKey.
+// LoadUserInfo returns the UserInfo for the user named by claims, as consumed
+// by RequireUser/RequireAdmin. It is the only place that turns a validated
+// token into a user record, so the gateway's authContextMiddleware and any
+// future entry point populate UserContextKey identically.
+//
+// It returns an *AuthError: ErrInvalidToken for an unparseable user ID,
+// ErrUserNotFound when no such row exists, and ErrUserDeleted for a
+// soft-deleted account.
 func (s *Service) LoadUserInfo(ctx context.Context, claims *Claims) (*UserInfo, error) {
 	userID, err := pgutil.StringToUUID(claims.UserID)
 	if err != nil {
@@ -47,264 +47,6 @@ func (s *Service) LoadUserInfo(ctx context.Context, claims *Claims) (*UserInfo, 
 		CreatedAt: pgutil.TimestamptzToTime(user.CreatedAt),
 		UpdatedAt: pgutil.TimestamptzToTime(user.UpdatedAt),
 	}, nil
-}
-
-// AuthMiddleware creates a middleware for JWT authentication
-func (s *Service) AuthMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		ctx, span := tracer.Start(c.Request.Context(), "auth.middleware")
-		defer span.End()
-
-		// Get token from Authorization header
-		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			span.SetAttributes(attribute.String("auth.error", "missing_authorization_header"))
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": "Authorization header is required",
-				"type":  string(ErrUnauthorized),
-			})
-			c.Abort()
-			return
-		}
-
-		// Check if it's a Bearer token
-		tokenParts := strings.SplitN(authHeader, " ", 2)
-		if len(tokenParts) != 2 || tokenParts[0] != "Bearer" {
-			span.SetAttributes(attribute.String("auth.error", "invalid_authorization_format"))
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": "Invalid authorization header format",
-				"type":  string(ErrUnauthorized),
-			})
-			c.Abort()
-			return
-		}
-
-		token := tokenParts[1]
-
-		// Validate token
-		claims, err := s.ValidateToken(token)
-		if err != nil {
-			span.RecordError(err)
-			span.SetAttributes(attribute.String("auth.error", "invalid_token"))
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": "Invalid or expired token",
-				"type":  string(ErrInvalidToken),
-			})
-			c.Abort()
-			return
-		}
-
-		// Get user from database
-		userID, err := pgutil.StringToUUID(claims.UserID)
-		if err != nil {
-			span.RecordError(err)
-			span.SetAttributes(attribute.String("auth.error", "invalid_user_id"))
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": "Invalid user ID",
-				"type":  string(ErrInvalidToken),
-			})
-			c.Abort()
-			return
-		}
-
-		user, err := s.queries.GetUserByID(ctx, userID)
-		if err != nil {
-			span.RecordError(err)
-			span.SetAttributes(attribute.String("auth.error", "user_not_found"))
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": "User not found",
-				"type":  string(ErrUserNotFound),
-			})
-			c.Abort()
-			return
-		}
-
-		// Check if user is deleted
-		if user.DeletedAt.Valid {
-			span.SetAttributes(attribute.String("auth.error", "user_deleted"))
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": "User account has been deleted",
-				"type":  string(ErrUserDeleted),
-			})
-			c.Abort()
-			return
-		}
-
-		// Add user and claims to context
-		userInfo := UserInfo{
-			ID:        pgutil.UUIDToString(user.ID),
-			Email:     user.Email,
-			Name:      user.Name,
-			IsAdmin:   user.IsAdmin,
-			CreatedAt: pgutil.TimestamptzToTime(user.CreatedAt),
-			UpdatedAt: pgutil.TimestamptzToTime(user.UpdatedAt),
-		}
-
-		c.Set(string(UserContextKey), userInfo)
-		c.Set(string(ClaimsContextKey), claims)
-
-		// Add user info to span
-		span.SetAttributes(
-			attribute.String("auth.user_id", pgutil.UUIDToString(user.ID)),
-			attribute.String("auth.user_email", user.Email),
-			attribute.Bool("auth.is_admin", user.IsAdmin),
-		)
-
-		c.Next()
-	}
-}
-
-// AdminMiddleware creates a middleware that requires admin privileges
-func (s *Service) AdminMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		_, span := tracer.Start(c.Request.Context(), "auth.admin_middleware")
-		defer span.End()
-
-		// Get user from context (should be set by AuthMiddleware)
-		userInterface, exists := c.Get(string(UserContextKey))
-		if !exists {
-			span.SetAttributes(attribute.String("auth.error", "user_not_in_context"))
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": "Authentication required",
-				"type":  string(ErrUnauthorized),
-			})
-			c.Abort()
-			return
-		}
-
-		user, ok := userInterface.(UserInfo)
-		if !ok {
-			span.SetAttributes(attribute.String("auth.error", "invalid_user_context"))
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": "Invalid user context",
-			})
-			c.Abort()
-			return
-		}
-
-		// Check if user is admin
-		if !user.IsAdmin {
-			span.SetAttributes(attribute.String("auth.error", "insufficient_permissions"))
-			c.JSON(http.StatusForbidden, gin.H{
-				"error": "Admin privileges required",
-				"type":  string(ErrInsufficientPermissions),
-			})
-			c.Abort()
-			return
-		}
-
-		span.SetAttributes(attribute.Bool("auth.admin_access", true))
-		c.Next()
-	}
-}
-
-// OptionalAuthMiddleware creates a middleware for optional authentication
-// If a valid token is provided, user info is added to context
-// If no token or invalid token, request continues without user info
-func (s *Service) OptionalAuthMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		ctx, span := tracer.Start(c.Request.Context(), "auth.optional_middleware")
-		defer span.End()
-
-		// Get token from Authorization header
-		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			span.SetAttributes(attribute.String("auth.status", "no_token"))
-			c.Next()
-			return
-		}
-
-		// Check if it's a Bearer token
-		tokenParts := strings.SplitN(authHeader, " ", 2)
-		if len(tokenParts) != 2 || tokenParts[0] != "Bearer" {
-			span.SetAttributes(attribute.String("auth.status", "invalid_format"))
-			c.Next()
-			return
-		}
-
-		token := tokenParts[1]
-
-		// Validate token
-		claims, err := s.ValidateToken(token)
-		if err != nil {
-			span.SetAttributes(attribute.String("auth.status", "invalid_token"))
-			c.Next()
-			return
-		}
-
-		// Get user from database
-		userID, err := pgutil.StringToUUID(claims.UserID)
-		if err != nil {
-			span.SetAttributes(attribute.String("auth.status", "invalid_user_id"))
-			c.Next()
-			return
-		}
-
-		user, err := s.queries.GetUserByID(ctx, userID)
-		if err != nil {
-			span.SetAttributes(attribute.String("auth.status", "user_not_found"))
-			c.Next()
-			return
-		}
-
-		// Check if user is deleted
-		if user.DeletedAt.Valid {
-			span.SetAttributes(attribute.String("auth.status", "user_deleted"))
-			c.Next()
-			return
-		}
-
-		// Add user and claims to context
-		userInfo := UserInfo{
-			ID:        pgutil.UUIDToString(user.ID),
-			Email:     user.Email,
-			Name:      user.Name,
-			IsAdmin:   user.IsAdmin,
-			CreatedAt: pgutil.TimestamptzToTime(user.CreatedAt),
-			UpdatedAt: pgutil.TimestamptzToTime(user.UpdatedAt),
-		}
-
-		c.Set(string(UserContextKey), userInfo)
-		c.Set(string(ClaimsContextKey), claims)
-
-		span.SetAttributes(
-			attribute.String("auth.status", "authenticated"),
-			attribute.String("auth.user_id", pgutil.UUIDToString(user.ID)),
-			attribute.Bool("auth.is_admin", user.IsAdmin),
-		)
-
-		c.Next()
-	}
-}
-
-// GetUserFromContext extracts user information from Gin context
-func GetUserFromContext(c *gin.Context) (*UserInfo, bool) {
-	userInterface, exists := c.Get(string(UserContextKey))
-	if !exists {
-		return nil, false
-	}
-
-	user, ok := userInterface.(UserInfo)
-	if !ok {
-		return nil, false
-	}
-
-	return &user, true
-}
-
-// GetClaimsFromContext extracts JWT claims from Gin context
-func GetClaimsFromContext(c *gin.Context) (*Claims, bool) {
-	claimsInterface, exists := c.Get(string(ClaimsContextKey))
-	if !exists {
-		return nil, false
-	}
-
-	claims, ok := claimsInterface.(*Claims)
-	if !ok {
-		return nil, false
-	}
-
-	return claims, true
 }
 
 // GetUserFromStdContext extracts user information from standard context
