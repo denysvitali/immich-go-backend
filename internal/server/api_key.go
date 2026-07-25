@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/denysvitali/immich-go-backend/internal/apikeys"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 	"github.com/google/uuid"
@@ -30,11 +29,7 @@ func (s *Server) GetApiKeys(ctx context.Context, _ *emptypb.Empty) (*immichv1.Ge
 		return nil, status.Error(codes.Unauthenticated, "authentication required")
 	}
 
-	// Create service if not exists
-	apiKeyService := apikeys.NewService(s.db.Queries)
-
-	// Get all API keys for the user
-	keys, err := apiKeyService.GetAPIKeysByUser(ctx, userID)
+	keys, err := s.apiKeyService.GetAPIKeysByUser(ctx, userID)
 	if err != nil {
 		return nil, SanitizedInternal(ctx, "failed to get API keys", err)
 	}
@@ -69,11 +64,7 @@ func (s *Server) CreateApiKey(ctx context.Context, req *immichv1.CreateApiKeyReq
 		return nil, status.Error(codes.Unauthenticated, "authentication required")
 	}
 
-	// Create service
-	apiKeyService := apikeys.NewService(s.db.Queries)
-
-	// Create the API key
-	apiKey, rawKey, err := apiKeyService.CreateAPIKey(ctx, userID, req.Name)
+	apiKey, rawKey, err := s.apiKeyService.CreateAPIKey(ctx, userID, req.Name)
 	if err != nil {
 		return nil, SanitizedInternal(ctx, "failed to create API key", err)
 	}
@@ -104,11 +95,7 @@ func (s *Server) DeleteApiKey(ctx context.Context, req *immichv1.DeleteApiKeyReq
 		return nil, status.Error(codes.Unauthenticated, "authentication required")
 	}
 
-	// Create service
-	apiKeyService := apikeys.NewService(s.db.Queries)
-
-	// Delete the API key
-	if err := apiKeyService.DeleteAPIKey(ctx, keyID, userID); err != nil {
+	if err := s.apiKeyService.DeleteAPIKey(ctx, keyID, userID); err != nil {
 		return nil, SanitizedInternal(ctx, "failed to delete API key", err)
 	}
 
@@ -169,8 +156,7 @@ func (s *Server) GetMyApiKey(ctx context.Context, _ *emptypb.Empty) (*immichv1.A
 	}
 	rawKey := strings.TrimPrefix(values[0], "immich_")
 
-	apiKeyService := apikeys.NewService(s.db.Queries)
-	apiKey, err := apiKeyService.ValidateAPIKey(ctx, rawKey)
+	apiKey, err := s.apiKeyService.ValidateAPIKey(ctx, rawKey)
 	if err != nil {
 		return nil, status.Error(codes.Unauthenticated, "invalid API key")
 	}
