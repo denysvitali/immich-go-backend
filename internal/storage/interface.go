@@ -85,10 +85,15 @@ type FileMetadata struct {
 	Metadata    map[string]string `json:"metadata,omitempty"`
 }
 
-// StorageConfig represents configuration for storage backends
+// StorageConfig selects and configures a storage backend.
+//
+// It is populated from the `storage` section of the YAML document. Only
+// STORAGE_BACKEND, STORAGE_LOCAL_ROOT and UPLOAD_TEMP_DIR can be overridden
+// from the environment (see config.loadFromEnv); everything else, S3
+// credentials included, must come from YAML.
 type StorageConfig struct {
 	// Backend type: "local", "s3", "gcs", "azure", etc.
-	Backend string `yaml:"backend" env:"STORAGE_BACKEND" default:"local"`
+	Backend string `yaml:"backend"`
 
 	// Local storage configuration
 	Local LocalConfig `yaml:"local,omitempty"`
@@ -106,88 +111,88 @@ type StorageConfig struct {
 // LocalConfig represents local filesystem storage configuration
 type LocalConfig struct {
 	// Root directory for storing files
-	RootPath string `yaml:"root_path" env:"STORAGE_LOCAL_ROOT" default:"./uploads"`
+	RootPath string `yaml:"root_path"`
 
 	// File permissions (octal)
-	FileMode string `yaml:"file_mode" env:"STORAGE_LOCAL_FILE_MODE" default:"0644"`
+	FileMode string `yaml:"file_mode"`
 
 	// Directory permissions (octal)
-	DirMode string `yaml:"dir_mode" env:"STORAGE_LOCAL_DIR_MODE" default:"0755"`
+	DirMode string `yaml:"dir_mode"`
 }
 
 // S3Config represents S3-compatible storage configuration
 type S3Config struct {
 	// Enable S3 storage
-	Enabled bool `yaml:"enabled" env:"S3_ENABLED" default:"false"`
+	Enabled bool `yaml:"enabled"`
 
 	// Enable direct upload to S3 via pre-signed URLs
-	DirectUpload bool `yaml:"direct_upload" env:"S3_DIRECT_UPLOAD" default:"false"`
+	DirectUpload bool `yaml:"direct_upload"`
 
 	// S3 endpoint (leave empty for AWS S3)
-	Endpoint string `yaml:"endpoint" env:"S3_ENDPOINT"`
+	Endpoint string `yaml:"endpoint"`
 
 	// S3 region
-	Region string `yaml:"region" env:"S3_REGION" default:"us-east-1"`
+	Region string `yaml:"region"`
 
 	// S3 bucket name
-	Bucket string `yaml:"bucket" env:"S3_BUCKET"`
+	Bucket string `yaml:"bucket"`
 
 	// S3 access key ID
-	AccessKeyID string `yaml:"access_key_id" env:"S3_ACCESS_KEY_ID"`
+	AccessKeyID string `yaml:"access_key_id"`
 
 	// S3 secret access key
-	SecretAccessKey string `yaml:"secret_access_key" env:"S3_SECRET_ACCESS_KEY"`
+	SecretAccessKey string `yaml:"secret_access_key"`
 
 	// Use SSL/TLS
-	UseSSL bool `yaml:"use_ssl" env:"S3_USE_SSL" default:"true"`
+	UseSSL bool `yaml:"use_ssl"`
 
 	// Path prefix for all objects
-	PathPrefix string `yaml:"path_prefix" env:"S3_PATH_PREFIX"`
+	PathPrefix string `yaml:"path_prefix"`
 
 	// Force path style (for MinIO and other S3-compatible services)
-	ForcePathStyle bool `yaml:"force_path_style" env:"S3_FORCE_PATH_STYLE" default:"false"`
+	ForcePathStyle bool `yaml:"force_path_style"`
 
 	// Pre-signed URL expiry duration
-	PresignedURLExpiry time.Duration `yaml:"presigned_url_expiry" env:"S3_PRESIGNED_URL_EXPIRY" default:"15m"`
+	PresignedURLExpiry time.Duration `yaml:"presigned_url_expiry"`
 }
 
 // RcloneConfig represents rclone storage configuration
 type RcloneConfig struct {
 	// Rclone remote name (from rclone config)
-	Remote string `yaml:"remote" env:"RCLONE_REMOTE"`
+	Remote string `yaml:"remote"`
 
 	// Path within the remote
-	Path string `yaml:"path" env:"RCLONE_PATH" default:"/"`
+	Path string `yaml:"path"`
 
 	// Rclone config file path
-	ConfigFile string `yaml:"config_file" env:"RCLONE_CONFIG_FILE"`
+	ConfigFile string `yaml:"config_file"`
 
 	// Additional rclone flags
-	Flags []string `yaml:"flags" env:"RCLONE_FLAGS"`
+	Flags []string `yaml:"flags"`
 
 	// Connection timeout
-	Timeout time.Duration `yaml:"timeout" env:"RCLONE_TIMEOUT" default:"30s"`
+	Timeout time.Duration `yaml:"timeout"`
 }
 
 // UploadConfig represents upload-specific configuration
 type UploadConfig struct {
 	// Maximum file size in bytes
-	MaxFileSize int64 `yaml:"max_file_size" env:"UPLOAD_MAX_FILE_SIZE" default:"104857600"` // 100MB
+	MaxFileSize int64 `yaml:"max_file_size"` // 100MB
 
 	// Allowed file extensions
-	AllowedExtensions []string `yaml:"allowed_extensions" env:"UPLOAD_ALLOWED_EXTENSIONS"`
+	AllowedExtensions []string `yaml:"allowed_extensions"`
 
 	// Allowed MIME types
-	AllowedMimeTypes []string `yaml:"allowed_mime_types" env:"UPLOAD_ALLOWED_MIME_TYPES"`
+	AllowedMimeTypes []string `yaml:"allowed_mime_types"`
 
 	// Enable virus scanning
-	VirusScanEnabled bool `yaml:"virus_scan_enabled" env:"UPLOAD_VIRUS_SCAN_ENABLED" default:"false"`
+	VirusScanEnabled bool `yaml:"virus_scan_enabled"`
 
 	// Temporary upload directory
-	TempDir string `yaml:"temp_dir" env:"UPLOAD_TEMP_DIR" default:"/tmp/immich-uploads"`
+	TempDir string `yaml:"temp_dir"`
 
 	// Cleanup temporary files after this duration
-	TempFileCleanup time.Duration `yaml:"temp_file_cleanup" env:"UPLOAD_TEMP_FILE_CLEANUP" default:"1h"`
+	TempFileCleanup time.Duration `yaml:"temp_file_cleanup"`
 }
 
 // StorageError represents a storage-specific error

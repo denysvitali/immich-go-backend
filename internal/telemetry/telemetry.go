@@ -17,23 +17,30 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// Config represents telemetry configuration
+// Config is the telemetry configuration, populated from the `telemetry`
+// section of the YAML document only — config.loadFromEnv has no telemetry
+// entries.
+//
+// Note that the OpenTelemetry SDK reads its own OTEL_* environment variables
+// directly (exporter selection, endpoints, resource attributes). Those are
+// honoured by the SDK regardless of the values here; this struct controls
+// only what this package decides for itself.
 type Config struct {
-	ServiceName    string `yaml:"service_name" env:"OTEL_SERVICE_NAME" default:"immich-go-backend"`
-	ServiceVersion string `yaml:"service_version" env:"OTEL_SERVICE_VERSION" default:"1.0.0"`
-	Environment    string `yaml:"environment" env:"OTEL_ENVIRONMENT" default:"development"`
+	ServiceName    string `yaml:"service_name"`
+	ServiceVersion string `yaml:"service_version"`
+	Environment    string `yaml:"environment"`
 
 	// Tracing configuration
-	TracingEnabled bool `yaml:"tracing_enabled" env:"OTEL_TRACING_ENABLED" default:"true"`
+	TracingEnabled bool `yaml:"tracing_enabled"`
 
 	// Metrics configuration
-	MetricsEnabled bool `yaml:"metrics_enabled" env:"OTEL_METRICS_ENABLED" default:"true"`
+	MetricsEnabled bool `yaml:"metrics_enabled"`
 
 	// Sampling configuration
-	TraceSampleRate float64 `yaml:"trace_sample_rate" env:"OTEL_TRACE_SAMPLE_RATE" default:"1.0"`
+	TraceSampleRate float64 `yaml:"trace_sample_rate"`
 
 	// Resource attributes
-	ResourceAttributes map[string]string `yaml:"resource_attributes" env:"OTEL_RESOURCE_ATTRIBUTES"`
+	ResourceAttributes map[string]string `yaml:"resource_attributes"`
 }
 
 // Provider manages OpenTelemetry providers

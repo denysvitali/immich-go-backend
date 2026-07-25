@@ -13,7 +13,18 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Config represents the application configuration
+// Config is the fully-resolved application configuration.
+//
+// Values come from exactly three sources, in this order:
+//
+//  1. setDefaults, which is the authoritative list of defaults.
+//  2. the YAML document, if a path was given to LoadConfig.
+//  3. loadFromEnv, which is the authoritative list of environment overrides.
+//     Only the variables named in that function have any effect; there is no
+//     reflective tag-based binding.
+//
+// LoadConfig then runs validateConfig, so an invalid combination fails at
+// startup rather than at first use.
 type Config struct {
 	// Server configuration
 	Server ServerConfig `yaml:"server"`
@@ -46,19 +57,19 @@ type Config struct {
 	// WebUIDir is the directory containing a static frontend build (e.g.
 	// the Immich web dist). When empty, the API is exposed directly with
 	// no HTML UI. Set via IMMICH_WEBUI_DIR or `webui_dir` in YAML.
-	WebUIDir string `yaml:"webui_dir" env:"IMMICH_WEBUI_DIR" default:""`
+	WebUIDir string `yaml:"webui_dir"`
 }
 
 // MachineLearningConfig controls the external Immich ML container.
 type MachineLearningConfig struct {
 	// Enabled allows the backend to call the ML service when feature flags permit.
-	Enabled bool `yaml:"enabled" env:"MACHINE_LEARNING_ENABLED" default:"false"`
+	Enabled bool `yaml:"enabled"`
 
 	// URL is the Immich ML base URL (e.g. http://immich-machine-learning:3003).
-	URL string `yaml:"url" env:"MACHINE_LEARNING_URL" default:""`
+	URL string `yaml:"url"`
 
 	// Timeout for each ML HTTP request.
-	Timeout time.Duration `yaml:"timeout" env:"MACHINE_LEARNING_TIMEOUT" default:"60s"`
+	Timeout time.Duration `yaml:"timeout"`
 
 	Clip               ClipMLConfig               `yaml:"clip"`
 	FacialRecognition  FacialRecognitionMLConfig  `yaml:"facial_recognition"`
@@ -67,66 +78,66 @@ type MachineLearningConfig struct {
 
 // ClipMLConfig configures CLIP smart search.
 type ClipMLConfig struct {
-	Enabled     bool    `yaml:"enabled" default:"true"`
-	ModelName   string  `yaml:"model_name" default:"ViT-B-32__openai"`
-	MaxDistance float64 `yaml:"max_distance" default:"0.6"`
+	Enabled     bool    `yaml:"enabled"`
+	ModelName   string  `yaml:"model_name"`
+	MaxDistance float64 `yaml:"max_distance"`
 }
 
 // FacialRecognitionMLConfig configures face detection/recognition.
 type FacialRecognitionMLConfig struct {
-	Enabled     bool    `yaml:"enabled" default:"true"`
-	ModelName   string  `yaml:"model_name" default:"buffalo_l"`
-	MinScore    float64 `yaml:"min_score" default:"0.7"`
-	MaxDistance float64 `yaml:"max_distance" default:"0.5"`
-	MinFaces    int     `yaml:"min_faces" default:"3"`
+	Enabled     bool    `yaml:"enabled"`
+	ModelName   string  `yaml:"model_name"`
+	MinScore    float64 `yaml:"min_score"`
+	MaxDistance float64 `yaml:"max_distance"`
+	MinFaces    int     `yaml:"min_faces"`
 }
 
 // DuplicateDetectionMLConfig configures CLIP-based near-duplicate grouping.
 type DuplicateDetectionMLConfig struct {
-	Enabled     bool    `yaml:"enabled" default:"true"`
-	MaxDistance float64 `yaml:"max_distance" default:"0.01"`
+	Enabled     bool    `yaml:"enabled"`
+	MaxDistance float64 `yaml:"max_distance"`
 }
 
 // ServerConfig represents server configuration
 type ServerConfig struct {
 	// HTTP server address
-	Address string `yaml:"address" env:"SERVER_ADDRESS" default:"0.0.0.0:8080"`
+	Address string `yaml:"address"`
 
 	// gRPC server address
-	GRPCAddress string `yaml:"grpc_address" env:"SERVER_GRPC_ADDRESS" default:"0.0.0.0:9090"`
+	GRPCAddress string `yaml:"grpc_address"`
 
 	// Read timeout
-	ReadTimeout time.Duration `yaml:"read_timeout" env:"SERVER_READ_TIMEOUT" default:"30s"`
+	ReadTimeout time.Duration `yaml:"read_timeout"`
 
 	// Write timeout
-	WriteTimeout time.Duration `yaml:"write_timeout" env:"SERVER_WRITE_TIMEOUT" default:"30s"`
+	WriteTimeout time.Duration `yaml:"write_timeout"`
 
 	// Idle timeout
-	IdleTimeout time.Duration `yaml:"idle_timeout" env:"SERVER_IDLE_TIMEOUT" default:"120s"`
+	IdleTimeout time.Duration `yaml:"idle_timeout"`
 
 	// Shutdown timeout
-	ShutdownTimeout time.Duration `yaml:"shutdown_timeout" env:"SERVER_SHUTDOWN_TIMEOUT" default:"30s"`
+	ShutdownTimeout time.Duration `yaml:"shutdown_timeout"`
 
 	// Enable CORS
-	CORSEnabled bool `yaml:"cors_enabled" env:"SERVER_CORS_ENABLED" default:"true"`
+	CORSEnabled bool `yaml:"cors_enabled"`
 
 	// CORS allowed origins
-	CORSAllowedOrigins []string `yaml:"cors_allowed_origins" env:"SERVER_CORS_ALLOWED_ORIGINS"`
+	CORSAllowedOrigins []string `yaml:"cors_allowed_origins"`
 
 	// Enable request logging
-	RequestLogging bool `yaml:"request_logging" env:"SERVER_REQUEST_LOGGING" default:"true"`
+	RequestLogging bool `yaml:"request_logging"`
 
 	// Enable metrics endpoint
-	MetricsEnabled bool `yaml:"metrics_enabled" env:"SERVER_METRICS_ENABLED" default:"true"`
+	MetricsEnabled bool `yaml:"metrics_enabled"`
 
 	// Metrics endpoint path
-	MetricsPath string `yaml:"metrics_path" env:"SERVER_METRICS_PATH" default:"/metrics"`
+	MetricsPath string `yaml:"metrics_path"`
 
 	// Enable health check endpoint
-	HealthCheckEnabled bool `yaml:"health_check_enabled" env:"SERVER_HEALTH_CHECK_ENABLED" default:"true"`
+	HealthCheckEnabled bool `yaml:"health_check_enabled"`
 
 	// Health check endpoint path
-	HealthCheckPath string `yaml:"health_check_path" env:"SERVER_HEALTH_CHECK_PATH" default:"/health"`
+	HealthCheckPath string `yaml:"health_check_path"`
 
 	// TLS configuration
 	TLS TLSConfig `yaml:"tls"`
@@ -135,80 +146,80 @@ type ServerConfig struct {
 // TLSConfig represents TLS configuration
 type TLSConfig struct {
 	// Enable TLS
-	Enabled bool `yaml:"enabled" env:"TLS_ENABLED" default:"false"`
+	Enabled bool `yaml:"enabled"`
 
 	// Certificate file path
-	CertFile string `yaml:"cert_file" env:"TLS_CERT_FILE"`
+	CertFile string `yaml:"cert_file"`
 
 	// Private key file path
-	KeyFile string `yaml:"key_file" env:"TLS_KEY_FILE"`
+	KeyFile string `yaml:"key_file"`
 
 	// Auto-generate self-signed certificate
-	AutoGenerate bool `yaml:"auto_generate" env:"TLS_AUTO_GENERATE" default:"false"`
+	AutoGenerate bool `yaml:"auto_generate"`
 }
 
 // DatabaseConfig represents database configuration
 type DatabaseConfig struct {
 	// Database URL
-	URL string `yaml:"url" env:"DATABASE_URL" default:"postgres://immich:immich@localhost:5432/immich?sslmode=disable"`
+	URL string `yaml:"url"`
 
 	// Maximum number of open connections
-	MaxOpenConns int `yaml:"max_open_conns" env:"DATABASE_MAX_OPEN_CONNS" default:"25"`
+	MaxOpenConns int `yaml:"max_open_conns"`
 
 	// Maximum number of idle connections
-	MaxIdleConns int `yaml:"max_idle_conns" env:"DATABASE_MAX_IDLE_CONNS" default:"5"`
+	MaxIdleConns int `yaml:"max_idle_conns"`
 
 	// Maximum connection lifetime
-	MaxConnLifetime time.Duration `yaml:"max_conn_lifetime" env:"DATABASE_MAX_CONN_LIFETIME" default:"1h"`
+	MaxConnLifetime time.Duration `yaml:"max_conn_lifetime"`
 
 	// Connection timeout
-	ConnectTimeout time.Duration `yaml:"connect_timeout" env:"DATABASE_CONNECT_TIMEOUT" default:"30s"`
+	ConnectTimeout time.Duration `yaml:"connect_timeout"`
 
 	// Query timeout
-	QueryTimeout time.Duration `yaml:"query_timeout" env:"DATABASE_QUERY_TIMEOUT" default:"30s"`
+	QueryTimeout time.Duration `yaml:"query_timeout"`
 
 	// Enable query logging
-	LogQueries bool `yaml:"log_queries" env:"DATABASE_LOG_QUERIES" default:"false"`
+	LogQueries bool `yaml:"log_queries"`
 
 	// Enable migrations
-	AutoMigrate bool `yaml:"auto_migrate" env:"IMMICH_DATABASE_AUTO_MIGRATE" default:"true"`
+	AutoMigrate bool `yaml:"auto_migrate"`
 }
 
 // AuthConfig represents authentication configuration
 type AuthConfig struct {
 	// JWT secret key
-	JWTSecret string `yaml:"jwt_secret" env:"AUTH_JWT_SECRET"`
+	JWTSecret string `yaml:"jwt_secret"`
 
 	// JWT token expiry
-	JWTExpiry time.Duration `yaml:"jwt_expiry" env:"AUTH_JWT_EXPIRY" default:"24h"`
+	JWTExpiry time.Duration `yaml:"jwt_expiry"`
 
 	// JWT refresh token expiry
-	JWTRefreshExpiry time.Duration `yaml:"jwt_refresh_expiry" env:"AUTH_JWT_REFRESH_EXPIRY" default:"168h"` // 7 days
+	JWTRefreshExpiry time.Duration `yaml:"jwt_refresh_expiry"` // 7 days
 
 	// JWT issuer
-	JWTIssuer string `yaml:"jwt_issuer" env:"AUTH_JWT_ISSUER" default:"immich-go-backend"`
+	JWTIssuer string `yaml:"jwt_issuer"`
 
 	// Enable user registration
-	RegistrationEnabled bool `yaml:"registration_enabled" env:"AUTH_REGISTRATION_ENABLED" default:"true"`
+	RegistrationEnabled bool `yaml:"registration_enabled"`
 
 	// Require email verification
-	EmailVerificationRequired bool `yaml:"email_verification_required" env:"AUTH_EMAIL_VERIFICATION_REQUIRED" default:"false"`
+	EmailVerificationRequired bool `yaml:"email_verification_required"`
 
 	// Password minimum length
-	PasswordMinLength int `yaml:"password_min_length" env:"AUTH_PASSWORD_MIN_LENGTH" default:"8"`
+	PasswordMinLength int `yaml:"password_min_length"`
 
 	// Password complexity requirements
-	PasswordRequireUppercase bool `yaml:"password_require_uppercase" env:"AUTH_PASSWORD_REQUIRE_UPPERCASE" default:"false"`
-	PasswordRequireLowercase bool `yaml:"password_require_lowercase" env:"AUTH_PASSWORD_REQUIRE_LOWERCASE" default:"false"`
-	PasswordRequireNumbers   bool `yaml:"password_require_numbers" env:"AUTH_PASSWORD_REQUIRE_NUMBERS" default:"false"`
-	PasswordRequireSymbols   bool `yaml:"password_require_symbols" env:"AUTH_PASSWORD_REQUIRE_SYMBOLS" default:"false"`
+	PasswordRequireUppercase bool `yaml:"password_require_uppercase"`
+	PasswordRequireLowercase bool `yaml:"password_require_lowercase"`
+	PasswordRequireNumbers   bool `yaml:"password_require_numbers"`
+	PasswordRequireSymbols   bool `yaml:"password_require_symbols"`
 
 	// Session configuration
-	SessionTimeout time.Duration `yaml:"session_timeout" env:"AUTH_SESSION_TIMEOUT" default:"24h"`
+	SessionTimeout time.Duration `yaml:"session_timeout"`
 
 	// Rate limiting
-	LoginRateLimit  int           `yaml:"login_rate_limit" env:"AUTH_LOGIN_RATE_LIMIT" default:"5"`
-	LoginRateWindow time.Duration `yaml:"login_rate_window" env:"AUTH_LOGIN_RATE_WINDOW" default:"15m"`
+	LoginRateLimit  int           `yaml:"login_rate_limit"`
+	LoginRateWindow time.Duration `yaml:"login_rate_window"`
 
 	// OAuth configuration
 	OAuth OAuthConfig `yaml:"oauth"`
@@ -217,7 +228,7 @@ type AuthConfig struct {
 // OAuthConfig represents OAuth configuration
 type OAuthConfig struct {
 	// Enable OAuth
-	Enabled bool `yaml:"enabled" env:"OAUTH_ENABLED" default:"false"`
+	Enabled bool `yaml:"enabled"`
 
 	// Google OAuth
 	Google OAuthProviderConfig `yaml:"google"`
@@ -232,108 +243,108 @@ type OAuthConfig struct {
 // OAuthProviderConfig represents OAuth provider configuration
 type OAuthProviderConfig struct {
 	// Enable this provider
-	Enabled bool `yaml:"enabled" env:"OAUTH_{PROVIDER}_ENABLED" default:"false"`
+	Enabled bool `yaml:"enabled"`
 
 	// Client ID
-	ClientID string `yaml:"client_id" env:"OAUTH_{PROVIDER}_CLIENT_ID"`
+	ClientID string `yaml:"client_id"`
 
 	// Client secret
-	ClientSecret string `yaml:"client_secret" env:"OAUTH_{PROVIDER}_CLIENT_SECRET"`
+	ClientSecret string `yaml:"client_secret"`
 
 	// Redirect URL
-	RedirectURL string `yaml:"redirect_url" env:"OAUTH_{PROVIDER}_REDIRECT_URL"`
+	RedirectURL string `yaml:"redirect_url"`
 
 	// Scopes
-	Scopes []string `yaml:"scopes" env:"OAUTH_{PROVIDER}_SCOPES"`
+	Scopes []string `yaml:"scopes"`
 }
 
 // JobsConfig represents job queue configuration
 type JobsConfig struct {
 	// Enable job processing
-	Enabled bool `yaml:"enabled" env:"JOBS_ENABLED" default:"true"`
+	Enabled bool `yaml:"enabled"`
 
 	// Redis URL for job queue
-	RedisURL string `yaml:"redis_url" env:"JOBS_REDIS_URL" default:"redis://localhost:6379/0"`
+	RedisURL string `yaml:"redis_url"`
 
 	// Number of worker goroutines
-	Workers int `yaml:"workers" env:"JOBS_WORKERS" default:"4"`
+	Workers int `yaml:"workers"`
 
 	// Job retry attempts
-	RetryMaxRetries int `yaml:"retry_max_retries" env:"IMMICH_JOBS_RETRY_MAX_RETRIES" default:"10"`
+	RetryMaxRetries int `yaml:"retry_max_retries"`
 
 	// Job timeout
-	JobTimeout time.Duration `yaml:"job_timeout" env:"JOBS_JOB_TIMEOUT" default:"30m"`
+	JobTimeout time.Duration `yaml:"job_timeout"`
 
 	// Queue names and priorities
-	Queues map[string]int `yaml:"queues" env:"JOBS_QUEUES"`
+	Queues map[string]int `yaml:"queues"`
 
 	// Cleanup configuration
-	CleanupEnabled  bool          `yaml:"cleanup_enabled" env:"JOBS_CLEANUP_ENABLED" default:"true"`
-	CleanupInterval time.Duration `yaml:"cleanup_interval" env:"JOBS_CLEANUP_INTERVAL" default:"1h"`
-	RetentionPeriod time.Duration `yaml:"retention_period" env:"JOBS_RETENTION_PERIOD" default:"168h"` // 7 days
+	CleanupEnabled  bool          `yaml:"cleanup_enabled"`
+	CleanupInterval time.Duration `yaml:"cleanup_interval"`
+	RetentionPeriod time.Duration `yaml:"retention_period"` // 7 days
 }
 
 // LoggingConfig represents logging configuration
 type LoggingConfig struct {
 	// Log level (debug, info, warn, error)
-	Level string `yaml:"level" env:"LOG_LEVEL" default:"info"`
+	Level string `yaml:"level"`
 
 	// Log format (json, text)
-	Format string `yaml:"format" env:"LOG_FORMAT" default:"json"`
+	Format string `yaml:"format"`
 
 	// Log output (stdout, stderr, file)
-	Output string `yaml:"output" env:"LOG_OUTPUT" default:"stdout"`
+	Output string `yaml:"output"`
 
 	// Log file path (when output is file)
-	FilePath string `yaml:"file_path" env:"LOG_FILE_PATH" default:"./logs/immich.log"`
+	FilePath string `yaml:"file_path"`
 
 	// Enable log rotation
-	RotationEnabled bool `yaml:"rotation_enabled" env:"LOG_ROTATION_ENABLED" default:"true"`
+	RotationEnabled bool `yaml:"rotation_enabled"`
 
 	// Maximum log file size
-	MaxSize int `yaml:"max_size" env:"LOG_MAX_SIZE" default:"100"` // MB
+	MaxSize int `yaml:"max_size"` // MB
 
 	// Maximum number of old log files
-	MaxBackups int `yaml:"max_backups" env:"LOG_MAX_BACKUPS" default:"3"`
+	MaxBackups int `yaml:"max_backups"`
 
 	// Maximum age of log files
-	MaxAge int `yaml:"max_age" env:"LOG_MAX_AGE" default:"28"` // days
+	MaxAge int `yaml:"max_age"` // days
 
 	// Compress old log files
-	Compress bool `yaml:"compress" env:"LOG_COMPRESS" default:"true"`
+	Compress bool `yaml:"compress"`
 }
 
 // FeatureConfig represents feature flags
 type FeatureConfig struct {
 	// Enable machine learning features
-	MachineLearningEnabled bool `yaml:"machine_learning_enabled" env:"FEATURE_MACHINE_LEARNING_ENABLED" default:"false"`
+	MachineLearningEnabled bool `yaml:"machine_learning_enabled"`
 
 	// Enable face recognition
-	FaceRecognitionEnabled bool `yaml:"face_recognition_enabled" env:"FEATURE_FACE_RECOGNITION_ENABLED" default:"false"`
+	FaceRecognitionEnabled bool `yaml:"face_recognition_enabled"`
 
 	// Enable object detection
-	ObjectDetectionEnabled bool `yaml:"object_detection_enabled" env:"FEATURE_OBJECT_DETECTION_ENABLED" default:"false"`
+	ObjectDetectionEnabled bool `yaml:"object_detection_enabled"`
 
 	// Enable CLIP search
-	CLIPSearchEnabled bool `yaml:"clip_search_enabled" env:"FEATURE_CLIP_SEARCH_ENABLED" default:"false"`
+	CLIPSearchEnabled bool `yaml:"clip_search_enabled"`
 
 	// Enable video transcoding
-	VideoTranscodingEnabled bool `yaml:"video_transcoding_enabled" env:"FEATURE_VIDEO_TRANSCODING_ENABLED" default:"false"`
+	VideoTranscodingEnabled bool `yaml:"video_transcoding_enabled"`
 
 	// Enable thumbnail generation
-	ThumbnailGenerationEnabled bool `yaml:"thumbnail_generation_enabled" env:"FEATURE_THUMBNAIL_GENERATION_ENABLED" default:"true"`
+	ThumbnailGenerationEnabled bool `yaml:"thumbnail_generation_enabled"`
 
 	// Enable EXIF extraction
-	EXIFExtractionEnabled bool `yaml:"exif_extraction_enabled" env:"FEATURE_EXIF_EXTRACTION_ENABLED" default:"true"`
+	EXIFExtractionEnabled bool `yaml:"exif_extraction_enabled"`
 
 	// Enable duplicate detection
-	DuplicateDetectionEnabled bool `yaml:"duplicate_detection_enabled" env:"FEATURE_DUPLICATE_DETECTION_ENABLED" default:"false"`
+	DuplicateDetectionEnabled bool `yaml:"duplicate_detection_enabled"`
 
 	// Enable backup/sync
-	BackupSyncEnabled bool `yaml:"backup_sync_enabled" env:"FEATURE_BACKUP_SYNC_ENABLED" default:"true"`
+	BackupSyncEnabled bool `yaml:"backup_sync_enabled"`
 
 	// Enable sharing
-	SharingEnabled bool `yaml:"sharing_enabled" env:"FEATURE_SHARING_ENABLED" default:"true"`
+	SharingEnabled bool `yaml:"sharing_enabled"`
 }
 
 // LoadConfig loads configuration from file and environment variables
