@@ -224,162 +224,29 @@ func formatQuota(quota *int64) string {
 
 // applyProtoToSystemConfig copies the fields representable in the proto DTO
 // onto the full configuration document. Sections absent from the proto keep
-// their current values.
+// their current values, which is what makes the web UI's partial updates work.
+//
+// Each section is applied by its own function below; they nil-check their own
+// argument so this stays a checklist.
 func applyProtoToSystemConfig(cfg *systemconfig.Dto, req *immichv1.SystemConfigDto) {
 	if req == nil {
 		return
 	}
-	if f := req.Ffmpeg; f != nil {
-		if v, err := strconv.Atoi(f.Crf); err == nil {
-			cfg.FFmpeg.CRF = v
-		}
-		if v, err := strconv.Atoi(f.Threads); err == nil {
-			cfg.FFmpeg.Threads = v
-		}
-		if f.Preset != "" {
-			cfg.FFmpeg.Preset = f.Preset
-		}
-		if f.TargetVideoCodec != "" {
-			cfg.FFmpeg.TargetVideoCodec = f.TargetVideoCodec
-		}
-		if f.AcceptedVideoCodecs != "" {
-			cfg.FFmpeg.AcceptedVideoCodecs = strings.Split(f.AcceptedVideoCodecs, ",")
-		}
-		if f.TargetAudioCodec != "" {
-			cfg.FFmpeg.TargetAudioCodec = f.TargetAudioCodec
-		}
-		if f.AcceptedAudioCodecs != "" {
-			cfg.FFmpeg.AcceptedAudioCodecs = strings.Split(f.AcceptedAudioCodecs, ",")
-		}
-		if f.TargetResolution != "" {
-			cfg.FFmpeg.TargetResolution = f.TargetResolution
-		}
-		if f.MaxBitrate != "" {
-			cfg.FFmpeg.MaxBitrate = f.MaxBitrate
-		}
-		if f.CqMode != "" {
-			cfg.FFmpeg.CQMode = f.CqMode
-		}
-		if f.PreferredHwDevice != "" {
-			cfg.FFmpeg.PreferredHwDevice = f.PreferredHwDevice
-		}
-		if f.Transcode != "" {
-			cfg.FFmpeg.Transcode = f.Transcode
-		}
-		if f.Tonemap != "" {
-			cfg.FFmpeg.Tonemap = f.Tonemap
-		}
-	}
-	if j := req.Job; j != nil {
-		setConcurrency := func(dst *systemconfig.JobSettingsDto, v int32) {
-			if v > 0 {
-				dst.Concurrency = int(v)
-			}
-		}
-		setConcurrency(&cfg.Job.BackgroundTask, j.BackgroundTaskConcurrency)
-		setConcurrency(&cfg.Job.SmartSearch, j.SmartSearchConcurrency)
-		setConcurrency(&cfg.Job.MetadataExtraction, j.MetadataExtractionConcurrency)
-		setConcurrency(&cfg.Job.FaceDetection, j.FaceDetectionConcurrency)
-		setConcurrency(&cfg.Job.Search, j.SearchConcurrency)
-		setConcurrency(&cfg.Job.Sidecar, j.SidecarConcurrency)
-		setConcurrency(&cfg.Job.Library, j.LibraryConcurrency)
-		setConcurrency(&cfg.Job.Migration, j.MigrationConcurrency)
-		setConcurrency(&cfg.Job.ThumbnailGeneration, j.ThumbnailGenerationConcurrency)
-		setConcurrency(&cfg.Job.VideoConversion, j.VideoConversionConcurrency)
-	}
-	if l := req.Library; l != nil {
-		if l.Scan != nil {
-			cfg.Library.Scan.Enabled = l.Scan.Enabled
-			if l.Scan.CronExpression != "" {
-				cfg.Library.Scan.CronExpression = l.Scan.CronExpression
-			}
-		}
-		if l.Watch != nil {
-			cfg.Library.Watch.Enabled = l.Watch.Enabled
-		}
-	}
-	if l := req.Logging; l != nil {
-		cfg.Logging.Enabled = l.Enabled
-		if l.Level != "" {
-			cfg.Logging.Level = l.Level
-		}
-	}
-	if ml := req.MachineLearning; ml != nil {
-		cfg.MachineLearning.Enabled = ml.Enabled
-		if ml.Url != "" {
-			cfg.MachineLearning.URLs = strings.Split(ml.Url, ",")
-		}
-		if ml.Clip != nil {
-			cfg.MachineLearning.Clip.Enabled = ml.Clip.Enabled
-			if ml.Clip.ModelName != "" {
-				cfg.MachineLearning.Clip.ModelName = ml.Clip.ModelName
-			}
-		}
-		if ml.DuplicateDetection != nil {
-			cfg.MachineLearning.DuplicateDetection.Enabled = ml.DuplicateDetection.Enabled
-			if ml.DuplicateDetection.MaxDistance > 0 {
-				cfg.MachineLearning.DuplicateDetection.MaxDistance = float64(ml.DuplicateDetection.MaxDistance) / 100
-			}
-		}
-		if fr := ml.FacialRecognition; fr != nil {
-			cfg.MachineLearning.FacialRecognition.Enabled = fr.Enabled
-			if fr.ModelName != "" {
-				cfg.MachineLearning.FacialRecognition.ModelName = fr.ModelName
-			}
-			if fr.MinScore > 0 {
-				cfg.MachineLearning.FacialRecognition.MinScore = float64(fr.MinScore) / 100
-			}
-			if fr.MaxDistance > 0 {
-				cfg.MachineLearning.FacialRecognition.MaxDistance = float64(fr.MaxDistance) / 100
-			}
-			if fr.MinFaces > 0 {
-				cfg.MachineLearning.FacialRecognition.MinFaces = int(fr.MinFaces)
-			}
-		}
-	}
-	if m := req.Map; m != nil {
-		cfg.Map.Enabled = m.Enabled
-		if m.LightStyle != "" {
-			cfg.Map.LightStyle = m.LightStyle
-		}
-		if m.DarkStyle != "" {
-			cfg.Map.DarkStyle = m.DarkStyle
-		}
-	}
+
+	applyFFmpegConfig(&cfg.FFmpeg, req.Ffmpeg)
+	applyJobConfig(&cfg.Job, req.Job)
+	applyLibraryConfig(&cfg.Library, req.Library)
+	applyLoggingConfig(&cfg.Logging, req.Logging)
+	applyMachineLearningConfig(&cfg.MachineLearning, req.MachineLearning)
+	applyMapConfig(&cfg.Map, req.Map)
+	applyNotificationsConfig(&cfg.Notifications, req.Notifications)
+	applyOAuthConfig(&cfg.OAuth, req.Oauth)
+	applyServerConfig(&cfg.Server, req.Server)
+	applyStorageTemplateConfig(&cfg.StorageTemplate, req.StorageTemplate)
+	applyTrashConfig(&cfg.Trash, req.Trash)
+
 	if v := req.NewVersionCheck; v != nil {
 		cfg.NewVersionCheck.Enabled = v.Enabled
-	}
-	if n := req.Notifications; n != nil && n.Smtp != nil {
-		cfg.Notifications.SMTP.Enabled = n.Smtp.Enabled
-		cfg.Notifications.SMTP.From = n.Smtp.From
-		cfg.Notifications.SMTP.ReplyTo = n.Smtp.ReplyTo
-		if t := n.Smtp.Transport; t != nil {
-			cfg.Notifications.SMTP.Transport.Host = t.Host
-			cfg.Notifications.SMTP.Transport.Port = int(t.Port)
-			cfg.Notifications.SMTP.Transport.Username = t.Username
-			cfg.Notifications.SMTP.Transport.Password = t.Password
-			cfg.Notifications.SMTP.Transport.IgnoreCert = t.IgnoreCert
-			cfg.Notifications.SMTP.Transport.Secure = t.Secure
-		}
-	}
-	if o := req.Oauth; o != nil {
-		cfg.OAuth.Enabled = o.Enabled
-		cfg.OAuth.IssuerURL = o.IssuerUrl
-		cfg.OAuth.ClientID = o.ClientId
-		cfg.OAuth.ClientSecret = o.ClientSecret
-		cfg.OAuth.Scope = o.Scope
-		cfg.OAuth.StorageLabelClaim = o.StorageLabelClaim
-		cfg.OAuth.StorageQuotaClaim = o.StorageQuotaClaim
-		cfg.OAuth.AutoRegister = o.AutoRegister
-		cfg.OAuth.AutoLaunch = o.AutoLaunch
-		cfg.OAuth.ButtonText = o.ButtonText
-		cfg.OAuth.MobileOverrideEnabled = o.MobileOverrideEnabled
-		cfg.OAuth.MobileRedirectURI = o.MobileRedirectUri
-		if o.DefaultStorageQuota != "" {
-			if v, err := strconv.ParseInt(o.DefaultStorageQuota, 10, 64); err == nil {
-				cfg.OAuth.DefaultStorageQuota = &v
-			}
-		}
 	}
 	if p := req.PasswordLogin; p != nil {
 		cfg.PasswordLogin.Enabled = p.Enabled
@@ -387,29 +254,223 @@ func applyProtoToSystemConfig(cfg *systemconfig.Dto, req *immichv1.SystemConfigD
 	if r := req.ReverseGeocoding; r != nil {
 		cfg.ReverseGeocoding.Enabled = r.Enabled
 	}
-	if sv := req.Server; sv != nil {
-		cfg.Server.ExternalDomain = sv.ExternalDomain
-		cfg.Server.LoginPageMessage = sv.LoginPageMessage
-	}
-	if st := req.StorageTemplate; st != nil {
-		cfg.StorageTemplate.Enabled = st.Enabled
-		cfg.StorageTemplate.HashVerificationEnabled = st.HashVerificationEnabled
-		if st.Template != "" {
-			cfg.StorageTemplate.Template = st.Template
-		}
-	}
 	if t := req.Theme; t != nil {
 		cfg.Theme.CustomCSS = t.CustomCss
 	}
-	if t := req.Trash; t != nil {
-		cfg.Trash.Enabled = t.Enabled
-		if t.Days > 0 {
-			cfg.Trash.Days = int(t.Days)
+	if u := req.User; u != nil && u.DeleteDelay > 0 {
+		cfg.User.DeleteDelay = int(u.DeleteDelay)
+	}
+}
+
+// setIfNotEmpty assigns v to *dst unless v is empty. An empty string in the
+// proto means "field not sent", so it must not clear the stored value.
+func setIfNotEmpty(dst *string, v string) {
+	if v != "" {
+		*dst = v
+	}
+}
+
+// setListIfNotEmpty assigns the comma-separated members of v to *dst unless v
+// is empty. The proto models these lists as one comma-joined string.
+func setListIfNotEmpty(dst *[]string, v string) {
+	if v != "" {
+		*dst = strings.Split(v, ",")
+	}
+}
+
+func applyFFmpegConfig(cfg *systemconfig.FFmpegDto, dto *immichv1.SystemConfigFFmpegDto) {
+	if dto == nil {
+		return
+	}
+
+	// CRF and Threads are strings in the proto; an unparseable value is
+	// ignored rather than rejected, matching the previous behaviour.
+	if v, err := strconv.Atoi(dto.Crf); err == nil {
+		cfg.CRF = v
+	}
+	if v, err := strconv.Atoi(dto.Threads); err == nil {
+		cfg.Threads = v
+	}
+
+	setIfNotEmpty(&cfg.Preset, dto.Preset)
+	setIfNotEmpty(&cfg.TargetVideoCodec, dto.TargetVideoCodec)
+	setIfNotEmpty(&cfg.TargetAudioCodec, dto.TargetAudioCodec)
+	setIfNotEmpty(&cfg.TargetResolution, dto.TargetResolution)
+	setIfNotEmpty(&cfg.MaxBitrate, dto.MaxBitrate)
+	setIfNotEmpty(&cfg.CQMode, dto.CqMode)
+	setIfNotEmpty(&cfg.PreferredHwDevice, dto.PreferredHwDevice)
+	setIfNotEmpty(&cfg.Transcode, dto.Transcode)
+	setIfNotEmpty(&cfg.Tonemap, dto.Tonemap)
+	setListIfNotEmpty(&cfg.AcceptedVideoCodecs, dto.AcceptedVideoCodecs)
+	setListIfNotEmpty(&cfg.AcceptedAudioCodecs, dto.AcceptedAudioCodecs)
+}
+
+func applyJobConfig(cfg *systemconfig.JobDto, dto *immichv1.SystemConfigJobDto) {
+	if dto == nil {
+		return
+	}
+
+	// Zero means "not sent"; a queue's concurrency is never legitimately 0.
+	setConcurrency := func(dst *systemconfig.JobSettingsDto, v int32) {
+		if v > 0 {
+			dst.Concurrency = int(v)
 		}
 	}
-	if u := req.User; u != nil {
-		if u.DeleteDelay > 0 {
-			cfg.User.DeleteDelay = int(u.DeleteDelay)
+
+	setConcurrency(&cfg.BackgroundTask, dto.BackgroundTaskConcurrency)
+	setConcurrency(&cfg.SmartSearch, dto.SmartSearchConcurrency)
+	setConcurrency(&cfg.MetadataExtraction, dto.MetadataExtractionConcurrency)
+	setConcurrency(&cfg.FaceDetection, dto.FaceDetectionConcurrency)
+	setConcurrency(&cfg.Search, dto.SearchConcurrency)
+	setConcurrency(&cfg.Sidecar, dto.SidecarConcurrency)
+	setConcurrency(&cfg.Library, dto.LibraryConcurrency)
+	setConcurrency(&cfg.Migration, dto.MigrationConcurrency)
+	setConcurrency(&cfg.ThumbnailGeneration, dto.ThumbnailGenerationConcurrency)
+	setConcurrency(&cfg.VideoConversion, dto.VideoConversionConcurrency)
+}
+
+func applyLibraryConfig(cfg *systemconfig.LibraryDto, dto *immichv1.SystemConfigLibraryDto) {
+	if dto == nil {
+		return
+	}
+
+	if dto.Scan != nil {
+		cfg.Scan.Enabled = dto.Scan.Enabled
+		setIfNotEmpty(&cfg.Scan.CronExpression, dto.Scan.CronExpression)
+	}
+	if dto.Watch != nil {
+		cfg.Watch.Enabled = dto.Watch.Enabled
+	}
+}
+
+func applyLoggingConfig(cfg *systemconfig.LoggingDto, dto *immichv1.SystemConfigLoggingDto) {
+	if dto == nil {
+		return
+	}
+
+	cfg.Enabled = dto.Enabled
+	setIfNotEmpty(&cfg.Level, dto.Level)
+}
+
+func applyMachineLearningConfig(cfg *systemconfig.MachineLearningDto, dto *immichv1.SystemConfigMachineLearningDto) {
+	if dto == nil {
+		return
+	}
+
+	cfg.Enabled = dto.Enabled
+	setListIfNotEmpty(&cfg.URLs, dto.Url)
+
+	if clip := dto.Clip; clip != nil {
+		cfg.Clip.Enabled = clip.Enabled
+		setIfNotEmpty(&cfg.Clip.ModelName, clip.ModelName)
+	}
+	if dd := dto.DuplicateDetection; dd != nil {
+		cfg.DuplicateDetection.Enabled = dd.Enabled
+		// The proto carries distances as percentages; the document stores
+		// them as fractions.
+		if dd.MaxDistance > 0 {
+			cfg.DuplicateDetection.MaxDistance = float64(dd.MaxDistance) / 100
 		}
+	}
+	if fr := dto.FacialRecognition; fr != nil {
+		cfg.FacialRecognition.Enabled = fr.Enabled
+		setIfNotEmpty(&cfg.FacialRecognition.ModelName, fr.ModelName)
+		if fr.MinScore > 0 {
+			cfg.FacialRecognition.MinScore = float64(fr.MinScore) / 100
+		}
+		if fr.MaxDistance > 0 {
+			cfg.FacialRecognition.MaxDistance = float64(fr.MaxDistance) / 100
+		}
+		if fr.MinFaces > 0 {
+			cfg.FacialRecognition.MinFaces = int(fr.MinFaces)
+		}
+	}
+}
+
+func applyMapConfig(cfg *systemconfig.MapDto, dto *immichv1.SystemConfigMapDto) {
+	if dto == nil {
+		return
+	}
+
+	cfg.Enabled = dto.Enabled
+	setIfNotEmpty(&cfg.LightStyle, dto.LightStyle)
+	setIfNotEmpty(&cfg.DarkStyle, dto.DarkStyle)
+}
+
+func applyNotificationsConfig(cfg *systemconfig.NotificationsDto, dto *immichv1.SystemConfigNotificationsDto) {
+	if dto == nil || dto.Smtp == nil {
+		return
+	}
+
+	// SMTP credentials are replaced wholesale, not merged: an empty username
+	// or password is a legitimate way to clear them.
+	cfg.SMTP.Enabled = dto.Smtp.Enabled
+	cfg.SMTP.From = dto.Smtp.From
+	cfg.SMTP.ReplyTo = dto.Smtp.ReplyTo
+
+	if t := dto.Smtp.Transport; t != nil {
+		cfg.SMTP.Transport.Host = t.Host
+		cfg.SMTP.Transport.Port = int(t.Port)
+		cfg.SMTP.Transport.Username = t.Username
+		cfg.SMTP.Transport.Password = t.Password
+		cfg.SMTP.Transport.IgnoreCert = t.IgnoreCert
+		cfg.SMTP.Transport.Secure = t.Secure
+	}
+}
+
+func applyOAuthConfig(cfg *systemconfig.OAuthDto, dto *immichv1.SystemConfigOAuthDto) {
+	if dto == nil {
+		return
+	}
+
+	// Every field is replaced wholesale: clearing the client secret or the
+	// issuer URL is how an admin disables an OAuth provider from the UI.
+	cfg.Enabled = dto.Enabled
+	cfg.IssuerURL = dto.IssuerUrl
+	cfg.ClientID = dto.ClientId
+	cfg.ClientSecret = dto.ClientSecret
+	cfg.Scope = dto.Scope
+	cfg.StorageLabelClaim = dto.StorageLabelClaim
+	cfg.StorageQuotaClaim = dto.StorageQuotaClaim
+	cfg.AutoRegister = dto.AutoRegister
+	cfg.AutoLaunch = dto.AutoLaunch
+	cfg.ButtonText = dto.ButtonText
+	cfg.MobileOverrideEnabled = dto.MobileOverrideEnabled
+	cfg.MobileRedirectURI = dto.MobileRedirectUri
+
+	if dto.DefaultStorageQuota != "" {
+		if v, err := strconv.ParseInt(dto.DefaultStorageQuota, 10, 64); err == nil {
+			cfg.DefaultStorageQuota = &v
+		}
+	}
+}
+
+func applyServerConfig(cfg *systemconfig.ServerDto, dto *immichv1.SystemConfigServerDto) {
+	if dto == nil {
+		return
+	}
+
+	cfg.ExternalDomain = dto.ExternalDomain
+	cfg.LoginPageMessage = dto.LoginPageMessage
+}
+
+func applyStorageTemplateConfig(cfg *systemconfig.StorageTemplateDto, dto *immichv1.SystemConfigStorageTemplateDto) {
+	if dto == nil {
+		return
+	}
+
+	cfg.Enabled = dto.Enabled
+	cfg.HashVerificationEnabled = dto.HashVerificationEnabled
+	setIfNotEmpty(&cfg.Template, dto.Template)
+}
+
+func applyTrashConfig(cfg *systemconfig.TrashDto, dto *immichv1.SystemConfigTrashDto) {
+	if dto == nil {
+		return
+	}
+
+	cfg.Enabled = dto.Enabled
+	if dto.Days > 0 {
+		cfg.Days = int(dto.Days)
 	}
 }
