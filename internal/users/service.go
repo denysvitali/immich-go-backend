@@ -35,38 +35,24 @@ type Service struct {
 
 // NewService creates a new user management service
 func NewService(queries *sqlc.Queries, cfg *config.Config) (*Service, error) {
-	meter := telemetry.GetMeter()
-
-	userCounter, err := meter.Int64UpDownCounter(
-		"users_total",
-		metric.WithDescription("Total number of users in the system"),
-	)
+	metrics, err := telemetry.NewServiceMetrics(telemetry.ServiceMetricNames{
+		Operations:            "user_operations_total",
+		OperationsDescription: "Total number of user operations",
+		Duration:              "user_operation_duration_seconds",
+		DurationDescription:   "Time spent on user operations",
+		Items:                 "users_total",
+		ItemsDescription:      "Total number of users in the system",
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create user counter: %w", err)
-	}
-
-	operationCounter, err := meter.Int64Counter(
-		"user_operations_total",
-		metric.WithDescription("Total number of user operations"),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create operation counter: %w", err)
-	}
-
-	operationDuration, err := meter.Float64Histogram(
-		"user_operation_duration_seconds",
-		metric.WithDescription("Time spent on user operations"),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create operation duration histogram: %w", err)
+		return nil, err
 	}
 
 	return &Service{
 		db:                queries,
 		config:            cfg,
-		userCounter:       userCounter,
-		operationCounter:  operationCounter,
-		operationDuration: operationDuration,
+		userCounter:       metrics.Items,
+		operationCounter:  metrics.Operations,
+		operationDuration: metrics.Duration,
 	}, nil
 }
 

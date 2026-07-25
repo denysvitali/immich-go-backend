@@ -30,38 +30,24 @@ type Service struct {
 
 // NewService creates a new faces service
 func NewService(queries *sqlc.Queries, cfg *config.Config) (*Service, error) {
-	meter := telemetry.GetMeter()
-
-	faceCounter, err := meter.Int64UpDownCounter(
-		"faces_total",
-		metric.WithDescription("Total number of faces in the system"),
-	)
+	metrics, err := telemetry.NewServiceMetrics(telemetry.ServiceMetricNames{
+		Operations:            "face_operations_total",
+		OperationsDescription: "Total number of face operations",
+		Duration:              "face_operation_duration_seconds",
+		DurationDescription:   "Time spent on face operations",
+		Items:                 "faces_total",
+		ItemsDescription:      "Total number of faces in the system",
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create face counter: %w", err)
-	}
-
-	operationCounter, err := meter.Int64Counter(
-		"face_operations_total",
-		metric.WithDescription("Total number of face operations"),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create operation counter: %w", err)
-	}
-
-	operationDuration, err := meter.Float64Histogram(
-		"face_operation_duration_seconds",
-		metric.WithDescription("Time spent on face operations"),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create operation duration histogram: %w", err)
+		return nil, err
 	}
 
 	return &Service{
 		db:                queries,
 		config:            cfg,
-		faceCounter:       faceCounter,
-		operationCounter:  operationCounter,
-		operationDuration: operationDuration,
+		faceCounter:       metrics.Items,
+		operationCounter:  metrics.Operations,
+		operationDuration: metrics.Duration,
 	}, nil
 }
 

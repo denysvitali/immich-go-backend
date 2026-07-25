@@ -30,38 +30,24 @@ type Service struct {
 
 // NewService creates a new stack service
 func NewService(queries *sqlc.Queries, cfg *config.Config) (*Service, error) {
-	meter := telemetry.GetMeter()
-
-	stackCounter, err := meter.Int64UpDownCounter(
-		"stacks_total",
-		metric.WithDescription("Total number of stacks in the system"),
-	)
+	metrics, err := telemetry.NewServiceMetrics(telemetry.ServiceMetricNames{
+		Operations:            "stack_operations_total",
+		OperationsDescription: "Total number of stack operations",
+		Duration:              "stack_operation_duration_seconds",
+		DurationDescription:   "Time spent on stack operations",
+		Items:                 "stacks_total",
+		ItemsDescription:      "Total number of stacks in the system",
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create stack counter: %w", err)
-	}
-
-	operationCounter, err := meter.Int64Counter(
-		"stack_operations_total",
-		metric.WithDescription("Total number of stack operations"),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create operation counter: %w", err)
-	}
-
-	operationDuration, err := meter.Float64Histogram(
-		"stack_operation_duration_seconds",
-		metric.WithDescription("Time spent on stack operations"),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create operation duration histogram: %w", err)
+		return nil, err
 	}
 
 	return &Service{
 		db:                queries,
 		config:            cfg,
-		stackCounter:      stackCounter,
-		operationCounter:  operationCounter,
-		operationDuration: operationDuration,
+		stackCounter:      metrics.Items,
+		operationCounter:  metrics.Operations,
+		operationDuration: metrics.Duration,
 	}, nil
 }
 

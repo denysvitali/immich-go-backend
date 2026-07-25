@@ -31,38 +31,24 @@ type Service struct {
 
 // NewService creates a new duplicates service
 func NewService(queries *sqlc.Queries, cfg *config.Config) (*Service, error) {
-	meter := telemetry.GetMeter()
-
-	operationCounter, err := meter.Int64Counter(
-		"duplicates_operations_total",
-		metric.WithDescription("Total number of duplicates operations"),
-	)
+	metrics, err := telemetry.NewServiceMetrics(telemetry.ServiceMetricNames{
+		Operations:            "duplicates_operations_total",
+		OperationsDescription: "Total number of duplicates operations",
+		Duration:              "duplicates_operation_duration_seconds",
+		DurationDescription:   "Time spent on duplicates operations",
+		Items:                 "duplicates_found_total",
+		ItemsDescription:      "Total number of duplicate assets found",
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create operation counter: %w", err)
-	}
-
-	operationDuration, err := meter.Float64Histogram(
-		"duplicates_operation_duration_seconds",
-		metric.WithDescription("Time spent on duplicates operations"),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create operation duration histogram: %w", err)
-	}
-
-	duplicatesFound, err := meter.Int64UpDownCounter(
-		"duplicates_found_total",
-		metric.WithDescription("Total number of duplicate assets found"),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create duplicates found counter: %w", err)
+		return nil, err
 	}
 
 	return &Service{
 		db:                queries,
 		config:            cfg,
-		operationCounter:  operationCounter,
-		operationDuration: operationDuration,
-		duplicatesFound:   duplicatesFound,
+		operationCounter:  metrics.Operations,
+		operationDuration: metrics.Duration,
+		duplicatesFound:   metrics.Items,
 	}, nil
 }
 

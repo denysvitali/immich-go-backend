@@ -132,38 +132,24 @@ type Service struct {
 
 // NewService creates a new workflow management service
 func NewService(queries *sqlc.Queries, cfg *config.Config) (*Service, error) {
-	meter := telemetry.GetMeter()
-
-	workflowCounter, err := meter.Int64UpDownCounter(
-		"workflows_total",
-		metric.WithDescription("Total number of workflows"),
-	)
+	metrics, err := telemetry.NewServiceMetrics(telemetry.ServiceMetricNames{
+		Operations:            "workflow_executions_total",
+		OperationsDescription: "Total number of workflow executions",
+		Duration:              "workflow_operation_duration_seconds",
+		DurationDescription:   "Time spent on workflow operations",
+		Items:                 "workflows_total",
+		ItemsDescription:      "Total number of workflows",
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create workflow counter: %w", err)
-	}
-
-	executionCounter, err := meter.Int64Counter(
-		"workflow_executions_total",
-		metric.WithDescription("Total number of workflow executions"),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create execution counter: %w", err)
-	}
-
-	operationDuration, err := meter.Float64Histogram(
-		"workflow_operation_duration_seconds",
-		metric.WithDescription("Time spent on workflow operations"),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create operation duration histogram: %w", err)
+		return nil, err
 	}
 
 	return &Service{
 		db:                queries,
 		config:            cfg,
-		workflowCounter:   workflowCounter,
-		executionCounter:  executionCounter,
-		operationDuration: operationDuration,
+		workflowCounter:   metrics.Items,
+		executionCounter:  metrics.Operations,
+		operationDuration: metrics.Duration,
 	}, nil
 }
 
