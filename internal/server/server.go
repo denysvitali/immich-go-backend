@@ -24,7 +24,6 @@ import (
 
 	"github.com/denysvitali/immich-go-backend/internal/activity"
 	"github.com/denysvitali/immich-go-backend/internal/admin"
-	"github.com/denysvitali/immich-go-backend/internal/albums"
 	"github.com/denysvitali/immich-go-backend/internal/apikeys"
 	"github.com/denysvitali/immich-go-backend/internal/assets"
 	"github.com/denysvitali/immich-go-backend/internal/auth"
@@ -82,11 +81,8 @@ type Server struct {
 	// Service layer
 	userService           *users.Service
 	assetService          *assets.Service
-	albumService          *albums.Service
 	apiKeyService         *apikeys.Service
-	libraryService        *libraries.Service
 	librariesServer       *libraries.Server
-	searchService         *search.Service
 	searchServer          *search.Server
 	downloadService       *download.Service
 	sharedLinksService    *sharedlinks.Service
@@ -98,25 +94,17 @@ type Server struct {
 	peopleService         *people.Server
 	partnersService       *partners.Server
 	activityService       *activity.Server
-	adminService          *admin.Service
 	adminServer           *admin.Server
-	duplicatesService     *duplicates.Service
 	duplicatesServer      *duplicates.Server
-	facesService          *faces.Service
 	facesServer           *faces.Server
-	stacksService         *stacks.Service
 	stacksServer          *stacks.Server
 	systemMetadataService *systemmetadata.Service
 	systemMetadataServer  *systemmetadata.Server
-	viewService           *view.Service
 	viewServer            *view.Server
 	sessionsService       *sessions.Service
 	sessionsServer        *sessions.Server
-	syncService           *sync.Service
 	syncServer            *sync.Server
-	memoriesService       *memories.Service
 	memoriesServer        *memories.Server
-	notificationsService  *notifications.Service
 	notificationsServer   *notifications.Server
 	timelineService       *timeline.Service
 	timelineServer        *timeline.Server
@@ -209,7 +197,6 @@ func NewServer(cfg *config.Config, db *db.Conn) (*Server, error) {
 		logrus.Info("Machine learning client disabled (enable Features.MachineLearningEnabled + machine_learning)")
 	}
 
-	albumService := albums.NewService(db.Queries)
 	apiKeyService := apikeys.NewService(db.Queries)
 	libraryService := libraries.NewService(db.Queries, cfg, storageService)
 	searchService := search.NewService(db.Queries, mlClient, cfg)
@@ -348,11 +335,8 @@ func NewServer(cfg *config.Config, db *db.Conn) (*Server, error) {
 		wsHub:                 wsHub,
 		userService:           userService,
 		assetService:          assetService,
-		albumService:          albumService,
 		apiKeyService:         apiKeyService,
-		libraryService:        libraryService,
 		librariesServer:       libraryServer,
-		searchService:         searchService,
 		searchServer:          searchServer,
 		downloadService:       downloadService,
 		sharedLinksService:    sharedLinksService,
@@ -364,25 +348,17 @@ func NewServer(cfg *config.Config, db *db.Conn) (*Server, error) {
 		peopleService:         peopleService,
 		partnersService:       partnersService,
 		activityService:       activityService,
-		adminService:          adminService,
 		adminServer:           adminServer,
-		duplicatesService:     duplicatesService,
 		duplicatesServer:      duplicatesServer,
-		facesService:          facesService,
 		facesServer:           facesServer,
-		stacksService:         stacksService,
 		stacksServer:          stacksServer,
 		systemMetadataService: systemMetadataService,
 		systemMetadataServer:  systemMetadataServer,
-		viewService:           viewService,
 		viewServer:            viewServer,
 		sessionsService:       sessionsService,
 		sessionsServer:        sessionsServer,
-		syncService:           syncService,
 		syncServer:            syncServer,
-		memoriesService:       memoriesService,
 		memoriesServer:        memoriesServer,
-		notificationsService:  notificationsService,
 		notificationsServer:   notificationsServer,
 		timelineService:       timelineService,
 		timelineServer:        timelineServer,
@@ -902,10 +878,6 @@ func (s *Server) Stop() {
 			logrus.WithError(err).Error("Failed to close gRPC client connection")
 		}
 	}
-}
-
-func (s *Server) Shutdown(ctx context.Context) error {
-	return nil
 }
 
 // parseRedisURL parses a Redis URL and returns address, password, and database number.
