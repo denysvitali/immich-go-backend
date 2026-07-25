@@ -39,7 +39,7 @@ func TestIntegration_CreateStack(t *testing.T) {
 	asset3ID := createTestAsset(t, tdb, userID, "asset3")
 
 	// Create a stack with the assets
-	response, err := service.CreateStack(ctx, CreateStackRequest{
+	response, err := service.CreateStack(ctx, userID.String(), CreateStackRequest{
 		AssetIDs: []string{
 			asset1ID.String(),
 			asset2ID.String(),
@@ -64,8 +64,10 @@ func TestIntegration_CreateStackEmptyAssets(t *testing.T) {
 	service, err := NewService(tdb.Queries, cfg)
 	require.NoError(t, err)
 
+	userID := createTestUser(t, tdb, "emptystack@test.com")
+
 	// Try to create a stack with no assets
-	response, err := service.CreateStack(ctx, CreateStackRequest{
+	response, err := service.CreateStack(ctx, userID.String(), CreateStackRequest{
 		AssetIDs: []string{},
 	})
 	assert.Error(t, err)
@@ -89,13 +91,13 @@ func TestIntegration_GetStack(t *testing.T) {
 	asset2ID := createTestAsset(t, tdb, userID, "getasset2")
 
 	// Create a stack
-	createResponse, err := service.CreateStack(ctx, CreateStackRequest{
+	createResponse, err := service.CreateStack(ctx, userID.String(), CreateStackRequest{
 		AssetIDs: []string{asset1ID.String(), asset2ID.String()},
 	})
 	require.NoError(t, err)
 
 	// Get the stack
-	getResponse, err := service.GetStack(ctx, createResponse.ID)
+	getResponse, err := service.GetStack(ctx, userID.String(), createResponse.ID)
 	require.NoError(t, err)
 	assert.NotNil(t, getResponse)
 	assert.Equal(t, createResponse.ID, getResponse.ID)
@@ -113,9 +115,11 @@ func TestIntegration_GetStackNotFound(t *testing.T) {
 	service, err := NewService(tdb.Queries, cfg)
 	require.NoError(t, err)
 
+	userID := createTestUser(t, tdb, "getstacknotfound@test.com")
+
 	// Try to get a non-existent stack
 	randomID := uuid.New().String()
-	response, err := service.GetStack(ctx, randomID)
+	response, err := service.GetStack(ctx, userID.String(), randomID)
 	assert.Error(t, err)
 	assert.Nil(t, response)
 }
@@ -136,7 +140,7 @@ func TestIntegration_UpdateStackPrimaryAsset(t *testing.T) {
 	asset2ID := createTestAsset(t, tdb, userID, "updateasset2")
 
 	// Create a stack
-	createResponse, err := service.CreateStack(ctx, CreateStackRequest{
+	createResponse, err := service.CreateStack(ctx, userID.String(), CreateStackRequest{
 		AssetIDs: []string{asset1ID.String(), asset2ID.String()},
 	})
 	require.NoError(t, err)
@@ -144,7 +148,7 @@ func TestIntegration_UpdateStackPrimaryAsset(t *testing.T) {
 
 	// Update primary asset to asset2
 	asset2IDStr := asset2ID.String()
-	updateResponse, err := service.UpdateStack(ctx, createResponse.ID, UpdateStackRequest{
+	updateResponse, err := service.UpdateStack(ctx, userID.String(), createResponse.ID, UpdateStackRequest{
 		PrimaryAssetID: &asset2IDStr,
 	})
 	require.NoError(t, err)
@@ -167,17 +171,17 @@ func TestIntegration_DeleteStack(t *testing.T) {
 	asset2ID := createTestAsset(t, tdb, userID, "deleteasset2")
 
 	// Create a stack
-	createResponse, err := service.CreateStack(ctx, CreateStackRequest{
+	createResponse, err := service.CreateStack(ctx, userID.String(), CreateStackRequest{
 		AssetIDs: []string{asset1ID.String(), asset2ID.String()},
 	})
 	require.NoError(t, err)
 
 	// Delete the stack
-	err = service.DeleteStack(ctx, createResponse.ID)
+	err = service.DeleteStack(ctx, userID.String(), createResponse.ID)
 	require.NoError(t, err)
 
 	// Verify stack is deleted
-	getResponse, err := service.GetStack(ctx, createResponse.ID)
+	getResponse, err := service.GetStack(ctx, userID.String(), createResponse.ID)
 	assert.Error(t, err)
 	assert.Nil(t, getResponse)
 }
@@ -200,25 +204,25 @@ func TestIntegration_DeleteStacks(t *testing.T) {
 	asset4ID := createTestAsset(t, tdb, userID, "bulkasset4")
 
 	// Create two stacks
-	stack1, err := service.CreateStack(ctx, CreateStackRequest{
+	stack1, err := service.CreateStack(ctx, userID.String(), CreateStackRequest{
 		AssetIDs: []string{asset1ID.String(), asset2ID.String()},
 	})
 	require.NoError(t, err)
 
-	stack2, err := service.CreateStack(ctx, CreateStackRequest{
+	stack2, err := service.CreateStack(ctx, userID.String(), CreateStackRequest{
 		AssetIDs: []string{asset3ID.String(), asset4ID.String()},
 	})
 	require.NoError(t, err)
 
 	// Delete both stacks
-	err = service.DeleteStacks(ctx, []string{stack1.ID, stack2.ID})
+	err = service.DeleteStacks(ctx, userID.String(), []string{stack1.ID, stack2.ID})
 	require.NoError(t, err)
 
 	// Verify both stacks are deleted
-	_, err = service.GetStack(ctx, stack1.ID)
+	_, err = service.GetStack(ctx, userID.String(), stack1.ID)
 	assert.Error(t, err)
 
-	_, err = service.GetStack(ctx, stack2.ID)
+	_, err = service.GetStack(ctx, userID.String(), stack2.ID)
 	assert.Error(t, err)
 }
 
@@ -240,12 +244,12 @@ func TestIntegration_GetUserStacks(t *testing.T) {
 	asset4ID := createTestAsset(t, tdb, userID, "userasset4")
 
 	// Create two stacks for the user
-	_, err = service.CreateStack(ctx, CreateStackRequest{
+	_, err = service.CreateStack(ctx, userID.String(), CreateStackRequest{
 		AssetIDs: []string{asset1ID.String(), asset2ID.String()},
 	})
 	require.NoError(t, err)
 
-	_, err = service.CreateStack(ctx, CreateStackRequest{
+	_, err = service.CreateStack(ctx, userID.String(), CreateStackRequest{
 		AssetIDs: []string{asset3ID.String(), asset4ID.String()},
 	})
 	require.NoError(t, err)
@@ -274,7 +278,7 @@ func TestIntegration_AddAssetsToStack(t *testing.T) {
 	asset3ID := createTestAsset(t, tdb, userID, "addasset3")
 
 	// Create a stack with 2 assets
-	createResponse, err := service.CreateStack(ctx, CreateStackRequest{
+	createResponse, err := service.CreateStack(ctx, userID.String(), CreateStackRequest{
 		AssetIDs: []string{asset1ID.String(), asset2ID.String()},
 	})
 	require.NoError(t, err)
@@ -285,7 +289,7 @@ func TestIntegration_AddAssetsToStack(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify stack now has 3 assets
-	getResponse, err := service.GetStack(ctx, createResponse.ID)
+	getResponse, err := service.GetStack(ctx, userID.String(), createResponse.ID)
 	require.NoError(t, err)
 	assert.Equal(t, int32(3), getResponse.AssetCount)
 }
@@ -307,7 +311,7 @@ func TestIntegration_RemoveAssetsFromStack(t *testing.T) {
 	asset3ID := createTestAsset(t, tdb, userID, "removeasset3")
 
 	// Create a stack with 3 assets
-	createResponse, err := service.CreateStack(ctx, CreateStackRequest{
+	createResponse, err := service.CreateStack(ctx, userID.String(), CreateStackRequest{
 		AssetIDs: []string{asset1ID.String(), asset2ID.String(), asset3ID.String()},
 	})
 	require.NoError(t, err)
@@ -318,7 +322,7 @@ func TestIntegration_RemoveAssetsFromStack(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify stack now has 2 assets
-	getResponse, err := service.GetStack(ctx, createResponse.ID)
+	getResponse, err := service.GetStack(ctx, userID.String(), createResponse.ID)
 	require.NoError(t, err)
 	assert.Equal(t, int32(2), getResponse.AssetCount)
 }
@@ -339,7 +343,7 @@ func TestIntegration_SearchStacks(t *testing.T) {
 	asset2ID := createTestAsset(t, tdb, userID, "searchasset2")
 
 	// Create a stack
-	createResponse, err := service.CreateStack(ctx, CreateStackRequest{
+	createResponse, err := service.CreateStack(ctx, userID.String(), CreateStackRequest{
 		AssetIDs: []string{asset1ID.String(), asset2ID.String()},
 	})
 	require.NoError(t, err)
@@ -375,13 +379,15 @@ func TestIntegration_InvalidUUIDs(t *testing.T) {
 	service, err := NewService(tdb.Queries, cfg)
 	require.NoError(t, err)
 
+	userID := createTestUser(t, tdb, "invaliduuids@test.com")
+
 	// Test invalid stack ID
-	_, err = service.GetStack(ctx, "not-a-valid-uuid")
+	_, err = service.GetStack(ctx, userID.String(), "not-a-valid-uuid")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid stack ID")
 
 	// Test invalid asset IDs
-	_, err = service.CreateStack(ctx, CreateStackRequest{
+	_, err = service.CreateStack(ctx, userID.String(), CreateStackRequest{
 		AssetIDs: []string{"not-a-valid-uuid"},
 	})
 	assert.Error(t, err)
