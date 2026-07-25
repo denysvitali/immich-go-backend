@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/denysvitali/immich-go-backend/internal/storage"
@@ -652,50 +651,4 @@ func validateConfig(config *Config) error {
 	}
 
 	return nil
-}
-
-// GetEnvOrDefault returns the value of an environment variable or a default value
-func GetEnvOrDefault(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
-}
-
-// GetEnvOrDefaultInt returns the value of an environment variable as an integer or a default value
-func GetEnvOrDefaultInt(key string, defaultValue int) int {
-	if value := os.Getenv(key); value != "" {
-		if intValue, err := strconv.Atoi(value); err == nil {
-			return intValue
-		}
-	}
-	return defaultValue
-}
-
-// GetEnvOrDefaultBool returns the value of an environment variable as a boolean or a default value
-func GetEnvOrDefaultBool(key string, defaultValue bool) bool {
-	if value := os.Getenv(key); value != "" {
-		if boolValue, err := strconv.ParseBool(value); err == nil {
-			return boolValue
-		}
-	}
-	return defaultValue
-}
-
-// GetEnvOrDefaultDuration returns the value of an environment variable as a duration or a default value
-func GetEnvOrDefaultDuration(key string, defaultValue time.Duration) time.Duration {
-	if value := os.Getenv(key); value != "" {
-		if duration, err := time.ParseDuration(value); err == nil {
-			return duration
-		}
-	}
-	return defaultValue
-}
-
-// GetEnvOrDefaultStringSlice returns the value of an environment variable as a string slice or a default value
-func GetEnvOrDefaultStringSlice(key string, defaultValue []string, separator string) []string {
-	if value := os.Getenv(key); value != "" {
-		return strings.Split(value, separator)
-	}
-	return defaultValue
 }
