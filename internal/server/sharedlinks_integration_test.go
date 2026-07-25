@@ -32,8 +32,8 @@ func newSharedLinksTestEnv(t *testing.T) *sharedLinksTestEnv {
 	tdb := testdb.SetupTestDB(t)
 
 	srv := &Server{
-		queries:            tdb.Queries,
-		sharedLinksService: sharedlinks.NewService(tdb.Queries),
+		queries:  tdb.Queries,
+		services: services{sharedLinksService: sharedlinks.NewService(tdb.Queries)},
 	}
 
 	return &sharedLinksTestEnv{

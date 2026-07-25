@@ -16,7 +16,7 @@ import (
 
 func TestHandleWsRoutesBulkTagAssetsBeforeGatewayTagIDMatch(t *testing.T) {
 	tagsServer := &fakeTagsServiceServer{}
-	handler := (&Server{tagsService: tagsServer}).handleWs(runtime.NewServeMux())
+	handler := (&Server{services: services{tagsService: tagsServer}}).handleWs(runtime.NewServeMux())
 	req := httptest.NewRequest(http.MethodPut, "/api/tags/assets", strings.NewReader(`{"assetIds":["asset-1"],"tagIds":["tag-1"]}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()

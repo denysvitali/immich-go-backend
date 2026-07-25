@@ -26,7 +26,7 @@ func TestSetGRPCConnChangesSyncRegistration(t *testing.T) {
 	srv := &Server{
 		config:     &config.Config{},
 		grpcServer: grpc.NewServer(),
-		syncServer: sync.NewServer(sync.NewService(nil, nil)),
+		services:   services{syncServer: sync.NewServer(sync.NewService(nil, nil))},
 	}
 	immichv1.RegisterSyncServiceServer(srv.grpcServer, srv.syncServer)
 

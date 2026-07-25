@@ -88,9 +88,9 @@ func newAssetViewerTestEnv(t *testing.T) *assetViewerTestEnv {
 	require.NoError(t, err)
 
 	srv := &Server{
-		db:           conn,
-		queries:      tdb.Queries,
-		assetService: assetService,
+		db:       conn,
+		queries:  tdb.Queries,
+		services: services{assetService: assetService},
 	}
 
 	return &assetViewerTestEnv{
