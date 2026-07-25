@@ -6,7 +6,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/denysvitali/immich-go-backend/internal/server/socketio/engine"
+	"github.com/denysvitali/immich-go-backend/internal/socketio/engine"
 )
 
 func TestHandshakeResponse(t *testing.T) {

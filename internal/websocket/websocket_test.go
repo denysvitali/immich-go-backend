@@ -10,7 +10,7 @@ import (
 
 	gorilla "github.com/gorilla/websocket"
 
-	"github.com/denysvitali/immich-go-backend/internal/server/socketio/engine"
+	"github.com/denysvitali/immich-go-backend/internal/socketio/engine"
 )
 
 // These tests pin the observable socket.io/engine.io behaviour of Hub and

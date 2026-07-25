@@ -9,8 +9,8 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/sirupsen/logrus"
 
-	"github.com/denysvitali/immich-go-backend/internal/server/socketio"
-	"github.com/denysvitali/immich-go-backend/internal/server/socketio/engine"
+	"github.com/denysvitali/immich-go-backend/internal/socketio"
+	"github.com/denysvitali/immich-go-backend/internal/socketio/engine"
 )
 
 type Client struct {
