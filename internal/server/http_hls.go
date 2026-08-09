@@ -216,9 +216,26 @@ func (s *Server) hlsAsset(ctx context.Context, assetID string) (sqlc.Asset, uuid
 	}
 
 	assetUUID := pgtype.UUID{Bytes: parsedID, Valid: true}
+	userUUID, err := s.userUUIDFromContext(ctx)
+	if err != nil {
+		return sqlc.Asset{}, uuid.Nil, err
+	}
+
 	asset, err := s.db.GetAssetByID(ctx, assetUUID)
 	if err != nil {
-		return sqlc.Asset{}, uuid.Nil, status.Errorf(codes.NotFound, "asset not found: %v", err)
+		return sqlc.Asset{}, uuid.Nil, status.Error(codes.NotFound, "asset not found")
+	}
+	if asset.OwnerId != userUUID {
+		shared, err := s.db.CheckAssetSharedWithUser(ctx, sqlc.CheckAssetSharedWithUserParams{
+			AssetsId: assetUUID,
+			UsersId:  userUUID,
+		})
+		if err != nil {
+			return sqlc.Asset{}, uuid.Nil, grpcutil.SanitizedInternal(ctx, "failed to check asset access", err)
+		}
+		if !shared {
+			return sqlc.Asset{}, uuid.Nil, status.Error(codes.PermissionDenied, "access denied")
+		}
 	}
 	if asset.Type != "VIDEO" {
 		return sqlc.Asset{}, uuid.Nil, status.Error(codes.InvalidArgument, "asset is not a video")

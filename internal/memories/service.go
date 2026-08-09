@@ -3,13 +3,19 @@ package memories
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+// ErrMemoryAssetAccessDenied means the memory is not owned by the caller or
+// at least one requested asset is not currently accessible to that owner.
+var ErrMemoryAssetAccessDenied = errors.New("memory asset access denied")
 
 type Service struct {
 	queries *sqlc.Queries
@@ -51,7 +57,7 @@ func (s *Service) GetMemories(ctx context.Context, userID string) ([]*Memory, er
 	// Convert to Memory structs
 	memories := make([]*Memory, 0, len(dbMemories))
 	for _, dbMem := range dbMemories {
-		memory, err := s.hydrateMemory(ctx, dbMem, userID)
+		memory, err := s.hydrateMemory(ctx, dbMem, userUUID, userID)
 		if err != nil {
 			return nil, err
 		}
@@ -63,7 +69,12 @@ func (s *Service) GetMemories(ctx context.Context, userID string) ([]*Memory, er
 
 // hydrateMemory converts a sqlc.Memory row into the service Memory type,
 // populating AssetIDs from the memories_assets_assets join table.
-func (s *Service) hydrateMemory(ctx context.Context, dbMem sqlc.Memory, userID string) (*Memory, error) {
+func (s *Service) hydrateMemory(
+	ctx context.Context,
+	dbMem sqlc.Memory,
+	ownerID pgtype.UUID,
+	userID string,
+) (*Memory, error) {
 	// Parse JSON data to get type and other metadata
 	var data map[string]interface{}
 	if err := json.Unmarshal(dbMem.Data, &data); err != nil {
@@ -88,7 +99,10 @@ func (s *Service) hydrateMemory(ctx context.Context, dbMem sqlc.Memory, userID s
 	// the full asset rows. Failures here are non-fatal: a memory without
 	// linked assets is still valid.
 	memUUID := pgtype.UUID{Bytes: dbMem.ID.Bytes, Valid: true}
-	assetUUIDs, err := s.queries.GetMemoryAssets(ctx, memUUID)
+	assetUUIDs, err := s.queries.GetAccessibleMemoryAssetIDs(ctx, sqlc.GetAccessibleMemoryAssetIDsParams{
+		MemoryID: memUUID,
+		OwnerID:  ownerID,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to load memory assets: %w", err)
 	}
@@ -112,6 +126,12 @@ func (s *Service) hydrateMemory(ctx context.Context, dbMem sqlc.Memory, userID s
 }
 
 func (s *Service) GetMemory(ctx context.Context, userID string, memoryID string) (*Memory, error) {
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		return nil, err
+	}
+	userUUID := pgtype.UUID{Bytes: uid, Valid: true}
+
 	// Parse memory ID
 	memUUID, err := uuid.Parse(memoryID)
 	if err != nil {
@@ -121,40 +141,15 @@ func (s *Service) GetMemory(ctx context.Context, userID string, memoryID string)
 	memoryUUID := pgtype.UUID{Bytes: memUUID, Valid: true}
 
 	// Get memory from database
-	dbMemory, err := s.queries.GetMemory(ctx, memoryUUID)
+	dbMemory, err := s.queries.GetOwnedMemory(ctx, sqlc.GetOwnedMemoryParams{
+		MemoryID: memoryUUID,
+		OwnerID:  userUUID,
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	// Verify ownership
-	if uuid.UUID(dbMemory.OwnerId.Bytes).String() != userID {
-		return nil, err // Should return permission denied error
-	}
-
-	// Parse JSON data
-	var data map[string]interface{}
-	if err := json.Unmarshal(dbMemory.Data, &data); err != nil {
-		data = make(map[string]interface{})
-	}
-
-	title, _ := data["title"].(string)
-	if title == "" {
-		title = "Memory"
-	}
-
-	description, _ := data["description"].(string)
-
-	return &Memory{
-		ID:          memoryID,
-		UserID:      userID,
-		Title:       title,
-		Description: description,
-		Date:        dbMemory.MemoryAt.Time,
-		Type:        dbMemory.Type,
-		AssetIDs:    []string{}, // Would need to query memory_assets table
-		CreatedAt:   dbMemory.CreatedAt.Time,
-		UpdatedAt:   dbMemory.UpdatedAt.Time,
-	}, nil
+	return s.hydrateMemory(ctx, dbMemory, userUUID, userID)
 }
 
 func (s *Service) CreateMemory(ctx context.Context, memory *Memory) (*Memory, error) {
@@ -195,6 +190,12 @@ func (s *Service) CreateMemory(ctx context.Context, memory *Memory) (*Memory, er
 }
 
 func (s *Service) UpdateMemory(ctx context.Context, userID string, memoryID string, updates map[string]interface{}) (*Memory, error) {
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		return nil, err
+	}
+	userUUID := pgtype.UUID{Bytes: uid, Valid: true}
+
 	// Parse memory ID
 	memUUID, err := uuid.Parse(memoryID)
 	if err != nil {
@@ -204,14 +205,12 @@ func (s *Service) UpdateMemory(ctx context.Context, userID string, memoryID stri
 	memoryUUID := pgtype.UUID{Bytes: memUUID, Valid: true}
 
 	// Get existing memory first to verify ownership and merge data
-	existing, err := s.queries.GetMemory(ctx, memoryUUID)
+	existing, err := s.queries.GetOwnedMemory(ctx, sqlc.GetOwnedMemoryParams{
+		MemoryID: memoryUUID,
+		OwnerID:  userUUID,
+	})
 	if err != nil {
 		return nil, err
-	}
-
-	// Verify ownership
-	if uuid.UUID(existing.OwnerId.Bytes).String() != userID {
-		return nil, err // Should return permission denied error
 	}
 
 	// Prepare update params
@@ -273,6 +272,12 @@ func (s *Service) UpdateMemory(ctx context.Context, userID string, memoryID stri
 }
 
 func (s *Service) DeleteMemory(ctx context.Context, userID string, memoryID string) error {
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		return err
+	}
+	userUUID := pgtype.UUID{Bytes: uid, Valid: true}
+
 	// Parse memory ID
 	memUUID, err := uuid.Parse(memoryID)
 	if err != nil {
@@ -282,14 +287,12 @@ func (s *Service) DeleteMemory(ctx context.Context, userID string, memoryID stri
 	memoryUUID := pgtype.UUID{Bytes: memUUID, Valid: true}
 
 	// Get memory first to verify ownership
-	dbMemory, err := s.queries.GetMemory(ctx, memoryUUID)
+	_, err = s.queries.GetOwnedMemory(ctx, sqlc.GetOwnedMemoryParams{
+		MemoryID: memoryUUID,
+		OwnerID:  userUUID,
+	})
 	if err != nil {
 		return err
-	}
-
-	// Verify ownership
-	if uuid.UUID(dbMemory.OwnerId.Bytes).String() != userID {
-		return err // Should return permission denied error
 	}
 
 	// Delete memory from database (soft delete)
@@ -297,6 +300,12 @@ func (s *Service) DeleteMemory(ctx context.Context, userID string, memoryID stri
 }
 
 func (s *Service) AddAssetsToMemory(ctx context.Context, userID string, memoryID string, assetIDs []string) error {
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		return fmt.Errorf("invalid user ID: %w", err)
+	}
+	userUUID := pgtype.UUID{Bytes: uid, Valid: true}
+
 	// Parse memory ID
 	memUUID, err := uuid.Parse(memoryID)
 	if err != nil {
@@ -305,38 +314,45 @@ func (s *Service) AddAssetsToMemory(ctx context.Context, userID string, memoryID
 
 	memoryUUID := pgtype.UUID{Bytes: memUUID, Valid: true}
 
-	// Verify memory ownership
-	dbMemory, err := s.queries.GetMemory(ctx, memoryUUID)
-	if err != nil {
-		return fmt.Errorf("memory not found: %w", err)
-	}
-
-	if uuid.UUID(dbMemory.OwnerId.Bytes).String() != userID {
-		return fmt.Errorf("access denied: memory does not belong to user")
-	}
-
-	// Convert asset IDs to UUIDs
-	var assetUUIDs []pgtype.UUID
+	// Parse every ID before touching the database. Invalid IDs reject the whole
+	// request instead of silently shrinking it into a partial mutation.
+	assetUUIDs := make([]pgtype.UUID, 0, len(assetIDs))
+	seen := make(map[uuid.UUID]struct{}, len(assetIDs))
 	for _, assetIDStr := range assetIDs {
 		assetID, err := uuid.Parse(assetIDStr)
 		if err != nil {
-			continue // Skip invalid IDs
+			return fmt.Errorf("invalid asset ID: %w", err)
 		}
+		if _, ok := seen[assetID]; ok {
+			continue
+		}
+		seen[assetID] = struct{}{}
 		assetUUIDs = append(assetUUIDs, pgtype.UUID{Bytes: assetID, Valid: true})
 	}
 
-	if len(assetUUIDs) == 0 {
-		return nil
-	}
-
-	// Add assets to memory
-	return s.queries.AddAssetsToMemory(ctx, sqlc.AddAssetsToMemoryParams{
-		MemoriesId: memoryUUID,
-		Column2:    assetUUIDs,
+	// The guarded statement validates the owned memory and the complete set of
+	// owned/shared assets before inserting any relation.
+	authorized, err := s.queries.AddAccessibleAssetsToMemory(ctx, sqlc.AddAccessibleAssetsToMemoryParams{
+		AssetIds: assetUUIDs,
+		MemoryID: memoryUUID,
+		OwnerID:  userUUID,
 	})
+	if err != nil {
+		return fmt.Errorf("add assets to memory: %w", err)
+	}
+	if !authorized {
+		return ErrMemoryAssetAccessDenied
+	}
+	return nil
 }
 
 func (s *Service) RemoveAssetsFromMemory(ctx context.Context, userID string, memoryID string, assetIDs []string) error {
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		return fmt.Errorf("invalid user ID: %w", err)
+	}
+	userUUID := pgtype.UUID{Bytes: uid, Valid: true}
+
 	// Parse memory ID
 	memUUID, err := uuid.Parse(memoryID)
 	if err != nil {
@@ -346,13 +362,12 @@ func (s *Service) RemoveAssetsFromMemory(ctx context.Context, userID string, mem
 	memoryUUID := pgtype.UUID{Bytes: memUUID, Valid: true}
 
 	// Verify memory ownership
-	dbMemory, err := s.queries.GetMemory(ctx, memoryUUID)
+	_, err = s.queries.GetOwnedMemory(ctx, sqlc.GetOwnedMemoryParams{
+		MemoryID: memoryUUID,
+		OwnerID:  userUUID,
+	})
 	if err != nil {
 		return fmt.Errorf("memory not found: %w", err)
-	}
-
-	if uuid.UUID(dbMemory.OwnerId.Bytes).String() != userID {
-		return fmt.Errorf("access denied: memory does not belong to user")
 	}
 
 	// Convert asset IDs to UUIDs
@@ -377,6 +392,12 @@ func (s *Service) RemoveAssetsFromMemory(ctx context.Context, userID string, mem
 }
 
 func (s *Service) GetMemoryAssets(ctx context.Context, userID string, memoryID string) ([]string, error) {
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid user ID: %w", err)
+	}
+	userUUID := pgtype.UUID{Bytes: uid, Valid: true}
+
 	// Parse memory ID
 	memUUID, err := uuid.Parse(memoryID)
 	if err != nil {
@@ -386,17 +407,22 @@ func (s *Service) GetMemoryAssets(ctx context.Context, userID string, memoryID s
 	memoryUUID := pgtype.UUID{Bytes: memUUID, Valid: true}
 
 	// Verify memory ownership
-	dbMemory, err := s.queries.GetMemory(ctx, memoryUUID)
+	_, err = s.queries.GetOwnedMemory(ctx, sqlc.GetOwnedMemoryParams{
+		MemoryID: memoryUUID,
+		OwnerID:  userUUID,
+	})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("access denied: memory does not belong to user")
+		}
 		return nil, fmt.Errorf("memory not found: %w", err)
 	}
 
-	if uuid.UUID(dbMemory.OwnerId.Bytes).String() != userID {
-		return nil, fmt.Errorf("access denied: memory does not belong to user")
-	}
-
 	// Get assets for this memory
-	assetUUIDs, err := s.queries.GetMemoryAssets(ctx, memoryUUID)
+	assetUUIDs, err := s.queries.GetAccessibleMemoryAssetIDs(ctx, sqlc.GetAccessibleMemoryAssetIDsParams{
+		MemoryID: memoryUUID,
+		OwnerID:  userUUID,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get memory assets: %w", err)
 	}

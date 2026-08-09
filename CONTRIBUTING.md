@@ -22,7 +22,7 @@ make test             # full test suite
 make lint             # golangci-lint
 ```
 
-If you don't have Nix, the project's `go.mod` is plain Go 1.24 — install Go, install `buf`, install `sqlc`, install `golangci-lint`, and run the same Make targets. The `nix develop` shell just pins versions.
+If you don't have Nix, the project's `go.mod` pins Go 1.26.5 — install Go, `buf`, `sqlc`, and `golangci-lint`, then run the same Make targets. The `nix develop` shell just pins versions.
 
 ## Project layout reminder
 

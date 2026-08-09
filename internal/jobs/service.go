@@ -464,7 +464,36 @@ func (s *Service) Stop() {
 	s.logger.Info("Stopping job queue server")
 	s.server.Stop()
 	s.server.Shutdown()
-	s.client.Close()
+	s.Close()
+}
+
+// Close releases Redis clients when worker startup fails or after shutdown.
+func (s *Service) Close() {
+	if err := s.inspector.Close(); err != nil {
+		s.logger.WithError(err).Warn("Failed to close job queue inspector")
+	}
+	if err := s.client.Close(); err != nil {
+		s.logger.WithError(err).Warn("Failed to close job queue client")
+	}
+}
+
+// HealthCheck verifies that the worker's Redis broker remains reachable.
+func (s *Service) HealthCheck(ctx context.Context) error {
+	if s == nil || s.server == nil {
+		return fmt.Errorf("job queue is not initialized")
+	}
+
+	result := make(chan error, 1)
+	go func() {
+		result <- s.server.Ping()
+	}()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-result:
+		return err
+	}
 }
 
 // getQueueByPriority returns the queue name based on priority

@@ -6,6 +6,7 @@ import (
 	"crypto/sha1" //nolint:gosec // Immich uses SHA-1 asset checksums; not for crypto.
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"github.com/denysvitali/immich-go-backend/internal/grpcutil"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
@@ -162,6 +164,7 @@ func (s *Server) UploadAsset(ctx context.Context, request *immichv1.UploadAssetR
 	// Otherwise fall back to the client-supplied OriginalPath.
 	originalPath := assetData.OriginalPath
 	fileContent := request.FileContent
+	var uploadedPath string
 	if len(fileContent) > 0 {
 		storageService := s.assetService.GetStorageService()
 		uploadResult, uploadErr := storageService.UploadAsset(
@@ -179,6 +182,7 @@ func (s *Server) UploadAsset(ctx context.Context, request *immichv1.UploadAssetR
 			return nil, grpcutil.SanitizedInternal(ctx, "failed to store uploaded asset", uploadErr)
 		} else {
 			originalPath = uploadResult.Path
+			uploadedPath = uploadResult.Path
 		}
 	}
 
@@ -198,6 +202,14 @@ func (s *Server) UploadAsset(ctx context.Context, request *immichv1.UploadAssetR
 		Status:           sqlc.AssetsStatusEnumActive,
 	})
 	if err != nil {
+		// The media write precedes the database insert for this compatibility
+		// endpoint. Compensate if the insert is rejected (including when a user
+		// deletion fence became active while the upload was in flight).
+		if uploadedPath != "" {
+			if cleanupErr := s.assetService.GetStorageService().DeleteAsset(context.WithoutCancel(ctx), uploadedPath); cleanupErr != nil {
+				logrus.WithError(cleanupErr).WithField("path", uploadedPath).Error("UploadAsset: failed to remove orphaned upload")
+			}
+		}
 		return nil, grpcutil.SanitizedInternal(ctx, "failed to create asset", err)
 	}
 
@@ -313,13 +325,11 @@ func (s *Server) DeleteAssets(ctx context.Context, request *immichv1.DeleteAsset
 		}
 
 		if request.Force {
-			if _, err := s.db.UpdateAssetStatus(ctx, sqlc.UpdateAssetStatusParams{
-				ID:     asset.ID,
-				Status: sqlc.AssetsStatusEnumDeleted,
-			}); err != nil {
-				return nil, grpcutil.SanitizedInternal(ctx, "failed to delete assets", err)
-			}
-			if err := s.db.PermanentlyDeleteAsset(ctx, asset.ID); err != nil {
+			if err := s.assetService.HardDeleteAsset(
+				ctx,
+				pgutil.PgtypeToUUID(asset.ID),
+				pgutil.PgtypeToUUID(userID),
+			); err != nil {
 				return nil, grpcutil.SanitizedInternal(ctx, "failed to delete assets", err)
 			}
 			continue
@@ -717,17 +727,24 @@ func (s *Server) ReplaceAsset(ctx context.Context, request *immichv1.ReplaceAsse
 	}
 
 	storageService := s.assetService.GetStorageService()
-	if err := storageService.Upload(ctx, existingAsset.OriginalPath, bytes.NewReader(fileContent), assetDownloadContentType(existingAsset.OriginalFileName)); err != nil {
-		return nil, grpcutil.SanitizedInternal(ctx, "failed to replace asset file", err)
-	}
-
-	updatedAsset, err := s.db.ReplaceAssetFile(ctx, sqlc.ReplaceAssetFileParams{
+	updatedAsset, err := s.db.ReplaceAssetOriginalFile(ctx, sqlc.ReplaceAssetOriginalFileParams{
+		AssetID:        existingAsset.ID,
+		OwnerID:        existingAsset.OwnerId,
 		Checksum:       []byte(*request.Checksum),
 		FileModifiedAt: pgtype.Timestamptz{Time: fileModifiedAt.AsTime(), Valid: true},
-		ID:             existingAsset.ID,
-		OwnerID:        existingAsset.OwnerId,
+		WriteOriginalFile: func(writeCtx context.Context, lockedAsset sqlc.Asset) error {
+			return storageService.Upload(
+				writeCtx,
+				lockedAsset.OriginalPath,
+				bytes.NewReader(fileContent),
+				assetDownloadContentType(lockedAsset.OriginalFileName),
+			)
+		},
 	})
 	if err != nil {
+		if errors.Is(err, sqlc.ErrAssetOriginalFileWriteRejected) {
+			return nil, status.Error(codes.NotFound, "asset not found")
+		}
 		return nil, grpcutil.SanitizedInternal(ctx, "failed to update asset after replacement", err)
 	}
 
@@ -840,6 +857,19 @@ func (s *Server) GetAssetThumbnail(ctx context.Context, request *immichv1.GetAss
 		if err := storageService.Upload(ctx, thumbnailPath, bytes.NewReader(thumbData), s.getThumbnailContentType(thumbnailType)); err != nil {
 			// Log error but don't fail the request
 			logrus.WithError(err).Warn("Failed to store generated thumbnail")
+		} else if _, err := s.db.CreateAssetFile(ctx, sqlc.CreateAssetFileParams{
+			AssetId: asset.ID,
+			Type:    string(thumbnailType),
+			Path:    thumbnailPath,
+		}); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				cleanupErr := storageService.DeleteAsset(context.WithoutCancel(ctx), thumbnailPath)
+				if cleanupErr != nil {
+					logrus.WithError(cleanupErr).WithField("path", thumbnailPath).
+						Error("Failed to remove rejected generated thumbnail")
+				}
+			}
+			return nil, grpcutil.SanitizedInternal(ctx, "asset was deleted while generating thumbnail", err)
 		}
 
 		// Return the generated thumbnail data

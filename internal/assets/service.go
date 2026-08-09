@@ -2,6 +2,7 @@ package assets
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"github.com/denysvitali/immich-go-backend/internal/storage"
 	"github.com/denysvitali/immich-go-backend/internal/telemetry"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -209,30 +211,22 @@ func (s *Service) CompleteUpload(ctx context.Context, assetID uuid.UUID, reader 
 		return fmt.Errorf("invalid asset ID: %w", err)
 	}
 
-	asset, err := s.db.GetAssetByID(ctx, assetUUID)
-	if err != nil {
-		span.RecordError(err)
-		return fmt.Errorf("failed to get asset: %w", err)
-	}
-
-	// Upload file to storage if not using direct upload
-	if !s.config.Storage.S3.DirectUpload {
-		contentType := s.getMimeTypeFromAssetType(asset.Type)
-		err = s.storage.Upload(ctx, asset.OriginalPath, reader, contentType)
-		if err != nil {
-			span.RecordError(err)
-			return fmt.Errorf("failed to upload file: %w", err)
-		}
-	}
-
-	// Update asset status to active
-	_, err = s.db.UpdateAssetStatus(ctx, sqlc.UpdateAssetStatusParams{
-		ID:     asset.ID,
-		Status: sqlc.AssetsStatusEnumActive,
+	// Keep the asset row locked from before the storage write until the active
+	// status is finalized. Permanent deletion must then either wait and sweep
+	// this object, or establish deletion intent first and prevent the write.
+	asset, err := s.db.CompleteAssetUpload(ctx, sqlc.CompleteAssetUploadParams{
+		AssetID: assetUUID,
+		WriteOriginalFile: func(writeCtx context.Context, lockedAsset sqlc.Asset) error {
+			if s.config.Storage.S3.DirectUpload {
+				return nil
+			}
+			contentType := s.getMimeTypeFromAssetType(lockedAsset.Type)
+			return s.storage.Upload(writeCtx, lockedAsset.OriginalPath, reader, contentType)
+		},
 	})
 	if err != nil {
 		span.RecordError(err)
-		return fmt.Errorf("failed to update asset status: %w", err)
+		return fmt.Errorf("failed to complete asset upload: %w", err)
 	}
 
 	processCtx := context.WithoutCancel(ctx)
@@ -240,7 +234,6 @@ func (s *Service) CompleteUpload(ctx context.Context, assetID uuid.UUID, reader 
 
 	s.uploadCounter.Add(ctx, 1,
 		metric.WithAttributes(
-			attribute.String("user_id", pgutil.UUIDToString(asset.OwnerId)),
 			attribute.String("type", asset.Type),
 		))
 
@@ -421,6 +414,11 @@ func (s *Service) generateAndStoreVideoThumbnails(ctx context.Context, assetID p
 		})
 		if err != nil {
 			span.RecordError(err)
+			if cleanupErr := cleanupRejectedDerivedFile(ctx, err, s.storage, thumbPath); cleanupErr != nil {
+				span.RecordError(cleanupErr)
+				s.logger.Error("Failed to remove untracked video thumbnail",
+					zap.String("path", thumbPath), zap.Error(cleanupErr))
+			}
 			// Continue with other thumbnails
 		}
 	}
@@ -470,6 +468,11 @@ func (s *Service) generateAndStoreThumbnails(ctx context.Context, assetID pgtype
 		})
 		if err != nil {
 			span.RecordError(err)
+			if cleanupErr := cleanupRejectedDerivedFile(ctx, err, s.storage, thumbPath); cleanupErr != nil {
+				span.RecordError(cleanupErr)
+				s.logger.Error("Failed to remove untracked thumbnail",
+					zap.String("path", thumbPath), zap.Error(cleanupErr))
+			}
 			// Continue with other thumbnails
 		}
 	}
@@ -591,7 +594,7 @@ func (s *Service) GetAsset(ctx context.Context, assetID uuid.UUID, userID uuid.U
 		return nil, fmt.Errorf("invalid user ID: %w", err)
 	}
 
-	// Get asset with user verification
+	// Get active asset with user verification.
 	asset, err := s.db.GetAssetByIDAndUser(ctx, sqlc.GetAssetByIDAndUserParams{
 		ID:      assetUUID,
 		OwnerId: userUUID,
@@ -682,7 +685,6 @@ func (s *Service) DownloadAsset(ctx context.Context, req DownloadRequest) (*Down
 
 	s.downloadCounter.Add(ctx, 1,
 		metric.WithAttributes(
-			attribute.String("user_id", req.UserID.String()),
 			attribute.String("type", string(asset.Type)),
 			attribute.Bool("is_thumbnail", req.ThumbnailType != nil),
 		))
@@ -853,7 +855,7 @@ func (s *Service) DeleteAsset(ctx context.Context, assetID uuid.UUID, userID uui
 	defer span.End()
 
 	// Verify ownership
-	asset, err := s.GetAsset(ctx, assetID, userID)
+	_, err := s.GetAsset(ctx, assetID, userID)
 	if err != nil {
 		span.RecordError(err)
 		return fmt.Errorf("failed to get asset: %w", err)
@@ -880,24 +882,6 @@ func (s *Service) DeleteAsset(ctx context.Context, assetID uuid.UUID, userID uui
 		s.sync.BroadcastAssetEvent(userID.String(), assetID.String(), "delete")
 	}
 
-	// Update storage metrics
-	s.storageSize.Add(ctx, -asset.Metadata.Size,
-		metric.WithAttributes(attribute.String("operation", "delete")))
-
-	// Schedule background cleanup if this is a hard delete
-	// For now, just do immediate cleanup
-	// In production, you'd want to use a job queue for this
-	cleanupCtx := context.WithoutCancel(ctx)
-	go func() {
-		if err := s.cleanupAssetFiles(cleanupCtx, assetUUID, asset.OriginalPath); err != nil {
-			// Log error but don't fail the deletion
-			s.logger.Error("Failed to cleanup asset files",
-				zap.Error(err),
-				zap.String("assetID", assetUUID.String()),
-				zap.String("path", asset.OriginalPath))
-		}
-	}()
-
 	return nil
 }
 
@@ -910,97 +894,167 @@ func (s *Service) HardDeleteAsset(ctx context.Context, assetID uuid.UUID, userID
 		))
 	defer span.End()
 
-	// Verify ownership
-	asset, err := s.GetAsset(ctx, assetID, userID)
-	if err != nil {
-		span.RecordError(err)
-		return fmt.Errorf("failed to get asset: %w", err)
-	}
-
 	assetUUID, err := pgutil.StringToUUID(assetID.String())
 	if err != nil {
 		span.RecordError(err)
 		return fmt.Errorf("invalid asset ID: %w", err)
 	}
 
-	// Delete all associated files immediately
-	err = s.cleanupAssetFiles(ctx, assetUUID, asset.OriginalPath)
+	userUUID, err := pgutil.StringToUUID(userID.String())
 	if err != nil {
 		span.RecordError(err)
-		// Continue with database deletion even if file cleanup fails
+		return fmt.Errorf("invalid user ID: %w", err)
 	}
 
-	// Delete EXIF data
-	err = s.db.DeleteExif(ctx, assetUUID)
-	if err != nil {
-		span.RecordError(err)
-		// Continue even if EXIF deletion fails
-	}
-
-	// Delete all asset files from database
-	err = s.db.DeleteAssetFiles(ctx, assetUUID)
-	if err != nil {
-		span.RecordError(err)
-		// Continue even if asset files deletion fails
-	}
-
-	// Permanently delete the asset record
-	err = s.db.PermanentlyDeleteAssets(ctx, sqlc.PermanentlyDeleteAssetsParams{
-		Column1: []pgtype.UUID{assetUUID},
-		OwnerId: stringToUUIDUnsafe(userID.String()),
+	// Load the asset directly so all storage-bearing columns are available and
+	// ownership is checked before any object is removed.
+	asset, err := s.db.GetAssetByIDAndUserForDeletion(ctx, sqlc.GetAssetByIDAndUserForDeletionParams{
+		ID:      assetUUID,
+		OwnerId: userUUID,
 	})
 	if err != nil {
 		span.RecordError(err)
-		return fmt.Errorf("failed to permanently delete asset: %w", err)
+		return fmt.Errorf("failed to get asset: %w", err)
 	}
 
-	// Update storage metrics
-	s.storageSize.Add(ctx, -asset.Metadata.Size,
-		metric.WithAttributes(attribute.String("operation", "hard_delete")))
+	// Persist deletion intent before removing irreversible bytes. If storage
+	// cleanup or finalization fails, normal active-asset listings hide the row
+	// and a retry can resume from the same record instead of exposing a live
+	// asset whose media has already been removed.
+	if !asset.DeletedAt.Valid && asset.Status != sqlc.AssetsStatusEnumDeleted {
+		if _, err := s.db.UpdateAssetStatus(ctx, sqlc.UpdateAssetStatusParams{
+			ID:     assetUUID,
+			Status: sqlc.AssetsStatusEnumDeleted,
+		}); err != nil {
+			span.RecordError(err)
+			return fmt.Errorf("mark asset for permanent deletion: %w", err)
+		}
+	}
+
+	// Snapshot derived files only after establishing deletion intent. Asset-file
+	// inserts take a SHARE lock on the parent asset, so the status update waits
+	// for earlier producers and later producers fail their guarded insert.
+	assetFiles, err := s.db.GetAssetFiles(ctx, assetUUID)
+	if err != nil {
+		span.RecordError(err)
+		return fmt.Errorf("failed to get asset files: %w", err)
+	}
+
+	var storageBytes int64
+	if exif, exifErr := s.db.GetExifByAssetId(ctx, assetUUID); exifErr == nil && exif.FileSizeInByte.Valid {
+		storageBytes = exif.FileSizeInByte.Int64
+	}
+
+	paths := assetStoragePaths(asset, assetFiles)
+	err = deleteAssetPathsThenFinalize(ctx, s.storage, paths, func() error {
+		return s.db.PermanentlyDeleteAssets(ctx, sqlc.PermanentlyDeleteAssetsParams{
+			Column1: []pgtype.UUID{assetUUID},
+			OwnerId: userUUID,
+		})
+	})
+	if err != nil {
+		span.RecordError(err)
+		return err
+	}
+
+	if s.sync != nil {
+		s.sync.BroadcastAssetEvent(userID.String(), assetID.String(), "delete")
+	}
+	if storageBytes > 0 {
+		s.storageSize.Add(ctx, -storageBytes,
+			metric.WithAttributes(attribute.String("operation", "hard_delete")))
+	}
 
 	return nil
 }
 
-// cleanupAssetFiles removes the asset files from storage
-func (s *Service) cleanupAssetFiles(ctx context.Context, assetID pgtype.UUID, originalPath string) error {
-	ctx, span := tracer.Start(ctx, "assets.cleanup_files",
-		trace.WithAttributes(
-			attribute.String("asset_id", pgutil.UUIDToString(assetID)),
-		))
-	defer span.End()
+type permanentDeletionStorage interface {
+	AssetExists(ctx context.Context, assetPath string) (bool, error)
+	DeleteAsset(ctx context.Context, assetPath string) error
+}
 
-	var cleanupErrors []error
-
-	// Delete original file
-	err := s.storage.DeleteAsset(ctx, originalPath)
-	if err != nil {
-		span.RecordError(err)
-		cleanupErrors = append(cleanupErrors, fmt.Errorf("failed to delete original file: %w", err))
+func assetStoragePaths(asset sqlc.Asset, files []sqlc.AssetFile) []string {
+	paths := make([]string, 0, len(files)+7)
+	// External-library originals and sidecars are source files owned outside
+	// Immich storage. Removing the database asset must not delete those files.
+	if !asset.IsExternal {
+		paths = append(paths, asset.OriginalPath)
 	}
+	if asset.EncodedVideoPath.Valid {
+		paths = append(paths, asset.EncodedVideoPath.String)
+	}
+	if !asset.IsExternal && asset.SidecarPath.Valid {
+		paths = append(paths, asset.SidecarPath.String)
+	}
+	// Compatibility routes can generate deterministic thumbnails before their
+	// asset_files record is committed. Include every standard derived path so a
+	// deletion also repairs media left by older untracked writes.
+	if asset.OriginalPath != "" {
+		generator := NewThumbnailGenerator()
+		paths = append(paths,
+			generator.GetThumbnailPath(asset.OriginalPath, ThumbnailTypePreview),
+			generator.GetThumbnailPath(asset.OriginalPath, ThumbnailTypeWebp),
+			generator.GetThumbnailPath(asset.OriginalPath, ThumbnailTypeThumb),
+		)
+		if asset.ID.Valid {
+			assetID := pgutil.UUIDToString(asset.ID)
+			originalDir := filepath.Dir(asset.OriginalPath)
+			paths = append(paths, filepath.Join(filepath.Dir(originalDir), "encoded-videos", assetID+".mp4"))
+		}
+	}
+	for _, file := range files {
+		paths = append(paths, file.Path)
+	}
+	return paths
+}
 
-	// Get all associated files from database
-	assetFiles, err := s.db.GetAssetFiles(ctx, assetID)
-	if err != nil {
-		span.RecordError(err)
-		cleanupErrors = append(cleanupErrors, fmt.Errorf("failed to get asset files: %w", err))
-	} else {
-		// Delete each associated file (thumbnails, etc.)
-		for _, file := range assetFiles {
-			err := s.storage.DeleteAsset(ctx, file.Path)
-			if err != nil {
-				span.RecordError(err)
-				cleanupErrors = append(cleanupErrors, fmt.Errorf("failed to delete file %s: %w", file.Path, err))
-			}
+func cleanupRejectedDerivedFile(ctx context.Context, recordErr error, storageService *storage.Service, path string) error {
+	if !errors.Is(recordErr, pgx.ErrNoRows) {
+		return nil
+	}
+	return storageService.DeleteAsset(context.WithoutCancel(ctx), path)
+}
+
+// deleteAssetPathsThenFinalize removes every known object before finalizing
+// the database deletion. Missing objects are successful so a partially
+// completed deletion can be retried safely.
+func deleteAssetPathsThenFinalize(
+	ctx context.Context,
+	storageService permanentDeletionStorage,
+	paths []string,
+	finalize func() error,
+) error {
+	seen := make(map[string]struct{}, len(paths))
+	var deletionErrors []error
+
+	for _, path := range paths {
+		if path == "" {
+			continue
+		}
+		if _, ok := seen[path]; ok {
+			continue
+		}
+		seen[path] = struct{}{}
+
+		exists, err := storageService.AssetExists(ctx, path)
+		if err != nil {
+			deletionErrors = append(deletionErrors, fmt.Errorf("check asset file %q: %w", path, err))
+			continue
+		}
+		if !exists {
+			continue
+		}
+		if err := storageService.DeleteAsset(ctx, path); err != nil {
+			deletionErrors = append(deletionErrors, fmt.Errorf("delete asset file %q: %w", path, err))
 		}
 	}
 
-	if len(cleanupErrors) > 0 {
-		span.SetAttributes(attribute.Int("cleanup_errors", len(cleanupErrors)))
-		// Return the first error, but log all of them
-		return cleanupErrors[0]
+	if len(deletionErrors) > 0 {
+		return fmt.Errorf("asset storage cleanup failed: %w", errors.Join(deletionErrors...))
 	}
-
-	span.SetAttributes(attribute.String("status", "success"))
+	if err := finalize(); err != nil {
+		return fmt.Errorf("failed to permanently delete asset: %w", err)
+	}
 	return nil
 }
 
@@ -1026,7 +1080,7 @@ func (s *Service) RestoreAsset(ctx context.Context, assetID uuid.UUID, userID uu
 	}
 
 	// Restore the asset by changing its status back to active
-	err = s.db.RestoreAssets(ctx, sqlc.RestoreAssetsParams{
+	_, err = s.db.RestoreAssets(ctx, sqlc.RestoreAssetsParams{
 		Column1: []pgtype.UUID{assetUUID},
 		OwnerId: userUUID,
 	})
@@ -1196,11 +1250,6 @@ func (s *Service) thumbnailSize(ctx context.Context, path string, sizeMode thumb
 		return 0
 	}
 	return metadata.Size
-}
-
-func stringToUUIDUnsafe(s string) pgtype.UUID {
-	id, _ := uuid.Parse(s)
-	return pgtype.UUID{Bytes: id, Valid: true}
 }
 
 // getMimeTypeFromAssetType derives MIME type from asset type

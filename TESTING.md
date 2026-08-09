@@ -106,7 +106,7 @@ The video artifacts in CI help diagnose UI regressions; pull them via the GitHub
 
 ## CI pipeline
 
-`.github/workflows/go.yaml` is the pipeline. It runs on Go 1.24 + buf 1.49.0 with two parallel jobs:
+`.github/workflows/go.yaml` is the pipeline. It runs on Go 1.26.5 + buf 1.49.0 with two parallel jobs:
 
 - `build` — `go test -short` over `./...` plus lint/vet.
 - `integration-tests` — `go test -tags=integration -race -timeout=10m` over `./internal/...`.
@@ -208,8 +208,10 @@ Watch `psql -U immich -c "SELECT count(*) FROM pg_stat_activity;"` and `redis-cl
 ## Known limitations
 
 - **ML** (face detection, CLIP smart search) requires the optional external `machine_learning` service. Without it, smart search falls back to text-only and faces return empty.
-- **HLS / adaptive video streaming** is not yet wired.
-- **OAuth mobile redirect** flow is not implemented (regular OAuth login works).
-- **Token refresh** endpoint exists; double-check coverage in `internal/auth` before relying on it.
+- **Backups/restores** are not operational yet: the restore endpoint records metadata but no restore worker consumes it.
+- **Queue administration** is still an in-memory facade and does not control the asynq/Redis worker queues.
+- **Workflow/plugin execution** exposes much of the API shape but still contains simulated/no-op behavior.
+- **Cross-service durability** is incomplete for upload/finalization and multi-instance mobile sync; failure-injection and restart tests are still required.
+- **WebSocket events** have a safe authenticated transport, but domain services are not yet publishing live updates through the hub.
 
 For the full upstream parity backlog, see [ROADMAP.md](ROADMAP.md).

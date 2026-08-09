@@ -168,17 +168,7 @@ func (s *Service) UpdateAlbum(ctx context.Context, albumID uuid.UUID, userID uui
 		return nil, fmt.Errorf("invalid album ID: %w", err)
 	}
 
-	// Get existing album to check ownership
-	album, err := s.db.GetAlbum(ctx, albumUUID)
-	if err != nil {
-		span.RecordError(err)
-		return nil, fmt.Errorf("failed to get album: %w", err)
-	}
-
-	// Check if user owns this album
-	if pgutil.UUIDToString(album.OwnerId) != userID.String() {
-		return nil, fmt.Errorf("access denied: user does not own this album")
-	}
+	ownerUUID := pgutil.UUIDToPgtype(userID)
 
 	// Prepare update parameters
 	updateParams := sqlc.UpdateAlbumParams{
@@ -198,7 +188,10 @@ func (s *Service) UpdateAlbum(ctx context.Context, albumID uuid.UUID, userID uui
 	}
 
 	// Update album
-	updatedAlbum, err := s.db.UpdateAlbum(ctx, updateParams)
+	updatedAlbum, err := s.db.UpdateOwnedAlbum(ctx, sqlc.UpdateOwnedAlbumParams{
+		OwnerID: ownerUUID,
+		Update:  updateParams,
+	})
 	if err != nil {
 		span.RecordError(err)
 		return nil, fmt.Errorf("failed to update album: %w", err)

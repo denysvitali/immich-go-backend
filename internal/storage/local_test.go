@@ -3,9 +3,11 @@ package storage
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -257,6 +259,119 @@ func TestLocalBackend_UploadStream(t *testing.T) {
 	content, err := io.ReadAll(downloaded)
 	require.NoError(t, err)
 	assert.Equal(t, testContent, content)
+}
+
+func TestLocalBackend_RejectsTraversal(t *testing.T) {
+	parentDir := t.TempDir()
+	rootDir := filepath.Join(parentDir, "storage")
+	backend, err := NewLocalBackend(LocalConfig{RootPath: rootDir})
+	require.NoError(t, err)
+
+	outsidePath := filepath.Join(parentDir, "outside.txt")
+	err = backend.UploadBytes(context.Background(), "../outside.txt", []byte("escaped"), "text/plain")
+	require.ErrorContains(t, err, "escapes root")
+	assert.NoFileExists(t, outsidePath)
+
+	require.NoError(t, os.WriteFile(outsidePath, []byte("keep"), 0o600))
+	err = backend.Delete(context.Background(), "../outside.txt")
+	require.ErrorContains(t, err, "escapes root")
+	assert.FileExists(t, outsidePath)
+
+	err = backend.Delete(context.Background(), "")
+	require.ErrorContains(t, err, "resolves to root")
+	assert.DirExists(t, rootDir)
+}
+
+func TestLocalBackend_RejectsSymlinksBelowRoot(t *testing.T) {
+	rootDir := t.TempDir()
+	outsideDir := t.TempDir()
+	backend, err := NewLocalBackend(LocalConfig{RootPath: rootDir})
+	require.NoError(t, err)
+
+	require.NoError(t, os.Symlink(outsideDir, filepath.Join(rootDir, "escape")))
+	err = backend.UploadBytes(context.Background(), "escape/file.txt", []byte("escaped"), "text/plain")
+	require.ErrorContains(t, err, "symlink path component is not allowed")
+	assert.NoFileExists(t, filepath.Join(outsideDir, "file.txt"))
+
+	outsideFile := filepath.Join(outsideDir, "secret.txt")
+	require.NoError(t, os.WriteFile(outsideFile, []byte("secret"), 0o600))
+	require.NoError(t, os.Symlink(outsideFile, filepath.Join(rootDir, "secret.txt")))
+
+	_, err = backend.Download(context.Background(), "secret.txt")
+	require.ErrorContains(t, err, "symlink path component is not allowed")
+	err = backend.Delete(context.Background(), "secret.txt")
+	require.ErrorContains(t, err, "symlink path component is not allowed")
+	assert.FileExists(t, outsideFile)
+
+	_, err = backend.List(context.Background(), "", false)
+	require.ErrorContains(t, err, "symlink path component is not allowed")
+}
+
+func TestLocalBackend_UploadFailureIsAtomicAndCleansTemporaryFile(t *testing.T) {
+	rootDir := t.TempDir()
+	backend, err := NewLocalBackend(LocalConfig{RootPath: rootDir})
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	path := "assets/file.txt"
+	require.NoError(t, backend.UploadBytes(ctx, path, []byte("original"), "text/plain"))
+
+	writeErr := errors.New("reader failed")
+	err = backend.Upload(ctx, path, &failingReader{
+		reader: strings.NewReader("partial replacement"),
+		err:    writeErr,
+	}, -1, "text/plain")
+	require.ErrorIs(t, err, writeErr)
+
+	content, err := os.ReadFile(filepath.Join(rootDir, path))
+	require.NoError(t, err)
+	assert.Equal(t, []byte("original"), content)
+	assertNoUploadTemporaryFiles(t, filepath.Join(rootDir, "assets"))
+}
+
+func TestLocalBackend_UploadVerifiesDeclaredSize(t *testing.T) {
+	rootDir := t.TempDir()
+	backend, err := NewLocalBackend(LocalConfig{RootPath: rootDir})
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	for _, tt := range []struct {
+		name string
+		data string
+		size int64
+	}{
+		{name: "short reader", data: "abc", size: 4},
+		{name: "long reader", data: "abcde", size: 4},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join("assets", strings.ReplaceAll(tt.name, " ", "-")+".txt")
+			err := backend.Upload(ctx, path, strings.NewReader(tt.data), tt.size, "text/plain")
+			require.ErrorContains(t, err, "uploaded size mismatch")
+			assert.NoFileExists(t, filepath.Join(rootDir, path))
+			assertNoUploadTemporaryFiles(t, filepath.Join(rootDir, "assets"))
+		})
+	}
+}
+
+type failingReader struct {
+	reader io.Reader
+	err    error
+}
+
+func (r *failingReader) Read(data []byte) (int, error) {
+	n, err := r.reader.Read(data)
+	if errors.Is(err, io.EOF) {
+		return 0, r.err
+	}
+	return n, err
+}
+
+func assertNoUploadTemporaryFiles(t *testing.T, dir string) {
+	t.Helper()
+
+	tempFiles, err := filepath.Glob(filepath.Join(dir, ".immich-go-upload-*"))
+	require.NoError(t, err)
+	assert.Empty(t, tempFiles)
 }
 
 func TestLocalBackend_GetPublicURL(t *testing.T) {

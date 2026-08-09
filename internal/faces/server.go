@@ -2,9 +2,11 @@ package faces
 
 import (
 	"context"
+	"errors"
 
 	"github.com/denysvitali/immich-go-backend/internal/auth"
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
+	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -25,10 +27,9 @@ func NewServer(service *Service) *Server {
 
 // GetFaces retrieves faces, optionally filtered by ID
 func (s *Server) GetFaces(ctx context.Context, request *immichv1.GetFacesRequest) (*immichv1.GetFacesResponse, error) {
-	// Get user from context
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok || claims == nil {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	userID, err := authenticatedUserID(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	// Convert request
@@ -39,9 +40,9 @@ func (s *Server) GetFaces(ctx context.Context, request *immichv1.GetFacesRequest
 	}
 
 	// Call service
-	response, err := s.service.GetFaces(ctx, req)
+	response, err := s.service.GetFaces(ctx, userID, req)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get faces: %v", err)
+		return nil, faceServiceError("failed to get faces", err)
 	}
 
 	// Convert response
@@ -69,10 +70,9 @@ func (s *Server) GetFaces(ctx context.Context, request *immichv1.GetFacesRequest
 
 // CreateFace creates a new face detection record
 func (s *Server) CreateFace(ctx context.Context, request *immichv1.CreateFaceRequest) (*immichv1.FaceResponse, error) {
-	// Get user from context
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok || claims == nil {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	userID, err := authenticatedUserID(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	// Validate request
@@ -99,9 +99,9 @@ func (s *Server) CreateFace(ctx context.Context, request *immichv1.CreateFaceReq
 	}
 
 	// Call service
-	response, err := s.service.CreateFace(ctx, req)
+	response, err := s.service.CreateFace(ctx, userID, req)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to create face: %v", err)
+		return nil, faceServiceError("failed to create face", err)
 	}
 
 	// Convert response
@@ -122,10 +122,9 @@ func (s *Server) CreateFace(ctx context.Context, request *immichv1.CreateFaceReq
 
 // DeleteFace removes a face detection record
 func (s *Server) DeleteFace(ctx context.Context, request *immichv1.DeleteFaceRequest) (*emptypb.Empty, error) {
-	// Get user from context
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok || claims == nil {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	userID, err := authenticatedUserID(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	// Validate request
@@ -134,9 +133,9 @@ func (s *Server) DeleteFace(ctx context.Context, request *immichv1.DeleteFaceReq
 	}
 
 	// Call service
-	err := s.service.DeleteFace(ctx, request.GetId())
+	err = s.service.DeleteFace(ctx, userID, request.GetId())
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to delete face: %v", err)
+		return nil, faceServiceError("failed to delete face", err)
 	}
 
 	return &emptypb.Empty{}, nil
@@ -144,10 +143,9 @@ func (s *Server) DeleteFace(ctx context.Context, request *immichv1.DeleteFaceReq
 
 // ReassignFacesById reassigns faces to a different person
 func (s *Server) ReassignFacesById(ctx context.Context, request *immichv1.ReassignFacesByIdRequest) (*immichv1.ReassignFacesByIdResponse, error) {
-	// Get user from context
-	claims, ok := auth.GetClaimsFromStdContext(ctx)
-	if !ok || claims == nil {
-		return nil, status.Error(codes.Unauthenticated, "unauthorized")
+	userID, err := authenticatedUserID(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	// Validate request
@@ -159,9 +157,9 @@ func (s *Server) ReassignFacesById(ctx context.Context, request *immichv1.Reassi
 	}
 
 	// Call service
-	response, err := s.service.ReassignFacesById(ctx, request.GetId(), request.GetPersonId())
+	response, err := s.service.ReassignFacesById(ctx, userID, request.GetId(), request.GetPersonId())
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to reassign faces: %v", err)
+		return nil, faceServiceError("failed to reassign faces", err)
 	}
 
 	// Convert response
@@ -185,4 +183,23 @@ func (s *Server) ReassignFacesById(ctx context.Context, request *immichv1.Reassi
 	return &immichv1.ReassignFacesByIdResponse{
 		UpdatedFaces: updatedFaces,
 	}, nil
+}
+
+func authenticatedUserID(ctx context.Context) (uuid.UUID, error) {
+	claims, ok := auth.GetClaimsFromStdContext(ctx)
+	if !ok || claims == nil {
+		return uuid.Nil, status.Error(codes.Unauthenticated, "unauthorized")
+	}
+	userID, err := uuid.Parse(claims.UserID)
+	if err != nil {
+		return uuid.Nil, status.Error(codes.Unauthenticated, "invalid user identity")
+	}
+	return userID, nil
+}
+
+func faceServiceError(operation string, err error) error {
+	if errors.Is(err, ErrAccessDenied) {
+		return status.Error(codes.PermissionDenied, "access denied")
+	}
+	return status.Errorf(codes.Internal, "%s: %v", operation, err)
 }

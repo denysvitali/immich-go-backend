@@ -24,11 +24,29 @@ const testDeadline = 5 * time.Second
 // client. Both are torn down when the test ends.
 func dialHub(t *testing.T) (*gorilla.Conn, *Hub) {
 	t.Helper()
+	conn, hub, _ := dialHubWithHandler(t)
+	return conn, hub
+}
+
+func dialHubWithHandler(t *testing.T) (*gorilla.Conn, *Hub, <-chan struct{}) {
+	t.Helper()
 
 	hub := New()
 	go hub.Run()
+	t.Cleanup(func() {
+		hub.Close()
+		select {
+		case <-hub.stopped:
+		case <-time.After(testDeadline):
+			t.Errorf("hub did not stop")
+		}
+	})
 
-	srv := httptest.NewServer(http.HandlerFunc(hub.HandleWebSocket))
+	handlerReturned := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hub.HandleWebSocket(w, r)
+		close(handlerReturned)
+	}))
 	t.Cleanup(srv.Close)
 
 	url := "ws" + strings.TrimPrefix(srv.URL, "http")
@@ -44,7 +62,34 @@ func dialHub(t *testing.T) (*gorilla.Conn, *Hub) {
 	if err := conn.SetReadDeadline(time.Now().Add(testDeadline)); err != nil {
 		t.Fatalf("set read deadline: %v", err)
 	}
-	return conn, hub
+	return conn, hub, handlerReturned
+}
+
+func TestWebSocketRejectsCrossOriginUpgrade(t *testing.T) {
+	hub := New()
+	go hub.Run()
+	t.Cleanup(hub.Close)
+
+	srv := httptest.NewServer(http.HandlerFunc(hub.HandleWebSocket))
+	t.Cleanup(srv.Close)
+
+	header := http.Header{}
+	header.Set("Origin", "https://attacker.example")
+	url := "ws" + strings.TrimPrefix(srv.URL, "http")
+	conn, resp, err := gorilla.DefaultDialer.Dial(url, header)
+	if conn != nil {
+		_ = conn.Close()
+	}
+	if err == nil {
+		t.Fatal("cross-origin WebSocket upgrade unexpectedly succeeded")
+	}
+	if resp == nil {
+		t.Fatal("cross-origin WebSocket upgrade returned no HTTP response")
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusForbidden)
+	}
 }
 
 // TestHandshakeIsFirstPacket pins that the server opens with an Engine.IO OPEN
@@ -127,38 +172,102 @@ func TestSocketIOConnectGetsConnectAck(t *testing.T) {
 // client down: HandleWebSocket returns, which means readPump exited and the
 // hub processed the unregister.
 func TestClientCloseUnregisters(t *testing.T) {
-	hub := New()
-	go hub.Run()
-
-	handlerReturned := make(chan struct{})
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		hub.HandleWebSocket(w, r)
-		close(handlerReturned)
-	}))
-	t.Cleanup(srv.Close)
-
-	url := "ws" + strings.TrimPrefix(srv.URL, "http")
-	conn, resp, err := gorilla.DefaultDialer.Dial(url, nil)
-	if err != nil {
-		t.Fatalf("dial: %v", err)
-	}
-	if resp != nil && resp.Body != nil {
-		_ = resp.Body.Close()
-	}
-
-	if err := conn.SetReadDeadline(time.Now().Add(testDeadline)); err != nil {
-		t.Fatalf("set read deadline: %v", err)
-	}
+	conn, _, handlerReturned := dialHubWithHandler(t)
 	readHandshake(t, conn)
 
 	if err := conn.Close(); err != nil {
 		t.Fatalf("close: %v", err)
 	}
 
+	waitForHandler(t, handlerReturned, "the client disconnected")
+}
+
+// TestEngineIOCloseStopsClient exercises the exit path that used to close the
+// client completion channel in both handleMessage and readPump.
+func TestEngineIOCloseStopsClient(t *testing.T) {
+	conn, _, handlerReturned := dialHubWithHandler(t)
+	readHandshake(t, conn)
+
+	if err := conn.WriteMessage(gorilla.TextMessage, engine.EncodePacket(engine.PacketClose, nil)); err != nil {
+		t.Fatalf("write Engine.IO close: %v", err)
+	}
+
+	waitForHandler(t, handlerReturned, "an Engine.IO close packet")
+}
+
+// TestSocketIODisconnectStopsClient covers the equivalent nested Socket.IO
+// disconnect path and guards against multiple pumps racing to stop the client.
+func TestSocketIODisconnectStopsClient(t *testing.T) {
+	conn, _, handlerReturned := dialHubWithHandler(t)
+	readHandshake(t, conn)
+
+	disconnect := engine.EncodePacket(engine.PacketMessage, []byte("1"))
+	if err := conn.WriteMessage(gorilla.TextMessage, disconnect); err != nil {
+		t.Fatalf("write Socket.IO disconnect: %v", err)
+	}
+
+	waitForHandler(t, handlerReturned, "a Socket.IO disconnect packet")
+}
+
+// TestPingWithFullSendBufferDoesNotBlock ensures an unresponsive client cannot
+// pin readPump forever while it tries to enqueue the mandatory pong response.
+func TestPingWithFullSendBufferDoesNotBlock(t *testing.T) {
+	client := &Client{
+		session: engine.NewSession("full-buffer", time.Second, time.Second),
+		send:    make(chan []byte, 1),
+		done:    make(chan struct{}),
+	}
+	client.send <- []byte("already full")
+
+	returned := make(chan struct{})
+	go func() {
+		client.handleMessage(engine.EncodePacket(engine.PacketPing, nil))
+		close(returned)
+	}()
+
+	select {
+	case <-returned:
+	case <-time.After(testDeadline):
+		t.Fatal("ping handling blocked on a full send buffer")
+	}
+
+	select {
+	case <-client.done:
+	case <-time.After(testDeadline):
+		t.Fatal("client was not stopped after its send buffer filled")
+	}
+}
+
+// TestHubCloseStopsClients proves that package owners can terminate Run and
+// that shutdown releases active handlers. Repeated Close calls must be safe.
+func TestHubCloseStopsClients(t *testing.T) {
+	conn, hub, handlerReturned := dialHubWithHandler(t)
+	readHandshake(t, conn)
+
+	hub.Close()
+	hub.Close()
+
+	select {
+	case <-hub.stopped:
+	case <-time.After(testDeadline):
+		t.Fatal("Hub.Run did not return after Close")
+	}
+	waitForHandler(t, handlerReturned, "hub shutdown")
+
+	hub.mu.RLock()
+	clientCount := len(hub.clients)
+	hub.mu.RUnlock()
+	if clientCount != 0 {
+		t.Fatalf("hub retained %d clients after shutdown", clientCount)
+	}
+}
+
+func waitForHandler(t *testing.T, handlerReturned <-chan struct{}, after string) {
+	t.Helper()
 	select {
 	case <-handlerReturned:
 	case <-time.After(testDeadline):
-		t.Fatal("HandleWebSocket did not return after the client disconnected")
+		t.Fatalf("HandleWebSocket did not return after %s", after)
 	}
 }
 

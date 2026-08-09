@@ -40,8 +40,24 @@ func TestNormalizePath(t *testing.T) {
 func TestNormalizePathFS(t *testing.T) {
 	root := t.TempDir()
 
-	assert.Equal(t, filepath.Join(root, "asset", "file.jpg"), normalizePathFS("/asset/file.jpg", root))
-	assert.Equal(t, filepath.Join(root, "asset", "file.jpg"), normalizePathFS("asset/../asset/file.jpg", root))
+	got, err := normalizePathFS("/asset/file.jpg", root)
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(root, "asset", "file.jpg"), got)
+
+	got, err = normalizePathFS("asset/../asset/file.jpg", root)
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(root, "asset", "file.jpg"), got)
+
+	got, err = normalizePathFS("", root)
+	require.NoError(t, err)
+	assert.Equal(t, root, got)
+
+	for _, path := range []string{"..", "../file.jpg", "asset/../../file.jpg", "/../../file.jpg"} {
+		t.Run(path, func(t *testing.T) {
+			_, err := normalizePathFS(path, root)
+			assert.ErrorContains(t, err, "escapes root")
+		})
+	}
 }
 
 func TestBuildS3PublicURL(t *testing.T) {

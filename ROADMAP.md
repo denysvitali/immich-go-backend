@@ -1,13 +1,13 @@
 # Roadmap
 
-The active target is **API parity** with upstream Immich so the official web UI and mobile apps work against this backend without modification. We track upstream's `v3.0.x` stable line.
+The active target is **behavioral parity** with upstream Immich so the official web UI and mobile apps work against this backend without modification. CI currently pins the route-coverage comparison to `v3.0.1`; matching route names alone does not establish behavioral parity.
 
 ## Tracking upstream
 
-| Stream | Latest | Notes |
+| Stream | Pinned target | Notes |
 |--------|--------|-------|
-| Stable | v3.0.2 | The behaviour we aim for in the short term. |
-| Preview | v3.0.0-rc.0 | Reviewed for upcoming shape; nothing users rely on yet. |
+| OpenAPI route gate | v3.0.1 | Must remain at 100%; this checks surface coverage only. |
+| Behavioral reference | v2.7.5 plus v3 work | Align this with the OpenAPI target before claiming parity. |
 
 Sources: [Immich releases](https://github.com/immich-app/immich/releases), the [OpenAPI spec](https://github.com/immich-app/immich/blob/main/open-api/immich-openapi-specs.json), and the [OAuth docs](https://docs.immich.app/administration/oauth).
 
@@ -39,10 +39,12 @@ flowchart LR
 - [x] Configurable worker pools for background jobs (`JOBS_WORKERS`, default 4).
 - [x] Advanced retry logic for background jobs.
 
-### v3 RC parity
+### v3 parity
 
-- [x] Workflows / plugins parity.
-  Workflows persist in PostgreSQL (`workflows`, `workflow_executions`). Plugins expose builtin methods/templates matching upstream v3 API shapes (WASM third-party host is out of scope).
+- [ ] Workflow execution semantics.
+  Definitions persist, but actions are currently marked successful without being executed.
+- [ ] Plugin lifecycle and execution.
+  The current service is in-memory and install operations are simulated; decide and implement the supported plugin model.
 - [x] HLS real-time transcoding.
   On-demand HLS via `ensureHLS` + ffmpeg when `Features.VideoTranscodingEnabled`.
 - [x] Integrity-report jobs.
@@ -91,6 +93,18 @@ flowchart LR
 - [x] Grafana dashboards (against `/metrics` + OTel) — `deploy/monitoring/grafana/`.
 - [x] Alerting rules (Prometheus / Alertmanager) — `deploy/monitoring/prometheus/`.
 - [x] Helm chart for Kubernetes — `deploy/helm/immich-go-backend/`.
+
+### Production-readiness blockers
+
+- [ ] Implement and destructive-test database backup creation, retention, validation, and restore. The current restore endpoint only records a request.
+- [ ] Replace the in-memory queue facade with the real asynq/Redis queue state and controls.
+- [ ] Add a durable upload/finalization or outbox protocol so DB and object-storage failures cannot orphan or desynchronize media.
+- [ ] Publish real WebSocket domain events; the current hub provides transport handling but services do not broadcast through it.
+- [ ] Persist mobile sync checkpoints/acknowledgements and add cross-instance pub/sub.
+- [ ] Implement or remove unsupported job types and storage-migration paths instead of returning success/no-op results.
+- [ ] Complete memory generation, explore search results, library statistics, reverse geocoding, and push delivery semantics.
+- [ ] Run clean-install, upgrade, failure-injection, and restore tests against the exact Compose and Helm release artifacts.
+- [ ] Complete an independent threat model/security review and a release process with versioned artifacts, checksums/SBOM, provenance, and published support/migration policy.
 
 ## Non-goals
 

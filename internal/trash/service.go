@@ -12,12 +12,22 @@ import (
 
 // Service handles trash operations
 type Service struct {
-	db *sqlc.Queries
+	db      *sqlc.Queries
+	deleter PermanentAssetDeleter
+}
+
+// PermanentAssetDeleter owns the storage-first permanent deletion workflow.
+type PermanentAssetDeleter interface {
+	HardDeleteAsset(ctx context.Context, assetID uuid.UUID, userID uuid.UUID) error
 }
 
 // NewService creates a new trash service
-func NewService(queries *sqlc.Queries) *Service {
-	return &Service{db: queries}
+func NewService(queries *sqlc.Queries, deleters ...PermanentAssetDeleter) *Service {
+	service := &Service{db: queries}
+	if len(deleters) > 0 {
+		service.deleter = deleters[0]
+	}
+	return service
 }
 
 // TrashedAsset represents an asset in trash
@@ -171,8 +181,9 @@ func (s *Service) RestoreAssets(ctx context.Context, userID string, assetIDs []s
 		return 0, nil
 	}
 
-	// Restore assets owned by the user
-	err = s.db.RestoreAssets(ctx, sqlc.RestoreAssetsParams{
+	// Restore only live, trashed assets owned by the user. The query is a
+	// compare-and-set so concurrent permanent-deletion intent cannot be undone.
+	restored, err := s.db.RestoreAssets(ctx, sqlc.RestoreAssetsParams{
 		Column1: assetUUIDs,
 		OwnerId: userUUID,
 	})
@@ -180,7 +191,7 @@ func (s *Service) RestoreAssets(ctx context.Context, userID string, assetIDs []s
 		return 0, fmt.Errorf("failed to restore assets: %w", err)
 	}
 
-	return len(assetUUIDs), nil
+	return int(restored), nil
 }
 
 // RestoreAllAssets restores all trashed assets for a user
@@ -214,6 +225,9 @@ func (s *Service) EmptyTrash(ctx context.Context, userID string) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("invalid user ID: %w", err)
 	}
+	if s.deleter == nil {
+		return 0, fmt.Errorf("permanent asset deletion is not configured")
+	}
 
 	// Get all trashed assets
 	assets, err := s.db.GetTrashedAssetsByUser(ctx, userUUID)
@@ -224,10 +238,11 @@ func (s *Service) EmptyTrash(ctx context.Context, userID string) (int, error) {
 	// Permanently delete each asset
 	deleted := 0
 	for _, asset := range assets {
-		err = s.db.PermanentlyDeleteAsset(ctx, asset.ID)
-		if err == nil {
-			deleted++
+		err = s.deleter.HardDeleteAsset(ctx, pgutil.PgtypeToUUID(asset.ID), pgutil.PgtypeToUUID(userUUID))
+		if err != nil {
+			return deleted, fmt.Errorf("failed to permanently delete asset %s: %w", pgutil.UUIDToString(asset.ID), err)
 		}
+		deleted++
 	}
 
 	return deleted, nil
@@ -256,9 +271,12 @@ func (s *Service) PermanentlyDeleteAsset(ctx context.Context, userID, assetID st
 	if pgutil.PgtypeToUUID(asset.OwnerId) != uid {
 		return fmt.Errorf("access denied: asset does not belong to user")
 	}
+	if s.deleter == nil {
+		return fmt.Errorf("permanent asset deletion is not configured")
+	}
 
-	// Permanently delete the asset
-	err = s.db.PermanentlyDeleteAsset(ctx, assetUUID)
+	// Permanently delete storage objects before finalizing the database record.
+	err = s.deleter.HardDeleteAsset(ctx, aid, uid)
 	if err != nil {
 		return fmt.Errorf("failed to permanently delete asset: %w", err)
 	}

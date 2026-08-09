@@ -37,7 +37,7 @@ func MapAuthErrorToGRPC(err error) codes.Code {
 		return codes.NotFound
 	case ErrUserExists:
 		return codes.AlreadyExists
-	case ErrPinCodeExists, ErrNoPinCode, ErrRegistrationDisabled:
+	case ErrPinCodeExists, ErrNoPinCode, ErrRegistrationDisabled, ErrAlreadyInitialized:
 		return codes.FailedPrecondition
 	default:
 		return codes.Internal
@@ -78,6 +78,7 @@ const (
 
 	// Registration errors
 	ErrRegistrationDisabled AuthErrorType = "registration_disabled"
+	ErrAlreadyInitialized   AuthErrorType = "already_initialized"
 
 	// Permission errors
 	ErrInsufficientPermissions AuthErrorType = "insufficient_permissions"

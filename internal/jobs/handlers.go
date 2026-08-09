@@ -136,11 +136,19 @@ func (h *Handlers) HandleThumbnailGeneration(ctx context.Context, task *asynq.Ta
 			Type:    string(thumbType),
 			Path:    thumbPath,
 		}); err != nil {
+			var cleanupErr error
+			if errors.Is(err, pgx.ErrNoRows) {
+				cleanupErr = h.storageService.DeleteAsset(context.WithoutCancel(ctx), thumbPath)
+			}
 			h.logger.WithError(err).WithFields(logrus.Fields{
 				"asset_id":   asset.ID,
 				"thumb_type": thumbType,
 				"thumb_path": thumbPath,
 			}).Warn("Failed to store thumbnail record in database")
+			if cleanupErr != nil {
+				h.logger.WithError(cleanupErr).WithField("thumb_path", thumbPath).
+					Error("Failed to remove untracked thumbnail")
+			}
 			continue
 		}
 
@@ -463,31 +471,23 @@ func (h *Handlers) HandleVideoTranscode(ctx context.Context, task *asynq.Task) e
 		return fmt.Errorf("failed to upload transcoded video: %w", err)
 	}
 
-	// 5. Update asset encodedVideoPath in database
+	// 5. Atomically publish the encoded path and its storage record. The
+	// guarded transaction serializes with permanent deletion, so deletion
+	// either observes this file or this finalization fails and removes it.
 	pgAssetID := pgtype.UUID{Bytes: assetID, Valid: true}
-	_, err = h.db.UpdateAssetEncodedVideoPath(ctx, sqlc.UpdateAssetEncodedVideoPathParams{
-		ID:               pgAssetID,
-		EncodedVideoPath: pgtype.Text{String: encodedPath, Valid: true},
-	})
-	if err != nil {
-		return fmt.Errorf("failed to update asset encoded video path: %w", err)
-	}
-
-	// 6. Record asset file of type 'encoded_video'
-	_, err = h.db.CreateAssetFile(ctx, sqlc.CreateAssetFileParams{
-		AssetId: pgAssetID,
-		Type:    "encoded-video",
+	_, err = h.db.FinalizeEncodedVideo(ctx, sqlc.FinalizeEncodedVideoParams{
+		AssetID: pgAssetID,
 		Path:    encodedPath,
 	})
 	if err != nil {
-		h.logger.WithError(err).WithFields(logrus.Fields{
-			"asset_id": assetID,
-			"path":     encodedPath,
-		}).Warn("Failed to record encoded video asset file")
-		// Non-fatal: the asset already has the encodedVideoPath set
+		if cleanupErr := cleanupRejectedJobOutput(ctx, err, h.storageService, encodedPath); cleanupErr != nil {
+			h.logger.WithError(cleanupErr).WithField("path", encodedPath).
+				Error("Failed to remove untracked encoded video")
+		}
+		return fmt.Errorf("failed to update asset encoded video path: %w", err)
 	}
 
-	// 7. Update asset job status to record that video conversion finished
+	// 6. Update asset job status to record that video conversion finished
 	now := time.Now()
 	if err := h.markAssetJobStatus(ctx, sqlc.UpdateAssetJobStatusParams{
 		AssetId:   pgAssetID,
@@ -502,6 +502,13 @@ func (h *Handlers) HandleVideoTranscode(ctx context.Context, task *asynq.Task) e
 	}).Info("Video transcode complete")
 
 	return nil
+}
+
+func cleanupRejectedJobOutput(ctx context.Context, recordErr error, storageService *storage.Service, path string) error {
+	if !errors.Is(recordErr, pgx.ErrNoRows) {
+		return nil
+	}
+	return storageService.DeleteAsset(context.WithoutCancel(ctx), path)
 }
 
 // encodedVideoPath derives a deterministic storage path for the encoded video.

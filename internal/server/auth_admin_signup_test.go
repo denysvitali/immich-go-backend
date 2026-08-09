@@ -98,4 +98,15 @@ func TestServerAdminSignUpSucceedsWithValidPassword(t *testing.T) {
 	assert.NotEmpty(t, resp.GetAccessToken())
 	assert.Equal(t, "admin-success@test.com", resp.GetUserEmail())
 	assert.True(t, resp.GetIsAdmin(), "first admin signup must produce an admin user")
+
+	second, err := srv.AdminSignUp(ctx, &immichv1.AdminSignUpRequest{
+		Email:    "second-admin@test.com",
+		Password: "validpassword123",
+		Name:     "Second Admin",
+	})
+	require.Error(t, err)
+	assert.Nil(t, second)
+	grpcStatus, ok := status.FromError(err)
+	require.True(t, ok)
+	assert.Equal(t, codes.FailedPrecondition, grpcStatus.Code())
 }

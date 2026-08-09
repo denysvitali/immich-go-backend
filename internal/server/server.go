@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"net"
+	"net/http"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/sirupsen/logrus"
@@ -63,6 +65,7 @@ type Server struct {
 	grpcServer  *grpc.Server
 	authService *auth.Service
 	wsHub       *websocket.Hub
+	metrics     http.Handler
 
 	// services holds every domain service. Embedded by value, so the zero
 	// Server has nil services rather than a nil struct to dereference.
@@ -110,14 +113,13 @@ type Server struct {
 func NewServer(cfg *config.Config, db *db.Conn) (*Server, error) {
 	authService := auth.NewService(cfg.Auth, db.Queries)
 
-	wsHub := websocket.New()
-	// The hub currently has no shutdown handle; see docs/refactor-audit.md.
-	go wsHub.Run()
-
 	svcs, err := newServices(cfg, db, authService)
 	if err != nil {
 		return nil, err
 	}
+
+	wsHub := websocket.New()
+	go wsHub.Run()
 
 	s := &Server{
 		config:      cfg,
@@ -127,7 +129,10 @@ func NewServer(cfg *config.Config, db *db.Conn) (*Server, error) {
 		queries:     db.Queries,
 		services:    svcs,
 	}
-	s.grpcServer = grpc.NewServer()
+	s.grpcServer = grpc.NewServer(
+		grpc.ChainUnaryInterceptor(s.authenticationUnaryInterceptor),
+		grpc.ChainStreamInterceptor(s.authenticationStreamInterceptor),
+	)
 
 	s.registerGRPCServices()
 
@@ -197,10 +202,37 @@ func (s *Server) SetGRPCConn(conn *grpc.ClientConn) {
 
 func (s *Server) Stop() {
 	logrus.Info("Stopping gRPC server...")
+	if s.wsHub != nil {
+		s.wsHub.Close()
+	}
 	if s.jobService != nil {
 		s.jobService.Stop()
 	}
-	s.grpcServer.GracefulStop()
+	if s.grpcServer != nil {
+		timeout := 30 * time.Second
+		if s.config != nil && s.config.Server.ShutdownTimeout > 0 {
+			timeout = s.config.Server.ShutdownTimeout
+		}
+		gracefulDone := make(chan struct{})
+		go func() {
+			s.grpcServer.GracefulStop()
+			close(gracefulDone)
+		}()
+		timer := time.NewTimer(timeout)
+		select {
+		case <-gracefulDone:
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+		case <-timer.C:
+			logrus.WithField("timeout", timeout).Warn("gRPC graceful shutdown timed out; forcing stop")
+			s.grpcServer.Stop()
+			<-gracefulDone
+		}
+	}
 	if s.grpcClientConn != nil {
 		if err := s.grpcClientConn.Close(); err != nil {
 			logrus.WithError(err).Error("Failed to close gRPC client connection")
@@ -289,6 +321,7 @@ func startJobService(
 	// metadata extraction, transcodes) sit in Redis forever.
 	if err := jobService.Start(); err != nil {
 		logrus.WithError(err).Warn("Failed to start job workers, background processing disabled")
+		jobService.Close()
 		return nil
 	}
 	return jobService
@@ -356,6 +389,7 @@ func newServices(cfg *config.Config, db *db.Conn, authService *auth.Service) (se
 	if err != nil {
 		return services{}, err
 	}
+	userService.SetPermanentAssetDeleter(assetService)
 
 	mlClient := newMLClient(cfg)
 
@@ -365,7 +399,7 @@ func newServices(cfg *config.Config, db *db.Conn, authService *auth.Service) (se
 	downloadService := download.NewService(db.Queries, storageService)
 	sharedLinksService := sharedlinks.NewService(db.Queries)
 	systemConfigService := systemconfig.NewService(db.Queries)
-	trashService := trash.NewServer(db.Queries)
+	trashService := trash.NewServer(db.Queries, assetService)
 	tagsService := tags.NewServer(db.Queries)
 	mapService := mapservice.NewServer(db.Queries)
 	peopleService := people.NewServer(db.Queries, storageService)
@@ -439,18 +473,21 @@ func newServices(cfg *config.Config, db *db.Conn, authService *auth.Service) (se
 	libraryServer := libraries.NewServer(libraryService)
 	searchServer := search.NewServer(searchService)
 
-	jobService := startJobService(cfg, db, assetService, libraryService, storageService, mlClient)
-
-	// Admin last: its dead-letter operations need the job service.
+	// Finish every fallible constructor before starting background workers.
+	// Admin's server wrapper receives the job service after worker startup.
 	adminService, err := admin.NewService(db.Queries, cfg, storageService)
 	if err != nil {
 		return services{}, err
 	}
+	adminService.SetPermanentAssetDeleter(assetService)
+
+	jobService := startJobService(cfg, db, assetService, libraryService, storageService, mlClient)
 	adminServer := admin.NewServer(adminService, jobService)
 
 	return services{
 		userService:           userService,
 		assetService:          assetService,
+		storageService:        storageService,
 		apiKeyService:         apiKeyService,
 		librariesServer:       libraryServer,
 		searchServer:          searchServer,

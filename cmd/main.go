@@ -19,8 +19,8 @@ import (
 var (
 	cfgFile string
 
-	// cfg is populated by initConfig before any RunE executes, via
-	// cobra.OnInitialize. Subcommands read it directly.
+	// cfg is populated by the root command's persistent pre-run hook before
+	// any RunE executes. Subcommands read it directly.
 	cfg *config.Config
 )
 
@@ -32,9 +32,10 @@ func main() {
 }
 
 var rootCmd = &cobra.Command{
-	Use:   "immich-go-backend",
-	Short: "Immich Go Backend Server",
-	Long:  `A Go implementation of the Immich backend server providing photo and video management capabilities.`,
+	Use:               "immich-go-backend",
+	Short:             "Immich Go Backend Server",
+	Long:              `A Go implementation of the Immich backend server providing photo and video management capabilities.`,
+	PersistentPreRunE: initConfig,
 }
 
 var versionCmd = &cobra.Command{
@@ -50,37 +51,59 @@ var versionCmd = &cobra.Command{
 }
 
 func init() {
-	cobra.OnInitialize(initConfig)
-
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is ./config.yaml)")
 	rootCmd.AddCommand(serveCmd)
 	rootCmd.AddCommand(migrateCmd)
 	rootCmd.AddCommand(versionCmd)
 }
 
-// initConfig loads the configuration and applies the logging settings. A
-// failure here is fatal: every subcommand needs a valid config, and continuing
-// with a zero-value one would fail later with a worse message.
-func initConfig() {
+// initConfig loads the configuration and applies the logging settings. Only
+// serve needs full runtime validation: utility commands can parse their inputs
+// without a JWT signing key because they never issue or validate tokens.
+func initConfig(cmd *cobra.Command, _ []string) error {
 	if cfgFile == "" {
 		cfgFile = "./config.yaml"
 	}
 
 	var err error
-	cfg, err = config.LoadConfig(cfgFile)
+	cfg, err = loadConfigForCommand(cmd, cfgFile)
 	if err != nil {
-		logrus.WithError(err).Fatal("Failed to load configuration")
+		return fmt.Errorf("load configuration: %w", err)
 	}
 
-	level, err := logrus.ParseLevel(cfg.Logging.Level)
+	return configureLogging(cfg.Logging)
+}
+
+func configureLogging(logging config.LoggingConfig) error {
+	level, err := logrus.ParseLevel(logging.Level)
 	if err != nil {
-		level = logrus.InfoLevel
+		return fmt.Errorf("invalid log level %q: %w", logging.Level, err)
 	}
 	logrus.SetLevel(level)
 
-	if cfg.Logging.Format == "json" {
+	switch logging.Format {
+	case "json":
 		logrus.SetFormatter(&logrus.JSONFormatter{})
-	} else {
+	case "text":
 		logrus.SetFormatter(&logrus.TextFormatter{})
+	default:
+		return fmt.Errorf("invalid log format %q; expected json or text", logging.Format)
 	}
+
+	switch logging.Output {
+	case "stdout":
+		logrus.SetOutput(os.Stdout)
+	case "stderr":
+		logrus.SetOutput(os.Stderr)
+	default:
+		return fmt.Errorf("unsupported log output %q; expected stdout or stderr", logging.Output)
+	}
+	return nil
+}
+
+func loadConfigForCommand(cmd *cobra.Command, configPath string) (*config.Config, error) {
+	if cmd.Name() == serveCmd.Name() {
+		return config.LoadConfig(configPath)
+	}
+	return config.LoadConfigWithoutValidation(configPath)
 }

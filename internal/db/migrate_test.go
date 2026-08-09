@@ -3,6 +3,11 @@ package db
 import (
 	"context"
 	"database/sql"
+	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -21,6 +26,41 @@ func TestMigration_Structure(t *testing.T) {
 	assert.Equal(t, 1, migration.Version)
 	assert.Equal(t, "initial_schema", migration.Name)
 	assert.Contains(t, migration.SQL, "CREATE TABLE")
+}
+
+func TestMigrationTablesMatchSQLCSchema(t *testing.T) {
+	schema, err := os.ReadFile(filepath.Join("..", "..", "sqlc", "schema.sql"))
+	require.NoError(t, err)
+
+	migrations, err := loadMigrations()
+	require.NoError(t, err)
+
+	var migrationSQL strings.Builder
+	for _, migration := range migrations {
+		migrationSQL.WriteString(migration.SQL)
+		migrationSQL.WriteByte('\n')
+	}
+
+	expected := publicTableNames(string(schema))
+	actual := publicTableNames(migrationSQL.String())
+	assert.Equal(t, expected, actual,
+		"runtime migrations and sqlc/schema.sql must declare the same public tables")
+}
+
+func publicTableNames(sqlText string) []string {
+	tablePattern := regexp.MustCompile(`(?im)^\s*CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?public\."?([a-z0-9_]+)"?\s*\(`)
+	matches := tablePattern.FindAllStringSubmatch(sqlText, -1)
+	tables := make([]string, 0, len(matches))
+	seen := make(map[string]struct{}, len(matches))
+	for _, match := range matches {
+		if _, ok := seen[match[1]]; ok {
+			continue
+		}
+		seen[match[1]] = struct{}{}
+		tables = append(tables, match[1])
+	}
+	sort.Strings(tables)
+	return tables
 }
 
 func TestCreateMigrationsTable(t *testing.T) {
@@ -93,33 +133,35 @@ func TestRunMigrations(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	t.Run("skips migrations when up to date", func(t *testing.T) {
-		// Create migrations table
-		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS schema_migrations`).
-			WillReturnResult(sqlmock.NewResult(0, 0))
+	migrations, err := loadMigrations()
+	require.NoError(t, err)
+	sort.Slice(migrations, func(i, j int) bool { return migrations[i].Version < migrations[j].Version })
 
-		// Get current version (assuming we're at version 1 and that's the latest)
-		rows := sqlmock.NewRows([]string{"version"}).AddRow(1)
-		mock.ExpectQuery(`SELECT COALESCE\(MAX\(version\), 0\) FROM schema_migrations`).
-			WillReturnRows(rows)
+	mock.ExpectExec(`SELECT pg_advisory_lock\(\$1\)`).
+		WithArgs(migrationAdvisoryLockID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery(`SHOW statement_timeout`).
+		WillReturnRows(sqlmock.NewRows([]string{"statement_timeout"}).AddRow("30s"))
+	mock.ExpectExec(`SET statement_timeout = 0`).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec(`(?s)CREATE TABLE IF NOT EXISTS schema_migrations.*ALTER TABLE schema_migrations`).
+		WillReturnResult(sqlmock.NewResult(0, 0))
 
-		// Since loadMigrations() reads from filesystem, we can't fully test RunMigrations
-		// without mocking the filesystem. This test demonstrates the structure.
-	})
+	rows := sqlmock.NewRows([]string{"version", "name", "checksum"})
+	for _, migration := range migrations {
+		rows.AddRow(migration.Version, migration.Name, migration.Checksum)
+	}
+	mock.ExpectQuery(`SELECT version, name, checksum FROM schema_migrations ORDER BY version`).
+		WillReturnRows(rows)
+	mock.ExpectExec(`SELECT set_config\('statement_timeout', \$1, false\)`).
+		WithArgs("30s").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`SELECT pg_advisory_unlock\(\$1\)`).
+		WithArgs(migrationAdvisoryLockID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	t.Run("runs pending migrations", func(t *testing.T) {
-		// Create migrations table
-		mock.ExpectExec(`CREATE TABLE IF NOT EXISTS schema_migrations`).
-			WillReturnResult(sqlmock.NewResult(0, 0))
-
-		// Get current version (0 - no migrations yet)
-		rows := sqlmock.NewRows([]string{"version"}).AddRow(0)
-		mock.ExpectQuery(`SELECT COALESCE\(MAX\(version\), 0\) FROM schema_migrations`).
-			WillReturnRows(rows)
-
-		// The actual migration running would happen here
-		// but requires filesystem mocking
-	})
+	require.NoError(t, RunMigrations(context.Background(), db))
+	require.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestMigrationOrdering(t *testing.T) {
@@ -145,6 +187,79 @@ func TestMigrationOrdering(t *testing.T) {
 	assert.Equal(t, "second", migrations[1].Name)
 	assert.Equal(t, 3, migrations[2].Version)
 	assert.Equal(t, "third", migrations[2].Name)
+}
+
+func TestValidateMigrationSequence(t *testing.T) {
+	t.Run("accepts contiguous unique migrations", func(t *testing.T) {
+		err := validateMigrationSequence([]Migration{
+			{Version: 1, Name: "initial"},
+			{Version: 2, Name: "next"},
+		})
+		assert.NoError(t, err)
+	})
+
+	t.Run("rejects gaps", func(t *testing.T) {
+		err := validateMigrationSequence([]Migration{
+			{Version: 1, Name: "initial"},
+			{Version: 3, Name: "later"},
+		})
+		assert.ErrorContains(t, err, "expected version 002")
+	})
+
+	t.Run("rejects duplicate names", func(t *testing.T) {
+		err := validateMigrationSequence([]Migration{
+			{Version: 1, Name: "same"},
+			{Version: 2, Name: "middle"},
+			{Version: 3, Name: "same"},
+		})
+		assert.ErrorContains(t, err, "duplicate migration name")
+	})
+}
+
+func TestValidateAppliedMigrations(t *testing.T) {
+	available := []Migration{
+		{Version: 1, Name: "initial", Checksum: "checksum-1"},
+		{Version: 2, Name: "next", Checksum: "checksum-2"},
+		{Version: 3, Name: "last", Checksum: "checksum-3"},
+	}
+
+	t.Run("accepts an ordered prefix and legacy empty checksum", func(t *testing.T) {
+		err := validateAppliedMigrations(available, []appliedMigration{
+			{Version: 1, Name: "initial", Checksum: sql.NullString{}},
+			{Version: 2, Name: "next", Checksum: sql.NullString{String: "checksum-2", Valid: true}},
+		})
+		assert.NoError(t, err)
+	})
+
+	t.Run("rejects a missing lower migration", func(t *testing.T) {
+		err := validateAppliedMigrations(available, []appliedMigration{
+			{Version: 1, Name: "initial"},
+			{Version: 3, Name: "last"},
+		})
+		assert.ErrorContains(t, err, "applied migration gap")
+	})
+
+	t.Run("rejects name drift", func(t *testing.T) {
+		err := validateAppliedMigrations(available, []appliedMigration{
+			{Version: 1, Name: "renamed"},
+		})
+		assert.ErrorContains(t, err, "name drift")
+	})
+
+	t.Run("rejects checksum drift", func(t *testing.T) {
+		err := validateAppliedMigrations(available, []appliedMigration{
+			{Version: 1, Name: "initial", Checksum: sql.NullString{String: "changed", Valid: true}},
+		})
+		assert.ErrorContains(t, err, "checksum drift")
+	})
+
+	t.Run("rejects migrations newer than the binary", func(t *testing.T) {
+		err := validateAppliedMigrations(available[:1], []appliedMigration{
+			{Version: 1, Name: "initial"},
+			{Version: 2, Name: "next"},
+		})
+		assert.ErrorContains(t, err, "binary only contains")
+	})
 }
 
 func TestMigrationTransaction(t *testing.T) {

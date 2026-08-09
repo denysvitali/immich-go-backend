@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,10 +16,34 @@ import (
 	"github.com/denysvitali/immich-go-backend/internal/db/testdb"
 	"github.com/denysvitali/immich-go-backend/internal/storage"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type gatedReader struct {
+	reader  *bytes.Reader
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func newGatedReader(data []byte) *gatedReader {
+	return &gatedReader{
+		reader:  bytes.NewReader(data),
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+}
+
+func (r *gatedReader) Read(p []byte) (int, error) {
+	r.once.Do(func() {
+		close(r.started)
+		<-r.release
+	})
+	return r.reader.Read(p)
+}
 
 // newTestConfig builds a minimal config.Config suitable for the assets service.
 func newTestConfig(storageRoot string) *config.Config {
@@ -263,6 +288,249 @@ func TestIntegration_FullAssetPipeline_TextFile(t *testing.T) {
 	assetFiles, err := tdb.Queries.GetAssetFiles(ctx, assetUUID)
 	require.NoError(t, err)
 	assert.Empty(t, assetFiles, "no thumbnails should be generated for a text file")
+}
+
+func TestIntegration_HardDeleteRemovesStorageBeforeDatabaseTombstone(t *testing.T) {
+	testdb.SkipIfNoDocker(t)
+
+	tdb := testdb.SetupTestDB(t)
+	ctx := context.Background()
+	service, _ := setupPipeline(t, tdb)
+	userID := createTestUser(t, ctx, tdb)
+
+	content := []byte("delete me")
+	resp, err := service.InitiateUpload(ctx, UploadRequest{
+		UserID:      userID,
+		Filename:    "delete-me.txt",
+		ContentType: "text/plain",
+		Size:        int64(len(content)),
+	})
+	require.NoError(t, err)
+	assetID := uuid.UUID(resp.AssetID)
+	require.NoError(t, service.CompleteUpload(ctx, assetID, bytes.NewReader(content)))
+
+	assetUUID := newTestUUID(t, assetID)
+	processed := pollUntil(10*time.Second, func() (bool, error) {
+		_, exifErr := tdb.Queries.GetAssetExif(ctx, assetUUID)
+		return exifErr == nil, nil
+	})
+	require.True(t, processed, "asset processing should finish before deletion")
+	asset, err := tdb.Queries.GetAssetByID(ctx, assetUUID)
+	require.NoError(t, err)
+	derivedPath := asset.OriginalPath + ".preview"
+	require.NoError(t, service.GetStorageService().UploadBytes(ctx, derivedPath, []byte("preview"), "image/jpeg"))
+	_, err = tdb.Queries.CreateAssetFile(ctx, sqlc.CreateAssetFileParams{
+		AssetId: assetUUID,
+		Type:    string(ThumbnailTypePreview),
+		Path:    derivedPath,
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, service.HardDeleteAsset(ctx, assetID, userID))
+
+	for _, path := range []string{asset.OriginalPath, derivedPath} {
+		exists, existsErr := service.GetStorageService().AssetExists(ctx, path)
+		require.NoError(t, existsErr)
+		assert.False(t, exists, "storage object should be removed: %s", path)
+	}
+	_, err = tdb.Queries.GetAssetByID(ctx, assetUUID)
+	assert.Error(t, err, "database tombstone should hide the asset")
+
+	// Older releases could leave a database tombstone before storage cleanup.
+	// Retrying through the current service must still discover and remove it.
+	legacyID := tdb.CreateTestAsset(t, userID, "legacy-tombstone")
+	legacyUUID := newTestUUID(t, legacyID)
+	legacyAsset, err := tdb.Queries.GetAssetByID(ctx, legacyUUID)
+	require.NoError(t, err)
+	require.NoError(t, service.GetStorageService().UploadBytes(ctx, legacyAsset.OriginalPath, []byte("legacy"), "image/jpeg"))
+	require.NoError(t, tdb.Queries.PermanentlyDeleteAssets(ctx, sqlc.PermanentlyDeleteAssetsParams{
+		Column1: []pgtype.UUID{legacyUUID},
+		OwnerId: newTestUUID(t, userID),
+	}))
+	require.NoError(t, service.HardDeleteAsset(ctx, legacyID, userID))
+	legacyExists, err := service.GetStorageService().AssetExists(ctx, legacyAsset.OriginalPath)
+	require.NoError(t, err)
+	assert.False(t, legacyExists, "legacy tombstone storage should be removed on retry")
+}
+
+func TestIntegration_AssetFileFinalizationSerializesWithDeletionIntent(t *testing.T) {
+	testdb.SkipIfNoDocker(t)
+
+	tdb := testdb.SetupTestDB(t)
+	ctx := context.Background()
+	userID := createTestUser(t, ctx, tdb)
+	assetID := tdb.CreateTestAsset(t, userID, "derived-file-lock")
+	assetUUID := newTestUUID(t, assetID)
+
+	producerTx, err := tdb.Pool.Begin(ctx)
+	require.NoError(t, err)
+	defer func() { _ = producerTx.Rollback(ctx) }()
+	_, err = sqlc.New(producerTx).CreateAssetFile(ctx, sqlc.CreateAssetFileParams{
+		AssetId: assetUUID,
+		Type:    string(ThumbnailTypePreview),
+		Path:    "derived/preview.jpg",
+	})
+	require.NoError(t, err)
+
+	deletionDone := make(chan error, 1)
+	go func() {
+		_, updateErr := tdb.Queries.UpdateAssetStatus(ctx, sqlc.UpdateAssetStatusParams{
+			ID:     assetUUID,
+			Status: sqlc.AssetsStatusEnumDeleted,
+		})
+		deletionDone <- updateErr
+	}()
+
+	select {
+	case updateErr := <-deletionDone:
+		t.Fatalf("deletion intent did not wait for derived-file finalization: %v", updateErr)
+	case <-time.After(200 * time.Millisecond):
+	}
+	require.NoError(t, producerTx.Commit(ctx))
+
+	select {
+	case updateErr := <-deletionDone:
+		require.NoError(t, updateErr)
+	case <-time.After(5 * time.Second):
+		t.Fatal("deletion intent remained blocked after derived-file commit")
+	}
+
+	files, err := tdb.Queries.GetAssetFiles(ctx, assetUUID)
+	require.NoError(t, err)
+	require.Len(t, files, 1)
+	assert.Equal(t, "derived/preview.jpg", files[0].Path)
+}
+
+func TestIntegration_CompleteUploadSerializesStorageWriteWithHardDelete(t *testing.T) {
+	testdb.SkipIfNoDocker(t)
+
+	tdb := testdb.SetupTestDB(t)
+	ctx := context.Background()
+	service, _ := setupPipeline(t, tdb)
+	userID := createTestUser(t, ctx, tdb)
+	content := []byte("write must commit before deletion sweeps it")
+
+	response, err := service.InitiateUpload(ctx, UploadRequest{
+		UserID:      userID,
+		Filename:    "concurrent-complete.txt",
+		ContentType: "text/plain",
+		Size:        int64(len(content)),
+	})
+	require.NoError(t, err)
+	assetID := uuid.UUID(response.AssetID)
+	assetUUID := newTestUUID(t, assetID)
+	asset, err := tdb.Queries.GetAssetByID(ctx, assetUUID)
+	require.NoError(t, err)
+
+	reader := newGatedReader(content)
+	uploadDone := make(chan error, 1)
+	go func() {
+		uploadDone <- service.CompleteUpload(ctx, assetID, reader)
+	}()
+
+	select {
+	case <-reader.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("complete upload did not reach the storage write")
+	}
+
+	deleteDone := make(chan error, 1)
+	go func() {
+		deleteDone <- service.HardDeleteAsset(ctx, assetID, userID)
+	}()
+
+	select {
+	case deleteErr := <-deleteDone:
+		t.Fatalf("hard delete did not wait for the locked original-file write: %v", deleteErr)
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	close(reader.release)
+	select {
+	case uploadErr := <-uploadDone:
+		require.NoError(t, uploadErr)
+	case <-time.After(10 * time.Second):
+		t.Fatal("complete upload remained blocked")
+	}
+	select {
+	case deleteErr := <-deleteDone:
+		require.NoError(t, deleteErr)
+	case <-time.After(10 * time.Second):
+		t.Fatal("hard delete remained blocked after upload committed")
+	}
+
+	exists, err := service.GetStorageService().AssetExists(ctx, asset.OriginalPath)
+	require.NoError(t, err)
+	assert.False(t, exists, "hard delete must sweep the original written by the earlier transaction")
+}
+
+func TestIntegration_DeletionIntentPreventsConcurrentReplacementWrite(t *testing.T) {
+	testdb.SkipIfNoDocker(t)
+
+	tdb := testdb.SetupTestDB(t)
+	ctx := context.Background()
+	userID := createTestUser(t, ctx, tdb)
+	assetID := tdb.CreateTestAsset(t, userID, "concurrent-replacement")
+	assetUUID := newTestUUID(t, assetID)
+	ownerUUID := newTestUUID(t, userID)
+
+	deletionTx, err := tdb.Pool.Begin(ctx)
+	require.NoError(t, err)
+	deletionCommitted := false
+	defer func() {
+		if !deletionCommitted {
+			_ = deletionTx.Rollback(ctx)
+		}
+	}()
+	_, err = sqlc.New(deletionTx).UpdateAssetStatus(ctx, sqlc.UpdateAssetStatusParams{
+		ID:     assetUUID,
+		Status: sqlc.AssetsStatusEnumDeleted,
+	})
+	require.NoError(t, err)
+
+	writeStarted := make(chan struct{}, 1)
+	replacementDone := make(chan error, 1)
+	go func() {
+		_, replaceErr := tdb.Queries.ReplaceAssetOriginalFile(ctx, sqlc.ReplaceAssetOriginalFileParams{
+			AssetID:  assetUUID,
+			OwnerID:  ownerUUID,
+			Checksum: []byte("replacement"),
+			WriteOriginalFile: func(context.Context, sqlc.Asset) error {
+				writeStarted <- struct{}{}
+				return nil
+			},
+		})
+		replacementDone <- replaceErr
+	}()
+
+	select {
+	case <-writeStarted:
+		t.Fatal("replacement wrote storage before deletion intent committed")
+	case replaceErr := <-replacementDone:
+		t.Fatalf("replacement did not wait for the deletion row lock: %v", replaceErr)
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	require.NoError(t, deletionTx.Commit(ctx))
+	deletionCommitted = true
+	select {
+	case replaceErr := <-replacementDone:
+		require.ErrorIs(t, replaceErr, sqlc.ErrAssetOriginalFileWriteRejected)
+	case <-time.After(5 * time.Second):
+		t.Fatal("replacement remained blocked after deletion intent committed")
+	}
+	select {
+	case <-writeStarted:
+		t.Fatal("replacement storage callback ran for a deletion-intent asset")
+	default:
+	}
+
+	_, err = tdb.Queries.ReplaceAssetFile(ctx, sqlc.ReplaceAssetFileParams{
+		Checksum: []byte("unguarded-replacement"),
+		ID:       assetUUID,
+		OwnerID:  ownerUUID,
+	})
+	require.ErrorIs(t, err, pgx.ErrNoRows, "replacement finalization must independently reject deleted assets")
 }
 
 // TestIntegration_TriggerProcessing_Image tests the TriggerProcessing public

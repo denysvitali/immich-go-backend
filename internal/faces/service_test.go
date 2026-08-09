@@ -54,7 +54,7 @@ func TestIntegration_CreateFace(t *testing.T) {
 	personID := createTestPerson(t, tdb, userID, "Test Person")
 
 	// Create a face
-	response, err := service.CreateFace(ctx, CreateFaceRequest{
+	response, err := service.CreateFace(ctx, userID, CreateFaceRequest{
 		AssetID:  assetID.String(),
 		PersonID: personID.String(),
 		BoundingBox: BoundingBox{
@@ -86,7 +86,7 @@ func TestIntegration_CreateFaceInvalidAssetID(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try to create a face with invalid asset ID
-	response, err := service.CreateFace(ctx, CreateFaceRequest{
+	response, err := service.CreateFace(ctx, uuid.Nil, CreateFaceRequest{
 		AssetID:  "not-a-valid-uuid",
 		PersonID: uuid.New().String(),
 		BoundingBox: BoundingBox{
@@ -112,7 +112,7 @@ func TestIntegration_CreateFaceInvalidPersonID(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try to create a face with invalid person ID
-	response, err := service.CreateFace(ctx, CreateFaceRequest{
+	response, err := service.CreateFace(ctx, uuid.Nil, CreateFaceRequest{
 		AssetID:  uuid.New().String(),
 		PersonID: "not-a-valid-uuid",
 		BoundingBox: BoundingBox{
@@ -143,7 +143,7 @@ func TestIntegration_GetFacesByAsset(t *testing.T) {
 	personID := createTestPerson(t, tdb, userID, "Get Faces Person")
 
 	// Create multiple faces for the same asset
-	_, err = service.CreateFace(ctx, CreateFaceRequest{
+	_, err = service.CreateFace(ctx, userID, CreateFaceRequest{
 		AssetID:  assetID.String(),
 		PersonID: personID.String(),
 		BoundingBox: BoundingBox{
@@ -152,7 +152,7 @@ func TestIntegration_GetFacesByAsset(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	_, err = service.CreateFace(ctx, CreateFaceRequest{
+	_, err = service.CreateFace(ctx, userID, CreateFaceRequest{
 		AssetID:  assetID.String(),
 		PersonID: personID.String(),
 		BoundingBox: BoundingBox{
@@ -162,7 +162,7 @@ func TestIntegration_GetFacesByAsset(t *testing.T) {
 	require.NoError(t, err)
 
 	// Get faces by asset
-	response, err := service.GetFaces(ctx, GetFacesRequest{
+	response, err := service.GetFaces(ctx, userID, GetFacesRequest{
 		AssetID: assetID.String(),
 	})
 	require.NoError(t, err)
@@ -187,7 +187,7 @@ func TestIntegration_GetFacesByPerson(t *testing.T) {
 	personID := createTestPerson(t, tdb, userID, "Multi-Asset Person")
 
 	// Create faces for the same person across different assets
-	_, err = service.CreateFace(ctx, CreateFaceRequest{
+	_, err = service.CreateFace(ctx, userID, CreateFaceRequest{
 		AssetID:  asset1ID.String(),
 		PersonID: personID.String(),
 		BoundingBox: BoundingBox{
@@ -196,7 +196,7 @@ func TestIntegration_GetFacesByPerson(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	_, err = service.CreateFace(ctx, CreateFaceRequest{
+	_, err = service.CreateFace(ctx, userID, CreateFaceRequest{
 		AssetID:  asset2ID.String(),
 		PersonID: personID.String(),
 		BoundingBox: BoundingBox{
@@ -206,7 +206,7 @@ func TestIntegration_GetFacesByPerson(t *testing.T) {
 	require.NoError(t, err)
 
 	// Get faces by person
-	response, err := service.GetFaces(ctx, GetFacesRequest{
+	response, err := service.GetFaces(ctx, userID, GetFacesRequest{
 		PersonID: personID.String(),
 	})
 	require.NoError(t, err)
@@ -225,7 +225,7 @@ func TestIntegration_GetFacesNoFilter(t *testing.T) {
 	require.NoError(t, err)
 
 	// Get faces with no filter returns empty
-	response, err := service.GetFaces(ctx, GetFacesRequest{})
+	response, err := service.GetFaces(ctx, uuid.Nil, GetFacesRequest{})
 	require.NoError(t, err)
 	assert.NotNil(t, response)
 	assert.Empty(t, response.Faces)
@@ -242,7 +242,7 @@ func TestIntegration_GetFacesInvalidAssetID(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try to get faces with invalid asset ID
-	response, err := service.GetFaces(ctx, GetFacesRequest{
+	response, err := service.GetFaces(ctx, uuid.Nil, GetFacesRequest{
 		AssetID: "not-a-valid-uuid",
 	})
 	assert.Error(t, err)
@@ -266,7 +266,7 @@ func TestIntegration_DeleteFace(t *testing.T) {
 	personID := createTestPerson(t, tdb, userID, "Delete Face Person")
 
 	// Create a face
-	createResponse, err := service.CreateFace(ctx, CreateFaceRequest{
+	createResponse, err := service.CreateFace(ctx, userID, CreateFaceRequest{
 		AssetID:  assetID.String(),
 		PersonID: personID.String(),
 		BoundingBox: BoundingBox{
@@ -276,11 +276,11 @@ func TestIntegration_DeleteFace(t *testing.T) {
 	require.NoError(t, err)
 
 	// Delete the face
-	err = service.DeleteFace(ctx, createResponse.ID)
+	err = service.DeleteFace(ctx, userID, createResponse.ID)
 	require.NoError(t, err)
 
 	// Verify face is deleted by checking faces for the asset
-	getResponse, err := service.GetFaces(ctx, GetFacesRequest{
+	getResponse, err := service.GetFaces(ctx, userID, GetFacesRequest{
 		AssetID: assetID.String(),
 	})
 	require.NoError(t, err)
@@ -298,7 +298,7 @@ func TestIntegration_DeleteFaceInvalidID(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try to delete with invalid ID
-	err = service.DeleteFace(ctx, "not-a-valid-uuid")
+	err = service.DeleteFace(ctx, uuid.Nil, "not-a-valid-uuid")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid face ID")
 }
@@ -320,7 +320,7 @@ func TestIntegration_ReassignFacesById(t *testing.T) {
 	person2ID := createTestPerson(t, tdb, userID, "Person Two")
 
 	// Create a face assigned to person1
-	createResponse, err := service.CreateFace(ctx, CreateFaceRequest{
+	createResponse, err := service.CreateFace(ctx, userID, CreateFaceRequest{
 		AssetID:  assetID.String(),
 		PersonID: person1ID.String(),
 		BoundingBox: BoundingBox{
@@ -331,14 +331,14 @@ func TestIntegration_ReassignFacesById(t *testing.T) {
 	assert.Equal(t, person1ID.String(), createResponse.PersonID)
 
 	// Reassign the face to person2
-	reassignResponse, err := service.ReassignFacesById(ctx, createResponse.ID, person2ID.String())
+	reassignResponse, err := service.ReassignFacesById(ctx, userID, createResponse.ID, person2ID.String())
 	require.NoError(t, err)
 	assert.NotNil(t, reassignResponse)
 	assert.Len(t, reassignResponse.UpdatedFaces, 1)
 	assert.Equal(t, person2ID.String(), reassignResponse.UpdatedFaces[0].PersonID)
 
 	// Verify the face now belongs to person2
-	getResponse, err := service.GetFaces(ctx, GetFacesRequest{
+	getResponse, err := service.GetFaces(ctx, userID, GetFacesRequest{
 		PersonID: person2ID.String(),
 	})
 	require.NoError(t, err)
@@ -357,7 +357,7 @@ func TestIntegration_ReassignFacesInvalidFaceID(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try to reassign with invalid face ID
-	response, err := service.ReassignFacesById(ctx, "not-a-valid-uuid", uuid.New().String())
+	response, err := service.ReassignFacesById(ctx, uuid.Nil, "not-a-valid-uuid", uuid.New().String())
 	assert.Error(t, err)
 	assert.Nil(t, response)
 	assert.Contains(t, err.Error(), "invalid face ID")
@@ -374,7 +374,7 @@ func TestIntegration_ReassignFacesInvalidPersonID(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try to reassign with invalid person ID
-	response, err := service.ReassignFacesById(ctx, uuid.New().String(), "not-a-valid-uuid")
+	response, err := service.ReassignFacesById(ctx, uuid.Nil, uuid.New().String(), "not-a-valid-uuid")
 	assert.Error(t, err)
 	assert.Nil(t, response)
 	assert.Contains(t, err.Error(), "invalid person ID")
@@ -398,7 +398,7 @@ func TestIntegration_MultipleFacesPerAsset(t *testing.T) {
 	person3ID := createTestPerson(t, tdb, userID, "Charlie")
 
 	// Create faces for different people in the same photo
-	_, err = service.CreateFace(ctx, CreateFaceRequest{
+	_, err = service.CreateFace(ctx, userID, CreateFaceRequest{
 		AssetID:  assetID.String(),
 		PersonID: person1ID.String(),
 		BoundingBox: BoundingBox{
@@ -407,7 +407,7 @@ func TestIntegration_MultipleFacesPerAsset(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	_, err = service.CreateFace(ctx, CreateFaceRequest{
+	_, err = service.CreateFace(ctx, userID, CreateFaceRequest{
 		AssetID:  assetID.String(),
 		PersonID: person2ID.String(),
 		BoundingBox: BoundingBox{
@@ -416,7 +416,7 @@ func TestIntegration_MultipleFacesPerAsset(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	_, err = service.CreateFace(ctx, CreateFaceRequest{
+	_, err = service.CreateFace(ctx, userID, CreateFaceRequest{
 		AssetID:  assetID.String(),
 		PersonID: person3ID.String(),
 		BoundingBox: BoundingBox{
@@ -426,7 +426,7 @@ func TestIntegration_MultipleFacesPerAsset(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify all faces are retrieved
-	response, err := service.GetFaces(ctx, GetFacesRequest{
+	response, err := service.GetFaces(ctx, userID, GetFacesRequest{
 		AssetID: assetID.String(),
 	})
 	require.NoError(t, err)
@@ -440,4 +440,46 @@ func TestIntegration_MultipleFacesPerAsset(t *testing.T) {
 	assert.Equal(t, 1, personFaceCount[person1ID.String()])
 	assert.Equal(t, 1, personFaceCount[person2ID.String()])
 	assert.Equal(t, 1, personFaceCount[person3ID.String()])
+}
+
+func TestIntegration_RejectsCrossTenantFaceOperations(t *testing.T) {
+	testdb.SkipIfNoDocker(t)
+
+	tdb := testdb.SetupTestDB(t)
+	ctx := context.Background()
+	service, err := NewService(tdb.Queries, &config.Config{})
+	require.NoError(t, err)
+
+	ownerID := createTestUser(t, tdb, "face-owner@test.com")
+	otherID := createTestUser(t, tdb, "face-other@test.com")
+	assetID := createTestAsset(t, tdb, ownerID, "private-face-asset")
+	personID := createTestPerson(t, tdb, ownerID, "Private Person")
+	otherPersonID := createTestPerson(t, tdb, otherID, "Other Person")
+	face, err := service.CreateFace(ctx, ownerID, CreateFaceRequest{
+		AssetID:  assetID.String(),
+		PersonID: personID.String(),
+		BoundingBox: BoundingBox{
+			X1: 10, Y1: 10, X2: 20, Y2: 20,
+		},
+	})
+	require.NoError(t, err)
+
+	_, err = service.GetFaces(ctx, otherID, GetFacesRequest{ID: &face.ID})
+	assert.ErrorIs(t, err, ErrAccessDenied)
+	_, err = service.CreateFace(ctx, otherID, CreateFaceRequest{
+		AssetID:  assetID.String(),
+		PersonID: otherPersonID.String(),
+	})
+	assert.ErrorIs(t, err, ErrAccessDenied)
+	err = service.DeleteFace(ctx, otherID, face.ID)
+	assert.ErrorIs(t, err, ErrAccessDenied)
+	_, err = service.ReassignFacesById(ctx, otherID, face.ID, otherPersonID.String())
+	assert.ErrorIs(t, err, ErrAccessDenied)
+	_, err = service.ReassignFacesById(ctx, ownerID, face.ID, otherPersonID.String())
+	assert.ErrorIs(t, err, ErrAccessDenied)
+
+	got, err := service.GetFaces(ctx, ownerID, GetFacesRequest{ID: &face.ID})
+	require.NoError(t, err)
+	require.Len(t, got.Faces, 1)
+	assert.Equal(t, personID.String(), got.Faces[0].PersonID)
 }

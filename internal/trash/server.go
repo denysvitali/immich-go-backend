@@ -18,12 +18,14 @@ import (
 type Server struct {
 	immichv1.UnimplementedTrashServiceServer
 	queries *sqlc.Queries
+	deleter PermanentAssetDeleter
 }
 
 // NewServer creates a new trash server
-func NewServer(queries *sqlc.Queries) *Server {
+func NewServer(queries *sqlc.Queries, deleter PermanentAssetDeleter) *Server {
 	return &Server{
 		queries: queries,
+		deleter: deleter,
 	}
 }
 
@@ -40,6 +42,9 @@ func (s *Server) EmptyTrash(ctx context.Context, _ *emptypb.Empty) (*emptypb.Emp
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "invalid user ID: %v", err)
 	}
+	if s.deleter == nil {
+		return nil, status.Error(codes.Internal, "permanent asset deletion is not configured")
+	}
 
 	// Get all trashed assets for the user
 	trashedAssets, err := s.queries.GetTrashedAssetsByUser(ctx, userID)
@@ -47,12 +52,11 @@ func (s *Server) EmptyTrash(ctx context.Context, _ *emptypb.Empty) (*emptypb.Emp
 		return nil, status.Errorf(codes.Internal, "failed to get trashed assets: %v", err)
 	}
 
-	// Permanently delete each trashed asset
+	// Permanently delete each trashed asset through the storage-aware workflow.
 	for _, asset := range trashedAssets {
-		err = s.queries.PermanentlyDeleteAsset(ctx, asset.ID)
+		err = s.deleter.HardDeleteAsset(ctx, pgutil.PgtypeToUUID(asset.ID), pgutil.PgtypeToUUID(userID))
 		if err != nil {
-			// Log error but continue with other assets
-			continue
+			return nil, status.Errorf(codes.Internal, "failed to permanently delete asset: %v", err)
 		}
 	}
 
@@ -118,7 +122,7 @@ func (s *Server) RestoreAssets(ctx context.Context, request *immichv1.RestoreAss
 
 	// Restore all assets in batch (ownership check is done in the query)
 	if len(assetUUIDs) > 0 {
-		err = s.queries.RestoreAssets(ctx, sqlc.RestoreAssetsParams{
+		_, err = s.queries.RestoreAssets(ctx, sqlc.RestoreAssetsParams{
 			Column1: assetUUIDs,
 			OwnerId: userID,
 		})

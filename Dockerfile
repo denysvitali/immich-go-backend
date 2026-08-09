@@ -17,7 +17,7 @@
 #     Redis env vars at external services.
 
 # ---------- Stage 1: build ----------
-FROM golang:1.24-alpine AS builder
+FROM golang:1.26.5-alpine AS builder
 
 # Build deps: git for `go mod`, curl + ca-certificates to fetch buf.
 RUN apk add --no-cache git ca-certificates curl

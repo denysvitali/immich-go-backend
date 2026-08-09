@@ -26,11 +26,37 @@ func normalizePath(path, prefix string) string {
 	return prefix + "/" + path
 }
 
-// normalizePathFS is like normalizePath but uses filepath.Join for local
-// filesystem paths. The root is joined with the cleaned path.
-func normalizePathFS(path, root string) string {
-	path = filepath.Clean(strings.TrimPrefix(path, "/"))
-	return filepath.Join(root, path)
+// normalizePathFS resolves a storage path below root. A leading separator is
+// accepted for parity with object-store keys, but parent traversal and paths
+// that otherwise escape root are rejected.
+func normalizePathFS(path, root string) (string, error) {
+	root = filepath.Clean(root)
+	if !filepath.IsAbs(root) {
+		return "", fmt.Errorf("storage root must be absolute")
+	}
+
+	// Storage paths use a leading slash as an optional key delimiter. Remove
+	// all leading platform separators before cleaning so they cannot turn the
+	// joined result into an absolute filesystem path.
+	path = strings.TrimLeft(path, string(filepath.Separator))
+	cleanPath := filepath.Clean(path)
+	if volume := filepath.VolumeName(cleanPath); volume != "" {
+		return "", fmt.Errorf("storage path must not contain a volume name")
+	}
+	if cleanPath == ".." || strings.HasPrefix(cleanPath, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("storage path escapes root")
+	}
+
+	fullPath := filepath.Join(root, cleanPath)
+	relPath, err := filepath.Rel(root, fullPath)
+	if err != nil {
+		return "", fmt.Errorf("resolve storage path: %w", err)
+	}
+	if relPath == ".." || strings.HasPrefix(relPath, ".."+string(filepath.Separator)) || filepath.IsAbs(relPath) {
+		return "", fmt.Errorf("storage path escapes root")
+	}
+
+	return fullPath, nil
 }
 
 // buildS3PublicURL constructs a public S3 URL from the given parameters.

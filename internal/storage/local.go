@@ -1,13 +1,16 @@
 package storage
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"mime"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -47,6 +50,14 @@ func NewLocalBackend(config LocalConfig) (*LocalBackend, error) {
 		return nil, wrapError("create local backend", "", "local", fmt.Errorf("failed to create root directory: %w", err))
 	}
 
+	// Resolve symlinks in the configured root once. Symlinks below this
+	// canonical root are rejected by getFullPath so a stored path can never be
+	// redirected outside the backend after initialization.
+	rootPath, err = filepath.EvalSymlinks(rootPath)
+	if err != nil {
+		return nil, wrapError("create local backend", "", "local", fmt.Errorf("failed to resolve root directory: %w", err))
+	}
+
 	return &LocalBackend{
 		config:   config,
 		rootPath: rootPath,
@@ -69,9 +80,129 @@ func parseFileMode(modeStr string, defaultMode os.FileMode) (os.FileMode, error)
 	return os.FileMode(mode), nil
 }
 
-// getFullPath returns the full filesystem path for a given storage path
-func (l *LocalBackend) getFullPath(path string) string {
-	return normalizePathFS(path, l.rootPath)
+// getFullPath returns a contained filesystem path and rejects every symlink
+// below the canonical storage root. The local backend intentionally does not
+// follow user-controlled symlinks.
+func (l *LocalBackend) getFullPath(path string, allowRoot bool) (string, error) {
+	fullPath, err := normalizePathFS(path, l.rootPath)
+	if err != nil {
+		return "", err
+	}
+	if !allowRoot && fullPath == l.rootPath {
+		return "", fmt.Errorf("storage path resolves to root")
+	}
+	if err := l.rejectSymlinks(fullPath); err != nil {
+		return "", err
+	}
+	return fullPath, nil
+}
+
+func (l *LocalBackend) rejectSymlinks(fullPath string) error {
+	relPath, err := filepath.Rel(l.rootPath, fullPath)
+	if err != nil {
+		return fmt.Errorf("resolve path relative to storage root: %w", err)
+	}
+	if relPath == "." {
+		return nil
+	}
+
+	currentPath := l.rootPath
+	for _, part := range strings.Split(relPath, string(filepath.Separator)) {
+		if part == "" || part == "." {
+			continue
+		}
+		currentPath = filepath.Join(currentPath, part)
+		info, err := os.Lstat(currentPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return fmt.Errorf("inspect path component: %w", err)
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("symlink path component is not allowed: %s", part)
+		}
+	}
+	return nil
+}
+
+// atomicWrite writes and syncs a temporary file in the destination directory,
+// then atomically renames it into place. A failed write never exposes partial
+// content or replaces an existing destination.
+func (l *LocalBackend) atomicWrite(path string, reader io.Reader, size int64) error {
+	fullPath, err := l.getFullPath(path, false)
+	if err != nil {
+		return err
+	}
+
+	dir := filepath.Dir(fullPath)
+	if err := os.MkdirAll(dir, l.dirMode); err != nil {
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
+	// MkdirAll may have encountered a concurrently introduced path component;
+	// validate the complete destination again before creating the temp file.
+	if _, err := l.getFullPath(path, false); err != nil {
+		return err
+	}
+
+	tempFile, err := os.CreateTemp(dir, ".immich-go-upload-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temporary file: %w", err)
+	}
+	tempPath := tempFile.Name()
+	committed := false
+	defer func() {
+		_ = tempFile.Close()
+		if !committed {
+			_ = os.Remove(tempPath)
+		}
+	}()
+
+	if err := tempFile.Chmod(l.fileMode); err != nil {
+		return fmt.Errorf("failed to set temporary file mode: %w", err)
+	}
+
+	var written int64
+	if size >= 0 && size < math.MaxInt64 {
+		limited := &io.LimitedReader{R: reader, N: size + 1}
+		written, err = io.Copy(tempFile, limited)
+	} else {
+		written, err = io.Copy(tempFile, reader)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to write temporary file: %w", err)
+	}
+	if size >= 0 && written != size {
+		if written > size {
+			return fmt.Errorf("uploaded size mismatch: declared %d bytes, received more data", size)
+		}
+		return fmt.Errorf("uploaded size mismatch: declared %d bytes, received %d", size, written)
+	}
+	if err := tempFile.Sync(); err != nil {
+		return fmt.Errorf("failed to sync temporary file: %w", err)
+	}
+	if err := tempFile.Close(); err != nil {
+		return fmt.Errorf("failed to close temporary file: %w", err)
+	}
+	if err := os.Rename(tempPath, fullPath); err != nil {
+		return fmt.Errorf("failed to commit temporary file: %w", err)
+	}
+	committed = true
+
+	// Persist the directory entry as well as the file contents so a successful
+	// upload survives a host crash after rename.
+	dirHandle, err := os.Open(dir)
+	if err != nil {
+		return fmt.Errorf("failed to open destination directory for sync: %w", err)
+	}
+	if err := dirHandle.Sync(); err != nil {
+		_ = dirHandle.Close()
+		return fmt.Errorf("failed to sync destination directory: %w", err)
+	}
+	if err := dirHandle.Close(); err != nil {
+		return fmt.Errorf("failed to close destination directory: %w", err)
+	}
+	return nil
 }
 
 // Upload uploads a file to the local filesystem
@@ -84,27 +215,9 @@ func (l *LocalBackend) Upload(ctx context.Context, path string, reader io.Reader
 		))
 	defer span.End()
 
-	fullPath := l.getFullPath(path)
-
-	// Create directory if it doesn't exist
-	dir := filepath.Dir(fullPath)
-	if err := os.MkdirAll(dir, l.dirMode); err != nil {
+	if err := l.atomicWrite(path, reader, size); err != nil {
 		span.RecordError(err)
-		return wrapError("upload", path, "local", fmt.Errorf("failed to create directory: %w", err))
-	}
-
-	// Create the file
-	file, err := os.OpenFile(fullPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, l.fileMode)
-	if err != nil {
-		span.RecordError(err)
-		return wrapError("upload", path, "local", fmt.Errorf("failed to create file: %w", err))
-	}
-	defer file.Close()
-
-	// Copy data to file
-	if _, err := io.Copy(file, reader); err != nil {
-		span.RecordError(err)
-		return wrapError("upload", path, "local", fmt.Errorf("failed to write file: %w", err))
+		return wrapError("upload", path, "local", err)
 	}
 
 	return nil
@@ -120,19 +233,9 @@ func (l *LocalBackend) UploadBytes(ctx context.Context, path string, data []byte
 		))
 	defer span.End()
 
-	fullPath := l.getFullPath(path)
-
-	// Create directory if it doesn't exist
-	dir := filepath.Dir(fullPath)
-	if err := os.MkdirAll(dir, l.dirMode); err != nil {
+	if err := l.atomicWrite(path, bytes.NewReader(data), int64(len(data))); err != nil {
 		span.RecordError(err)
-		return wrapError("upload bytes", path, "local", fmt.Errorf("failed to create directory: %w", err))
-	}
-
-	// Write the file
-	if err := os.WriteFile(fullPath, data, l.fileMode); err != nil {
-		span.RecordError(err)
-		return wrapError("upload bytes", path, "local", fmt.Errorf("failed to write file: %w", err))
+		return wrapError("upload bytes", path, "local", err)
 	}
 
 	return nil
@@ -144,7 +247,11 @@ func (l *LocalBackend) Download(ctx context.Context, path string) (io.ReadCloser
 		trace.WithAttributes(attribute.String("storage.path", path)))
 	defer span.End()
 
-	fullPath := l.getFullPath(path)
+	fullPath, err := l.getFullPath(path, false)
+	if err != nil {
+		span.RecordError(err)
+		return nil, wrapError("download", path, "local", err)
+	}
 
 	file, err := os.Open(fullPath)
 	if err != nil {
@@ -164,7 +271,11 @@ func (l *LocalBackend) Delete(ctx context.Context, path string) error {
 		trace.WithAttributes(attribute.String("storage.path", path)))
 	defer span.End()
 
-	fullPath := l.getFullPath(path)
+	fullPath, err := l.getFullPath(path, false)
+	if err != nil {
+		span.RecordError(err)
+		return wrapError("delete", path, "local", err)
+	}
 
 	if err := os.Remove(fullPath); err != nil {
 		span.RecordError(err)
@@ -183,9 +294,13 @@ func (l *LocalBackend) Exists(ctx context.Context, path string) (bool, error) {
 		trace.WithAttributes(attribute.String("storage.path", path)))
 	defer span.End()
 
-	fullPath := l.getFullPath(path)
+	fullPath, err := l.getFullPath(path, false)
+	if err != nil {
+		span.RecordError(err)
+		return false, wrapError("exists", path, "local", err)
+	}
 
-	_, err := os.Stat(fullPath)
+	_, err = os.Stat(fullPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return false, nil
@@ -203,7 +318,11 @@ func (l *LocalBackend) GetSize(ctx context.Context, path string) (int64, error) 
 		trace.WithAttributes(attribute.String("storage.path", path)))
 	defer span.End()
 
-	fullPath := l.getFullPath(path)
+	fullPath, err := l.getFullPath(path, false)
+	if err != nil {
+		span.RecordError(err)
+		return 0, wrapError("get size", path, "local", err)
+	}
 
 	info, err := os.Stat(fullPath)
 	if err != nil {
@@ -249,14 +368,26 @@ func (l *LocalBackend) Copy(ctx context.Context, srcPath, dstPath string) error 
 		))
 	defer span.End()
 
-	srcFullPath := l.getFullPath(srcPath)
-	dstFullPath := l.getFullPath(dstPath)
+	srcFullPath, err := l.getFullPath(srcPath, false)
+	if err != nil {
+		span.RecordError(err)
+		return wrapError("copy", srcPath, "local", err)
+	}
+	dstFullPath, err := l.getFullPath(dstPath, false)
+	if err != nil {
+		span.RecordError(err)
+		return wrapError("copy", dstPath, "local", err)
+	}
 
 	// Create destination directory if it doesn't exist
 	dstDir := filepath.Dir(dstFullPath)
 	if err := os.MkdirAll(dstDir, l.dirMode); err != nil {
 		span.RecordError(err)
-		return wrapError("copy", srcPath, "local", fmt.Errorf("failed to create destination directory: %w", err))
+		return wrapError("copy", dstPath, "local", fmt.Errorf("failed to create destination directory: %w", err))
+	}
+	if _, err := l.getFullPath(dstPath, false); err != nil {
+		span.RecordError(err)
+		return wrapError("copy", dstPath, "local", err)
 	}
 
 	// Open source file
@@ -267,18 +398,17 @@ func (l *LocalBackend) Copy(ctx context.Context, srcPath, dstPath string) error 
 	}
 	defer srcFile.Close()
 
-	// Create destination file
-	dstFile, err := os.OpenFile(dstFullPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, l.fileMode)
+	srcInfo, err := srcFile.Stat()
 	if err != nil {
 		span.RecordError(err)
-		return wrapError("copy", srcPath, "local", fmt.Errorf("failed to create destination file: %w", err))
+		return wrapError("copy", srcPath, "local", fmt.Errorf("failed to stat source file: %w", err))
 	}
-	defer dstFile.Close()
 
-	// Copy data
-	if _, err := io.Copy(dstFile, srcFile); err != nil {
+	// Use the same atomic commit path as uploads so a failed copy cannot expose
+	// a truncated destination.
+	if err := l.atomicWrite(dstPath, srcFile, srcInfo.Size()); err != nil {
 		span.RecordError(err)
-		return wrapError("copy", srcPath, "local", fmt.Errorf("failed to copy file data: %w", err))
+		return wrapError("copy", dstPath, "local", fmt.Errorf("failed to copy file data: %w", err))
 	}
 
 	return nil
@@ -293,14 +423,26 @@ func (l *LocalBackend) Move(ctx context.Context, srcPath, dstPath string) error 
 		))
 	defer span.End()
 
-	srcFullPath := l.getFullPath(srcPath)
-	dstFullPath := l.getFullPath(dstPath)
+	srcFullPath, err := l.getFullPath(srcPath, false)
+	if err != nil {
+		span.RecordError(err)
+		return wrapError("move", srcPath, "local", err)
+	}
+	dstFullPath, err := l.getFullPath(dstPath, false)
+	if err != nil {
+		span.RecordError(err)
+		return wrapError("move", dstPath, "local", err)
+	}
 
 	// Create destination directory if it doesn't exist
 	dstDir := filepath.Dir(dstFullPath)
 	if err := os.MkdirAll(dstDir, l.dirMode); err != nil {
 		span.RecordError(err)
-		return wrapError("move", srcPath, "local", fmt.Errorf("failed to create destination directory: %w", err))
+		return wrapError("move", dstPath, "local", fmt.Errorf("failed to create destination directory: %w", err))
+	}
+	if _, err := l.getFullPath(dstPath, false); err != nil {
+		span.RecordError(err)
+		return wrapError("move", dstPath, "local", err)
 	}
 
 	// Try to rename first (fastest if on same filesystem)
@@ -329,7 +471,11 @@ func (l *LocalBackend) List(ctx context.Context, prefix string, recursive bool) 
 		))
 	defer span.End()
 
-	fullPath := l.getFullPath(prefix)
+	fullPath, err := l.getFullPath(prefix, true)
+	if err != nil {
+		span.RecordError(err)
+		return nil, wrapError("list", prefix, "local", err)
+	}
 
 	var files []FileInfo
 
@@ -337,6 +483,9 @@ func (l *LocalBackend) List(ctx context.Context, prefix string, recursive bool) 
 		err := filepath.Walk(fullPath, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
 				return err
+			}
+			if info.Mode()&os.ModeSymlink != 0 {
+				return fmt.Errorf("symlink path component is not allowed: %s", info.Name())
 			}
 
 			// Skip the root directory itself
@@ -375,6 +524,9 @@ func (l *LocalBackend) List(ctx context.Context, prefix string, recursive bool) 
 		}
 
 		for _, entry := range entries {
+			if entry.Type()&os.ModeSymlink != 0 {
+				return nil, wrapError("list", prefix, "local", fmt.Errorf("symlink path component is not allowed: %s", entry.Name()))
+			}
 			info, err := entry.Info()
 			if err != nil {
 				continue
@@ -409,7 +561,11 @@ func (l *LocalBackend) GetMetadata(ctx context.Context, path string) (*FileMetad
 		trace.WithAttributes(attribute.String("storage.path", path)))
 	defer span.End()
 
-	fullPath := l.getFullPath(path)
+	fullPath, err := l.getFullPath(path, false)
+	if err != nil {
+		span.RecordError(err)
+		return nil, wrapError("get metadata", path, "local", err)
+	}
 
 	info, err := os.Stat(fullPath)
 	if err != nil {

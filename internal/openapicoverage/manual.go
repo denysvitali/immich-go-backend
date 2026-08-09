@@ -65,17 +65,40 @@ func parseManualRouteFile(path string) ([]GatewayRoute, error) {
 	}
 
 	var routes []GatewayRoute
-	ast.Inspect(file, func(n ast.Node) bool {
-		switch n := n.(type) {
-		case *ast.IfStmt:
-			routes = append(routes, routesFromIf(n, "")...)
-		case *ast.SwitchStmt:
-			routes = append(routes, routesFromSwitch(n, "")...)
-			return false
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Body == nil {
+			continue
 		}
-		return true
-	})
+
+		// Manual compatibility handlers are sometimes split into one helper
+		// per HTTP method. In that shape the path switch lives in the helper,
+		// while the method switch lives in its caller, so a file-local AST walk
+		// cannot otherwise associate the two. Treat a recognized method suffix
+		// as the helper's inherited method.
+		method := methodFromFunctionName(fn.Name.Name)
+		ast.Inspect(fn.Body, func(n ast.Node) bool {
+			switch n := n.(type) {
+			case *ast.IfStmt:
+				routes = append(routes, routesFromIf(n, method)...)
+				return false
+			case *ast.SwitchStmt:
+				routes = append(routes, routesFromSwitch(n, method)...)
+				return false
+			}
+			return true
+		})
+	}
 	return routes, nil
+}
+
+func methodFromFunctionName(name string) string {
+	for selector, method := range httpMethods {
+		if strings.HasSuffix(name, strings.TrimPrefix(selector, "Method")) {
+			return method
+		}
+	}
+	return ""
 }
 
 func routesFromStmtList(stmts []ast.Stmt, method string) []GatewayRoute {

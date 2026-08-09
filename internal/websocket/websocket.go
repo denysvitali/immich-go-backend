@@ -14,11 +14,13 @@ import (
 )
 
 type Client struct {
-	conn    *websocket.Conn
-	session *engine.Session
-	hub     *Hub
-	send    chan []byte
-	done    chan struct{}
+	conn     *websocket.Conn
+	session  *engine.Session
+	hub      *Hub
+	send     chan []byte
+	done     chan struct{}
+	stopOnce sync.Once
+	pumps    sync.WaitGroup
 }
 
 type Hub struct {
@@ -26,14 +28,15 @@ type Hub struct {
 	register   chan *Client
 	unregister chan *Client
 	mu         sync.RWMutex
+	done       chan struct{}
+	stopped    chan struct{}
+	stopOnce   sync.Once
+	runOnce    sync.Once
 }
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
-	CheckOrigin: func(r *http.Request) bool {
-		return true // Consider implementing proper origin checking in production
-	},
 }
 
 func New() *Hub {
@@ -41,28 +44,80 @@ func New() *Hub {
 		clients:    make(map[*Client]bool),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
+		done:       make(chan struct{}),
+		stopped:    make(chan struct{}),
 	}
 }
 
 // Run starts the hub
 func (h *Hub) Run() {
-	for {
-		select {
-		case client := <-h.register:
-			h.mu.Lock()
-			h.clients[client] = true
-			h.mu.Unlock()
-			logrus.WithField("sessionID", client.session.ID).Info("Client registered")
+	h.runOnce.Do(func() {
+		defer close(h.stopped)
 
-		case client := <-h.unregister:
-			h.mu.Lock()
-			if _, ok := h.clients[client]; ok {
-				delete(h.clients, client)
-				close(client.send)
+		for {
+			select {
+			case client := <-h.register:
+				h.mu.Lock()
+				h.clients[client] = true
+				h.mu.Unlock()
+				logrus.WithField("sessionID", client.session.ID).Info("Client registered")
+
+			case client := <-h.unregister:
+				h.mu.Lock()
+				_, ok := h.clients[client]
+				if ok {
+					delete(h.clients, client)
+				}
+				h.mu.Unlock()
+				if ok {
+					logrus.WithField("sessionID", client.session.ID).Info("Client unregistered")
+				}
+
+			case <-h.done:
+				h.mu.Lock()
+				clients := make([]*Client, 0, len(h.clients))
+				for client := range h.clients {
+					clients = append(clients, client)
+					delete(h.clients, client)
+				}
+				h.mu.Unlock()
+
+				for _, client := range clients {
+					client.stop()
+				}
+				return
 			}
-			h.mu.Unlock()
-			logrus.WithField("sessionID", client.session.ID).Info("Client unregistered")
 		}
+	})
+}
+
+// Close stops the hub and disconnects every registered client. It is safe to
+// call more than once.
+func (h *Hub) Close() {
+	h.stopOnce.Do(func() {
+		close(h.done)
+	})
+}
+
+func (h *Hub) registerClient(client *Client) bool {
+	select {
+	case <-h.done:
+		return false
+	default:
+	}
+
+	select {
+	case h.register <- client:
+		return true
+	case <-h.done:
+		return false
+	}
+}
+
+func (h *Hub) unregisterClient(client *Client) {
+	select {
+	case h.unregister <- client:
+	case <-h.done:
 	}
 }
 
@@ -94,7 +149,15 @@ func (h *Hub) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Register client
-	h.register <- client
+	if !h.registerClient(client) {
+		return
+	}
+	defer func() {
+		client.stop()
+		_ = c.Close()
+		client.pumps.Wait()
+		h.unregisterClient(client)
+	}()
 
 	logrus.WithField("sessionID", session.ID).Info("WebSocket connection established")
 
@@ -112,20 +175,45 @@ func (h *Hub) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Start goroutines
+	client.pumps.Add(3)
 	go client.writePump()
 	go client.readPump()
 	go client.pingPump()
 
 	// Wait for client to finish
 	<-client.done
-	h.unregister <- client
+}
+
+// stop is the single owner of the client's completion signal. Keeping the
+// outbound channel open makes concurrent, best-effort senders safe while the
+// pumps observe done and exit.
+func (c *Client) stop() {
+	c.stopOnce.Do(func() {
+		close(c.done)
+	})
+}
+
+func (c *Client) trySend(message []byte) bool {
+	select {
+	case <-c.done:
+		return false
+	default:
+	}
+
+	select {
+	case c.send <- message:
+		return true
+	case <-c.done:
+		return false
+	default:
+		return false
+	}
 }
 
 // readPump pumps messages from the websocket connection to the hub
 func (c *Client) readPump() {
-	defer func() {
-		close(c.done)
-	}()
+	defer c.pumps.Done()
+	defer c.stop()
 
 	for {
 		_, data, err := c.conn.ReadMessage()
@@ -137,22 +225,25 @@ func (c *Client) readPump() {
 		}
 
 		c.handleMessage(data)
+		select {
+		case <-c.done:
+			return
+		default:
+		}
 	}
 }
 
 // writePump pumps messages from the hub to the websocket connection
 func (c *Client) writePump() {
+	defer c.pumps.Done()
+	defer c.stop()
+
 	ticker := time.NewTicker(54 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
-		case message, ok := <-c.send:
-			if !ok {
-				_ = c.conn.WriteMessage(websocket.CloseMessage, []byte{})
-				return
-			}
-
+		case message := <-c.send:
 			if err := c.conn.WriteMessage(websocket.TextMessage, message); err != nil {
 				logrus.WithError(err).Error("Failed to write message to websocket")
 				return
@@ -162,12 +253,18 @@ func (c *Client) writePump() {
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}
+
+		case <-c.done:
+			return
 		}
 	}
 }
 
 // pingPump sends ping packets and handles pong responses
 func (c *Client) pingPump() {
+	defer c.pumps.Done()
+	defer c.stop()
+
 	ticker := time.NewTicker(c.session.PingInterval)
 	defer ticker.Stop()
 
@@ -176,10 +273,9 @@ func (c *Client) pingPump() {
 		case <-ticker.C:
 			// Send Engine.IO ping packet
 			pingPacket := engine.EncodePacket(engine.PacketPing, nil)
-			select {
-			case c.send <- pingPacket:
+			if c.trySend(pingPacket) {
 				logrus.WithField("sessionID", c.session.ID).Debug("Sent ping packet")
-			default:
+			} else {
 				// Channel is full, client is probably disconnected
 				return
 			}
@@ -212,13 +308,16 @@ func (c *Client) handleMessage(data []byte) {
 
 	case engine.PacketClose:
 		logrus.WithField("sessionID", c.session.ID).Info("Received close packet")
-		close(c.done)
+		c.stop()
 	case engine.PacketPing:
 		// Handle ping packet
 		logrus.WithField("sessionID", c.session.ID).Debug("Received ping packet")
 		// Respond with pong
 		pongPacket := engine.EncodePacket(engine.PacketPong, nil)
-		c.send <- pongPacket
+		if !c.trySend(pongPacket) {
+			logrus.WithField("sessionID", c.session.ID).Warn("Failed to send pong: client buffer full or closed")
+			c.stop()
+		}
 
 	default:
 		logrus.WithFields(logrus.Fields{
@@ -255,7 +354,7 @@ func (c *Client) handleSocketIOMessage(data []byte) {
 	case socketio.PacketDisconnect:
 		// Handle Socket.IO disconnection
 		logrus.WithField("sessionID", c.session.ID).Info("Socket.IO disconnect")
-		close(c.done)
+		c.stop()
 
 	default:
 		logrus.WithFields(logrus.Fields{
@@ -286,15 +385,15 @@ func (c *Client) handleSocketIOConnect(packet *socketio.SocketIOPacket) {
 	// Wrap in Engine.IO message packet
 	messagePacket := engine.EncodePacket(engine.PacketMessage, responseBytes)
 
-	select {
-	case c.send <- messagePacket:
+	if c.trySend(messagePacket) {
 		logrus.WithFields(logrus.Fields{
 			"sessionID":         c.session.ID,
 			"socketioSessionID": socketioSessionID,
 			"namespace":         namespace,
 		}).Info("Socket.IO connection established")
-	default:
+	} else {
 		logrus.Error("Failed to send Socket.IO connect response: channel full")
+		c.stop()
 	}
 }
 
@@ -324,11 +423,11 @@ func (c *Client) handleSocketIOEvent(packet *socketio.SocketIOPacket) {
 		}
 
 		messagePacket := engine.EncodePacket(engine.PacketMessage, ackBytes)
-		select {
-		case c.send <- messagePacket:
+		if c.trySend(messagePacket) {
 			logrus.WithField("sessionID", c.session.ID).Debug("Sent Socket.IO acknowledgment")
-		default:
+		} else {
 			logrus.Error("Failed to send Socket.IO ack: channel full")
+			c.stop()
 		}
 	}
 }

@@ -150,6 +150,10 @@ func (s *Server) PingServer(ctx context.Context, empty *emptypb.Empty) (*immichv
 }
 
 func (s *Server) GetServerStatistics(ctx context.Context, empty *emptypb.Empty) (*immichv1.ServerStatsResponse, error) {
+	if _, err := s.requireAdmin(ctx); err != nil {
+		return nil, err
+	}
+
 	stats, err := s.queries.GetServerAssetStatistics(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to get server statistics: %v", err)

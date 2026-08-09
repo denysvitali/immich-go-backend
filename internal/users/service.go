@@ -10,6 +10,7 @@ import (
 	"github.com/denysvitali/immich-go-backend/internal/db/pgutil"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/denysvitali/immich-go-backend/internal/telemetry"
+	"github.com/denysvitali/immich-go-backend/internal/userdeletion"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"go.opentelemetry.io/otel/attribute"
@@ -24,13 +25,20 @@ var tracer = telemetry.GetTracer("users")
 
 // Service handles user management operations
 type Service struct {
-	db     *sqlc.Queries
-	config *config.Config
+	db           *sqlc.Queries
+	config       *config.Config
+	assetDeleter userdeletion.PermanentAssetDeleter
 
 	// Metrics
 	userCounter       metric.Int64UpDownCounter
 	operationCounter  metric.Int64Counter
 	operationDuration metric.Float64Histogram
+}
+
+// SetPermanentAssetDeleter configures storage-first asset cleanup for hard
+// user deletion.
+func (s *Service) SetPermanentAssetDeleter(deleter userdeletion.PermanentAssetDeleter) {
+	s.assetDeleter = deleter
 }
 
 // NewService creates a new user management service
@@ -367,6 +375,27 @@ func (s *Service) DeleteUser(ctx context.Context, userID uuid.UUID, hardDelete b
 	userUUID := pgutil.UUIDToPgtype(userID)
 
 	if hardDelete {
+		marked, err := s.db.MarkUserForPermanentDeletion(ctx, userUUID)
+		if err != nil || marked != 1 {
+			if err == nil {
+				err = fmt.Errorf("user not found")
+			}
+			span.RecordError(err)
+			return &UserError{
+				Type:    ErrDatabaseError,
+				Message: "Failed to fence user for permanent deletion",
+				Err:     err,
+			}
+		}
+		if err := userdeletion.DeleteOwnedAssets(ctx, s.db, s.assetDeleter, userID); err != nil {
+			span.RecordError(err)
+			return &UserError{
+				Type:    ErrDatabaseError,
+				Message: "Failed to delete user assets",
+				Err:     err,
+			}
+		}
+
 		// Hard delete - permanently remove user
 		if err := s.db.HardDeleteUser(ctx, userUUID); err != nil {
 			span.RecordError(err)

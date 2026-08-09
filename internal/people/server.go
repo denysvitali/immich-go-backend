@@ -2,6 +2,7 @@ package people
 
 import (
 	"context"
+	"errors"
 	"io"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 	"github.com/denysvitali/immich-go-backend/internal/storage"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -22,8 +24,19 @@ import (
 // Server implements the PeopleService
 type Server struct {
 	immichv1.UnimplementedPeopleServiceServer
-	queries *sqlc.Queries
+	queries peopleQueries
 	storage *storage.Service
+}
+
+type peopleQueries interface {
+	CountPersonAssets(context.Context, pgtype.UUID) (int64, error)
+	CreatePerson(context.Context, sqlc.CreatePersonParams) (sqlc.Person, error)
+	DeletePerson(context.Context, pgtype.UUID) error
+	GetPeople(context.Context, pgtype.UUID) ([]sqlc.Person, error)
+	GetPerson(context.Context, pgtype.UUID) (sqlc.Person, error)
+	MergePeople(context.Context, sqlc.MergePeopleParams) (sqlc.Person, error)
+	ReassignFaces(context.Context, sqlc.ReassignFacesParams) (sqlc.Person, error)
+	UpdatePerson(context.Context, sqlc.UpdatePersonParams) (sqlc.Person, error)
 }
 
 // NewServer creates a new people server. The storage service is required
@@ -103,7 +116,10 @@ func (s *Server) getOwnedPerson(
 	personUUID := pgUUID(personID)
 	person, err := s.queries.GetPerson(ctx, personUUID)
 	if err != nil {
-		return sqlc.Person{}, pgtype.UUID{}, status.Error(codes.NotFound, notFoundMessage)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return sqlc.Person{}, pgtype.UUID{}, status.Error(codes.NotFound, notFoundMessage)
+		}
+		return sqlc.Person{}, pgtype.UUID{}, status.Error(codes.Internal, "failed to get person")
 	}
 	if !isPGUUID(person.OwnerId, userID) {
 		return sqlc.Person{}, pgtype.UUID{}, status.Error(codes.PermissionDenied, "access denied")
@@ -361,21 +377,45 @@ func (s *Server) MergePerson(ctx context.Context, request *immichv1.MergePersonR
 		return nil, err
 	}
 
-	targetPerson, _, err := s.getOwnedPerson(ctx, userID, request.GetId(), "invalid target person ID", "target person not found")
+	targetPerson, targetUUID, err := s.getOwnedPerson(ctx, userID, request.GetId(), "invalid target person ID", "target person not found")
 	if err != nil {
 		return nil, err
 	}
 
-	// For each person to merge, verify ownership and delete them
-	// In a real implementation, we would also reassign their face assets to the target person
+	// Validate the complete request before changing any rows. This prevents a
+	// cross-user, missing, or malformed source later in the list from leaving a
+	// partially merged result.
+	sourceUUIDs := make([]pgtype.UUID, 0, len(request.GetIds()))
+	seen := make(map[uuid.UUID]struct{}, len(request.GetIds()))
 	for _, idStr := range request.GetIds() {
 		_, personUUID, err := s.getOwnedPerson(ctx, userID, idStr, "invalid person ID", "person not found")
 		if err != nil {
-			continue
+			return nil, err
 		}
 
-		// Delete the person (in real implementation, would reassign assets first)
-		_ = s.queries.DeletePerson(ctx, personUUID)
+		sourceID := uuid.UUID(personUUID.Bytes)
+		if sourceID == uuid.UUID(targetUUID.Bytes) {
+			return nil, status.Error(codes.InvalidArgument, "target person cannot be merged into itself")
+		}
+		if _, duplicate := seen[sourceID]; duplicate {
+			continue
+		}
+		seen[sourceID] = struct{}{}
+		sourceUUIDs = append(sourceUUIDs, personUUID)
+	}
+
+	if len(sourceUUIDs) > 0 {
+		targetPerson, err = s.queries.MergePeople(ctx, sqlc.MergePeopleParams{
+			TargetID:  targetUUID,
+			OwnerID:   pgUUID(userID),
+			SourceIds: sourceUUIDs,
+		})
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, status.Error(codes.Aborted, "people changed during merge")
+			}
+			return nil, status.Error(codes.Internal, "failed to merge people")
+		}
 	}
 
 	return &immichv1.MergePersonResponse{
@@ -390,18 +430,65 @@ func (s *Server) ReassignFaces(ctx context.Context, request *immichv1.ReassignFa
 		return nil, err
 	}
 
-	// Get all people for the user to return updated list
-	dbPeople, err := s.queries.GetPeople(ctx, pgUUID(userID))
+	target, targetUUID, err := s.getOwnedPerson(ctx, userID, request.GetId(), "invalid target person ID", "target person not found")
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get people: %v", err)
+		return nil, err
 	}
 
-	// Convert to proto response
-	people := make([]*immichv1.PersonResponse, 0, len(dbPeople))
-	for _, person := range dbPeople {
-		people = append(people, s.personResponse(ctx, person))
+	faceUpdates := make([]sqlc.FaceReassignment, 0, len(request.GetFaceUpdates()))
+	validatedSources := make(map[uuid.UUID]struct{}, len(request.GetFaceUpdates()))
+	for _, update := range request.GetFaceUpdates() {
+		assetID, err := uuid.Parse(update.GetAssetId())
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, "invalid asset ID")
+		}
+		sourcePersonID, err := uuid.Parse(update.GetPersonId())
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, "invalid source person ID")
+		}
+		if _, alreadyValidated := validatedSources[sourcePersonID]; !alreadyValidated {
+			if _, _, err := s.getOwnedPerson(ctx, userID, sourcePersonID.String(), "invalid source person ID", "source person not found"); err != nil {
+				return nil, err
+			}
+			validatedSources[sourcePersonID] = struct{}{}
+		}
+		faceUpdates = append(faceUpdates, sqlc.FaceReassignment{
+			AssetID:        pgUUID(assetID),
+			SourcePersonID: pgUUID(sourcePersonID),
+		})
 	}
 
+	if len(faceUpdates) == 0 {
+		return &immichv1.ReassignFacesResponse{People: []*immichv1.PersonResponse{}}, nil
+	}
+
+	target, err = s.queries.ReassignFaces(ctx, sqlc.ReassignFacesParams{
+		TargetPersonID: targetUUID,
+		OwnerID:        pgUUID(userID),
+		FaceUpdates:    faceUpdates,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, sqlc.ErrFaceReassignmentAccessDenied):
+			return nil, status.Error(codes.PermissionDenied, "access denied")
+		case errors.Is(err, sqlc.ErrFaceReassignmentNotFound):
+			return nil, status.Error(codes.NotFound, "face not found")
+		case errors.Is(err, sqlc.ErrFaceReassignmentConflict), errors.Is(err, pgx.ErrNoRows):
+			return nil, status.Error(codes.Aborted, "people or faces changed during reassignment")
+		default:
+			return nil, status.Error(codes.Internal, "failed to reassign faces")
+		}
+	}
+
+	faceCount, err := s.queries.CountPersonAssets(ctx, target.ID)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "failed to count reassigned faces")
+	}
+	targetResponse := buildPersonResponse(target, faceCount)
+	people := make([]*immichv1.PersonResponse, 0, len(request.GetFaceUpdates()))
+	for range request.GetFaceUpdates() {
+		people = append(people, targetResponse)
+	}
 	return &immichv1.ReassignFacesResponse{
 		People: people,
 	}, nil

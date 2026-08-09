@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"net/http"
@@ -16,9 +17,11 @@ import (
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/denysvitali/immich-go-backend/internal/config"
 	"github.com/denysvitali/immich-go-backend/internal/db"
 	"github.com/denysvitali/immich-go-backend/internal/embedded"
 	"github.com/denysvitali/immich-go-backend/internal/server"
+	"github.com/denysvitali/immich-go-backend/internal/telemetry"
 )
 
 // grpcReadyTimeout bounds how long serve waits for its own gRPC listener to
@@ -26,9 +29,6 @@ import (
 // is a local dial, so anything slower than this means the listener never came
 // up and failing fast beats serving a gateway that cannot reach SyncService.
 const grpcReadyTimeout = 10 * time.Second
-
-// httpShutdownTimeout bounds the graceful HTTP drain on SIGTERM.
-const httpShutdownTimeout = 10 * time.Second
 
 var serveCmd = &cobra.Command{
 	Use:   "serve",
@@ -43,6 +43,15 @@ var serveCmd = &cobra.Command{
 func runServer(_ *cobra.Command, _ []string) error {
 	ctx := context.Background()
 
+	telemetryProvider, err := telemetry.NewProvider(
+		cfg.Telemetry,
+		telemetry.WithPrometheusMetrics(cfg.Server.MetricsEnabled),
+	)
+	if err != nil {
+		return fmt.Errorf("initialize telemetry: %w", err)
+	}
+	defer shutdownTelemetry(telemetryProvider, cfg.Server.ShutdownTimeout)
+
 	database, closeDatabase, err := openDatabase(ctx)
 	if err != nil {
 		return err
@@ -53,14 +62,23 @@ func runServer(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create server: %w", err)
 	}
+	srv.SetMetricsHandler(telemetryProvider.MetricsHandler())
 
 	// Registered before either listener starts so a signal arriving during
 	// startup is not lost.
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
+	serverStopped := false
+	defer func() {
+		if !serverStopped {
+			srv.Stop()
+		}
+	}()
 
 	grpcAddr := cfg.Server.GRPCAddress
-	if err := startGRPC(srv, grpcAddr); err != nil {
+	grpcErrCh, err := startGRPC(srv, grpcAddr)
+	if err != nil {
 		return err
 	}
 
@@ -70,14 +88,36 @@ func runServer(_ *cobra.Command, _ []string) error {
 	}
 	srv.SetGRPCConn(grpcClientConn)
 
-	httpServer, err := startHTTP(srv, cfg.Server.Address)
+	httpServer, httpErrCh, err := startHTTP(srv, cfg.Server)
 	if err != nil {
 		return err
 	}
 
-	<-sigCh
-	shutdown(httpServer, srv)
-	return nil
+	select {
+	case <-sigCh:
+		shutdown(httpServer, srv, cfg.Server.ShutdownTimeout)
+		serverStopped = true
+		return nil
+	case err := <-grpcErrCh:
+		shutdown(httpServer, srv, cfg.Server.ShutdownTimeout)
+		serverStopped = true
+		return unexpectedServerStop("gRPC", err)
+	case err := <-httpErrCh:
+		shutdown(httpServer, srv, cfg.Server.ShutdownTimeout)
+		serverStopped = true
+		return unexpectedServerStop("HTTP", err)
+	}
+}
+
+func shutdownTelemetry(provider *telemetry.Provider, timeout time.Duration) {
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	if err := provider.Shutdown(ctx); err != nil {
+		logrus.WithError(err).Error("Failed to shutdown telemetry providers")
+	}
 }
 
 // openDatabase starts the embedded PostgreSQL when enabled, connects, and runs
@@ -98,7 +138,7 @@ func openDatabase(ctx context.Context) (*db.Conn, func(), error) {
 		cfg.Database.URL = runtime.DSN()
 	}
 
-	database, err := db.New(ctx, cfg.Database.URL)
+	database, err := db.NewWithOptions(ctx, cfg.Database.URL, databaseOptions())
 	if err != nil {
 		if embeddedPG != nil {
 			_ = embeddedPG.Stop()
@@ -132,23 +172,32 @@ func openDatabase(ctx context.Context) (*db.Conn, func(), error) {
 	return database, cleanup, nil
 }
 
-// startGRPC binds the gRPC listener and serves it in the background. A serve
-// error after startup is logged, not returned: by then the HTTP listener owns
-// the process lifetime and the signal handler decides when to stop.
-func startGRPC(srv *server.Server, addr string) error {
+func databaseOptions() db.Options {
+	return db.Options{
+		MaxOpenConns:    cfg.Database.MaxOpenConns,
+		MinIdleConns:    cfg.Database.MinIdleConns,
+		MaxConnLifetime: cfg.Database.MaxConnLifetime,
+		ConnectTimeout:  cfg.Database.ConnectTimeout,
+		QueryTimeout:    cfg.Database.QueryTimeout,
+		LogQueries:      cfg.Database.LogQueries,
+	}
+}
+
+// startGRPC binds the gRPC listener and returns asynchronous Serve failures to
+// the lifecycle owner so a half-dead process never remains healthy forever.
+func startGRPC(srv *server.Server, addr string) (<-chan error, error) {
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
-		return fmt.Errorf("failed to listen on %s: %w", addr, err)
+		return nil, fmt.Errorf("failed to listen on %s: %w", addr, err)
 	}
 
+	errCh := make(chan error, 1)
 	go func() {
 		logrus.Infof("Starting gRPC server on %s", addr)
-		if err := srv.ServeGRPC(listener); err != nil {
-			logrus.WithError(err).Error("gRPC server failed")
-		}
+		errCh <- srv.ServeGRPC(listener)
 	}()
 
-	return nil
+	return errCh, nil
 }
 
 // dialLocalGRPC connects back to our own gRPC listener so the HTTP gateway can
@@ -180,35 +229,58 @@ func dialLocalGRPC(ctx context.Context, addr string) (*grpc.ClientConn, error) {
 // the caller can drain it on shutdown. Building the handler can fail when a
 // service's gateway registration is rejected, which would leave that service
 // unreachable over REST — so it aborts startup instead.
-func startHTTP(srv *server.Server, addr string) (*http.Server, error) {
+func startHTTP(srv *server.Server, serverConfig config.ServerConfig) (*http.Server, <-chan error, error) {
+	listener, err := net.Listen("tcp", serverConfig.Address)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to listen on %s: %w", serverConfig.Address, err)
+	}
+
 	handler, err := srv.HTTPHandler()
 	if err != nil {
-		return nil, fmt.Errorf("build HTTP handler: %w", err)
+		_ = listener.Close()
+		return nil, nil, fmt.Errorf("build HTTP handler: %w", err)
 	}
 
 	httpServer := &http.Server{
-		Addr:         addr,
+		Addr:         serverConfig.Address,
 		Handler:      handler,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
+		ReadTimeout:  serverConfig.ReadTimeout,
+		WriteTimeout: serverConfig.WriteTimeout,
+		IdleTimeout:  serverConfig.IdleTimeout,
+	}
+	tlsEnabled := serverConfig.TLS.Enabled
+	if tlsEnabled {
+		certificate, err := tls.LoadX509KeyPair(serverConfig.TLS.CertFile, serverConfig.TLS.KeyFile)
+		if err != nil {
+			_ = listener.Close()
+			return nil, nil, fmt.Errorf("load HTTP TLS certificate: %w", err)
+		}
+		tlsConfig := &tls.Config{
+			MinVersion:   tls.VersionTLS12,
+			Certificates: []tls.Certificate{certificate},
+		}
+		httpServer.TLSConfig = tlsConfig
 	}
 
+	errCh := make(chan error, 1)
 	go func() {
-		logrus.Infof("Starting HTTP server on %s", addr)
-		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logrus.WithError(err).Error("HTTP server failed")
+		logrus.Infof("Starting HTTP server on %s", serverConfig.Address)
+		if tlsEnabled {
+			errCh <- httpServer.ServeTLS(listener, "", "")
+			return
 		}
+		errCh <- httpServer.Serve(listener)
 	}()
 
-	return httpServer, nil
+	return httpServer, errCh, nil
 }
 
 // shutdown drains HTTP first so in-flight requests can finish against a still
 // running gRPC server, then stops gRPC and the job workers.
-func shutdown(httpServer *http.Server, srv *server.Server) {
+func shutdown(httpServer *http.Server, srv *server.Server, timeout time.Duration) {
 	logrus.Info("Shutting down servers...")
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), httpShutdownTimeout)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
@@ -216,4 +288,11 @@ func shutdown(httpServer *http.Server, srv *server.Server) {
 	}
 
 	srv.Stop()
+}
+
+func unexpectedServerStop(name string, err error) error {
+	if err == nil {
+		return fmt.Errorf("%s server stopped unexpectedly", name)
+	}
+	return fmt.Errorf("%s server stopped unexpectedly: %w", name, err)
 }

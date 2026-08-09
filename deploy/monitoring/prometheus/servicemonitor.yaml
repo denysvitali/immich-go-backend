@@ -35,14 +35,6 @@ spec:
       # relabelings: []
       # metricRelabelings: []
 
-    # Optional second endpoint if OTEL_METRICS_EXPORTER=prometheus is used
-    # on a dedicated Service port named `metrics` (9464 by default):
-    # - port: metrics
-    #   path: /metrics
-    #   interval: 15s
-    #   scrapeTimeout: 10s
-    #   scheme: http
-
 ---
 # Example companion Service (only if you do not already expose the HTTP port).
 # Safe to omit when your existing Service already publishes port `http`.
@@ -61,7 +53,3 @@ spec:
       port: 3001
       targetPort: 3001
       protocol: TCP
-    # - name: metrics
-    #   port: 9464
-    #   targetPort: 9464
-    #   protocol: TCP

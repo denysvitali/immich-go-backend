@@ -66,7 +66,8 @@ func (s *Server) Logout(ctx context.Context, req *emptypb.Empty) (*immichv1.Logo
 		return nil, status.Errorf(codes.Unauthenticated, "not authenticated")
 	}
 
-	// Invalidate the session
+	// Invalidate all refresh sessions for this user. The logout contract does
+	// not carry a specific refresh token.
 	err = s.authService.Logout(ctx, userID.String())
 	if err != nil {
 		return nil, grpcutil.SanitizedInternal(ctx, "logout failed", err)

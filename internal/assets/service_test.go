@@ -3,6 +3,7 @@ package assets
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"path/filepath"
 	"strings"
@@ -41,6 +42,124 @@ func TestService_GetStorageService(t *testing.T) {
 
 	result := service.GetStorageService()
 	assert.Equal(t, storageService, result)
+}
+
+type flakyPermanentDeletionStorage struct {
+	existing     map[string]bool
+	deleteErrors map[string]int
+	deleteCalls  map[string]int
+}
+
+func (s *flakyPermanentDeletionStorage) AssetExists(_ context.Context, path string) (bool, error) {
+	return s.existing[path], nil
+}
+
+func (s *flakyPermanentDeletionStorage) DeleteAsset(_ context.Context, path string) error {
+	s.deleteCalls[path]++
+	if s.deleteErrors[path] > 0 {
+		s.deleteErrors[path]--
+		return errors.New("injected storage failure")
+	}
+	s.existing[path] = false
+	return nil
+}
+
+func TestDeleteAssetPathsThenFinalizeIsRetrySafe(t *testing.T) {
+	storageService := &flakyPermanentDeletionStorage{
+		existing: map[string]bool{
+			"original.jpg": true,
+			"preview.jpg":  true,
+			"video.mp4":    true,
+		},
+		deleteErrors: map[string]int{"preview.jpg": 1},
+		deleteCalls:  make(map[string]int),
+	}
+	finalizeCalls := 0
+	finalize := func() error {
+		finalizeCalls++
+		return nil
+	}
+	paths := []string{"original.jpg", "preview.jpg", "video.mp4", "preview.jpg", ""}
+
+	err := deleteAssetPathsThenFinalize(context.Background(), storageService, paths, finalize)
+	assert.ErrorContains(t, err, "injected storage failure")
+	assert.Zero(t, finalizeCalls, "database deletion must not finalize after storage failure")
+	assert.False(t, storageService.existing["original.jpg"])
+	assert.True(t, storageService.existing["preview.jpg"])
+	assert.False(t, storageService.existing["video.mp4"], "cleanup should attempt all paths")
+
+	err = deleteAssetPathsThenFinalize(context.Background(), storageService, paths, finalize)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, finalizeCalls)
+	assert.False(t, storageService.existing["preview.jpg"])
+	assert.Equal(t, 1, storageService.deleteCalls["original.jpg"], "missing files are successful on retry")
+	assert.Equal(t, 2, storageService.deleteCalls["preview.jpg"])
+	assert.Equal(t, 1, storageService.deleteCalls["video.mp4"])
+}
+
+func TestDeleteAssetPathsThenFinalizeRetriesDatabaseFinalization(t *testing.T) {
+	storageService := &flakyPermanentDeletionStorage{
+		existing:    map[string]bool{"original.jpg": true},
+		deleteCalls: make(map[string]int),
+	}
+	finalizeCalls := 0
+	finalize := func() error {
+		finalizeCalls++
+		if finalizeCalls == 1 {
+			return errors.New("injected database failure")
+		}
+		return nil
+	}
+
+	err := deleteAssetPathsThenFinalize(context.Background(), storageService, []string{"original.jpg"}, finalize)
+	assert.ErrorContains(t, err, "injected database failure")
+	assert.False(t, storageService.existing["original.jpg"])
+
+	err = deleteAssetPathsThenFinalize(context.Background(), storageService, []string{"original.jpg"}, finalize)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, finalizeCalls)
+	assert.Equal(t, 1, storageService.deleteCalls["original.jpg"], "the retry should accept the missing object")
+}
+
+func TestAssetStoragePathsIncludesAllRecordedObjects(t *testing.T) {
+	generator := NewThumbnailGenerator()
+	assetID := uuid.New()
+	paths := assetStoragePaths(sqlc.Asset{
+		ID:               pgtype.UUID{Bytes: assetID, Valid: true},
+		OriginalPath:     "original.jpg",
+		EncodedVideoPath: pgtype.Text{String: "encoded.mp4", Valid: true},
+		SidecarPath:      pgtype.Text{String: "sidecar.xmp", Valid: true},
+	}, []sqlc.AssetFile{{Path: "thumb.webp"}, {Path: "preview.jpg"}})
+
+	assert.Equal(t, []string{
+		"original.jpg",
+		"encoded.mp4",
+		"sidecar.xmp",
+		generator.GetThumbnailPath("original.jpg", ThumbnailTypePreview),
+		generator.GetThumbnailPath("original.jpg", ThumbnailTypeWebp),
+		generator.GetThumbnailPath("original.jpg", ThumbnailTypeThumb),
+		filepath.Join("encoded-videos", assetID.String()+".mp4"),
+		"thumb.webp",
+		"preview.jpg",
+	}, paths)
+}
+
+func TestAssetStoragePathsPreservesExternalSourceFiles(t *testing.T) {
+	generator := NewThumbnailGenerator()
+	paths := assetStoragePaths(sqlc.Asset{
+		OriginalPath:     "/external-library/original.jpg",
+		EncodedVideoPath: pgtype.Text{String: "encoded.mp4", Valid: true},
+		SidecarPath:      pgtype.Text{String: "/external-library/original.xmp", Valid: true},
+		IsExternal:       true,
+	}, []sqlc.AssetFile{{Path: "thumb.webp"}})
+
+	assert.Equal(t, []string{
+		"encoded.mp4",
+		generator.GetThumbnailPath("/external-library/original.jpg", ThumbnailTypePreview),
+		generator.GetThumbnailPath("/external-library/original.jpg", ThumbnailTypeWebp),
+		generator.GetThumbnailPath("/external-library/original.jpg", ThumbnailTypeThumb),
+		"thumb.webp",
+	}, paths)
 }
 
 func TestAssetType(t *testing.T) {

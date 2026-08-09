@@ -14,6 +14,7 @@ import (
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/denysvitali/immich-go-backend/internal/storage"
 	"github.com/denysvitali/immich-go-backend/internal/telemetry"
+	"github.com/denysvitali/immich-go-backend/internal/userdeletion"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"go.opentelemetry.io/otel/attribute"
@@ -32,14 +33,21 @@ const defaultTemplateBaseURL = "https://demo.immich.app"
 
 // Service handles administrative operations
 type Service struct {
-	db      *sqlc.Queries
-	config  *config.Config
-	storage *storage.Service
-	email   emailSender
+	db           *sqlc.Queries
+	config       *config.Config
+	storage      *storage.Service
+	email        emailSender
+	assetDeleter userdeletion.PermanentAssetDeleter
 
 	// Metrics
 	operationCounter  metric.Int64Counter
 	operationDuration metric.Float64Histogram
+}
+
+// SetPermanentAssetDeleter configures storage-first asset cleanup for forced
+// user deletion.
+func (s *Service) SetPermanentAssetDeleter(deleter userdeletion.PermanentAssetDeleter) {
+	s.assetDeleter = deleter
 }
 
 // NewService creates a new admin service
@@ -626,6 +634,17 @@ func (s *Service) DeleteUserAdmin(ctx context.Context, userID string, force bool
 
 	// Perform deletion based on force flag
 	if force {
+		marked, err := s.db.MarkUserForPermanentDeletion(ctx, userUUID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fence user for permanent deletion: %w", err)
+		}
+		if marked != 1 {
+			return nil, fmt.Errorf("failed to fence user for permanent deletion: user not found")
+		}
+		if err := userdeletion.DeleteOwnedAssets(ctx, s.db, s.assetDeleter, uid); err != nil {
+			return nil, fmt.Errorf("failed to delete user assets: %w", err)
+		}
+
 		// Hard delete - permanently remove from database
 		err = s.db.HardDeleteUser(ctx, userUUID)
 		if err != nil {

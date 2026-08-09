@@ -16,6 +16,7 @@ import (
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/sirupsen/logrus"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -23,153 +24,178 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// frontendShapeHandlers intercepts a small set of REST endpoints whose default
-// grpc-gateway handling differs from the upstream Immich SDK/web UI — either
-// because the response shape doesn't match, or because the gateway can't
-// carry the payload at all (multipart uploads, zip streaming).
+// handleFrontendShape intercepts the REST endpoints whose default grpc-gateway
+// handling differs from what the upstream Immich SDK and web UI expect — either
+// because the response shape doesn't match, or because the gateway cannot carry
+// the payload at all (multipart uploads, zip streaming, raw media bytes).
+//
+// It returns true when the request has been fully served. One handler per HTTP
+// method follows; the route strings must stay literal, because
+// internal/openapicoverage finds these routes by matching them in the AST and
+// the 100%-coverage gate fails if they become variables.
 func (s *Server) handleFrontendShape(w http.ResponseWriter, r *http.Request) (handled bool) {
 	switch r.Method {
 	case http.MethodGet:
-		switch r.URL.Path {
-		case "/api/partners":
-			normalizePartnerDirectionQuery(r)
-		case "/system-metadata/version-check-state", "/api/system-metadata/version-check-state":
-			s.handleVersionCheckState(w, r)
-			return true
-		case "/api/timeline/buckets":
-			s.handleTimelineBuckets(w, r)
-			return true
-		case "/api/timeline/bucket":
-			s.handleTimelineBucket(w, r)
-			return true
-		case "/api/albums":
-			s.handleAlbums(w, r)
-			return true
-		case "/api/admin/users":
-			s.handleAdminUsers(w, r)
-			return true
-		case "/api/admin/integrity/summary":
-			s.handleAdminIntegritySummary(w, r)
-			return true
-		case "/api/libraries":
-			s.handleLibraries(w, r)
-			return true
-		case "/api/memories":
-			s.handleMemories(w, r)
-			return true
-		case "/api/notifications":
-			s.handleNotifications(w, r)
-			return true
-		case "/api/server/version-history":
-			s.handleServerVersionHistory(w, r)
-			return true
-		case "/api/plugins/triggers":
-			s.handlePluginTriggers(w, r)
-			return true
-		case "/api/plugins/methods":
-			s.handlePluginMethods(w, r)
-			return true
-		case "/api/plugins/templates":
-			s.handlePluginTemplates(w, r)
-			return true
-		case "/api/workflows/triggers":
-			s.handleWorkflowTriggers(w, r)
-			return true
-		case "/api/system-config":
-			s.handleSystemConfigGet(w, r)
-			return true
-		case "/api/system-config/defaults":
-			s.handleSystemConfigDefaults(w, r)
-			return true
-		case "/api/system-config/storage-template-options":
-			s.handleStorageTemplateOptions(w, r)
-			return true
-		}
-
-		if reportType, ok := adminIntegrityCSVTypeFromPath(r.URL.Path); ok {
-			s.handleAdminIntegrityCSV(w, r, reportType)
-			return true
-		}
-
-		if itemID, ok := adminIntegrityFileIDFromPath(r.URL.Path); ok {
-			s.handleAdminIntegrityFile(w, r, itemID)
-			return true
-		}
-
-		if assetID, ok := hlsMainPlaylistAssetIDFromPath(r.URL.Path); ok {
-			s.handleHLSMainPlaylist(w, r, assetID)
-			return true
-		}
-
-		if mediaPlaylist, ok := hlsMediaPlaylistFromPath(r.URL.Path); ok {
-			s.handleHLSMediaPlaylist(w, r, mediaPlaylist)
-			return true
-		}
-
-		if segment, ok := hlsSegmentFromPath(r.URL.Path); ok {
-			s.handleHLSSegment(w, r, segment)
-			return true
-		}
-
-		if assetID, kind := assetMediaRouteFromPath(r.URL.Path); kind != assetMediaNone {
-			s.handleAssetMedia(w, r, assetID, kind)
-			return true
-		}
-
-		if albumID, ok := albumMapMarkersIDFromPath(r.URL.Path); ok {
-			s.handleAlbumMapMarkers(w, r, albumID)
-			return true
-		}
-
-		if albumID, ok := albumIDFromPath(r.URL.Path); ok {
-			s.handleAlbum(w, r, albumID)
-			return true
-		}
-
+		return s.handleFrontendShapeGet(w, r)
 	case http.MethodPut:
-		if r.URL.Path == "/api/system-config" {
-			s.handleSystemConfigPut(w, r)
-			return true
-		}
-
+		return s.handleFrontendShapePut(w, r)
 	case http.MethodDelete:
-		if r.URL.Path == "/api/users/me/onboarding" {
-			s.handleUserOnboardingDelete(w, r)
-			return true
-		}
-
-		if assetID, sessionID, ok := hlsSessionFromPath(r.URL.Path); ok {
-			s.handleHLSEndSession(w, r, assetID, sessionID)
-			return true
-		}
-
+		return s.handleFrontendShapeDelete(w, r)
 	case http.MethodPost:
-		switch r.URL.Path {
-		case "/api/assets":
-			// Only the multipart upload flow; JSON creation stays on the
-			// gateway route.
-			if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/") {
-				s.handleAssetUpload(w, r)
-				return true
-			}
-		case "/api/partners":
-			s.handlePartnerCreate(w, r, "")
-			return true
-		case "/api/download/info":
-			s.handleDownloadInfo(w, r)
-			return true
-		case "/api/download/archive":
-			s.handleDownloadArchive(w, r)
-			return true
-		case "/api/oauth/backchannel-logout":
-			s.handleOAuthBackchannelLogout(w, r)
-			return true
-		}
+		return s.handleFrontendShapePost(w, r)
+	}
+	return false
+}
 
-		if partnerID, ok := partnerIDFromPath(r.URL.Path); ok {
-			s.handlePartnerCreate(w, r, partnerID)
+func (s *Server) handleFrontendShapeGet(w http.ResponseWriter, r *http.Request) bool {
+	switch r.URL.Path {
+	case "/api/partners":
+		normalizePartnerDirectionQuery(r)
+	case "/system-metadata/version-check-state", "/api/system-metadata/version-check-state":
+		s.handleVersionCheckState(w, r)
+		return true
+	case "/api/timeline/buckets":
+		s.handleTimelineBuckets(w, r)
+		return true
+	case "/api/timeline/bucket":
+		s.handleTimelineBucket(w, r)
+		return true
+	case "/api/albums":
+		s.handleAlbums(w, r)
+		return true
+	case "/api/admin/users":
+		s.handleAdminUsers(w, r)
+		return true
+	case "/api/admin/integrity/summary":
+		s.handleAdminIntegritySummary(w, r)
+		return true
+	case "/api/libraries":
+		s.handleLibraries(w, r)
+		return true
+	case "/api/memories":
+		s.handleMemories(w, r)
+		return true
+	case "/api/notifications":
+		s.handleNotifications(w, r)
+		return true
+	case "/api/server/version-history":
+		s.handleServerVersionHistory(w, r)
+		return true
+	case "/api/plugins/triggers":
+		s.handlePluginTriggers(w, r)
+		return true
+	case "/api/plugins/methods":
+		s.handlePluginMethods(w, r)
+		return true
+	case "/api/plugins/templates":
+		s.handlePluginTemplates(w, r)
+		return true
+	case "/api/workflows/triggers":
+		s.handleWorkflowTriggers(w, r)
+		return true
+	case "/api/system-config":
+		s.handleSystemConfigGet(w, r)
+		return true
+	case "/api/system-config/defaults":
+		s.handleSystemConfigDefaults(w, r)
+		return true
+	case "/api/system-config/storage-template-options":
+		s.handleStorageTemplateOptions(w, r)
+		return true
+	}
+
+	if reportType, ok := adminIntegrityCSVTypeFromPath(r.URL.Path); ok {
+		s.handleAdminIntegrityCSV(w, r, reportType)
+		return true
+	}
+
+	if itemID, ok := adminIntegrityFileIDFromPath(r.URL.Path); ok {
+		s.handleAdminIntegrityFile(w, r, itemID)
+		return true
+	}
+
+	if assetID, ok := hlsMainPlaylistAssetIDFromPath(r.URL.Path); ok {
+		s.handleHLSMainPlaylist(w, r, assetID)
+		return true
+	}
+
+	if mediaPlaylist, ok := hlsMediaPlaylistFromPath(r.URL.Path); ok {
+		s.handleHLSMediaPlaylist(w, r, mediaPlaylist)
+		return true
+	}
+
+	if segment, ok := hlsSegmentFromPath(r.URL.Path); ok {
+		s.handleHLSSegment(w, r, segment)
+		return true
+	}
+
+	if assetID, kind := assetMediaRouteFromPath(r.URL.Path); kind != assetMediaNone {
+		s.handleAssetMedia(w, r, assetID, kind)
+		return true
+	}
+
+	if albumID, ok := albumMapMarkersIDFromPath(r.URL.Path); ok {
+		s.handleAlbumMapMarkers(w, r, albumID)
+		return true
+	}
+
+	if albumID, ok := albumIDFromPath(r.URL.Path); ok {
+		s.handleAlbum(w, r, albumID)
+		return true
+	}
+
+	return false
+}
+
+func (s *Server) handleFrontendShapePut(w http.ResponseWriter, r *http.Request) bool {
+	if r.URL.Path == "/api/system-config" {
+		s.handleSystemConfigPut(w, r)
+		return true
+	}
+
+	return false
+}
+
+func (s *Server) handleFrontendShapeDelete(w http.ResponseWriter, r *http.Request) bool {
+	if r.URL.Path == "/api/users/me/onboarding" {
+		s.handleUserOnboardingDelete(w, r)
+		return true
+	}
+
+	if assetID, sessionID, ok := hlsSessionFromPath(r.URL.Path); ok {
+		s.handleHLSEndSession(w, r, assetID, sessionID)
+		return true
+	}
+
+	return false
+}
+
+func (s *Server) handleFrontendShapePost(w http.ResponseWriter, r *http.Request) bool {
+	switch r.URL.Path {
+	case "/api/assets":
+		// Only the multipart upload flow; JSON creation stays on the
+		// gateway route.
+		if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/") {
+			s.handleAssetUpload(w, r)
 			return true
 		}
+	case "/api/partners":
+		s.handlePartnerCreate(w, r, "")
+		return true
+	case "/api/download/info":
+		s.handleDownloadInfo(w, r)
+		return true
+	case "/api/download/archive":
+		s.handleDownloadArchive(w, r)
+		return true
+	case "/api/oauth/backchannel-logout":
+		s.handleOAuthBackchannelLogout(w, r)
+		return true
+	}
+
+	if partnerID, ok := partnerIDFromPath(r.URL.Path); ok {
+		s.handlePartnerCreate(w, r, partnerID)
+		return true
 	}
 
 	return false
@@ -208,18 +234,24 @@ func normalizePartnerDirectionQuery(r *http.Request) {
 }
 
 func (s *Server) requireAuth(w http.ResponseWriter, r *http.Request) (*auth.Claims, bool) {
-	authHeader := requestAuthorization(r)
-	if !strings.HasPrefix(authHeader, "Bearer ") {
-		w.WriteHeader(http.StatusUnauthorized)
+	if err := requestAuthenticationError(r.Context()); err != nil {
+		writeGRPCErrorJSON(w, r, err)
 		return nil, false
 	}
+	if claims, ok := auth.GetClaimsFromStdContext(r.Context()); ok && claims != nil {
+		return claims, true
+	}
 
-	claims, err := s.authService.ValidateToken(strings.TrimPrefix(authHeader, "Bearer "))
+	authenticatedRequest, err := s.authenticateHTTPRequest(r)
 	if err != nil {
-		w.WriteHeader(http.StatusUnauthorized)
+		writeGRPCErrorJSON(w, r, err)
 		return nil, false
 	}
-
+	claims, ok := auth.GetClaimsFromStdContext(authenticatedRequest.Context())
+	if !ok || claims == nil {
+		writeGRPCErrorJSON(w, r, status.Error(codes.Unauthenticated, "authentication required"))
+		return nil, false
+	}
 	return claims, true
 }
 
@@ -260,10 +292,10 @@ func writeGRPCErrorJSON(w http.ResponseWriter, r *http.Request, err error) {
 	}
 
 	entry := logrus.WithError(err).WithFields(logrus.Fields{
-		"method": r.Method,
-		"path":   r.URL.Path,
-		"query":  r.URL.RawQuery,
-		"status": statusCode,
+		"method":      r.Method,
+		"path":        r.URL.Path,
+		"queryParams": loggedQueryKeys(r.URL.RawQuery),
+		"status":      statusCode,
 	})
 	if statusCode >= http.StatusInternalServerError {
 		entry.Error("Frontend compatibility request failed")
@@ -549,7 +581,8 @@ func (s *Server) handleTimelineBucket(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAlbum(w http.ResponseWriter, r *http.Request, albumID string) {
-	if _, ok := s.requireAuth(w, r); !ok {
+	claims, ok := s.requireAuth(w, r)
+	if !ok {
 		return
 	}
 
@@ -559,13 +592,14 @@ func (s *Server) handleAlbum(w http.ResponseWriter, r *http.Request, albumID str
 		return
 	}
 
-	album, err := s.db.GetAlbum(r.Context(), albumUUID)
+	ctx := auth.WithClaims(r.Context(), claims)
+	album, _, err := s.authorizedAlbum(ctx, albumUUID, albumAccessView)
 	if err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]any{"error": "album not found"})
+		writeGRPCErrorJSON(w, r, err)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, s.frontendAlbumResponse(r.Context(), album))
+	writeJSON(w, http.StatusOK, s.frontendAlbumResponse(ctx, album))
 }
 
 // handleAlbums honors the upstream GetAlbumsDto filters. The v3 albums page

@@ -153,7 +153,7 @@ func (s *Server) DeleteUserLicense(ctx context.Context, empty *emptypb.Empty) (*
 }
 
 func (s *Server) claimsFromContext(ctx context.Context) (*auth.Claims, error) {
-	return auth.ClaimsFromContext(ctx, s.authService.ValidateToken)
+	return s.getUserFromContext(ctx)
 }
 
 func (s *Server) userIDFromContext(ctx context.Context) (uuid.UUID, error) {
@@ -456,6 +456,10 @@ func (s *Server) DeleteProfileImage(ctx context.Context, empty *emptypb.Empty) (
 }
 
 func (s *Server) GetUser(ctx context.Context, request *immichv1.GetUserRequest) (*immichv1.UserResponse, error) {
+	if _, err := s.claimsFromContext(ctx); err != nil {
+		return nil, err
+	}
+
 	userID, err := uuid.Parse(request.UserId)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid user ID: %v", err)
@@ -473,6 +477,10 @@ func (s *Server) GetUser(ctx context.Context, request *immichv1.GetUserRequest) 
 }
 
 func (s *Server) GetProfileImage(ctx context.Context, request *immichv1.GetProfileImageRequest) (*immichv1.GetProfileImageResponse, error) {
+	if _, err := s.claimsFromContext(ctx); err != nil {
+		return nil, err
+	}
+
 	// Parse user ID
 	userID, err := uuid.Parse(request.UserId)
 	if err != nil {

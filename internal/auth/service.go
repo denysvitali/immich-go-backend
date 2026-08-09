@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -10,7 +11,7 @@ import (
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -44,11 +45,22 @@ func NewService(config config.AuthConfig, queries *sqlc.Queries) *Service {
 
 // Claims represents JWT claims
 type Claims struct {
-	UserID  string `json:"user_id"`
-	Email   string `json:"email"`
-	IsAdmin bool   `json:"is_admin"`
+	UserID   string   `json:"user_id"`
+	Email    string   `json:"email"`
+	IsAdmin  bool     `json:"is_admin"`
+	TokenUse TokenUse `json:"token_use,omitempty"`
 	jwt.RegisteredClaims
 }
+
+// TokenUse identifies which authentication flow may consume a JWT. Access
+// and refresh tokens otherwise use the same key and claims, so validators must
+// not infer their purpose from the signature or lifetime.
+type TokenUse string
+
+const (
+	TokenUseAccess  TokenUse = "access"
+	TokenUseRefresh TokenUse = "refresh"
+)
 
 // LoginRequest represents a login request
 type LoginRequest struct {
@@ -122,6 +134,10 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (*AuthResponse, e
 		s.recordFailedLogin(loginKey)
 		return nil, NewAuthError(ErrUserDeleted, "User account has been deleted", nil)
 	}
+	if user.Status != "active" {
+		s.recordFailedLogin(loginKey)
+		return nil, NewAuthError(ErrUserDeleted, "User account is not active", nil)
+	}
 
 	// Verify password
 	if passwordErr := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); passwordErr != nil {
@@ -184,33 +200,37 @@ func (s *Service) Register(ctx context.Context, req RegisterRequest) (*AuthRespo
 
 // AdminSignUp creates the initial administrator account during setup.
 func (s *Service) AdminSignUp(ctx context.Context, req RegisterRequest) (*AuthResponse, error) {
-	userCount, err := s.countUsers(ctx)
+	initialized, err := s.IsInitialized(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	return s.register(ctx, req, userCount == 0)
+	if initialized {
+		return nil, NewAuthError(ErrAlreadyInitialized, "System setup has already been completed", nil)
+	}
+	return s.register(ctx, req, true)
 }
 
-// IsInitialized reports whether at least one user account exists, i.e.
-// whether the initial admin-sign-up step has been completed.
+// IsInitialized reports whether the one-time setup window has been closed.
+// The durable marker remains true even if every user is later deleted.
 func (s *Service) IsInitialized(ctx context.Context) (bool, error) {
-	userCount, err := s.countUsers(ctx)
+	initialized, err := s.queries.IsSystemInitialized(ctx)
 	if err != nil {
-		return false, err
+		return false, NewAuthError(ErrUserCreation, "Failed to check system initialization", err)
 	}
-	return userCount > 0, nil
+	return initialized.Valid && initialized.Bool, nil
 }
 
-func (s *Service) countUsers(ctx context.Context) (int64, error) {
-	userCount, err := s.queries.CountUsers(ctx, pgtype.Bool{Valid: false})
-	if err != nil {
-		return 0, NewAuthError(ErrUserCreation, "Failed to count existing users", err)
-	}
-	return userCount, nil
+type registeredUser struct {
+	ID          string
+	Email       string
+	Name        string
+	IsAdmin     bool
+	IsOnboarded bool
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
-func (s *Service) register(ctx context.Context, req RegisterRequest, isAdmin bool) (*AuthResponse, error) {
+func (s *Service) register(ctx context.Context, req RegisterRequest, initialAdmin bool) (*AuthResponse, error) {
 	ctx, span := tracer.Start(ctx, "auth.Register",
 		trace.WithAttributes(attribute.String("auth.email", req.Email)))
 	defer span.End()
@@ -225,10 +245,14 @@ func (s *Service) register(ctx context.Context, req RegisterRequest, isAdmin boo
 		return nil, recordedAuthError(span, ErrInvalidPassword, "Password does not meet requirements", err)
 	}
 
-	// Check if user already exists
-	existingUser, err := s.queries.GetUserByEmail(ctx, req.Email)
-	if err == nil && existingUser.ID.Valid {
-		return nil, NewAuthError(ErrUserExists, "User with this email already exists", nil)
+	// Preserve the ordinary registration duplicate response. Initial admin
+	// registration deliberately goes through the atomic database claim first,
+	// so every post-initialization call has the same failed-precondition result.
+	if !initialAdmin {
+		existingUser, err := s.queries.GetUserByEmail(ctx, req.Email)
+		if err == nil && existingUser.ID.Valid {
+			return nil, NewAuthError(ErrUserExists, "User with this email already exists", nil)
+		}
 	}
 
 	// Hash password
@@ -249,44 +273,68 @@ func (s *Service) register(ctx context.Context, req RegisterRequest, isAdmin boo
 		return nil, recordedAuthError(span, ErrUserCreation, "Failed to convert user ID", err)
 	}
 
-	createUserParams := sqlc.CreateUserParams{
-		ID:          userUUID,
-		Email:       req.Email,
-		Name:        req.Name,
-		Password:    string(hashedPassword),
-		IsAdmin:     isAdmin,
-		IsOnboarded: false, // New users have not completed onboarding
-	}
-
-	user, err := s.queries.CreateUser(ctx, createUserParams)
-	if err != nil {
-		return nil, recordedAuthError(span, ErrUserCreation, "Failed to create user account", err)
-	}
-
-	// Generate tokens
-	accessToken, refreshToken, expiresAt, err := s.generateTokens(pgutil.UUIDToString(user.ID), user.Email, user.IsAdmin)
+	// Generate tokens before the database statement. The refresh session is
+	// inserted alongside the user and bootstrap marker, so none can commit if
+	// any database write fails.
+	accessToken, refreshToken, expiresAt, err := s.generateTokens(userID, req.Email, initialAdmin)
 	if err != nil {
 		return nil, recordedAuthError(span, ErrTokenGeneration, "Failed to generate authentication tokens", err)
 	}
 
-	// Store refresh token
-	if err := s.storeRefreshToken(ctx, pgutil.UUIDToString(user.ID), refreshToken); err != nil {
-		return nil, recordedAuthError(span, ErrTokenStorage, "Failed to store refresh token", err)
+	refreshExpiresAt := pgutil.TimeToTimestamptz(time.Now().Add(s.config.JWTRefreshExpiry))
+	var user registeredUser
+	if initialAdmin {
+		created, createErr := s.queries.CreateInitialAdmin(ctx, sqlc.CreateInitialAdminParams{
+			ID:               userUUID,
+			Email:            req.Email,
+			Name:             req.Name,
+			Password:         string(hashedPassword),
+			RefreshToken:     refreshToken,
+			RefreshExpiresAt: refreshExpiresAt,
+		})
+		if errors.Is(createErr, pgx.ErrNoRows) {
+			return nil, NewAuthError(ErrAlreadyInitialized, "System setup has already been completed", nil)
+		}
+		if createErr != nil {
+			return nil, recordedAuthError(span, ErrUserCreation, "Failed to create initial administrator", createErr)
+		}
+		user = registeredUser{
+			ID:          pgutil.UUIDToString(created.ID),
+			Email:       created.Email,
+			Name:        created.Name,
+			IsAdmin:     created.IsAdmin,
+			IsOnboarded: created.IsOnboarded,
+			CreatedAt:   pgutil.TimestamptzToTime(created.CreatedAt),
+			UpdatedAt:   pgutil.TimestamptzToTime(created.UpdatedAt),
+		}
+	} else {
+		created, createErr := s.queries.CreateRegisteredUser(ctx, sqlc.CreateRegisteredUserParams{
+			ID:               userUUID,
+			Email:            req.Email,
+			Name:             req.Name,
+			Password:         string(hashedPassword),
+			RefreshToken:     refreshToken,
+			RefreshExpiresAt: refreshExpiresAt,
+		})
+		if createErr != nil {
+			return nil, recordedAuthError(span, ErrUserCreation, "Failed to create user account", createErr)
+		}
+		user = registeredUser{
+			ID:          pgutil.UUIDToString(created.ID),
+			Email:       created.Email,
+			Name:        created.Name,
+			IsAdmin:     created.IsAdmin,
+			IsOnboarded: created.IsOnboarded,
+			CreatedAt:   pgutil.TimestamptzToTime(created.CreatedAt),
+			UpdatedAt:   pgutil.TimestamptzToTime(created.UpdatedAt),
+		}
 	}
 
 	return &AuthResponse{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 		ExpiresAt:    expiresAt,
-		User: UserInfo{
-			ID:          pgutil.UUIDToString(user.ID),
-			Email:       user.Email,
-			Name:        user.Name,
-			IsAdmin:     user.IsAdmin,
-			IsOnboarded: user.IsOnboarded,
-			CreatedAt:   pgutil.TimestamptzToTime(user.CreatedAt),
-			UpdatedAt:   pgutil.TimestamptzToTime(user.UpdatedAt),
-		},
+		User:         UserInfo(user),
 	}, nil
 }
 
@@ -295,8 +343,11 @@ func (s *Service) RefreshToken(ctx context.Context, req RefreshRequest) (*AuthRe
 	ctx, span := tracer.Start(ctx, "auth.RefreshToken")
 	defer span.End()
 
-	// Validate refresh token
-	claims, err := s.validateToken(req.RefreshToken)
+	// Validate the token's explicit purpose before consulting storage. Legacy
+	// untyped tokens fail closed: refresh tokens and access/session tokens share
+	// the same sessions table, so storage membership cannot safely distinguish
+	// their intended use.
+	claims, err := s.validateRefreshToken(req.RefreshToken)
 	if err != nil {
 		return nil, recordedAuthError(span, ErrInvalidToken, "Invalid refresh token", err)
 	}
@@ -326,6 +377,9 @@ func (s *Service) RefreshToken(ctx context.Context, req RefreshRequest) (*AuthRe
 	// Check if user is deleted
 	if user.DeletedAt.Valid {
 		return nil, NewAuthError(ErrUserDeleted, "User account has been deleted", nil)
+	}
+	if user.Status != "active" {
+		return nil, NewAuthError(ErrUserDeleted, "User account is not active", nil)
 	}
 
 	// Generate new tokens
@@ -361,15 +415,28 @@ func (s *Service) RefreshToken(ctx context.Context, req RefreshRequest) (*AuthRe
 
 // ValidateToken validates a JWT token and returns claims
 func (s *Service) ValidateToken(tokenString string) (*Claims, error) {
-	return s.validateToken(tokenString)
+	claims, err := s.parseToken(tokenString)
+	if err != nil {
+		return nil, err
+	}
+	if claims.TokenUse != TokenUseAccess {
+		return nil, fmt.Errorf("invalid token use: access token required")
+	}
+	return claims, nil
 }
 
-// Logout invalidates a refresh token
-func (s *Service) Logout(ctx context.Context, refreshToken string) error {
+// Logout invalidates every refresh session for a user. The current logout API
+// identifies the authenticated user but does not submit a refresh token, so
+// deleting all of that user's sessions is the only complete revocation.
+func (s *Service) Logout(ctx context.Context, userID string) error {
 	ctx, span := tracer.Start(ctx, "auth.Logout")
 	defer span.End()
 
-	if err := s.queries.DeleteRefreshToken(ctx, refreshToken); err != nil {
+	userUUID, err := pgutil.StringToUUID(userID)
+	if err != nil {
+		return recordedAuthError(span, ErrInvalidCredentials, "Invalid user ID", err)
+	}
+	if err := s.queries.DeleteUserRefreshTokens(ctx, userUUID); err != nil {
 		return recordedAuthError(span, ErrTokenDeletion, "Failed to logout", err)
 	}
 
@@ -435,9 +502,10 @@ func (s *Service) GenerateToken(userID, email string, duration time.Duration) (s
 
 	// Create access token claims
 	accessClaims := &Claims{
-		UserID:  userID,
-		Email:   email,
-		IsAdmin: false, // OAuth users are not admin by default
+		UserID:   userID,
+		Email:    email,
+		IsAdmin:  false, // OAuth users are not admin by default
+		TokenUse: TokenUseAccess,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
 			IssuedAt:  jwt.NewNumericDate(now),
@@ -459,9 +527,10 @@ func (s *Service) generateTokens(userID, email string, isAdmin bool) (string, st
 
 	// Create access token claims
 	accessClaims := &Claims{
-		UserID:  userID,
-		Email:   email,
-		IsAdmin: isAdmin,
+		UserID:   userID,
+		Email:    email,
+		IsAdmin:  isAdmin,
+		TokenUse: TokenUseAccess,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
 			IssuedAt:  jwt.NewNumericDate(now),
@@ -473,9 +542,10 @@ func (s *Service) generateTokens(userID, email string, isAdmin bool) (string, st
 
 	// Create refresh token claims
 	refreshClaims := &Claims{
-		UserID:  userID,
-		Email:   email,
-		IsAdmin: isAdmin,
+		UserID:   userID,
+		Email:    email,
+		IsAdmin:  isAdmin,
+		TokenUse: TokenUseRefresh,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(now.Add(s.config.JWTRefreshExpiry)),
 			IssuedAt:  jwt.NewNumericDate(now),
@@ -502,14 +572,28 @@ func (s *Service) generateTokens(userID, email string, isAdmin bool) (string, st
 	return accessTokenString, refreshTokenString, expiresAt, nil
 }
 
-// validateToken validates a JWT token and returns claims
-func (s *Service) validateToken(tokenString string) (*Claims, error) {
+// validateRefreshToken validates a JWT intended for the refresh
+// flow. Both access tokens and untyped legacy tokens fail closed.
+func (s *Service) validateRefreshToken(tokenString string) (*Claims, error) {
+	claims, err := s.parseToken(tokenString)
+	if err != nil {
+		return nil, err
+	}
+	if claims.TokenUse != TokenUseRefresh {
+		return nil, fmt.Errorf("invalid token use: refresh token required")
+	}
+	return claims, nil
+}
+
+// parseToken verifies a JWT signature and registered claims without assigning
+// it an authentication purpose. Callers must enforce token_use for their flow.
+func (s *Service) parseToken(tokenString string) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+		if token.Method != jwt.SigningMethodHS256 {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
 		return []byte(s.config.JWTSecret), nil
-	})
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}))
 	if err != nil {
 		return nil, err
 	}

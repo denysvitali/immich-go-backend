@@ -70,6 +70,25 @@ SET "albumName" = COALESCE(sqlc.narg('album_name'), "albumName"),
 WHERE id = $1 AND "deletedAt" IS NULL
 RETURNING *;
 
+-- name: GetOwnedAlbumForUpdate :one
+-- Lock the album while an owner-authorized update validates related rows.
+SELECT * FROM albums
+WHERE id = sqlc.arg(album_id)
+  AND "ownerId" = sqlc.arg(owner_id)
+  AND "deletedAt" IS NULL
+FOR UPDATE;
+
+-- name: GetOwnedAlbumThumbnailForUpdate :one
+-- A thumbnail must be a live asset owned by the album owner and already in
+-- the album. Lock both the asset and membership until the album update ends.
+SELECT a.* FROM assets a
+JOIN albums_assets_assets aa ON aa."assetsId" = a.id
+WHERE aa."albumsId" = sqlc.arg(album_id)
+  AND a.id = sqlc.arg(asset_id)
+  AND a."ownerId" = sqlc.arg(owner_id)
+  AND a."deletedAt" IS NULL
+FOR UPDATE OF a, aa;
+
 -- name: DeleteAlbum :exec
 UPDATE albums
 SET "deletedAt" = now(),
@@ -146,7 +165,9 @@ AND "deletedAt" IS NULL;
 -- Asset queries
 -- name: GetAsset :one
 SELECT * FROM assets
-WHERE id = $1 AND "deletedAt" IS NULL;
+WHERE id = $1
+  AND "deletedAt" IS NULL
+  AND status != 'deleted'::assets_status_enum;
 
 -- name: GetAssets :many
 SELECT * FROM assets
@@ -174,7 +195,12 @@ INSERT INTO assets (
     "fileCreatedAt", "fileModifiedAt", "localDateTime", "originalFileName",
     checksum, "isFavorite", visibility, status
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13
+FROM users owner
+WHERE owner.id = $2
+  AND owner."deletedAt" IS NULL
+  AND owner.status = 'active'
+FOR SHARE OF owner
 RETURNING *;
 
 -- name: CreateLibraryAsset :one
@@ -183,7 +209,12 @@ INSERT INTO assets (
     "fileCreatedAt", "fileModifiedAt", "localDateTime", "originalFileName",
     checksum, "isFavorite", visibility, status, "isExternal"
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, true)
+SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, true
+FROM users owner
+WHERE owner.id = $2
+  AND owner."deletedAt" IS NULL
+  AND owner.status = 'active'
+FOR SHARE OF owner
 RETURNING *;
 
 -- name: UpdateAsset :one
@@ -263,6 +294,17 @@ SET checksum = sqlc.arg(checksum),
 WHERE id = sqlc.arg(id)
 AND "ownerId" = sqlc.arg(owner_id)
 AND "deletedAt" IS NULL
+AND status != 'deleted'::assets_status_enum
+RETURNING *;
+
+-- name: CompleteAssetOriginalFileWrite :one
+UPDATE assets
+SET status = 'active',
+    "updatedAt" = now(),
+    "updateId" = immich_uuid_v7()
+WHERE id = $1
+  AND "deletedAt" IS NULL
+  AND status != 'deleted'::assets_status_enum
 RETURNING *;
 
 -- name: MarkAssetProcessed :execrows
@@ -282,6 +324,30 @@ WHERE id = $1 AND "deletedAt" IS NULL;
 SELECT * FROM assets
 WHERE id = $1 AND "ownerId" = $2 AND "deletedAt" IS NULL;
 
+-- name: GetAssetForOriginalFileWrite :one
+-- Original-file writers hold this row lock through their storage write and
+-- database finalization. Permanent deletion's status update therefore either
+-- waits and later sweeps the written object, or wins and makes this guard fail.
+SELECT * FROM assets
+WHERE id = $1
+  AND "deletedAt" IS NULL
+  AND status != 'deleted'::assets_status_enum
+FOR UPDATE;
+
+-- name: GetOwnedAssetForOriginalFileWrite :one
+SELECT * FROM assets
+WHERE id = $1
+  AND "ownerId" = $2
+  AND "deletedAt" IS NULL
+  AND status != 'deleted'::assets_status_enum
+FOR UPDATE;
+
+-- name: GetAssetByIDAndUserForDeletion :one
+-- Includes deletion tombstones so cleanup can repair objects left by older
+-- releases or resume after database finalization.
+SELECT * FROM assets
+WHERE id = $1 AND "ownerId" = $2;
+
 -- name: GetUserAssets :many
 SELECT * FROM assets
 WHERE "ownerId" = $1 AND "deletedAt" IS NULL
@@ -289,6 +355,13 @@ AND (sqlc.narg('status')::assets_status_enum IS NULL OR status = sqlc.narg('stat
 ORDER BY "fileCreatedAt" DESC
 LIMIT sqlc.narg('limit')
 OFFSET sqlc.narg('offset');
+
+-- name: GetAllUserAssetsForDeletion :many
+SELECT * FROM assets
+WHERE "ownerId" = sqlc.arg(owner_id)
+ORDER BY id
+LIMIT sqlc.arg(page_size)
+OFFSET sqlc.arg(page_offset);
 
 -- name: GetDeletedAssetIDsForSync :many
 SELECT id FROM assets
@@ -347,6 +420,98 @@ ORDER BY "createdAt" DESC;
 INSERT INTO users (id, email, name, password, "isAdmin", "isOnboarded")
 VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING *;
+
+-- name: CreateRegisteredUser :one
+-- Ordinary registration permanently closes the one-time bootstrap window.
+-- The marker, user, and refresh session commit or roll back as one statement.
+WITH initialized AS (
+    INSERT INTO system_metadata (key, value)
+    VALUES (
+        'initial_admin_bootstrap',
+        jsonb_build_object(
+            'userId', sqlc.arg(id)::uuid,
+            'initializedAt', now()
+        )
+    )
+    ON CONFLICT (key) DO NOTHING
+), created_user AS (
+    INSERT INTO users (id, email, name, password, "isAdmin", "isOnboarded")
+    VALUES (
+        sqlc.arg(id),
+        sqlc.arg(email),
+        sqlc.arg(name),
+        sqlc.arg(password),
+        false,
+        false
+    )
+    RETURNING *
+), stored_session AS (
+    INSERT INTO sessions (token, "userId", "expiresAt")
+    SELECT sqlc.arg(refresh_token), id, sqlc.arg(refresh_expires_at)
+    FROM created_user
+    RETURNING token
+)
+SELECT
+    created_user.id,
+    created_user.email,
+    created_user.name,
+    created_user."isAdmin",
+    created_user."isOnboarded",
+    created_user."createdAt",
+    created_user."updatedAt"
+FROM created_user
+JOIN stored_session ON true;
+
+-- name: CreateInitialAdmin :one
+-- The unique metadata key is a durable, replica-safe claim. The user/session
+-- writes depend on the successful claim and therefore cannot run for losers.
+WITH bootstrap_claim AS (
+    INSERT INTO system_metadata (key, value)
+    SELECT
+        'initial_admin_bootstrap',
+        jsonb_build_object(
+            'userId', sqlc.arg(id)::uuid,
+            'initializedAt', now()
+        )
+    WHERE NOT EXISTS (SELECT 1 FROM users)
+    ON CONFLICT (key) DO NOTHING
+    RETURNING key
+), created_user AS (
+    INSERT INTO users (id, email, name, password, "isAdmin", "isOnboarded")
+    SELECT
+        sqlc.arg(id),
+        sqlc.arg(email),
+        sqlc.arg(name),
+        sqlc.arg(password),
+        true,
+        false
+    FROM bootstrap_claim
+    RETURNING *
+), stored_session AS (
+    INSERT INTO sessions (token, "userId", "expiresAt")
+    SELECT sqlc.arg(refresh_token), id, sqlc.arg(refresh_expires_at)
+    FROM created_user
+    RETURNING token
+)
+SELECT
+    created_user.id,
+    created_user.email,
+    created_user.name,
+    created_user."isAdmin",
+    created_user."isOnboarded",
+    created_user."createdAt",
+    created_user."updatedAt"
+FROM created_user
+JOIN stored_session ON true;
+
+-- name: IsSystemInitialized :one
+SELECT
+    EXISTS (
+        SELECT 1
+        FROM system_metadata
+        WHERE key = 'initial_admin_bootstrap'
+    )
+    OR EXISTS (SELECT 1 FROM users);
 
 -- name: UpdateUser :one
 UPDATE users
@@ -444,6 +609,15 @@ RETURNING *;
 -- name: SoftDeleteUser :exec
 UPDATE users
 SET "deletedAt" = now(),
+    "updatedAt" = now()
+WHERE id = $1;
+
+-- name: MarkUserForPermanentDeletion :execrows
+-- This row lock is the deletion fence. CreateAsset/CreateLibraryAsset take a
+-- SHARE lock while requiring status=active, so asset inserts either commit
+-- before cleanup enumerates them or fail after this transition.
+UPDATE users
+SET status = 'removing',
     "updatedAt" = now()
 WHERE id = $1;
 
@@ -621,6 +795,12 @@ ORDER BY "createdAt" DESC;
 SELECT * FROM memories
 WHERE id = $1 AND "deletedAt" IS NULL;
 
+-- name: GetOwnedMemory :one
+SELECT * FROM memories
+WHERE id = sqlc.arg(memory_id)
+  AND "ownerId" = sqlc.arg(owner_id)
+  AND "deletedAt" IS NULL;
+
 -- name: CreateMemory :one
 INSERT INTO memories ("ownerId", type, data)
 VALUES ($1, $2, $3)
@@ -646,6 +826,56 @@ INSERT INTO memories_assets_assets ("memoriesId", "assetsId")
 SELECT $1, unnest($2::uuid[])
 ON CONFLICT ("memoriesId", "assetsId") DO NOTHING;
 
+-- name: AddAccessibleAssetsToMemory :one
+-- Validate the complete request and insert it in one statement. The memory row
+-- is owner-scoped, and every requested live asset must either belong to that
+-- owner or be visible through a live shared album. If any asset fails, the
+-- authorized_memory CTE is empty and no relation is inserted.
+WITH requested_assets AS (
+    SELECT DISTINCT requested.id
+    FROM unnest(sqlc.arg(asset_ids)::uuid[]) AS requested(id)
+), owned_memory AS MATERIALIZED (
+    SELECT memory.id
+    FROM memories memory
+    WHERE memory.id = sqlc.arg(memory_id)
+      AND memory."ownerId" = sqlc.arg(owner_id)
+      AND memory."deletedAt" IS NULL
+    FOR UPDATE OF memory
+), accessible_assets AS MATERIALIZED (
+    SELECT asset.id
+    FROM assets asset
+    JOIN requested_assets requested ON requested.id = asset.id
+    WHERE asset."deletedAt" IS NULL
+      AND asset.status != 'deleted'::assets_status_enum
+      AND (
+          asset."ownerId" = sqlc.arg(owner_id)
+          OR EXISTS (
+              SELECT 1
+              FROM albums_assets_assets album_asset
+              JOIN albums_shared_users_users shared_user
+                ON shared_user."albumsId" = album_asset."albumsId"
+              JOIN albums album ON album.id = album_asset."albumsId"
+              WHERE album_asset."assetsId" = asset.id
+                AND shared_user."usersId" = sqlc.arg(owner_id)
+                AND album."deletedAt" IS NULL
+          )
+      )
+    FOR SHARE OF asset
+), authorized_memory AS (
+    SELECT memory.id
+    FROM owned_memory memory
+    WHERE (SELECT COUNT(*) FROM accessible_assets) =
+          (SELECT COUNT(*) FROM requested_assets)
+), inserted AS (
+    INSERT INTO memories_assets_assets ("memoriesId", "assetsId")
+    SELECT memory.id, asset.id
+    FROM authorized_memory memory
+    CROSS JOIN accessible_assets asset
+    ON CONFLICT ("memoriesId", "assetsId") DO NOTHING
+    RETURNING "memoriesId"
+)
+SELECT EXISTS (SELECT 1 FROM authorized_memory) AS authorized;
+
 -- name: RemoveAssetsFromMemory :exec
 DELETE FROM memories_assets_assets
 WHERE "memoriesId" = $1 AND "assetsId" = ANY($2::uuid[]);
@@ -653,6 +883,56 @@ WHERE "memoriesId" = $1 AND "assetsId" = ANY($2::uuid[]);
 -- name: GetMemoryAssets :many
 SELECT "assetsId" FROM memories_assets_assets
 WHERE "memoriesId" = $1;
+
+-- name: GetAccessibleMemoryAssetIDs :many
+SELECT asset.id
+FROM memories_assets_assets memory_asset
+JOIN memories memory ON memory.id = memory_asset."memoriesId"
+JOIN assets asset ON asset.id = memory_asset."assetsId"
+WHERE memory.id = sqlc.arg(memory_id)
+  AND memory."ownerId" = sqlc.arg(owner_id)
+  AND memory."deletedAt" IS NULL
+  AND asset."deletedAt" IS NULL
+  AND asset.status != 'deleted'::assets_status_enum
+  AND (
+      asset."ownerId" = sqlc.arg(owner_id)
+      OR EXISTS (
+          SELECT 1
+          FROM albums_assets_assets album_asset
+          JOIN albums_shared_users_users shared_user
+            ON shared_user."albumsId" = album_asset."albumsId"
+          JOIN albums album ON album.id = album_asset."albumsId"
+          WHERE album_asset."assetsId" = asset.id
+            AND shared_user."usersId" = sqlc.arg(owner_id)
+            AND album."deletedAt" IS NULL
+      )
+  )
+ORDER BY asset."fileCreatedAt" DESC, asset.id;
+
+-- name: GetAccessibleAssetsByMemoryID :many
+SELECT asset.*
+FROM memories_assets_assets memory_asset
+JOIN memories memory ON memory.id = memory_asset."memoriesId"
+JOIN assets asset ON asset.id = memory_asset."assetsId"
+WHERE memory.id = sqlc.arg(memory_id)
+  AND memory."ownerId" = sqlc.arg(owner_id)
+  AND memory."deletedAt" IS NULL
+  AND asset."deletedAt" IS NULL
+  AND asset.status != 'deleted'::assets_status_enum
+  AND (
+      asset."ownerId" = sqlc.arg(owner_id)
+      OR EXISTS (
+          SELECT 1
+          FROM albums_assets_assets album_asset
+          JOIN albums_shared_users_users shared_user
+            ON shared_user."albumsId" = album_asset."albumsId"
+          JOIN albums album ON album.id = album_asset."albumsId"
+          WHERE album_asset."assetsId" = asset.id
+            AND shared_user."usersId" = sqlc.arg(owner_id)
+            AND album."deletedAt" IS NULL
+      )
+  )
+ORDER BY asset."fileCreatedAt" DESC, asset.id;
 
 -- name: GetAssetsByMemoryID :many
 SELECT a.* FROM assets a
@@ -697,6 +977,78 @@ RETURNING *;
 -- name: DeletePerson :exec
 DELETE FROM person
 WHERE id = $1;
+
+-- name: GetOwnedPersonForMerge :one
+-- Lock every participant while MergePeople validates and applies its changes.
+SELECT * FROM person
+WHERE id = sqlc.arg(person_id) AND "ownerId" = sqlc.arg(owner_id)
+FOR UPDATE;
+
+-- name: ReassignPersonFaces :exec
+UPDATE asset_faces
+SET "personId" = sqlc.arg(target_id)
+WHERE "personId" = ANY(sqlc.arg(source_ids)::uuid[]);
+
+-- name: DeletePeopleForMerge :execrows
+DELETE FROM person
+WHERE id = ANY(sqlc.arg(source_ids)::uuid[])
+  AND "ownerId" = sqlc.arg(owner_id);
+
+-- name: GetFacesForReassignment :many
+-- Lock every matching face so the complete bulk request can be authorized
+-- before any of its rows are changed.
+SELECT af.*, a."ownerId" AS asset_owner_id
+FROM asset_faces af
+JOIN assets a ON a.id = af."assetId"
+WHERE af."assetId" = sqlc.arg(asset_id)
+  AND af."personId" = sqlc.arg(source_person_id)
+  AND af."deletedAt" IS NULL
+  AND a."deletedAt" IS NULL
+ORDER BY af.id
+FOR UPDATE OF af, a;
+
+-- name: GetFaceForReassignmentByID :one
+-- Lock one live face and its asset so a single-face reassignment can verify
+-- tenant ownership and that the source person has not changed.
+SELECT af.*, a."ownerId" AS asset_owner_id
+FROM asset_faces af
+JOIN assets a ON a.id = af."assetId"
+WHERE af.id = sqlc.arg(face_id)
+  AND af."deletedAt" IS NULL
+  AND a."deletedAt" IS NULL
+FOR UPDATE OF af, a;
+
+-- name: ReassignFacesByIDs :execrows
+UPDATE asset_faces
+SET "personId" = sqlc.arg(target_person_id)
+WHERE id = ANY(sqlc.arg(face_ids)::uuid[])
+  AND "deletedAt" IS NULL;
+
+-- name: RepairFeatureFacesAfterReassignment :exec
+-- Keep feature-face pointers attached to their own person after faces move.
+-- The target receives a feature face when it did not already have one, while
+-- a source whose feature moved receives another remaining face or NULL.
+UPDATE person p
+SET "faceAssetId" = (
+        SELECT af.id
+        FROM asset_faces af
+        WHERE af."personId" = p.id
+          AND af."deletedAt" IS NULL
+        ORDER BY af.id
+        LIMIT 1
+    ),
+    "updatedAt" = now()
+WHERE p.id = ANY(sqlc.arg(person_ids)::uuid[])
+  AND (
+      p."faceAssetId" IS NULL
+      OR NOT EXISTS (
+          SELECT 1
+          FROM asset_faces feature_face
+          WHERE feature_face.id = p."faceAssetId"
+            AND feature_face."personId" = p.id
+            AND feature_face."deletedAt" IS NULL
+      )
+  );
 
 -- name: GetPersonAssets :many
 SELECT DISTINCT a.* FROM assets a
@@ -1671,11 +2023,14 @@ AND status = 'trashed'
 ORDER BY "updatedAt" DESC
 LIMIT $2 OFFSET $3;
 
--- name: RestoreAssets :exec
+-- name: RestoreAssets :execrows
 UPDATE assets
 SET status = 'active',
     "updatedAt" = now()
-WHERE id = ANY($1::uuid[]) AND "ownerId" = $2;
+WHERE id = ANY($1::uuid[])
+  AND "ownerId" = $2
+  AND "deletedAt" IS NULL
+  AND status = 'trashed'::assets_status_enum;
 
 -- name: PermanentlyDeleteAssets :exec
 UPDATE assets
@@ -1686,7 +2041,12 @@ WHERE id = ANY($1::uuid[]) AND "ownerId" = $2;
 -- Asset Files queries
 -- name: CreateAssetFile :one
 INSERT INTO asset_files ("assetId", "type", "path")
-VALUES ($1, $2, $3)
+SELECT $1, $2, $3
+FROM assets asset
+WHERE asset.id = $1
+  AND asset."deletedAt" IS NULL
+  AND asset.status != 'deleted'::assets_status_enum
+FOR SHARE OF asset
 RETURNING *;
 
 -- name: GetAssetFiles :many
@@ -1931,6 +2291,11 @@ AND "deletedAt" IS NULL;
 -- name: GetFacesByPerson :many
 SELECT * FROM asset_faces
 WHERE "personId" = $1
+AND "deletedAt" IS NULL;
+
+-- name: GetAssetFaceByID :one
+SELECT * FROM asset_faces
+WHERE id = $1
 AND "deletedAt" IS NULL;
 
 -- name: DeleteFace :exec
@@ -2305,7 +2670,9 @@ UPDATE assets
 SET "encodedVideoPath" = $2,
     "updatedAt" = now(),
     "updateId" = immich_uuid_v7()
-WHERE id = $1 AND "deletedAt" IS NULL
+WHERE id = $1
+  AND "deletedAt" IS NULL
+  AND status != 'deleted'::assets_status_enum
 RETURNING *;
 
 -- Job failure (dead-letter) queries

@@ -49,6 +49,27 @@ func TestRequireAdminReturnsAdminClaims(t *testing.T) {
 	assert.Same(t, want, got)
 }
 
+func TestAuthenticationUnaryInterceptorEnrichesValidContext(t *testing.T) {
+	wantClaims := &auth.Claims{UserID: "7ebecbc0-9128-4c3e-941c-e50999d98942"}
+	wantUser := auth.UserInfo{ID: wantClaims.UserID, Email: "user@example.com"}
+	ctx := auth.WithClaims(context.Background(), wantClaims)
+	ctx = auth.WithUser(ctx, wantUser)
+
+	response, err := (&Server{}).authenticationUnaryInterceptor(ctx, "request", nil,
+		func(ctx context.Context, req any) (any, error) {
+			claims, ok := auth.GetClaimsFromStdContext(ctx)
+			require.True(t, ok)
+			assert.Same(t, wantClaims, claims)
+			user, ok := auth.GetUserFromStdContext(ctx)
+			require.True(t, ok)
+			assert.Equal(t, wantUser, *user)
+			return req, nil
+		})
+
+	require.NoError(t, err)
+	assert.Equal(t, "request", response)
+}
+
 // mustHTTPHandler builds the REST handler and fails the test if any gateway
 // registration is rejected.
 func mustHTTPHandler(t *testing.T, srv *Server) http.Handler {

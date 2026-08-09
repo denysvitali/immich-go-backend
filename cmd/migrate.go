@@ -20,7 +20,7 @@ var migrateCmd = &cobra.Command{
 func runMigrations(_ *cobra.Command, _ []string) error {
 	ctx := context.Background()
 
-	database, err := db.New(ctx, cfg.Database.URL)
+	database, err := db.NewWithOptions(ctx, cfg.Database.URL, databaseOptions())
 	if err != nil {
 		return fmt.Errorf("failed to connect to database: %w", err)
 	}

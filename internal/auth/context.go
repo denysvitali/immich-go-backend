@@ -157,6 +157,9 @@ func (s *Service) LoadUserInfo(ctx context.Context, claims *Claims) (*UserInfo, 
 	if user.DeletedAt.Valid {
 		return nil, NewAuthError(ErrUserDeleted, "user account has been deleted", nil)
 	}
+	if user.Status != "active" {
+		return nil, NewAuthError(ErrUserDeleted, "user account is not active", nil)
+	}
 
 	return &UserInfo{
 		ID:        pgutil.UUIDToString(user.ID),

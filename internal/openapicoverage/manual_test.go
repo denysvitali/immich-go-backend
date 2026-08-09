@@ -37,6 +37,21 @@ func handleFrontendShape(w http.ResponseWriter, r *http.Request) bool {
 	}
 	return false
 }
+
+func handleFrontendShapeDelete(w http.ResponseWriter, r *http.Request) bool {
+	if r.URL.Path == "/api/users/me/onboarding" {
+		return true
+	}
+	return false
+}
+
+func handleFrontendShapePut(w http.ResponseWriter, r *http.Request) bool {
+	switch r.URL.Path {
+	case "/api/system-config":
+		return true
+	}
+	return false
+}
 `)
 	writeFile(t, dir, "manual_test.go", `package fixture
 
@@ -64,6 +79,8 @@ func ignoredTestRoute(w http.ResponseWriter, r *http.Request) {
 		"GET /api/system-config/storage-template-options",
 		"GET /api/users/me",
 		"POST /api/download/archive",
+		"DELETE /api/users/me/onboarding",
+		"PUT /api/system-config",
 	}
 	if len(got) != len(want) {
 		t.Fatalf("got %d routes, want %d: %+v", len(got), len(want), routes)

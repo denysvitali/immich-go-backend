@@ -17,8 +17,8 @@ The binary is a single static Go executable (when built with `CGO_ENABLED=0`). E
 ## Quickstart
 
 ```bash
-# 1. Dependencies (PostgreSQL 16 + Redis 7; the compose file ships only pg + redis — the backend is started separately)
-docker compose up -d
+# 1. Dependencies (PostgreSQL 14 + VectorChord and Redis 7; the backend is started separately)
+docker compose up -d --wait
 
 # 2. Build the binary
 make build
@@ -78,7 +78,7 @@ curl -X POST http://localhost:3001/api/auth/admin-sign-up \
 |----------|---------|-------|
 | `DATABASE_URL` | `postgres://immich:immich@localhost:5432/immich?sslmode=disable` | Full DSN |
 | `IMMICH_DATABASE_AUTO_MIGRATE` | `true` | Run migrations during `serve`. Set to `false` for managed-DB prod |
-| `AUTH_JWT_SECRET` | _required_ | **Required.** Set a 32+ byte secret in any non-demo deployment |
+| `AUTH_JWT_SECRET` | _required_ | **Required by `serve`.** Set a random 32+ byte secret and keep it stable across restarts |
 | `SERVER_ADDRESS` | `0.0.0.0:3001` (Go default `0.0.0.0:8080`) | REST / WebSocket listener |
 | `SERVER_GRPC_ADDRESS` | `0.0.0.0:3002` (Go default `0.0.0.0:9090`) | gRPC listener (internal / private) |
 | `STORAGE_BACKEND` | `local` | `local`, `s3`, or `rclone` |
@@ -140,7 +140,7 @@ fly deploy
 The first deploy takes a few minutes:
 
 1. `Dockerfile.fly` stage 0 pulls `ghcr.io/immich-app/immich-server:${IMMICH_VERSION}` and copies `/build/www` → `/app/web`.
-2. Stage 1 builds a static Go binary on Go 1.24-alpine.
+2. Stage 1 builds a static Go binary on Go 1.26.5-alpine.
 3. Stage 2 assembles the Fly runtime image (Debian + bundled PostgreSQL libraries + ca-certificates + tini + curl + non-root user).
 4. On first `serve`, the binary initialises the bundled PostgreSQL cluster under `/data/pg`, runs migrations, then starts listening.
 
@@ -283,6 +283,8 @@ sudo journalctl -u immich-go-backend -f
 
 The included `docker-compose.yml` ships only `postgres` and `redis` — there is no `backend` service in the file. Run the server in a separate container or on the host. Below is an illustrative **sample full-stack compose** you can use as a starting point for your own deployment (not what's shipped in this repo):
 
+The PostgreSQL image is intentionally the digest-pinned image from the checked-out Immich v3.0.1 release. It contains pgvector, VectorChord, and the other extension binaries used by the migrations. Do not replace it with a stock `postgres` image unless you install every required extension yourself.
+
 ```yaml
 # Sample full-stack compose — illustrative, not the file shipped in the repo.
 # The repo's docker-compose.yml only provides postgres + redis.
@@ -308,16 +310,23 @@ services:
     restart: unless-stopped
 
   postgres:
-    image: postgres:16-alpine
+    image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0@sha256:bcf63357191b76a916ae5eb93464d65c07511da41e3bf7a8416db519b40b1c23
     environment:
       POSTGRES_USER: immich
       POSTGRES_PASSWORD: immich
       POSTGRES_DB: immich
-      POSTGRES_EXTENSIONS: "uuid-ossp,vector,earthdistance"
+      POSTGRES_INITDB_ARGS: "--data-checksums"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    shm_size: 128mb
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U immich"]
+      test:
+        - CMD-SHELL
+        - >-
+          pg_isready -U immich -d immich &&
+          test "$$(psql -U immich -d immich -Atqc
+          "SELECT count(*) = 7 FROM pg_available_extensions WHERE name IN
+          ('uuid-ossp','vector','vchord','cube','earthdistance','pg_trgm','unaccent')")" = t
       interval: 10s
       timeout: 5s
       retries: 5
@@ -389,12 +398,17 @@ Caddy terminates TLS automatically via Let's Encrypt.
 
 ```bash
 curl -fsS http://localhost:3001/api/server/ping     # REST liveness
+curl -fsS http://localhost:3001/health              # dependency readiness
 curl -fsS http://localhost:3001/api/server/version  # build metadata
 ```
 
+The configured health endpoint is public. It returns `503` when PostgreSQL or
+storage is unavailable; when Redis jobs were configured but could not start,
+it remains ready with HTTP `200` and reports `status: "degraded"`.
+
 ### Metrics
 
-`/metrics` is exposed by default (Prometheus exposition — `server.metrics_enabled` defaults to `true`). Disable with `server.metrics_enabled: false`. Scrape with Prometheus or any OTLP-compatible collector.
+`/metrics` is disabled by default because the endpoint is public. Enable it with `server.metrics_enabled: true` only when the listener is isolated or a reverse proxy restricts the metrics path. For remote OTLP export, separately enable `telemetry.metrics_enabled` and configure the standard `OTEL_*` exporter variables.
 
 Ready-made scrape configs, Prometheus/Alertmanager rules, and a Grafana dashboard live under [`deploy/monitoring/`](deploy/monitoring/) (see that directory’s `README.md` for metric names and import steps).
 
@@ -433,8 +447,8 @@ If you're on S3, use the bucket's native versioning / lifecycle rules.
 
 | Symptom | Likely cause |
 |---------|--------------|
-| Server won't start: `AUTH_JWT_SECRET is required` | Set the env var; the default in `config.yaml` is a placeholder, not a usable secret. |
-| `pq: extension "vector" is not available` | Install `postgresql-16-pgvector` (Debian/Ubuntu) or build from source; the official Immich image bundles it. |
+| Server won't start with an `AUTH_JWT_SECRET` error | Set the env var to a random 32+ byte value (for example, `openssl rand -hex 32`); `config.yaml` intentionally ships with no secret and placeholders are rejected. |
+| `pq: extension "vector"` or `"vchord" is not available` | Use the digest-pinned Immich PostgreSQL image from `docker-compose.yml`. For an external database, install both pgvector and VectorChord for that PostgreSQL version and configure VectorChord's required preload library. |
 | `pq: relation "migrations" does not exist` | First-time boot — `migrate` creates it automatically. |
 | WebSocket connections drop every 30 s | Reverse proxy `proxy_read_timeout` too low; raise to 1h. |
 | Upload 413 | `client_max_body_size` (nginx) or `--data-proxy-body-size` (Caddy) too small. |

@@ -2,6 +2,7 @@ package memories
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -30,53 +31,42 @@ func NewServer(service *Service) *Server {
 	}
 }
 
-// assetsForMemoryIDs loads the full asset rows linked to the given memory
-// IDs in a single batch query, then groups them by memory ID. Used to
-// populate the Memory.assets proto field, which previously was always empty.
-func (s *Server) assetsForMemoryIDs(ctx context.Context, memoryIDs []string) (map[string][]*immichv1.Asset, error) {
+// assetsForMemoryIDs loads the full accessible asset rows linked to each given
+// memory and groups them by memory ID. Used to populate Memory.assets without
+// resolving an unscoped cross-tenant asset relation.
+func (s *Server) assetsForMemoryIDs(
+	ctx context.Context,
+	ownerID string,
+	memoryIDs []string,
+) (map[string][]*immichv1.Asset, error) {
 	if len(memoryIDs) == 0 {
 		return map[string][]*immichv1.Asset{}, nil
 	}
+	parsedOwnerID, err := uuid.Parse(ownerID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid memory owner ID: %w", err)
+	}
+	ownerUUID := pgtype.UUID{Bytes: parsedOwnerID, Valid: true}
 
-	// Resolve memory -> asset IDs via the memories_assets_assets join table,
-	// then batch-load the full assets in a single query.
-	links := make(map[string][]pgtype.UUID, len(memoryIDs))
-	allAssetIDs := make([]pgtype.UUID, 0)
+	// Load each memory through a query that scopes both the memory and every
+	// linked asset to the authenticated owner's current access. This also makes
+	// legacy or corrupted cross-tenant relations non-readable.
+	result := make(map[string][]*immichv1.Asset, len(memoryIDs))
 	for _, mid := range memoryIDs {
 		memUUID, err := uuid.Parse(mid)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("invalid memory ID: %w", err)
 		}
-		assetUUIDs, err := s.service.queries.GetMemoryAssets(ctx, pgtype.UUID{Bytes: memUUID, Valid: true})
+		assets, err := s.service.queries.GetAccessibleAssetsByMemoryID(ctx, sqlc.GetAccessibleAssetsByMemoryIDParams{
+			MemoryID: pgtype.UUID{Bytes: memUUID, Valid: true},
+			OwnerID:  ownerUUID,
+		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to load asset links for memory %s: %w", mid, err)
+			return nil, fmt.Errorf("failed to load accessible assets for memory %s: %w", mid, err)
 		}
-		links[mid] = assetUUIDs
-		allAssetIDs = append(allAssetIDs, assetUUIDs...)
-	}
-
-	if len(allAssetIDs) == 0 {
-		return map[string][]*immichv1.Asset{}, nil
-	}
-
-	assets, err := s.service.queries.GetAssetsByIDs(ctx, allAssetIDs)
-	if err != nil {
-		return nil, fmt.Errorf("failed to batch-load assets: %w", err)
-	}
-
-	// Build id -> asset lookup once, then expand per memory.
-	byID := make(map[string]sqlc.Asset, len(assets))
-	for _, a := range assets {
-		byID[uuid.UUID(a.ID.Bytes).String()] = a
-	}
-
-	result := make(map[string][]*immichv1.Asset, len(memoryIDs))
-	for mid, ids := range links {
-		protoAssets := make([]*immichv1.Asset, 0, len(ids))
-		for _, id := range ids {
-			if asset, ok := byID[uuid.UUID(id.Bytes).String()]; ok {
-				protoAssets = append(protoAssets, s.convertAssetToProto(asset))
-			}
+		protoAssets := make([]*immichv1.Asset, 0, len(assets))
+		for _, asset := range assets {
+			protoAssets = append(protoAssets, s.convertAssetToProto(asset))
 		}
 		result[mid] = protoAssets
 	}
@@ -133,14 +123,13 @@ func (s *Server) SearchMemories(ctx context.Context, req *immichv1.SearchMemorie
 		return nil, status.Errorf(codes.Internal, "failed to get memories: %v", err)
 	}
 
-	// Pre-load assets for all memories in a single batch so the
-	// Memory.assets proto field is populated. Without this the web
-	// client's MemoryLane UI renders empty cards.
+	// Pre-load owner-scoped assets so the Memory.assets proto field is
+	// populated without exposing a stale cross-tenant relation.
 	memoryIDs := make([]string, 0, len(memories))
 	for _, m := range memories {
 		memoryIDs = append(memoryIDs, m.ID)
 	}
-	assetsByMem, err := s.assetsForMemoryIDs(ctx, memoryIDs)
+	assetsByMem, err := s.assetsForMemoryIDs(ctx, claims.UserID, memoryIDs)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to load memory assets: %v", err)
 	}
@@ -195,7 +184,7 @@ func (s *Server) CreateMemory(ctx context.Context, req *immichv1.CreateMemoryReq
 		return nil, status.Errorf(codes.Internal, "failed to create memory: %v", err)
 	}
 
-	assets, err := s.assetsForMemoryIDs(ctx, []string{created.ID})
+	assets, err := s.assetsForMemoryIDs(ctx, created.UserID, []string{created.ID})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to load memory assets: %v", err)
 	}
@@ -227,7 +216,7 @@ func (s *Server) GetMemory(ctx context.Context, req *immichv1.GetMemoryRequest) 
 		return nil, status.Errorf(codes.NotFound, "memory not found: %v", err)
 	}
 
-	assets, err := s.assetsForMemoryIDs(ctx, []string{memory.ID})
+	assets, err := s.assetsForMemoryIDs(ctx, memory.UserID, []string{memory.ID})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to load memory assets: %v", err)
 	}
@@ -270,7 +259,7 @@ func (s *Server) UpdateMemory(ctx context.Context, req *immichv1.UpdateMemoryReq
 		return nil, status.Errorf(codes.Internal, "failed to update memory: %v", err)
 	}
 
-	assets, err := s.assetsForMemoryIDs(ctx, []string{memory.ID})
+	assets, err := s.assetsForMemoryIDs(ctx, memory.UserID, []string{memory.ID})
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to load memory assets: %v", err)
 	}
@@ -312,6 +301,9 @@ func (s *Server) AddMemoryAssets(ctx context.Context, req *immichv1.AddMemoryAss
 	assetIDs := req.BulkIds.Ids
 	err := s.service.AddAssetsToMemory(ctx, claims.UserID, req.Id, assetIDs)
 	if err != nil {
+		if errors.Is(err, ErrMemoryAssetAccessDenied) {
+			return nil, status.Error(codes.PermissionDenied, "one or more assets are not accessible")
+		}
 		return nil, status.Errorf(codes.Internal, "failed to add assets: %v", err)
 	}
 

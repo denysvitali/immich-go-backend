@@ -6,13 +6,31 @@ package trash
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/denysvitali/immich-go-backend/internal/db/pgutil"
+	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/denysvitali/immich-go-backend/internal/db/testdb"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type integrationPermanentAssetDeleter struct {
+	queries *sqlc.Queries
+}
+
+func (d integrationPermanentAssetDeleter) HardDeleteAsset(ctx context.Context, assetID, userID uuid.UUID) error {
+	return d.queries.PermanentlyDeleteAssets(ctx, sqlc.PermanentlyDeleteAssetsParams{
+		Column1: []pgtype.UUID{pgutil.UUIDToPgtype(assetID)},
+		OwnerId: pgutil.UUIDToPgtype(userID),
+	})
+}
+
+func newIntegrationService(tdb *testdb.TestDB) *Service {
+	return NewService(tdb.Queries, integrationPermanentAssetDeleter{queries: tdb.Queries})
+}
 
 func createTestUser(t *testing.T, tdb *testdb.TestDB, email string) uuid.UUID {
 	return tdb.CreateTestUser(t, email)
@@ -218,6 +236,122 @@ func TestIntegration_RestoreAssets_Multiple(t *testing.T) {
 	assert.Empty(t, trashedAssets)
 }
 
+func TestIntegration_RestoreAssets_OnlyRestoresLiveTrashedAssets(t *testing.T) {
+	testdb.SkipIfNoDocker(t)
+
+	tdb := testdb.SetupTestDB(t)
+	ctx := context.Background()
+	service := NewService(tdb.Queries)
+	userID := createTestUser(t, tdb, "restore-cas@test.com")
+
+	liveTrashedID := createTestAsset(t, tdb, userID, "restore-cas-live-trashed")
+	activeID := createTestAsset(t, tdb, userID, "restore-cas-active")
+	deletionIntentID := createTestAsset(t, tdb, userID, "restore-cas-deletion-intent")
+	tombstoneID := createTestAsset(t, tdb, userID, "restore-cas-tombstone")
+
+	_, err := service.TrashAssets(ctx, userID.String(), []string{
+		liveTrashedID.String(),
+		tombstoneID.String(),
+	})
+	require.NoError(t, err)
+	_, err = tdb.Queries.UpdateAssetStatus(ctx, sqlc.UpdateAssetStatusParams{
+		ID:     pgutil.UUIDToPgtype(deletionIntentID),
+		Status: sqlc.AssetsStatusEnumDeleted,
+	})
+	require.NoError(t, err)
+	require.NoError(t, tdb.Queries.PermanentlyDeleteAssets(ctx, sqlc.PermanentlyDeleteAssetsParams{
+		Column1: []pgtype.UUID{pgutil.UUIDToPgtype(tombstoneID)},
+		OwnerId: pgutil.UUIDToPgtype(userID),
+	}))
+
+	restored, err := service.RestoreAssets(ctx, userID.String(), []string{
+		liveTrashedID.String(),
+		activeID.String(),
+		deletionIntentID.String(),
+		tombstoneID.String(),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 1, restored)
+
+	assertAssetLifecycleState(t, ctx, tdb, liveTrashedID, sqlc.AssetsStatusEnumActive, false)
+	assertAssetLifecycleState(t, ctx, tdb, activeID, sqlc.AssetsStatusEnumActive, false)
+	assertAssetLifecycleState(t, ctx, tdb, deletionIntentID, sqlc.AssetsStatusEnumDeleted, false)
+	assertAssetLifecycleState(t, ctx, tdb, tombstoneID, sqlc.AssetsStatusEnumTrashed, true)
+}
+
+func TestIntegration_RestoreAssets_CannotUndoConcurrentPermanentDeletionIntent(t *testing.T) {
+	testdb.SkipIfNoDocker(t)
+
+	tdb := testdb.SetupTestDB(t)
+	ctx := context.Background()
+	service := NewService(tdb.Queries)
+	userID := createTestUser(t, tdb, "restore-delete-race@test.com")
+	assetID := createTestAsset(t, tdb, userID, "restore-delete-race")
+	require.NoError(t, service.TrashAsset(ctx, userID.String(), assetID.String()))
+
+	deleteTx, err := tdb.Pool.Begin(ctx)
+	require.NoError(t, err)
+	deletionCommitted := false
+	defer func() {
+		if !deletionCommitted {
+			_ = deleteTx.Rollback(ctx)
+		}
+	}()
+	_, err = deleteTx.Exec(ctx, `UPDATE assets SET status = 'deleted' WHERE id = $1`, assetID)
+	require.NoError(t, err)
+
+	type restoreResult struct {
+		count int
+		err   error
+	}
+	restoreStarted := make(chan struct{})
+	restoreDone := make(chan restoreResult, 1)
+	go func() {
+		close(restoreStarted)
+		count, restoreErr := service.RestoreAssets(ctx, userID.String(), []string{assetID.String()})
+		restoreDone <- restoreResult{count: count, err: restoreErr}
+	}()
+	<-restoreStarted
+
+	select {
+	case result := <-restoreDone:
+		t.Fatalf("restore completed before deletion intent committed: count=%d err=%v", result.count, result.err)
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	require.NoError(t, deleteTx.Commit(ctx))
+	deletionCommitted = true
+
+	select {
+	case result := <-restoreDone:
+		require.NoError(t, result.err)
+		assert.Equal(t, 0, result.count)
+	case <-time.After(10 * time.Second):
+		t.Fatal("restore remained blocked after deletion intent committed")
+	}
+	assertAssetLifecycleState(t, ctx, tdb, assetID, sqlc.AssetsStatusEnumDeleted, false)
+}
+
+func assertAssetLifecycleState(
+	t *testing.T,
+	ctx context.Context,
+	tdb *testdb.TestDB,
+	assetID uuid.UUID,
+	wantStatus sqlc.AssetsStatusEnum,
+	wantDeletedAt bool,
+) {
+	t.Helper()
+	var status sqlc.AssetsStatusEnum
+	var deletedAt bool
+	err := tdb.Pool.QueryRow(ctx,
+		`SELECT status, "deletedAt" IS NOT NULL FROM assets WHERE id = $1`,
+		assetID,
+	).Scan(&status, &deletedAt)
+	require.NoError(t, err)
+	assert.Equal(t, wantStatus, status)
+	assert.Equal(t, wantDeletedAt, deletedAt)
+}
+
 func TestIntegration_RestoreAllAssets(t *testing.T) {
 	testdb.SkipIfNoDocker(t)
 
@@ -262,7 +396,7 @@ func TestIntegration_EmptyTrash(t *testing.T) {
 	tdb := testdb.SetupTestDB(t)
 	ctx := context.Background()
 
-	service := NewService(tdb.Queries)
+	service := newIntegrationService(tdb)
 
 	// Create user and multiple assets
 	userID := createTestUser(t, tdb, "emptytrash@test.com")
@@ -302,7 +436,7 @@ func TestIntegration_PermanentlyDeleteAsset(t *testing.T) {
 	tdb := testdb.SetupTestDB(t)
 	ctx := context.Background()
 
-	service := NewService(tdb.Queries)
+	service := newIntegrationService(tdb)
 
 	// Create user and asset
 	userID := createTestUser(t, tdb, "permdelete@test.com")
@@ -327,7 +461,7 @@ func TestIntegration_PermanentlyDeleteAsset_NotOwned(t *testing.T) {
 	tdb := testdb.SetupTestDB(t)
 	ctx := context.Background()
 
-	service := NewService(tdb.Queries)
+	service := newIntegrationService(tdb)
 
 	// Create two users
 	user1ID := createTestUser(t, tdb, "permowner@test.com")

@@ -5,10 +5,20 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/sirupsen/logrus"
 )
+
+func requestLoggingHandler(enabled bool, next http.Handler) http.Handler {
+	if !enabled {
+		return next
+	}
+	return httpLoggingHandler(next)
+}
 
 func httpLoggingHandler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -27,7 +37,7 @@ func httpLoggingHandler(next http.Handler) http.Handler {
 			"durationMs":  time.Since(start).Milliseconds(),
 			"method":      r.Method,
 			"path":        r.URL.Path,
-			"query":       r.URL.RawQuery,
+			"queryParams": loggedQueryKeys(r.URL.RawQuery),
 			"status":      statusCode,
 			"userAgent":   r.UserAgent(),
 			"requestHost": r.Host,
@@ -41,6 +51,26 @@ func httpLoggingHandler(next http.Handler) http.Handler {
 			entry.Info("Handled request")
 		}
 	})
+}
+
+// loggedQueryKeys keeps request logs useful without recording query values.
+// Several Immich routes accept bearer-equivalent shared-link credentials and
+// OAuth codes in the query string, so even an allow-list of secret field names
+// is too easy to get wrong as the API evolves.
+func loggedQueryKeys(rawQuery string) string {
+	if rawQuery == "" {
+		return ""
+	}
+	values, err := url.ParseQuery(rawQuery)
+	if err != nil {
+		return "<malformed>"
+	}
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return strings.Join(keys, ",")
 }
 
 type responseStatusRecorder struct {

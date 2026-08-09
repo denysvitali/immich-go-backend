@@ -4,27 +4,33 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/contrib/exporters/autoexport"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	otelprometheus "go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/propagation"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 	"go.opentelemetry.io/otel/trace"
 )
 
-// Config is the telemetry configuration, populated from the `telemetry`
-// section of the YAML document only — config.loadFromEnv has no telemetry
-// entries.
+// Config is the telemetry configuration. The YAML toggles decide whether the
+// optional autoexport trace and metric pipelines start; they default off so a
+// server does not unexpectedly send data to an OTLP endpoint.
 //
 // Note that the OpenTelemetry SDK reads its own OTEL_* environment variables
-// directly (exporter selection, endpoints, resource attributes). Those are
-// honoured by the SDK regardless of the values here; this struct controls
-// only what this package decides for itself.
+// directly (exporter selection, endpoints, resource attributes). Those values
+// configure a pipeline after its YAML toggle is enabled; they do not enable a
+// disabled pipeline by themselves. The in-process REST Prometheus reader is
+// controlled separately by server.metrics_enabled.
 type Config struct {
 	ServiceName    string `yaml:"service_name"`
 	ServiceVersion string `yaml:"service_version"`
@@ -48,11 +54,34 @@ type Provider struct {
 	config         Config
 	traceProvider  *sdktrace.TracerProvider
 	metricProvider *sdkmetric.MeterProvider
+	metricsHandler http.Handler
 	shutdownFuncs  []func(context.Context) error
 }
 
-// NewProvider creates a new telemetry provider
-func NewProvider(config Config) (*Provider, error) {
+type providerOptions struct {
+	prometheusEnabled bool
+}
+
+// ProviderOption customizes which telemetry readers the provider owns.
+type ProviderOption func(*providerOptions)
+
+// WithPrometheusMetrics adds an in-process Prometheus reader and HTTP handler.
+// It is independent from the OTEL_METRICS_EXPORTER setting so the configured
+// REST metrics endpoint remains available while metrics are also exported via
+// OTLP (or another autoexport destination).
+func WithPrometheusMetrics(enabled bool) ProviderOption {
+	return func(options *providerOptions) {
+		options.prometheusEnabled = enabled
+	}
+}
+
+// NewProvider creates a new telemetry provider.
+func NewProvider(config Config, options ...ProviderOption) (*Provider, error) {
+	providerConfig := providerOptions{}
+	for _, option := range options {
+		option(&providerConfig)
+	}
+
 	provider := &Provider{
 		config:        config,
 		shutdownFuncs: make([]func(context.Context) error, 0),
@@ -72,8 +101,9 @@ func NewProvider(config Config) (*Provider, error) {
 	}
 
 	// Setup metrics
-	if config.MetricsEnabled {
-		if err := provider.setupMetrics(res); err != nil {
+	if config.MetricsEnabled || providerConfig.prometheusEnabled {
+		if err := provider.setupMetrics(res, providerConfig.prometheusEnabled); err != nil {
+			_ = provider.Shutdown(context.Background())
 			return nil, fmt.Errorf("failed to setup metrics: %w", err)
 		}
 	}
@@ -92,7 +122,7 @@ func (p *Provider) createResource() (*resource.Resource, error) {
 	attributes := []attribute.KeyValue{
 		semconv.ServiceName(p.config.ServiceName),
 		semconv.ServiceVersion(p.config.ServiceVersion),
-		semconv.DeploymentEnvironment(p.config.Environment),
+		semconv.DeploymentEnvironmentName(p.config.Environment),
 	}
 
 	// Add custom resource attributes
@@ -135,18 +165,32 @@ func (p *Provider) setupTracing(res *resource.Resource) error {
 }
 
 // setupMetrics configures OpenTelemetry metrics
-func (p *Provider) setupMetrics(res *resource.Resource) error {
-	// Create metric exporter using autoexport
-	metricReader, err := autoexport.NewMetricReader(context.Background())
-	if err != nil {
-		return fmt.Errorf("failed to create metric reader: %w", err)
+func (p *Provider) setupMetrics(res *resource.Resource, prometheusEnabled bool) error {
+	providerOptions := []sdkmetric.Option{sdkmetric.WithResource(res)}
+
+	if p.config.MetricsEnabled {
+		metricReader, err := autoexport.NewMetricReader(context.Background())
+		if err != nil {
+			return fmt.Errorf("failed to create metric reader: %w", err)
+		}
+		providerOptions = append(providerOptions, sdkmetric.WithReader(metricReader))
 	}
 
-	// Create metric provider
-	p.metricProvider = sdkmetric.NewMeterProvider(
-		sdkmetric.WithResource(res),
-		sdkmetric.WithReader(metricReader),
-	)
+	if prometheusEnabled {
+		registry := prometheus.NewRegistry()
+		registry.MustRegister(
+			collectors.NewGoCollector(),
+			collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+		)
+		exporter, err := otelprometheus.New(otelprometheus.WithRegisterer(registry))
+		if err != nil {
+			return fmt.Errorf("failed to create Prometheus reader: %w", err)
+		}
+		providerOptions = append(providerOptions, sdkmetric.WithReader(exporter))
+		p.metricsHandler = promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
+	}
+
+	p.metricProvider = sdkmetric.NewMeterProvider(providerOptions...)
 
 	// Set global metric provider
 	otel.SetMeterProvider(p.metricProvider)
@@ -172,6 +216,13 @@ func (p *Provider) GetMeter(name string, opts ...metric.MeterOption) metric.Mete
 		return otel.GetMeterProvider().Meter(name, opts...)
 	}
 	return p.metricProvider.Meter(name, opts...)
+}
+
+// MetricsHandler returns the Prometheus exposition handler when it was
+// enabled with WithPrometheusMetrics. A nil handler means no scrape endpoint
+// should be registered.
+func (p *Provider) MetricsHandler() http.Handler {
+	return p.metricsHandler
 }
 
 // GetMeter returns a global meter for the given name
@@ -416,8 +467,8 @@ func GetDefaultConfig() Config {
 		ServiceName:     "immich-go-backend",
 		ServiceVersion:  "1.0.0",
 		Environment:     "development",
-		TracingEnabled:  true,
-		MetricsEnabled:  true,
+		TracingEnabled:  false,
+		MetricsEnabled:  false,
 		TraceSampleRate: 1.0,
 		ResourceAttributes: map[string]string{
 			"service.instance.id": "immich-go-backend-1",

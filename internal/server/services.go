@@ -23,6 +23,7 @@ import (
 	"github.com/denysvitali/immich-go-backend/internal/sessions"
 	"github.com/denysvitali/immich-go-backend/internal/sharedlinks"
 	"github.com/denysvitali/immich-go-backend/internal/stacks"
+	"github.com/denysvitali/immich-go-backend/internal/storage"
 	"github.com/denysvitali/immich-go-backend/internal/sync"
 	"github.com/denysvitali/immich-go-backend/internal/systemconfig"
 	"github.com/denysvitali/immich-go-backend/internal/systemmetadata"
@@ -43,6 +44,7 @@ import (
 type services struct {
 	userService           *users.Service
 	assetService          *assets.Service
+	storageService        *storage.Service
 	apiKeyService         *apikeys.Service
 	librariesServer       *libraries.Server
 	searchServer          *search.Server

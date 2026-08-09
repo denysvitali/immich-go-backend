@@ -8,15 +8,15 @@ import (
 	"testing"
 
 	"github.com/denysvitali/immich-go-backend/internal/db/testdb"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// TestIsInitializedFalseUntilFirstUser verifies that IsInitialized reflects
-// the real user count: false on an empty database, true once any user
-// exists. The frontend uses this to decide whether to show the "create
-// admin account" registration screen instead of the login screen.
-func TestIsInitializedFalseUntilFirstUser(t *testing.T) {
+// TestIsInitializedRemainsTrueAfterAdminDeletion verifies that the durable
+// bootstrap claim, rather than the current live-user count, controls whether
+// the unauthenticated setup screen can ever be reopened.
+func TestIsInitializedRemainsTrueAfterAdminDeletion(t *testing.T) {
 	testdb.SkipIfNoDocker(t)
 
 	tdb := testdb.SetupTestDB(t)
@@ -28,9 +28,22 @@ func TestIsInitializedFalseUntilFirstUser(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, initialized, "a fresh database should not be initialized")
 
-	insertUser(t, tdb, "is-initialized@test.com", "First User", "TestPassword123!", false)
+	registered, err := service.AdminSignUp(ctx, RegisterRequest{
+		Email:    "is-initialized@test.com",
+		Name:     "Initial Admin",
+		Password: "TestPassword123!",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, registered)
 
 	initialized, err = service.IsInitialized(ctx)
 	require.NoError(t, err)
-	assert.True(t, initialized, "database should be initialized once a user exists")
+	assert.True(t, initialized, "database should be initialized once bootstrap succeeds")
+
+	userID := mustUUID(t, uuid.MustParse(registered.User.ID))
+	require.NoError(t, tdb.Queries.HardDeleteUser(ctx, userID))
+
+	initialized, err = service.IsInitialized(ctx)
+	require.NoError(t, err)
+	assert.True(t, initialized, "deleting every user must not reopen bootstrap")
 }

@@ -87,10 +87,9 @@ type FileMetadata struct {
 
 // StorageConfig selects and configures a storage backend.
 //
-// It is populated from the `storage` section of the YAML document. Only
-// STORAGE_BACKEND, STORAGE_LOCAL_ROOT and UPLOAD_TEMP_DIR can be overridden
-// from the environment (see config.loadFromEnv); everything else, S3
-// credentials included, must come from YAML.
+// It is populated from the `storage` section of the YAML document and may be
+// overridden by the STORAGE_*, S3_*, and RCLONE_* environment bindings in
+// config.loadFromEnv.
 type StorageConfig struct {
 	// Backend type: "local", "s3", "gcs", "azure", etc.
 	Backend string `yaml:"backend"`

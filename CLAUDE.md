@@ -59,7 +59,7 @@ reverse. Add a new numbered migration **and** patch `sqlc/schema.sql`.
 
 ## Commands
 
-Prerequisites: Go 1.24 + `buf` + `sqlc` + `golangci-lint`. `nix develop` (or `shell.nix`) pins
+Prerequisites: Go 1.26.5 + `buf` + `sqlc` + `golangci-lint`. `nix develop` (or `shell.nix`) pins
 those versions but is optional — plain toolchain installs work fine, and CI doesn't use Nix.
 
 | Task | Command | Note |

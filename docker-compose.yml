@@ -2,19 +2,28 @@ version: '3.8'
 
 services:
   postgres:
-    image: postgres:16-alpine
+    # Keep this aligned with the Immich release whose API/schema we target.
+    # Unlike the stock Postgres image, this includes pgvector and VectorChord.
+    image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0@sha256:bcf63357191b76a916ae5eb93464d65c07511da41e3bf7a8416db519b40b1c23
     container_name: immich-postgres
     environment:
       POSTGRES_USER: immich
       POSTGRES_PASSWORD: immich
       POSTGRES_DB: immich
-      POSTGRES_EXTENSIONS: "uuid-ossp,vector,earthdistance"
+      POSTGRES_INITDB_ARGS: "--data-checksums"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
+    shm_size: 128mb
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U immich"]
+      test:
+        - CMD-SHELL
+        - >-
+          pg_isready -U immich -d immich &&
+          test "$$(psql -U immich -d immich -Atqc
+          "SELECT count(*) = 7 FROM pg_available_extensions WHERE name IN
+          ('uuid-ossp','vector','vchord','cube','earthdistance','pg_trgm','unaccent')")" = t
       interval: 10s
       timeout: 5s
       retries: 5

@@ -1,12 +1,15 @@
 package server
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestHLSPathParsing(t *testing.T) {
@@ -89,4 +92,12 @@ func TestHLSDisplaySize(t *testing.T) {
 			assert.Equal(t, tt.wantHeight, gotHeight)
 		})
 	}
+}
+
+func TestHLSAssetRequiresAuthentication(t *testing.T) {
+	asset, id, err := (&Server{}).hlsAsset(context.Background(), uuid.NewString())
+
+	assert.Empty(t, asset)
+	assert.Equal(t, uuid.Nil, id)
+	assert.Equal(t, codes.Unauthenticated, status.Code(err))
 }

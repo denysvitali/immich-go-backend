@@ -5,12 +5,16 @@ package auth
 
 import (
 	"context"
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/denysvitali/immich-go-backend/internal/config"
+	"github.com/denysvitali/immich-go-backend/internal/db/pgutil"
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/denysvitali/immich-go-backend/internal/db/testdb"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
@@ -82,9 +86,113 @@ func TestIntegration_AdminSignUpFirstUser(t *testing.T) {
 		Password: "SecurePass123!",
 		Name:     "Second User",
 	})
+	require.Error(t, err)
+	assert.Nil(t, second)
+	assert.Equal(t, ErrAlreadyInitialized, GetAuthErrorType(err))
+}
+
+func TestIntegration_AdminSignUpConcurrentReplicas(t *testing.T) {
+	testdb.SkipIfNoDocker(t)
+
+	tdb := testdb.SetupTestDB(t)
+	ctx := context.Background()
+	const contenders = 8
+
+	cfg := config.AuthConfig{
+		JWTSecret:           "test-secret-key-for-testing-only-needs-32-chars",
+		JWTExpiry:           time.Hour,
+		JWTRefreshExpiry:    time.Hour,
+		RegistrationEnabled: true,
+		PasswordMinLength:   8,
+	}
+
+	type result struct {
+		response *AuthResponse
+		err      error
+	}
+	start := make(chan struct{})
+	results := make(chan result, contenders)
+	var wg sync.WaitGroup
+	for i := 0; i < contenders; i++ {
+		wg.Add(1)
+		go func(replica int) {
+			defer wg.Done()
+			service := NewService(cfg, tdb.Queries)
+			<-start
+			response, err := service.AdminSignUp(ctx, RegisterRequest{
+				Email:    fmt.Sprintf("bootstrap-replica-%d@test.com", replica),
+				Password: "SecurePass123!",
+				Name:     fmt.Sprintf("Bootstrap Replica %d", replica),
+			})
+			results <- result{response: response, err: err}
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+
+	succeeded := 0
+	failedAsInitialized := 0
+	for result := range results {
+		if result.err == nil {
+			succeeded++
+			require.NotNil(t, result.response)
+			assert.True(t, result.response.User.IsAdmin)
+			continue
+		}
+		assert.Nil(t, result.response)
+		if GetAuthErrorType(result.err) == ErrAlreadyInitialized {
+			failedAsInitialized++
+		}
+	}
+
+	assert.Equal(t, 1, succeeded, "exactly one replica must win bootstrap")
+	assert.Equal(t, contenders-1, failedAsInitialized,
+		"every losing replica must receive the initialized precondition")
+
+	userCount, err := tdb.Queries.CountUsers(ctx, pgtype.Bool{Valid: false})
 	require.NoError(t, err)
-	require.NotNil(t, second)
-	assert.False(t, second.User.IsAdmin)
+	assert.EqualValues(t, 1, userCount)
+
+	users, err := tdb.Queries.GetUsers(ctx)
+	require.NoError(t, err)
+	require.Len(t, users, 1)
+	assert.True(t, users[0].IsAdmin)
+
+	sessionCount, err := tdb.Queries.CountUserSessions(ctx, users[0].ID)
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, sessionCount,
+		"the winning user and refresh session must be committed together")
+}
+
+func TestIntegration_OrdinaryRegistrationClosesAdminBootstrap(t *testing.T) {
+	testdb.SkipIfNoDocker(t)
+
+	tdb := testdb.SetupTestDB(t)
+	ctx := context.Background()
+	service := newTestAuthService(t, tdb)
+
+	registered, err := service.Register(ctx, RegisterRequest{
+		Email:    "ordinary-first@test.com",
+		Password: "SecurePass123!",
+		Name:     "Ordinary First User",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, registered)
+	assert.False(t, registered.User.IsAdmin)
+
+	admin, err := service.AdminSignUp(ctx, RegisterRequest{
+		Email:    "too-late-admin@test.com",
+		Password: "SecurePass123!",
+		Name:     "Too Late Admin",
+	})
+	require.Error(t, err)
+	assert.Nil(t, admin)
+	assert.Equal(t, ErrAlreadyInitialized, GetAuthErrorType(err))
+
+	userCount, err := tdb.Queries.CountUsers(ctx, pgtype.Bool{Valid: false})
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, userCount)
 }
 
 func TestIntegration_RegisterDuplicate(t *testing.T) {
@@ -336,6 +444,7 @@ func TestIntegration_TokenValidation(t *testing.T) {
 	cfg := config.AuthConfig{
 		JWTSecret:           "test-secret-key-for-testing-only-needs-32-chars",
 		JWTExpiry:           time.Hour,
+		JWTRefreshExpiry:    24 * time.Hour,
 		RegistrationEnabled: true,
 		PasswordMinLength:   8,
 	}
@@ -356,6 +465,11 @@ func TestIntegration_TokenValidation(t *testing.T) {
 	assert.NotNil(t, claims)
 	assert.Equal(t, "tokentest@test.com", claims.Email)
 	assert.False(t, claims.IsAdmin)
+	assert.Equal(t, TokenUseAccess, claims.TokenUse)
+
+	refreshClaims, err := service.ValidateToken(response.RefreshToken)
+	require.Error(t, err)
+	assert.Nil(t, refreshClaims)
 }
 
 func TestIntegration_RefreshToken(t *testing.T) {
@@ -367,6 +481,7 @@ func TestIntegration_RefreshToken(t *testing.T) {
 	cfg := config.AuthConfig{
 		JWTSecret:           "test-secret-key-for-testing-only-needs-32-chars",
 		JWTExpiry:           time.Hour,
+		JWTRefreshExpiry:    24 * time.Hour,
 		RegistrationEnabled: true,
 		PasswordMinLength:   8,
 	}
@@ -381,6 +496,14 @@ func TestIntegration_RefreshToken(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	// An access token must never be accepted by the refresh flow, even though
+	// it is signed by the same key and identifies the same user.
+	accessRefreshResponse, err := service.RefreshToken(ctx, RefreshRequest{
+		RefreshToken: registerResponse.AccessToken,
+	})
+	require.Error(t, err)
+	assert.Nil(t, accessRefreshResponse)
+
 	// Use the refresh token to get new tokens
 	refreshResponse, err := service.RefreshToken(ctx, RefreshRequest{
 		RefreshToken: registerResponse.RefreshToken,
@@ -392,6 +515,91 @@ func TestIntegration_RefreshToken(t *testing.T) {
 
 	// The new access token should be different from the old one
 	assert.NotEqual(t, registerResponse.AccessToken, refreshResponse.AccessToken)
+	accessClaims, err := service.ValidateToken(refreshResponse.AccessToken)
+	require.NoError(t, err)
+	assert.Equal(t, TokenUseAccess, accessClaims.TokenUse)
+	_, err = service.ValidateToken(refreshResponse.RefreshToken)
+	require.Error(t, err)
+}
+
+func TestIntegration_LegacyStoredUntypedTokenFailsClosed(t *testing.T) {
+	testdb.SkipIfNoDocker(t)
+
+	tdb := testdb.SetupTestDB(t)
+	ctx := context.Background()
+	cfg := config.AuthConfig{
+		JWTSecret:           "test-secret-key-for-testing-only-needs-32-chars",
+		JWTExpiry:           time.Hour,
+		JWTRefreshExpiry:    24 * time.Hour,
+		RegistrationEnabled: true,
+		PasswordMinLength:   8,
+	}
+	service := NewService(cfg, tdb.Queries)
+
+	registered, err := service.Register(ctx, RegisterRequest{
+		Email:    "legacy-refresh@test.com",
+		Password: "SecurePass123!",
+		Name:     "Legacy Refresh User",
+	})
+	require.NoError(t, err)
+
+	now := time.Now()
+	legacyClaims := &Claims{
+		UserID: registered.User.ID,
+		Email:  registered.User.Email,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(now.Add(cfg.JWTRefreshExpiry)),
+			IssuedAt:  jwt.NewNumericDate(now),
+			NotBefore: jwt.NewNumericDate(now),
+			Subject:   registered.User.ID,
+		},
+	}
+	legacyToken, err := jwt.NewWithClaims(jwt.SigningMethodHS256, legacyClaims).SignedString([]byte(cfg.JWTSecret))
+	require.NoError(t, err)
+	userID := uuid.MustParse(registered.User.ID)
+	require.NoError(t, tdb.Queries.CreateRefreshToken(ctx, sqlc.CreateRefreshTokenParams{
+		Token:     legacyToken,
+		UserId:    pgutil.UUIDToPgtype(userID),
+		ExpiresAt: pgutil.TimeToTimestamptz(now.Add(cfg.JWTRefreshExpiry)),
+	}))
+
+	// Legacy tokens fail closed at every access-token validator.
+	claims, err := service.ValidateToken(legacyToken)
+	require.Error(t, err)
+	assert.Nil(t, claims)
+
+	// Storage membership cannot override the missing token purpose because the
+	// sessions table contains both refresh and access/session tokens.
+	refreshed, err := service.RefreshToken(ctx, RefreshRequest{RefreshToken: legacyToken})
+	require.Error(t, err)
+	assert.Nil(t, refreshed)
+}
+
+func TestIntegration_LogoutRevokesUserRefreshTokens(t *testing.T) {
+	testdb.SkipIfNoDocker(t)
+
+	tdb := testdb.SetupTestDB(t)
+	ctx := context.Background()
+	cfg := config.AuthConfig{
+		JWTSecret:           "test-secret-key-for-testing-only-needs-32-chars",
+		JWTExpiry:           time.Hour,
+		JWTRefreshExpiry:    24 * time.Hour,
+		RegistrationEnabled: true,
+		PasswordMinLength:   8,
+	}
+	service := NewService(cfg, tdb.Queries)
+
+	registered, err := service.Register(ctx, RegisterRequest{
+		Email:    "logout@test.com",
+		Password: "SecurePass123!",
+		Name:     "Logout Test User",
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, service.Logout(ctx, registered.User.ID))
+	_, err = service.RefreshToken(ctx, RefreshRequest{RefreshToken: registered.RefreshToken})
+	require.Error(t, err)
+	assert.Equal(t, ErrInvalidToken, GetAuthErrorType(err))
 }
 
 func TestIntegration_ChangePassword(t *testing.T) {

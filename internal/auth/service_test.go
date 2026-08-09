@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -40,6 +41,7 @@ func TestGenerateToken(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, userID, claims.UserID)
 	assert.Equal(t, email, claims.Email)
+	assert.Equal(t, TokenUseAccess, claims.TokenUse)
 }
 
 func TestValidateToken(t *testing.T) {
@@ -92,6 +94,56 @@ func TestValidateToken(t *testing.T) {
 		assert.Nil(t, claims)
 		assert.Contains(t, err.Error(), "expired")
 	})
+
+	t.Run("refresh token cannot authenticate as access token", func(t *testing.T) {
+		service.config.JWTRefreshExpiry = 24 * time.Hour
+		_, refreshToken, _, err := service.generateTokens("user-123", "user@example.com", false)
+		require.NoError(t, err)
+		refreshClaims, err := service.parseToken(refreshToken)
+		require.NoError(t, err)
+		assert.Equal(t, TokenUseRefresh, refreshClaims.TokenUse)
+
+		claims, err := service.ValidateToken(refreshToken)
+		require.Error(t, err)
+		assert.Nil(t, claims)
+		assert.Contains(t, err.Error(), "access token required")
+	})
+
+	t.Run("untyped legacy token fails closed for access", func(t *testing.T) {
+		now := time.Now()
+		legacyClaims := &Claims{
+			UserID: "user-123",
+			Email:  "user@example.com",
+			RegisteredClaims: jwt.RegisteredClaims{
+				ExpiresAt: jwt.NewNumericDate(now.Add(time.Hour)),
+				IssuedAt:  jwt.NewNumericDate(now),
+			},
+		}
+		legacyToken, err := jwt.NewWithClaims(jwt.SigningMethodHS256, legacyClaims).SignedString([]byte(cfg.JWTSecret))
+		require.NoError(t, err)
+
+		claims, err := service.ValidateToken(legacyToken)
+		require.Error(t, err)
+		assert.Nil(t, claims)
+		assert.Contains(t, err.Error(), "access token required")
+	})
+}
+
+func TestRefreshTokenRejectsAccessTokenBeforeStorageLookup(t *testing.T) {
+	service := &Service{config: config.AuthConfig{
+		JWTSecret: "test-secret-key-for-testing-only-needs-32-chars",
+	}}
+	accessToken, err := service.GenerateToken("user-123", "user@example.com", time.Hour)
+	require.NoError(t, err)
+
+	response, err := service.RefreshToken(context.Background(), RefreshRequest{RefreshToken: accessToken})
+
+	require.Error(t, err)
+	assert.Nil(t, response)
+	authErr, ok := err.(*AuthError)
+	require.True(t, ok)
+	assert.Equal(t, ErrInvalidToken, authErr.Type)
+	assert.ErrorContains(t, authErr.Err, "refresh token required")
 }
 
 func TestValidatePassword(t *testing.T) {

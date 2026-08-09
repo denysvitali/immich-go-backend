@@ -177,7 +177,7 @@ Schema highlights:
 - A custom `immich_uuid_v7(timestamp)` function for time-ordered UUIDs.
 - Extensions: `uuid-ossp`, `vector` (pgvector), `vchord`, `cube`, `earthdistance`, `pg_trgm`, `unaccent`. The local dev `docker-compose.yml` only enables `uuid-ossp`, `vector`, and `earthdistance` at the image level — the rest are installed by the schema migrations.
 
-Pool sizing lives in `database.max_open_conns` / `max_idle_conns` in `config.yaml`.
+Pool sizing lives in `database.max_open_conns` / `min_idle_conns` in `config.yaml`.
 
 ---
 
@@ -335,7 +335,7 @@ The embedded mode is **single-process** by construction — do not run it behind
 `internal/telemetry/telemetry.go` wires OpenTelemetry:
 
 - **Tracing.** `go.opentelemetry.io/otel/sdk/trace` with the `autoexport` contrib package, so traces go to whatever OTLP endpoint `OTEL_EXPORTER_OTLP_ENDPOINT` (or one of the env-var variants) points at — Jaeger, Tempo, Honeycomb, vendor-specific, no code change.
-- **Metrics.** Same idea via `sdkmetric`. The `/metrics` endpoint serves Prometheus format by default.
+- **Metrics.** Same idea via `sdkmetric`. When `server.metrics_enabled` is set, the configured metrics path serves Prometheus format.
 - **Service name / version / environment** are configurable via standard OTel env vars (`OTEL_SERVICE_NAME`, etc.).
 
 gRPC and HTTP handlers are instrumented; service methods create child spans via the `tracer.Start(ctx, "service.method")` pattern.
@@ -351,9 +351,9 @@ For a happy-path upload:
 1. Mobile app `POST /api/assets` (multipart).
 2. grpc-gateway dispatches `AssetService.UploadAsset`.
 3. Auth middleware verifies the JWT and sets `User` on context.
-4. `assets.Service` validates the request, picks a UUID, inserts an `assets` row, writes bytes to the storage backend, then enqueues `thumbnail_generation` + `metadata_extraction` onto asynq.
+4. The asset service validates the request, coordinates the database row and storage write, then enqueues `thumbnail_generation` + `metadata_extraction` onto asynq.
 5. Returns the new `Asset` to the client.
-6. A worker (same process, another goroutine) picks up the queued task, generates the thumbnail, writes it back to storage, updates `assets` with thumb path, and emits a sync event over the WebSocket hub.
-7. Any subscribed client (the web UI on another device, for example) receives the sync event and refreshes its timeline.
+6. A worker (same process, another goroutine) picks up the queued task, generates the thumbnail, writes it back to storage, and updates `assets` with the thumbnail path.
+7. Durable cross-instance sync checkpoints and publication of domain events through the WebSocket hub are still production-readiness work; see [ROADMAP.md](ROADMAP.md#production-readiness-blockers).
 
 That single happy path touches every subsystem this document describes — read it again as a checklist the next time something needs to change.

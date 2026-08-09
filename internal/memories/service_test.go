@@ -7,10 +7,16 @@ import (
 	"context"
 	"testing"
 
+	"github.com/denysvitali/immich-go-backend/internal/auth"
+	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/denysvitali/immich-go-backend/internal/db/testdb"
+	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func createTestUser(t *testing.T, tdb *testdb.TestDB, email string) uuid.UUID {
@@ -443,6 +449,128 @@ func TestIntegration_AddAssetsToMemory_NotOwned(t *testing.T) {
 	err = service.AddAssetsToMemory(ctx, user2ID.String(), created.ID, []string{assetID.String()})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "access denied")
+}
+
+func TestIntegration_AddMemoryAssetsRejectsForeignBatchWithoutPartialMutation(t *testing.T) {
+	testdb.SkipIfNoDocker(t)
+
+	tdb := testdb.SetupTestDB(t)
+	ctx := context.Background()
+	service := NewService(tdb.Queries)
+	server := NewServer(service)
+	ownerID := createTestUser(t, tdb, "memory-batch-owner@test.com")
+	foreignOwnerID := createTestUser(t, tdb, "memory-batch-foreign@test.com")
+	ownedAssetID := createTestAsset(t, tdb, ownerID, "owned-batch-asset")
+	foreignAssetID := createTestAsset(t, tdb, foreignOwnerID, "foreign-batch-asset")
+
+	memory, err := service.CreateMemory(ctx, &Memory{
+		UserID: ownerID.String(),
+		Title:  "Atomic asset validation",
+		Type:   "custom",
+	})
+	require.NoError(t, err)
+
+	authenticatedCtx := auth.WithClaims(ctx, &auth.Claims{UserID: ownerID.String()})
+	_, err = server.AddMemoryAssets(authenticatedCtx, &immichv1.AddMemoryAssetsRequest{
+		Id: memory.ID,
+		BulkIds: &immichv1.BulkIds{Ids: []string{
+			ownedAssetID.String(),
+			foreignAssetID.String(),
+		}},
+	})
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+
+	memoryUUID := pgtype.UUID{Bytes: uuid.MustParse(memory.ID), Valid: true}
+	linkedIDs, err := tdb.Queries.GetMemoryAssets(ctx, memoryUUID)
+	require.NoError(t, err)
+	assert.Empty(t, linkedIDs, "an unauthorized batch must not insert its authorized subset")
+
+	require.NoError(t, service.AddAssetsToMemory(ctx, ownerID.String(), memory.ID, []string{ownedAssetID.String()}))
+	accessibleIDs, err := service.GetMemoryAssets(ctx, ownerID.String(), memory.ID)
+	require.NoError(t, err)
+	assert.Equal(t, []string{ownedAssetID.String()}, accessibleIDs)
+}
+
+func TestIntegration_AddMemoryAssetsAcceptsAssetSharedWithMemoryOwner(t *testing.T) {
+	testdb.SkipIfNoDocker(t)
+
+	tdb := testdb.SetupTestDB(t)
+	ctx := context.Background()
+	service := NewService(tdb.Queries)
+	memoryOwnerID := createTestUser(t, tdb, "memory-shared-owner@test.com")
+	assetOwnerID := createTestUser(t, tdb, "memory-shared-asset-owner@test.com")
+	sharedAssetID := createTestAsset(t, tdb, assetOwnerID, "shared-memory-asset")
+
+	album, err := tdb.Queries.CreateAlbum(ctx, sqlc.CreateAlbumParams{
+		OwnerId:   pgtype.UUID{Bytes: assetOwnerID, Valid: true},
+		AlbumName: "Shared memory assets",
+	})
+	require.NoError(t, err)
+	require.NoError(t, tdb.Queries.AddAssetToAlbum(ctx, sqlc.AddAssetToAlbumParams{
+		AlbumsId: album.ID,
+		AssetsId: pgtype.UUID{Bytes: sharedAssetID, Valid: true},
+	}))
+	require.NoError(t, tdb.Queries.AddUserToAlbum(ctx, sqlc.AddUserToAlbumParams{
+		AlbumsId: album.ID,
+		UsersId:  pgtype.UUID{Bytes: memoryOwnerID, Valid: true},
+		Role:     "viewer",
+	}))
+
+	memory, err := service.CreateMemory(ctx, &Memory{
+		UserID: memoryOwnerID.String(),
+		Title:  "Shared asset memory",
+		Type:   "custom",
+	})
+	require.NoError(t, err)
+	require.NoError(t, service.AddAssetsToMemory(ctx, memoryOwnerID.String(), memory.ID, []string{sharedAssetID.String()}))
+
+	linkedIDs, err := service.GetMemoryAssets(ctx, memoryOwnerID.String(), memory.ID)
+	require.NoError(t, err)
+	assert.Equal(t, []string{sharedAssetID.String()}, linkedIDs)
+}
+
+func TestIntegration_MemoryReadsHideLegacyForeignAssetRelations(t *testing.T) {
+	testdb.SkipIfNoDocker(t)
+
+	tdb := testdb.SetupTestDB(t)
+	ctx := context.Background()
+	service := NewService(tdb.Queries)
+	server := NewServer(service)
+	ownerID := createTestUser(t, tdb, "memory-read-owner@test.com")
+	foreignOwnerID := createTestUser(t, tdb, "memory-read-foreign@test.com")
+	ownedAssetID := createTestAsset(t, tdb, ownerID, "visible-memory-asset")
+	foreignAssetID := createTestAsset(t, tdb, foreignOwnerID, "hidden-memory-asset")
+
+	memory, err := service.CreateMemory(ctx, &Memory{
+		UserID: ownerID.String(),
+		Title:  "Legacy relation",
+		Type:   "custom",
+	})
+	require.NoError(t, err)
+	memoryUUID := pgtype.UUID{Bytes: uuid.MustParse(memory.ID), Valid: true}
+	// Bypass the guarded service to simulate a cross-tenant relation left by an
+	// older release. Read paths must still refuse to resolve the foreign asset.
+	require.NoError(t, tdb.Queries.AddAssetsToMemory(ctx, sqlc.AddAssetsToMemoryParams{
+		MemoriesId: memoryUUID,
+		Column2: []pgtype.UUID{
+			{Bytes: ownedAssetID, Valid: true},
+			{Bytes: foreignAssetID, Valid: true},
+		},
+	}))
+
+	assetIDs, err := service.GetMemoryAssets(ctx, ownerID.String(), memory.ID)
+	require.NoError(t, err)
+	assert.Equal(t, []string{ownedAssetID.String()}, assetIDs)
+	hydrated, err := service.GetMemory(ctx, ownerID.String(), memory.ID)
+	require.NoError(t, err)
+	assert.Equal(t, []string{ownedAssetID.String()}, hydrated.AssetIDs)
+
+	authenticatedCtx := auth.WithClaims(ctx, &auth.Claims{UserID: ownerID.String()})
+	response, err := server.GetMemory(authenticatedCtx, &immichv1.GetMemoryRequest{Id: memory.ID})
+	require.NoError(t, err)
+	require.Len(t, response.Assets, 1)
+	assert.Equal(t, ownedAssetID.String(), response.Assets[0].Id)
+	assert.NotEqual(t, foreignOwnerID.String(), response.Assets[0].OwnerId)
 }
 
 func TestIntegration_RemoveAssetsFromMemory(t *testing.T) {

@@ -7,35 +7,55 @@ metadata:
 data:
   SERVER_ADDRESS: {{ .Values.server.address | quote }}
   SERVER_GRPC_ADDRESS: {{ .Values.server.grpcAddress | quote }}
+  SERVER_READ_TIMEOUT: {{ .Values.server.readTimeout | quote }}
+  SERVER_WRITE_TIMEOUT: {{ .Values.server.writeTimeout | quote }}
+  SERVER_IDLE_TIMEOUT: {{ .Values.server.idleTimeout | quote }}
+  SERVER_SHUTDOWN_TIMEOUT: {{ .Values.server.shutdownTimeout | quote }}
   SERVER_METRICS_ENABLED: {{ .Values.server.metricsEnabled | quote }}
   SERVER_METRICS_PATH: {{ .Values.server.metricsPath | quote }}
   SERVER_CORS_ENABLED: {{ .Values.server.corsEnabled | quote }}
+  SERVER_CORS_ALLOWED_ORIGINS: {{ join "," .Values.server.corsAllowedOrigins | quote }}
   SERVER_REQUEST_LOGGING: {{ .Values.server.requestLogging | quote }}
+  SERVER_HEALTH_CHECK_ENABLED: {{ .Values.server.healthCheckEnabled | quote }}
+  SERVER_HEALTH_CHECK_PATH: {{ .Values.server.healthCheckPath | quote }}
+  TLS_ENABLED: {{ .Values.server.tls.enabled | quote }}
+  TLS_CERT_FILE: {{ .Values.server.tls.certFile | quote }}
+  TLS_KEY_FILE: {{ .Values.server.tls.keyFile | quote }}
   IMMICH_DATABASE_AUTO_MIGRATE: {{ .Values.database.autoMigrate | quote }}
   DATABASE_MAX_OPEN_CONNS: {{ .Values.database.maxOpenConns | quote }}
-  DATABASE_MAX_IDLE_CONNS: {{ .Values.database.maxIdleConns | quote }}
+  DATABASE_MIN_IDLE_CONNS: {{ .Values.database.minIdleConns | quote }}
   DATABASE_MAX_CONN_LIFETIME: {{ .Values.database.maxConnLifetime | quote }}
   DATABASE_CONNECT_TIMEOUT: {{ .Values.database.connectTimeout | quote }}
+  DATABASE_QUERY_TIMEOUT: {{ .Values.database.queryTimeout | quote }}
+  DATABASE_LOG_QUERIES: {{ .Values.database.logQueries | quote }}
   STORAGE_BACKEND: {{ .Values.storage.backend | quote }}
   STORAGE_LOCAL_ROOT: {{ .Values.storage.localRoot | quote }}
   UPLOAD_TEMP_DIR: {{ .Values.storage.uploadTempDir | quote }}
+  S3_ENABLED: {{ and .Values.storage.s3.enabled (eq .Values.storage.backend "s3") | quote }}
   AUTH_JWT_EXPIRY: {{ .Values.auth.jwtExpiry | quote }}
   AUTH_JWT_REFRESH_EXPIRY: {{ .Values.auth.jwtRefreshExpiry | quote }}
   AUTH_JWT_ISSUER: {{ .Values.auth.jwtIssuer | quote }}
   AUTH_REGISTRATION_ENABLED: {{ .Values.auth.registrationEnabled | quote }}
   JOBS_ENABLED: {{ .Values.jobs.enabled | quote }}
   JOBS_WORKERS: {{ .Values.jobs.workers | quote }}
+  IMMICH_JOBS_RETRY_MAX_RETRIES: {{ .Values.jobs.retryMaxRetries | quote }}
+  JOBS_JOB_TIMEOUT: {{ .Values.jobs.jobTimeout | quote }}
   LOG_LEVEL: {{ .Values.logging.level | quote }}
   LOG_FORMAT: {{ .Values.logging.format | quote }}
   LOG_OUTPUT: {{ .Values.logging.output | quote }}
   FEATURE_MACHINE_LEARNING_ENABLED: {{ .Values.features.machineLearningEnabled | quote }}
   FEATURE_FACE_RECOGNITION_ENABLED: {{ .Values.features.faceRecognitionEnabled | quote }}
+  FEATURE_OBJECT_DETECTION_ENABLED: {{ .Values.features.objectDetectionEnabled | quote }}
   FEATURE_CLIP_SEARCH_ENABLED: {{ .Values.features.clipSearchEnabled | quote }}
   FEATURE_VIDEO_TRANSCODING_ENABLED: {{ .Values.features.videoTranscodingEnabled | quote }}
   FEATURE_THUMBNAIL_GENERATION_ENABLED: {{ .Values.features.thumbnailGenerationEnabled | quote }}
   FEATURE_EXIF_EXTRACTION_ENABLED: {{ .Values.features.exifExtractionEnabled | quote }}
   FEATURE_DUPLICATE_DETECTION_ENABLED: {{ .Values.features.duplicateDetectionEnabled | quote }}
+  FEATURE_BACKUP_SYNC_ENABLED: {{ .Values.features.backupSyncEnabled | quote }}
   FEATURE_SHARING_ENABLED: {{ .Values.features.sharingEnabled | quote }}
+  MACHINE_LEARNING_ENABLED: {{ .Values.machineLearning.enabled | quote }}
+  MACHINE_LEARNING_URL: {{ .Values.machineLearning.url | quote }}
+  MACHINE_LEARNING_TIMEOUT: {{ .Values.machineLearning.timeout | quote }}
   {{- if .Values.webuiDir }}
   IMMICH_WEBUI_DIR: {{ .Values.webuiDir | quote }}
   {{- end }}

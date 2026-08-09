@@ -80,6 +80,11 @@ func TestIntegration_CreateAPIKey(t *testing.T) {
 
 	// The raw key should be verifiable against the stored hash
 	assert.True(t, service.VerifyAPIKey(rawKey, apiKey.Key))
+
+	validated, err := service.ValidateAPIKey(ctx, rawKey)
+	require.NoError(t, err)
+	assert.Equal(t, apiKey.ID, validated.ID)
+	assert.Equal(t, apiKey.UserId, validated.UserId)
 }
 
 func TestIntegration_GetAPIKeysByUser(t *testing.T) {

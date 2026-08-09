@@ -2,6 +2,7 @@ package faces
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -10,12 +11,16 @@ import (
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/denysvitali/immich-go-backend/internal/telemetry"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 )
 
 var tracer = telemetry.GetTracer("faces")
+
+var ErrAccessDenied = errors.New("access denied")
 
 // Service handles face detection and recognition operations
 type Service struct {
@@ -52,7 +57,7 @@ func NewService(queries *sqlc.Queries, cfg *config.Config) (*Service, error) {
 }
 
 // GetFaces retrieves faces, optionally filtered by ID
-func (s *Service) GetFaces(ctx context.Context, req GetFacesRequest) (*GetFacesResponse, error) {
+func (s *Service) GetFaces(ctx context.Context, userID uuid.UUID, req GetFacesRequest) (*GetFacesResponse, error) {
 	ctx, span := tracer.Start(ctx, "faces.get_faces")
 	defer span.End()
 
@@ -69,6 +74,19 @@ func (s *Service) GetFaces(ctx context.Context, req GetFacesRequest) (*GetFacesR
 	var err error
 
 	switch {
+	case req.ID != nil:
+		faceID, parseErr := uuid.Parse(*req.ID)
+		if parseErr != nil {
+			return nil, fmt.Errorf("invalid face ID: %w", parseErr)
+		}
+		face, getErr := s.db.GetAssetFaceByID(ctx, pgutil.UUIDToPgtype(faceID))
+		if getErr != nil {
+			return nil, fmt.Errorf("failed to get face: %w", getErr)
+		}
+		if err := s.requireOwnedAsset(ctx, userID, face.AssetId); err != nil {
+			return nil, err
+		}
+		faces = []sqlc.AssetFace{face}
 	case req.AssetID != "":
 		// Get faces by asset
 		var assetID uuid.UUID
@@ -76,7 +94,11 @@ func (s *Service) GetFaces(ctx context.Context, req GetFacesRequest) (*GetFacesR
 		if err != nil {
 			return nil, fmt.Errorf("invalid asset ID: %w", err)
 		}
-		faces, err = s.db.GetFacesByAsset(ctx, pgutil.UUIDToPgtype(assetID))
+		assetUUID := pgutil.UUIDToPgtype(assetID)
+		if err := s.requireOwnedAsset(ctx, userID, assetUUID); err != nil {
+			return nil, err
+		}
+		faces, err = s.db.GetFacesByAsset(ctx, assetUUID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get faces for asset: %w", err)
 		}
@@ -87,7 +109,11 @@ func (s *Service) GetFaces(ctx context.Context, req GetFacesRequest) (*GetFacesR
 		if err != nil {
 			return nil, fmt.Errorf("invalid person ID: %w", err)
 		}
-		faces, err = s.db.GetFacesByPerson(ctx, pgutil.UUIDToPgtype(personID))
+		personUUID := pgutil.UUIDToPgtype(personID)
+		if err := s.requireOwnedPerson(ctx, userID, personUUID); err != nil {
+			return nil, err
+		}
+		faces, err = s.db.GetFacesByPerson(ctx, personUUID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get faces for person: %w", err)
 		}
@@ -108,7 +134,7 @@ func (s *Service) GetFaces(ctx context.Context, req GetFacesRequest) (*GetFacesR
 }
 
 // CreateFace creates a new face detection record
-func (s *Service) CreateFace(ctx context.Context, req CreateFaceRequest) (*FaceResponse, error) {
+func (s *Service) CreateFace(ctx context.Context, userID uuid.UUID, req CreateFaceRequest) (*FaceResponse, error) {
 	ctx, span := tracer.Start(ctx, "faces.create_face",
 		trace.WithAttributes(
 			attribute.String("asset_id", req.AssetID),
@@ -136,6 +162,12 @@ func (s *Service) CreateFace(ctx context.Context, req CreateFaceRequest) (*FaceR
 		return nil, fmt.Errorf("invalid person ID: %w", err)
 	}
 	personUUID := pgutil.UUIDToPgtype(personID)
+	if err := s.requireOwnedAsset(ctx, userID, assetUUID); err != nil {
+		return nil, err
+	}
+	if err := s.requireOwnedPerson(ctx, userID, personUUID); err != nil {
+		return nil, err
+	}
 
 	// Get image dimensions from the bounding box (if not provided separately)
 	// For now, we'll use the bounding box max values as approximations
@@ -179,7 +211,7 @@ func (s *Service) CreateFace(ctx context.Context, req CreateFaceRequest) (*FaceR
 }
 
 // DeleteFace removes a face detection record
-func (s *Service) DeleteFace(ctx context.Context, faceID string) error {
+func (s *Service) DeleteFace(ctx context.Context, userID uuid.UUID, faceID string) error {
 	ctx, span := tracer.Start(ctx, "faces.delete_face",
 		trace.WithAttributes(attribute.String("face_id", faceID)))
 	defer span.End()
@@ -198,10 +230,15 @@ func (s *Service) DeleteFace(ctx context.Context, faceID string) error {
 		return fmt.Errorf("invalid face ID: %w", err)
 	}
 	faceUUID := pgutil.UUIDToPgtype(fID)
+	face, err := s.db.GetAssetFaceByID(ctx, faceUUID)
+	if err != nil {
+		return fmt.Errorf("failed to get face: %w", err)
+	}
+	if err := s.requireOwnedAsset(ctx, userID, face.AssetId); err != nil {
+		return err
+	}
 
 	// Delete the face record
-	// Note: In production, you would want to verify ownership first
-	// by joining with the asset and checking the owner
 	err = s.db.DeleteAssetFace(ctx, faceUUID)
 	if err != nil {
 		return fmt.Errorf("failed to delete face: %w", err)
@@ -214,7 +251,7 @@ func (s *Service) DeleteFace(ctx context.Context, faceID string) error {
 }
 
 // ReassignFacesById reassigns faces to a different person
-func (s *Service) ReassignFacesById(ctx context.Context, faceID, personID string) (*ReassignFacesByIdResponse, error) {
+func (s *Service) ReassignFacesById(ctx context.Context, userID uuid.UUID, faceID, personID string) (*ReassignFacesByIdResponse, error) {
 	ctx, span := tracer.Start(ctx, "faces.reassign_faces_by_id",
 		trace.WithAttributes(
 			attribute.String("face_id", faceID),
@@ -244,15 +281,18 @@ func (s *Service) ReassignFacesById(ctx context.Context, faceID, personID string
 	}
 	personUUID := pgutil.UUIDToPgtype(pID)
 
-	// Update the face to point to the new person
-	// Note: In production, you would want to verify ownership first
-	// by joining with the asset and person tables and checking the owner
-	updatedFace, err := s.db.UpdateAssetFace(ctx, sqlc.UpdateAssetFaceParams{
-		ID:       faceUUID,
-		PersonID: personUUID,
-		// Don't update bounding box - pass nil/empty to use COALESCE in query
+	updatedFace, err := s.db.ReassignSingleFace(ctx, sqlc.ReassignSingleFaceParams{
+		FaceID:         faceUUID,
+		TargetPersonID: personUUID,
+		OwnerID:        pgutil.UUIDToPgtype(userID),
 	})
 	if err != nil {
+		if errors.Is(err, sqlc.ErrFaceReassignmentAccessDenied) {
+			return nil, ErrAccessDenied
+		}
+		if errors.Is(err, sqlc.ErrFaceReassignmentNotFound) {
+			return nil, fmt.Errorf("failed to get face: %w", err)
+		}
 		return nil, fmt.Errorf("failed to reassign face: %w", err)
 	}
 
@@ -298,6 +338,34 @@ type BoundingBox struct {
 	Y1 int32
 	X2 int32
 	Y2 int32
+}
+
+func (s *Service) requireOwnedAsset(ctx context.Context, userID uuid.UUID, assetID pgtype.UUID) error {
+	_, err := s.db.GetAssetByIDAndUser(ctx, sqlc.GetAssetByIDAndUserParams{
+		ID:      assetID,
+		OwnerId: pgutil.UUIDToPgtype(userID),
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrAccessDenied
+	}
+	if err != nil {
+		return fmt.Errorf("failed to check asset ownership: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) requireOwnedPerson(ctx context.Context, userID uuid.UUID, personID pgtype.UUID) error {
+	person, err := s.db.GetPerson(ctx, personID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrAccessDenied
+	}
+	if err != nil {
+		return fmt.Errorf("failed to check person ownership: %w", err)
+	}
+	if person.OwnerId != pgutil.UUIDToPgtype(userID) {
+		return ErrAccessDenied
+	}
+	return nil
 }
 
 // Helper function to convert database face to response format

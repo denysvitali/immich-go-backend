@@ -9,7 +9,7 @@ server:
 database:
   url: "postgres://immich:immich@localhost:5432/immich?sslmode=disable"
   max_open_conns: 25
-  max_idle_conns: 10
+  min_idle_conns: 10
   max_conn_lifetime: 1h
   connect_timeout: 30s
 
@@ -19,18 +19,22 @@ logging:
   output: "stdout"
 
 auth:
-  jwt_secret: "your-super-secret-jwt-key-change-this-in-production"
+  # Required by `serve`. Prefer AUTH_JWT_SECRET so the value is not committed.
+  # Generate one with: openssl rand -hex 32
+  jwt_secret: ""
   jwt_expiry: "24h"
   jwt_refresh_expiry: "168h"
   jwt_issuer: "immich-go-backend"
   registration_enabled: true
 
 storage:
-  upload_location: "./uploads"
-  library_location: "./library"
-  thumbs_location: "./thumbs"
-  profile_location: "./profile"
-  video_location: "./encoded-video"
+  backend: "local"
+  local:
+    root_path: "./uploads"
+    file_mode: "0644"
+    dir_mode: "0755"
+  upload:
+    temp_dir: "/tmp/immich-uploads"
 
 features:
   # ML feature flags are off by default. Flip these (and machine_learning.enabled)
@@ -44,33 +48,12 @@ features:
   thumbnail_generation_enabled: true
   exif_extraction_enabled: true
 
-mail:
-  enabled: false
-  smtp:
-    host: ""
-    port: 587
-    username: ""
-    password: ""
-    from: "noreply@immich.app"
-
-external:
-  domain: ""
-  login_page_message: ""
-
 jobs:
   enabled: true
   redis_url: "redis://localhost:6379/0"
   workers: 4
-  concurrency: 10
-  queue_name: "immich"
   retry_max_retries: 10
-  
-redis:
-  host: "localhost"
-  port: 6379
-  password: ""
-  db: 0
-  
+
 # Immich ML service (https://docs.immich.app). Off by default.
 machine_learning:
   enabled: false

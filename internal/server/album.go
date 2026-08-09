@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 
 	"github.com/denysvitali/immich-go-backend/internal/grpcutil"
 
@@ -16,6 +17,60 @@ import (
 	immichv1 "github.com/denysvitali/immich-go-backend/internal/proto/gen/immich/v1"
 	"github.com/denysvitali/immich-go-backend/internal/ptr"
 )
+
+type albumAccessLevel uint8
+
+const (
+	albumAccessView albumAccessLevel = iota
+	albumAccessEdit
+	albumAccessManage
+)
+
+// authorizedAlbum loads an album and verifies that the authenticated user has
+// the requested access. Owners can perform every operation, shared editors can
+// change album assets, and shared viewers have read-only access.
+func (s *Server) authorizedAlbum(ctx context.Context, albumID pgtype.UUID, required albumAccessLevel) (sqlc.Album, pgtype.UUID, error) {
+	claims, err := s.claimsFromContext(ctx)
+	if err != nil {
+		return sqlc.Album{}, pgtype.UUID{}, err
+	}
+
+	userID, err := pgutil.StringToUUID(claims.UserID)
+	if err != nil {
+		return sqlc.Album{}, pgtype.UUID{}, grpcutil.SanitizedInternal(ctx, "invalid user ID", err)
+	}
+
+	album, err := s.db.GetAlbum(ctx, albumID)
+	if err != nil {
+		return sqlc.Album{}, pgtype.UUID{}, status.Error(codes.NotFound, "album not found")
+	}
+	if album.OwnerId == userID {
+		return album, userID, nil
+	}
+	if required == albumAccessManage {
+		return sqlc.Album{}, pgtype.UUID{}, status.Error(codes.PermissionDenied, "access denied")
+	}
+
+	sharedUsers, err := s.db.GetAlbumSharedUsers(ctx, albumID)
+	if err != nil {
+		return sqlc.Album{}, pgtype.UUID{}, grpcutil.SanitizedInternal(ctx, "failed to check album access", err)
+	}
+	for _, sharedUser := range sharedUsers {
+		if sharedUser.ID != userID {
+			continue
+		}
+		if !sharedAlbumAccessAllowed(sharedUser.Role, required) {
+			break
+		}
+		return album, userID, nil
+	}
+
+	return sqlc.Album{}, pgtype.UUID{}, status.Error(codes.PermissionDenied, "access denied")
+}
+
+func sharedAlbumAccessAllowed(role string, required albumAccessLevel) bool {
+	return required == albumAccessView || (required == albumAccessEdit && role == "editor")
+}
 
 func (s *Server) GetAllAlbums(ctx context.Context, request *immichv1.GetAllAlbumsRequest) (*immichv1.GetAllAlbumsResponse, error) {
 	// Get user ID from context/auth
@@ -54,6 +109,21 @@ func (s *Server) CreateAlbum(ctx context.Context, request *immichv1.CreateAlbumR
 		return nil, grpcutil.SanitizedInternal(ctx, "invalid user ID", err)
 	}
 
+	assetIDs := make([]pgtype.UUID, 0, len(request.AssetIds))
+	for _, assetID := range request.AssetIds {
+		assetUUID, err := pgutil.StringToUUID(assetID)
+		if err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid asset ID: %v", err)
+		}
+		if _, err := s.db.GetAssetByIDAndUser(ctx, sqlc.GetAssetByIDAndUserParams{
+			ID:      assetUUID,
+			OwnerId: userID,
+		}); err != nil {
+			return nil, status.Error(codes.NotFound, "asset not found")
+		}
+		assetIDs = append(assetIDs, assetUUID)
+	}
+
 	album, err := s.db.CreateAlbum(ctx, sqlc.CreateAlbumParams{
 		OwnerId:     userID,
 		AlbumName:   request.AlbumName,
@@ -64,11 +134,7 @@ func (s *Server) CreateAlbum(ctx context.Context, request *immichv1.CreateAlbumR
 	}
 
 	// Add assets to album if provided
-	for _, assetID := range request.AssetIds {
-		assetUUID := pgtype.UUID{}
-		if err := assetUUID.Scan(assetID); err != nil {
-			continue // Skip invalid UUIDs
-		}
+	for _, assetUUID := range assetIDs {
 		_ = s.db.AddAssetToAlbum(ctx, sqlc.AddAssetToAlbumParams{
 			AlbumsId: album.ID,
 			AssetsId: assetUUID,
@@ -84,50 +150,22 @@ func (s *Server) GetAlbumInfo(ctx context.Context, request *immichv1.GetAlbumInf
 		return nil, status.Errorf(codes.InvalidArgument, "invalid album ID: %v", err)
 	}
 
-	album, err := s.db.GetAlbum(ctx, albumID)
+	album, _, err := s.authorizedAlbum(ctx, albumID, albumAccessView)
 	if err != nil {
-		return nil, status.Errorf(codes.NotFound, "album not found: %v", err)
+		return nil, err
 	}
 
 	return s.convertAlbumToProto(album), nil
 }
 
 func (s *Server) GetAlbumMapMarkers(ctx context.Context, request *immichv1.GetAlbumMapMarkersRequest) (*immichv1.GetAlbumMapMarkersResponse, error) {
-	claims, err := s.claimsFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	userID, err := pgutil.StringToUUID(claims.UserID)
-	if err != nil {
-		return nil, grpcutil.SanitizedInternal(ctx, "invalid user ID", err)
-	}
-
 	albumID, err := pgutil.StringToUUID(request.Id)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid album ID: %v", err)
 	}
 
-	album, err := s.db.GetAlbum(ctx, albumID)
-	if err != nil {
-		return nil, status.Error(codes.NotFound, "album not found")
-	}
-	if album.OwnerId != userID {
-		sharedUsers, err := s.db.GetAlbumSharedUsers(ctx, albumID)
-		if err != nil {
-			return nil, grpcutil.SanitizedInternal(ctx, "failed to check album access", err)
-		}
-
-		allowed := false
-		for _, sharedUser := range sharedUsers {
-			if sharedUser.ID == userID {
-				allowed = true
-				break
-			}
-		}
-		if !allowed {
-			return nil, status.Error(codes.PermissionDenied, "access denied")
-		}
+	if _, _, err := s.authorizedAlbum(ctx, albumID, albumAccessView); err != nil {
+		return nil, err
 	}
 
 	rows, err := s.db.GetAlbumMapMarkers(ctx, albumID)
@@ -148,6 +186,10 @@ func (s *Server) UpdateAlbumInfo(ctx context.Context, request *immichv1.UpdateAl
 	if err := albumID.Scan(request.Id); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid album ID: %v", err)
 	}
+	_, userID, err := s.authorizedAlbum(ctx, albumID, albumAccessManage)
+	if err != nil {
+		return nil, err
+	}
 
 	albumName := pgutil.OptionalText(request.AlbumName)
 	description := pgutil.OptionalText(request.Description)
@@ -160,14 +202,23 @@ func (s *Server) UpdateAlbumInfo(ctx context.Context, request *immichv1.UpdateAl
 		}
 	}
 
-	album, err := s.db.UpdateAlbum(ctx, sqlc.UpdateAlbumParams{
-		ID:                    albumID,
-		AlbumName:             albumName,
-		Description:           description,
-		AlbumThumbnailAssetID: thumbnailAssetID,
-		IsActivityEnabled:     isActivityEnabled,
+	album, err := s.db.UpdateOwnedAlbum(ctx, sqlc.UpdateOwnedAlbumParams{
+		OwnerID: userID,
+		Update: sqlc.UpdateAlbumParams{
+			ID:                    albumID,
+			AlbumName:             albumName,
+			Description:           description,
+			AlbumThumbnailAssetID: thumbnailAssetID,
+			IsActivityEnabled:     isActivityEnabled,
+		},
 	})
 	if err != nil {
+		if errors.Is(err, sqlc.ErrAlbumThumbnailInvalid) {
+			return nil, status.Error(codes.InvalidArgument, "thumbnail asset must be owned by the caller and belong to the album")
+		}
+		if errors.Is(err, sqlc.ErrAlbumUpdateAccessDenied) {
+			return nil, status.Error(codes.PermissionDenied, "access denied")
+		}
 		return nil, grpcutil.SanitizedInternal(ctx, "failed to update album", err)
 	}
 
@@ -178,6 +229,9 @@ func (s *Server) DeleteAlbum(ctx context.Context, request *immichv1.DeleteAlbumR
 	albumID := pgtype.UUID{}
 	if err := albumID.Scan(request.Id); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid album ID: %v", err)
+	}
+	if _, _, err := s.authorizedAlbum(ctx, albumID, albumAccessManage); err != nil {
+		return nil, err
 	}
 
 	if err := s.db.DeleteAlbum(ctx, albumID); err != nil {
@@ -192,6 +246,10 @@ func (s *Server) AddAssetsToAlbum(ctx context.Context, request *immichv1.AddAsse
 	if err := albumID.Scan(request.Id); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid album ID: %v", err)
 	}
+	_, userID, err := s.authorizedAlbum(ctx, albumID, albumAccessEdit)
+	if err != nil {
+		return nil, err
+	}
 
 	results := make([]*immichv1.BulkIdResponse, len(request.AssetIds.Ids))
 	for i, assetID := range request.AssetIds.Ids {
@@ -201,6 +259,17 @@ func (s *Server) AddAssetsToAlbum(ctx context.Context, request *immichv1.AddAsse
 				Id:      assetID,
 				Success: false,
 				Error:   ptr.To("invalid asset ID"),
+			}
+			continue
+		}
+		if _, err := s.db.GetAssetByIDAndUser(ctx, sqlc.GetAssetByIDAndUserParams{
+			ID:      assetUUID,
+			OwnerId: userID,
+		}); err != nil {
+			results[i] = &immichv1.BulkIdResponse{
+				Id:      assetID,
+				Success: false,
+				Error:   ptr.To("asset not found"),
 			}
 			continue
 		}
@@ -226,6 +295,9 @@ func (s *Server) RemoveAssetFromAlbum(ctx context.Context, request *immichv1.Rem
 	albumID := pgtype.UUID{}
 	if err := albumID.Scan(request.Id); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid album ID: %v", err)
+	}
+	if _, _, err := s.authorizedAlbum(ctx, albumID, albumAccessEdit); err != nil {
+		return nil, err
 	}
 
 	results := make([]*immichv1.BulkIdResponse, len(request.AssetIds.Ids))
@@ -262,6 +334,9 @@ func (s *Server) AddUsersToAlbum(ctx context.Context, request *immichv1.AddUsers
 	if err := albumID.Scan(request.Id); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid album ID: %v", err)
 	}
+	if _, _, err := s.authorizedAlbum(ctx, albumID, albumAccessManage); err != nil {
+		return nil, err
+	}
 
 	for _, userID := range request.SharedUserIds {
 		userUUID := pgtype.UUID{}
@@ -289,6 +364,9 @@ func (s *Server) RemoveUserFromAlbum(ctx context.Context, request *immichv1.Remo
 	if err := albumID.Scan(request.Id); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid album ID: %v", err)
 	}
+	if _, _, err := s.authorizedAlbum(ctx, albumID, albumAccessManage); err != nil {
+		return nil, err
+	}
 
 	userID := pgtype.UUID{}
 	if err := userID.Scan(request.UserId); err != nil {
@@ -309,6 +387,9 @@ func (s *Server) UpdateAlbumUser(ctx context.Context, request *immichv1.UpdateAl
 	albumID := pgtype.UUID{}
 	if err := albumID.Scan(request.Id); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid album ID: %v", err)
+	}
+	if _, _, err := s.authorizedAlbum(ctx, albumID, albumAccessManage); err != nil {
+		return nil, err
 	}
 
 	userID := pgtype.UUID{}
@@ -428,12 +509,9 @@ func (s *Server) AddAssetsToAlbums(ctx context.Context, request *immichv1.AddAss
 			return nil, status.Errorf(codes.InvalidArgument, "invalid album ID: %v", err)
 		}
 
-		// Verify the album exists and is owned by the current user.
-		album, err := s.db.GetAlbum(ctx, albumUUID)
+		// Only album owners may modify multiple albums in bulk.
+		_, _, err = s.authorizedAlbum(ctx, albumUUID, albumAccessManage)
 		if err != nil {
-			return failure("not_found")
-		}
-		if album.OwnerId != userID {
 			return failure("no_permission")
 		}
 		albumUUIDs = append(albumUUIDs, albumUUID)
@@ -444,6 +522,12 @@ func (s *Server) AddAssetsToAlbums(ctx context.Context, request *immichv1.AddAss
 		assetUUID, err := pgutil.StringToUUID(assetID)
 		if err != nil {
 			return nil, status.Errorf(codes.InvalidArgument, "invalid asset ID: %v", err)
+		}
+		if _, err := s.db.GetAssetByIDAndUser(ctx, sqlc.GetAssetByIDAndUserParams{
+			ID:      assetUUID,
+			OwnerId: userID,
+		}); err != nil {
+			return failure("not_found")
 		}
 		assetUUIDs = append(assetUUIDs, assetUUID)
 	}

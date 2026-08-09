@@ -3,7 +3,7 @@
 A Go reimplementation of the [Immich](https://github.com/immich-app/immich) backend API, designed for cloud-native deployments with first-class S3, embedded PostgreSQL for single-binary demos, and a clean gRPC + REST architecture.
 
 > [!IMPORTANT]
-> **Status: functional, actively developed, not a security audit.** This project targets API parity with the official Immich backend so the official web UI and mobile apps work against it. It is suitable for self-hosting and demo deployments, but it has not undergone an independent security review — review the configuration, secrets handling, and exposure model before relying on it for sensitive data.
+> **Status: experimental preview, not production-ready.** The project has broad API coverage and is useful for development and disposable demos, but several workflows still have placeholder semantics and recovery, multi-replica state, and end-to-end storage consistency remain incomplete. It has not undergone an independent security review. Do not rely on it for the only copy of a photo library or expose it to untrusted users yet.
 
 ---
 
@@ -43,7 +43,7 @@ flowchart LR
         WS[WebSocket hub]
     end
 
-    PG[(PostgreSQL 16)]
+    PG[(PostgreSQL + VectorChord)]
     PGembed[(Embedded PG<br/>demo only)]
     S3[(S3 / Rclone / Local)]
     Redis[(Redis 7)]
@@ -53,7 +53,7 @@ flowchart LR
     iOS --> REST
     Android --> REST
     CLI --> REST
-    Web -.live events.-> WS
+    Web -.transport handshake.-> WS
     REST --> GRPC
     GRPC --> Services
     Services --> Storage
@@ -74,12 +74,13 @@ For the full architecture — service dependency graph, storage backends, auth c
 ### One command with Docker Compose
 
 ```bash
-docker compose up -d
+export AUTH_JWT_SECRET="$(openssl rand -hex 32)"
+docker compose up -d --wait
 ./bin/immich-go-backend migrate
 ./bin/immich-go-backend serve
 ```
 
-The default `docker-compose.yml` starts PostgreSQL 16 (with `uuid-ossp`, `vector`, and `earthdistance` enabled at the image level — `vchord`, `cube`, `pg_trgm`, and `unaccent` are created by the schema migrations) and Redis 7. The server listens on `:3001` (REST) and `:3002` (gRPC) per `config.yaml` — the Go default in `internal/config/config.go` is `8080`/`9090` and `config.yaml` overrides it.
+The default `docker-compose.yml` starts Redis 7 and the digest-pinned PostgreSQL 14 + VectorChord image used by the checked-out Immich v3.0.1 release. That image provides the `uuid-ossp`, `vector`, `vchord`, `cube`, `earthdistance`, `pg_trgm`, and `unaccent` extensions required by this backend's migrations; the database health check verifies their availability. A stock `postgres` image cannot run a clean install. `serve` requires a random JWT secret of at least 32 bytes; keep it stable across restarts so existing sessions remain valid. The server listens on `:3001` (REST) and `:3002` (gRPC) per `config.yaml` — the Go default in `internal/config/config.go` is `8080`/`9090` and `config.yaml` overrides it.
 
 Open `http://localhost:3001/api/server/ping` to confirm the server is up, then `POST /api/auth/admin-sign-up` to create the first admin.
 
@@ -116,7 +117,7 @@ make test             # unit + integration tests (needs Docker)
 make lint             # golangci-lint
 ```
 
-All targets are described in the [Makefile](Makefile). Generated proto code under `internal/proto/gen/` is committed, so a fresh checkout builds without running `buf generate`.
+All targets are described in the [Makefile](Makefile). Generated proto code under `internal/proto/gen/` is ignored; `make build`/`make test`, Docker builds, and CI run `buf generate` before compiling.
 
 ## Project layout
 
@@ -125,7 +126,7 @@ cmd/                          CLI entry (Cobra): serve / migrate / version
 internal/
   server/                     Wires all services, gRPC server, REST gateway
   <service>/                  One package per gRPC service (assets, albums, ...)
-  proto/                      .proto sources + generated Go (gen/ is committed)
+  proto/                      .proto sources + ignored generated Go (gen/)
   db/                         Database connection, embed.FS migrations
   db/sqlc/                    SQLC-generated Go (do not edit)
   db/testdb/                  testcontainers helpers for integration tests
@@ -168,7 +169,7 @@ Most useful sections:
 | `server` | HTTP/gRPC bind addresses, timeouts, CORS, metrics path |
 | `database` | DSN, pool sizing, auto-migrate flag |
 | `storage` | Backend (`local` / `s3` / `rclone`); pre-signed URLs (S3 only), upload limits |
-| `auth` | JWT secret/expiry, registration toggle, password policy, login rate-limit |
+| `auth` | JWT secret/expiry, registration toggle, password policy, login rate-limit. `serve` requires a non-placeholder secret of at least 32 bytes |
 | `jobs` | asynq Redis URL, worker count |
 | `telemetry` | OpenTelemetry tracing/metrics toggles, sampling rate |
 | `features` | Boolean flags (`FEATURE_MACHINE_LEARNING_ENABLED`, `FEATURE_FACE_RECOGNITION_ENABLED`, `FEATURE_CLIP_SEARCH_ENABLED`, `FEATURE_VIDEO_TRANSCODING_ENABLED`, `FEATURE_THUMBNAIL_GENERATION_ENABLED`, `FEATURE_EXIF_EXTRACTION_ENABLED`, `FEATURE_DUPLICATE_DETECTION_ENABLED`, `FEATURE_BACKUP_SYNC_ENABLED`, `FEATURE_SHARING_ENABLED`, …) |
@@ -184,7 +185,7 @@ For the full env-var reference and the precedence rules, see [DEPLOYMENT.md → 
 
 The linter is `golangci-lint` with errcheck, ineffassign, staticcheck, unused, gosec, govet, gofmt, gofumpt, goimports, misspell, dogsled, nakedret, gocritic, gosimple, unconvert, and copyloopvar. Generated files are excluded.
 
-CI (`.github/workflows/go.yaml`) runs on Go 1.24 + buf 1.49.0 with two parallel jobs: `build` (unit tests under `-short`, lint, vet) and `integration-tests` (`go test -tags=integration -race` over `./internal/...`). Per-package shard files live under `.github/test-shards/` and are not yet consumed by the workflow.
+CI (`.github/workflows/go.yaml`) runs on Go 1.26.5 + buf 1.49.0 with two parallel jobs: `build` (unit tests under `-short`, lint, vet) and `integration-tests` (`go test -tags=integration -race` over `./internal/...`). Per-package shard files live under `.github/test-shards/` and are not yet consumed by the workflow.
 
 ## Testing
 
@@ -216,7 +217,7 @@ The base image produces a static binary; the Fly image adds the embedded Postgre
 
 ## Roadmap
 
-The project tracks upstream Immich (`v3.0.2` stable) for parity. See [ROADMAP.md](ROADMAP.md) for the current backlog and what's tracking upstream changes.
+CI currently gates route coverage against the upstream Immich `v3.0.1` OpenAPI document. Route coverage is not a claim of behavioral parity; see [ROADMAP.md](ROADMAP.md) for the remaining semantic and production-readiness work.
 
 ## Contributing
 

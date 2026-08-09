@@ -54,6 +54,11 @@ func TestMapAuthErrorToGRPC(t *testing.T) {
 			want: codes.FailedPrecondition,
 		},
 		{
+			name: "already initialized",
+			err:  NewAuthError(ErrAlreadyInitialized, "setup complete", nil),
+			want: codes.FailedPrecondition,
+		},
+		{
 			name: "operational auth error",
 			err:  NewAuthError(ErrTokenStorage, "store token", nil),
 			want: codes.Internal,

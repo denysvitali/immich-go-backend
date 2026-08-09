@@ -89,7 +89,14 @@ func (s *Server) HTTPHandler() (http.Handler, error) {
 		return nil, err
 	}
 
-	return webui.Handler(s.config.WebUIDir, httpLoggingHandler(s.handleWs(mux))), nil
+	apiHandler := s.httpAuthenticationHandler(s.handleWs(mux))
+	if s.config.Server.CORSEnabled {
+		apiHandler = s.corsHandler(apiHandler)
+	}
+	// Operational endpoints sit outside the SPA handler. Otherwise its
+	// extension-less route fallback serves index.html for /metrics and /health.
+	handler := s.operationalHandler(webui.Handler(s.config.WebUIDir, apiHandler))
+	return requestLoggingHandler(s.config.Server.RequestLogging, handler), nil
 }
 
 // gatewayRegistration names one generated grpc-gateway registrar so a failure
@@ -190,6 +197,9 @@ func (s *Server) handleWs(mux *runtime.ServeMux) http.Handler {
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/socket.io/" {
+			if _, ok := s.requireAuth(w, r); !ok {
+				return
+			}
 			s.wsHub.HandleWebSocket(w, r)
 			return
 		}
@@ -231,6 +241,9 @@ func gatewayIncomingContext(r *http.Request) context.Context {
 	if authorization := requestAuthorization(r); authorization != "" {
 		md.Set("authorization", authorization)
 	}
+	if apiKey := strings.TrimSpace(r.Header.Get("x-api-key")); apiKey != "" {
+		md.Set("x-api-key", apiKey)
+	}
 	return metadata.NewIncomingContext(r.Context(), md)
 }
 
@@ -248,11 +261,11 @@ func loggingHTTPErrorHandler(ctx context.Context, mux *runtime.ServeMux, marshal
 	code := status.Code(err)
 	statusCode := runtime.HTTPStatusFromCode(code)
 	entry := logrus.WithError(err).WithFields(logrus.Fields{
-		"grpcCode": code.String(),
-		"method":   r.Method,
-		"path":     r.URL.Path,
-		"query":    r.URL.RawQuery,
-		"status":   statusCode,
+		"grpcCode":    code.String(),
+		"method":      r.Method,
+		"path":        r.URL.Path,
+		"queryParams": loggedQueryKeys(r.URL.RawQuery),
+		"status":      statusCode,
 	})
 	if statusCode >= http.StatusInternalServerError {
 		entry.Error("Gateway request failed")
@@ -268,25 +281,22 @@ func (s *Server) authContextMiddleware(handlerFunc runtime.HandlerFunc) runtime.
 		if authHeader != "" && r.Header.Get("Authorization") == "" {
 			r = requestWithAuthorization(r, authHeader)
 		}
-		if !strings.HasPrefix(authHeader, "Bearer ") {
-			handlerFunc(w, r, pathParams)
-			return
-		}
-
-		claims, err := s.authService.ValidateToken(strings.TrimPrefix(authHeader, "Bearer "))
-		if err != nil {
-			handlerFunc(w, r, pathParams)
-			return
-		}
-
-		ctx := context.WithValue(r.Context(), auth.ClaimsContextKey, claims)
-
-		if userInfo, err := s.authService.LoadUserInfo(ctx, claims); err == nil {
-			ctx = auth.WithUser(ctx, *userInfo)
-		}
-
-		handlerFunc(w, r.WithContext(ctx), pathParams)
+		handlerFunc(w, r.WithContext(s.authenticatedHTTPRequestContext(r)), pathParams)
 	}
+}
+
+func (s *Server) contextWithAuthenticatedUser(ctx context.Context, claims *auth.Claims) context.Context {
+	if _, ok := auth.GetUserFromStdContext(ctx); ok {
+		return auth.WithClaims(ctx, claims)
+	}
+	userInfo, err := s.authService.LoadUserInfo(ctx, claims)
+	if err != nil {
+		return ctx
+	}
+	claims.Email = userInfo.Email
+	claims.IsAdmin = userInfo.IsAdmin
+	ctx = auth.WithClaims(ctx, claims)
+	return auth.WithUser(ctx, *userInfo)
 }
 
 const immichAccessTokenCookie = "immich_access_token"

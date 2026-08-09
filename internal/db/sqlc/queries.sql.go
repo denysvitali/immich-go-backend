@@ -11,6 +11,70 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const addAccessibleAssetsToMemory = `-- name: AddAccessibleAssetsToMemory :one
+WITH requested_assets AS (
+    SELECT DISTINCT requested.id
+    FROM unnest($1::uuid[]) AS requested(id)
+), owned_memory AS MATERIALIZED (
+    SELECT memory.id
+    FROM memories memory
+    WHERE memory.id = $2
+      AND memory."ownerId" = $3
+      AND memory."deletedAt" IS NULL
+    FOR UPDATE OF memory
+), accessible_assets AS MATERIALIZED (
+    SELECT asset.id
+    FROM assets asset
+    JOIN requested_assets requested ON requested.id = asset.id
+    WHERE asset."deletedAt" IS NULL
+      AND asset.status != 'deleted'::assets_status_enum
+      AND (
+          asset."ownerId" = $3
+          OR EXISTS (
+              SELECT 1
+              FROM albums_assets_assets album_asset
+              JOIN albums_shared_users_users shared_user
+                ON shared_user."albumsId" = album_asset."albumsId"
+              JOIN albums album ON album.id = album_asset."albumsId"
+              WHERE album_asset."assetsId" = asset.id
+                AND shared_user."usersId" = $3
+                AND album."deletedAt" IS NULL
+          )
+      )
+    FOR SHARE OF asset
+), authorized_memory AS (
+    SELECT memory.id
+    FROM owned_memory memory
+    WHERE (SELECT COUNT(*) FROM accessible_assets) =
+          (SELECT COUNT(*) FROM requested_assets)
+), inserted AS (
+    INSERT INTO memories_assets_assets ("memoriesId", "assetsId")
+    SELECT memory.id, asset.id
+    FROM authorized_memory memory
+    CROSS JOIN accessible_assets asset
+    ON CONFLICT ("memoriesId", "assetsId") DO NOTHING
+    RETURNING "memoriesId"
+)
+SELECT EXISTS (SELECT 1 FROM authorized_memory) AS authorized
+`
+
+type AddAccessibleAssetsToMemoryParams struct {
+	AssetIds []pgtype.UUID
+	MemoryID pgtype.UUID
+	OwnerID  pgtype.UUID
+}
+
+// Validate the complete request and insert it in one statement. The memory row
+// is owner-scoped, and every requested live asset must either belong to that
+// owner or be visible through a live shared album. If any asset fails, the
+// authorized_memory CTE is empty and no relation is inserted.
+func (q *Queries) AddAccessibleAssetsToMemory(ctx context.Context, arg AddAccessibleAssetsToMemoryParams) (bool, error) {
+	row := q.db.QueryRow(ctx, addAccessibleAssetsToMemory, arg.AssetIds, arg.MemoryID, arg.OwnerID)
+	var authorized bool
+	err := row.Scan(&authorized)
+	return authorized, err
+}
+
 const addAssetToAlbum = `-- name: AddAssetToAlbum :exec
 INSERT INTO albums_assets_assets ("albumsId", "assetsId")
 VALUES ($1, $2)
@@ -297,6 +361,53 @@ func (q *Queries) ClearUserProfileImage(ctx context.Context, id pgtype.UUID) (Us
 		&i.AvatarColor,
 		&i.PinCode,
 		&i.IsOnboarded,
+	)
+	return i, err
+}
+
+const completeAssetOriginalFileWrite = `-- name: CompleteAssetOriginalFileWrite :one
+UPDATE assets
+SET status = 'active',
+    "updatedAt" = now(),
+    "updateId" = immich_uuid_v7()
+WHERE id = $1
+  AND "deletedAt" IS NULL
+  AND status != 'deleted'::assets_status_enum
+RETURNING id, "deviceAssetId", "ownerId", "deviceId", type, "originalPath", "fileCreatedAt", "fileModifiedAt", "isFavorite", duration, "encodedVideoPath", checksum, "livePhotoVideoId", "updatedAt", "createdAt", "originalFileName", "sidecarPath", thumbhash, "isOffline", "libraryId", "isExternal", "deletedAt", "localDateTime", "stackId", "duplicateId", status, "updateId", visibility
+`
+
+func (q *Queries) CompleteAssetOriginalFileWrite(ctx context.Context, id pgtype.UUID) (Asset, error) {
+	row := q.db.QueryRow(ctx, completeAssetOriginalFileWrite, id)
+	var i Asset
+	err := row.Scan(
+		&i.ID,
+		&i.DeviceAssetId,
+		&i.OwnerId,
+		&i.DeviceId,
+		&i.Type,
+		&i.OriginalPath,
+		&i.FileCreatedAt,
+		&i.FileModifiedAt,
+		&i.IsFavorite,
+		&i.Duration,
+		&i.EncodedVideoPath,
+		&i.Checksum,
+		&i.LivePhotoVideoId,
+		&i.UpdatedAt,
+		&i.CreatedAt,
+		&i.OriginalFileName,
+		&i.SidecarPath,
+		&i.Thumbhash,
+		&i.IsOffline,
+		&i.LibraryId,
+		&i.IsExternal,
+		&i.DeletedAt,
+		&i.LocalDateTime,
+		&i.StackId,
+		&i.DuplicateId,
+		&i.Status,
+		&i.UpdateId,
+		&i.Visibility,
 	)
 	return i, err
 }
@@ -854,7 +965,12 @@ INSERT INTO assets (
     "fileCreatedAt", "fileModifiedAt", "localDateTime", "originalFileName",
     checksum, "isFavorite", visibility, status
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13
+FROM users owner
+WHERE owner.id = $2
+  AND owner."deletedAt" IS NULL
+  AND owner.status = 'active'
+FOR SHARE OF owner
 RETURNING id, "deviceAssetId", "ownerId", "deviceId", type, "originalPath", "fileCreatedAt", "fileModifiedAt", "isFavorite", duration, "encodedVideoPath", checksum, "livePhotoVideoId", "updatedAt", "createdAt", "originalFileName", "sidecarPath", thumbhash, "isOffline", "libraryId", "isExternal", "deletedAt", "localDateTime", "stackId", "duplicateId", status, "updateId", visibility
 `
 
@@ -1004,7 +1120,12 @@ func (q *Queries) CreateAssetFace(ctx context.Context, arg CreateAssetFaceParams
 
 const createAssetFile = `-- name: CreateAssetFile :one
 INSERT INTO asset_files ("assetId", "type", "path")
-VALUES ($1, $2, $3)
+SELECT $1, $2, $3
+FROM assets asset
+WHERE asset.id = $1
+  AND asset."deletedAt" IS NULL
+  AND asset.status != 'deleted'::assets_status_enum
+FOR SHARE OF asset
 RETURNING id, "assetId", "createdAt", "updatedAt", type, path, "updateId"
 `
 
@@ -1231,6 +1352,90 @@ func (q *Queries) CreateFaceSearch(ctx context.Context, arg CreateFaceSearchPara
 	return i, err
 }
 
+const createInitialAdmin = `-- name: CreateInitialAdmin :one
+WITH bootstrap_claim AS (
+    INSERT INTO system_metadata (key, value)
+    SELECT
+        'initial_admin_bootstrap',
+        jsonb_build_object(
+            'userId', $1::uuid,
+            'initializedAt', now()
+        )
+    WHERE NOT EXISTS (SELECT 1 FROM users)
+    ON CONFLICT (key) DO NOTHING
+    RETURNING key
+), created_user AS (
+    INSERT INTO users (id, email, name, password, "isAdmin", "isOnboarded")
+    SELECT
+        $1,
+        $2,
+        $3,
+        $4,
+        true,
+        false
+    FROM bootstrap_claim
+    RETURNING id, email, password, "createdAt", "profileImagePath", "isAdmin", "shouldChangePassword", "deletedAt", "oauthId", "updatedAt", "storageLabel", name, "quotaSizeInBytes", "quotaUsageInBytes", status, "profileChangedAt", "updateId", "avatarColor", "pinCode", "isOnboarded"
+), stored_session AS (
+    INSERT INTO sessions (token, "userId", "expiresAt")
+    SELECT $5, id, $6
+    FROM created_user
+    RETURNING token
+)
+SELECT
+    created_user.id,
+    created_user.email,
+    created_user.name,
+    created_user."isAdmin",
+    created_user."isOnboarded",
+    created_user."createdAt",
+    created_user."updatedAt"
+FROM created_user
+JOIN stored_session ON true
+`
+
+type CreateInitialAdminParams struct {
+	ID               pgtype.UUID
+	Email            string
+	Name             string
+	Password         string
+	RefreshToken     string
+	RefreshExpiresAt pgtype.Timestamptz
+}
+
+type CreateInitialAdminRow struct {
+	ID          pgtype.UUID
+	Email       string
+	Name        string
+	IsAdmin     bool
+	IsOnboarded bool
+	CreatedAt   pgtype.Timestamptz
+	UpdatedAt   pgtype.Timestamptz
+}
+
+// The unique metadata key is a durable, replica-safe claim. The user/session
+// writes depend on the successful claim and therefore cannot run for losers.
+func (q *Queries) CreateInitialAdmin(ctx context.Context, arg CreateInitialAdminParams) (CreateInitialAdminRow, error) {
+	row := q.db.QueryRow(ctx, createInitialAdmin,
+		arg.ID,
+		arg.Email,
+		arg.Name,
+		arg.Password,
+		arg.RefreshToken,
+		arg.RefreshExpiresAt,
+	)
+	var i CreateInitialAdminRow
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.Name,
+		&i.IsAdmin,
+		&i.IsOnboarded,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const createJobFailure = `-- name: CreateJobFailure :one
 INSERT INTO job_failures (queue, job_type, payload, error, max_retries, retried_count, failed_at, last_failed_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -1317,7 +1522,12 @@ INSERT INTO assets (
     "fileCreatedAt", "fileModifiedAt", "localDateTime", "originalFileName",
     checksum, "isFavorite", visibility, status, "isExternal"
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, true)
+SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, true
+FROM users owner
+WHERE owner.id = $2
+  AND owner."deletedAt" IS NULL
+  AND owner.status = 'active'
+FOR SHARE OF owner
 RETURNING id, "deviceAssetId", "ownerId", "deviceId", type, "originalPath", "fileCreatedAt", "fileModifiedAt", "isFavorite", duration, "encodedVideoPath", checksum, "livePhotoVideoId", "updatedAt", "createdAt", "originalFileName", "sidecarPath", thumbhash, "isOffline", "libraryId", "isExternal", "deletedAt", "localDateTime", "stackId", "duplicateId", status, "updateId", visibility
 `
 
@@ -1659,6 +1869,89 @@ type CreateRefreshTokenParams struct {
 func (q *Queries) CreateRefreshToken(ctx context.Context, arg CreateRefreshTokenParams) error {
 	_, err := q.db.Exec(ctx, createRefreshToken, arg.Token, arg.UserId, arg.ExpiresAt)
 	return err
+}
+
+const createRegisteredUser = `-- name: CreateRegisteredUser :one
+WITH initialized AS (
+    INSERT INTO system_metadata (key, value)
+    VALUES (
+        'initial_admin_bootstrap',
+        jsonb_build_object(
+            'userId', $1::uuid,
+            'initializedAt', now()
+        )
+    )
+    ON CONFLICT (key) DO NOTHING
+), created_user AS (
+    INSERT INTO users (id, email, name, password, "isAdmin", "isOnboarded")
+    VALUES (
+        $1,
+        $2,
+        $3,
+        $4,
+        false,
+        false
+    )
+    RETURNING id, email, password, "createdAt", "profileImagePath", "isAdmin", "shouldChangePassword", "deletedAt", "oauthId", "updatedAt", "storageLabel", name, "quotaSizeInBytes", "quotaUsageInBytes", status, "profileChangedAt", "updateId", "avatarColor", "pinCode", "isOnboarded"
+), stored_session AS (
+    INSERT INTO sessions (token, "userId", "expiresAt")
+    SELECT $5, id, $6
+    FROM created_user
+    RETURNING token
+)
+SELECT
+    created_user.id,
+    created_user.email,
+    created_user.name,
+    created_user."isAdmin",
+    created_user."isOnboarded",
+    created_user."createdAt",
+    created_user."updatedAt"
+FROM created_user
+JOIN stored_session ON true
+`
+
+type CreateRegisteredUserParams struct {
+	ID               pgtype.UUID
+	Email            string
+	Name             string
+	Password         string
+	RefreshToken     string
+	RefreshExpiresAt pgtype.Timestamptz
+}
+
+type CreateRegisteredUserRow struct {
+	ID          pgtype.UUID
+	Email       string
+	Name        string
+	IsAdmin     bool
+	IsOnboarded bool
+	CreatedAt   pgtype.Timestamptz
+	UpdatedAt   pgtype.Timestamptz
+}
+
+// Ordinary registration permanently closes the one-time bootstrap window.
+// The marker, user, and refresh session commit or roll back as one statement.
+func (q *Queries) CreateRegisteredUser(ctx context.Context, arg CreateRegisteredUserParams) (CreateRegisteredUserRow, error) {
+	row := q.db.QueryRow(ctx, createRegisteredUser,
+		arg.ID,
+		arg.Email,
+		arg.Name,
+		arg.Password,
+		arg.RefreshToken,
+		arg.RefreshExpiresAt,
+	)
+	var i CreateRegisteredUserRow
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.Name,
+		&i.IsAdmin,
+		&i.IsOnboarded,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const createSession = `-- name: CreateSession :one
@@ -2235,6 +2528,25 @@ func (q *Queries) DeletePartnership(ctx context.Context, arg DeletePartnershipPa
 	return err
 }
 
+const deletePeopleForMerge = `-- name: DeletePeopleForMerge :execrows
+DELETE FROM person
+WHERE id = ANY($1::uuid[])
+  AND "ownerId" = $2
+`
+
+type DeletePeopleForMergeParams struct {
+	SourceIds []pgtype.UUID
+	OwnerID   pgtype.UUID
+}
+
+func (q *Queries) DeletePeopleForMerge(ctx context.Context, arg DeletePeopleForMergeParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deletePeopleForMerge, arg.SourceIds, arg.OwnerID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deletePerson = `-- name: DeletePerson :exec
 DELETE FROM person
 WHERE id = $1
@@ -2445,6 +2757,137 @@ WHERE id = $1
 func (q *Queries) DeleteWorkflow(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deleteWorkflow, id)
 	return err
+}
+
+const getAccessibleAssetsByMemoryID = `-- name: GetAccessibleAssetsByMemoryID :many
+SELECT asset.id, asset."deviceAssetId", asset."ownerId", asset."deviceId", asset.type, asset."originalPath", asset."fileCreatedAt", asset."fileModifiedAt", asset."isFavorite", asset.duration, asset."encodedVideoPath", asset.checksum, asset."livePhotoVideoId", asset."updatedAt", asset."createdAt", asset."originalFileName", asset."sidecarPath", asset.thumbhash, asset."isOffline", asset."libraryId", asset."isExternal", asset."deletedAt", asset."localDateTime", asset."stackId", asset."duplicateId", asset.status, asset."updateId", asset.visibility
+FROM memories_assets_assets memory_asset
+JOIN memories memory ON memory.id = memory_asset."memoriesId"
+JOIN assets asset ON asset.id = memory_asset."assetsId"
+WHERE memory.id = $1
+  AND memory."ownerId" = $2
+  AND memory."deletedAt" IS NULL
+  AND asset."deletedAt" IS NULL
+  AND asset.status != 'deleted'::assets_status_enum
+  AND (
+      asset."ownerId" = $2
+      OR EXISTS (
+          SELECT 1
+          FROM albums_assets_assets album_asset
+          JOIN albums_shared_users_users shared_user
+            ON shared_user."albumsId" = album_asset."albumsId"
+          JOIN albums album ON album.id = album_asset."albumsId"
+          WHERE album_asset."assetsId" = asset.id
+            AND shared_user."usersId" = $2
+            AND album."deletedAt" IS NULL
+      )
+  )
+ORDER BY asset."fileCreatedAt" DESC, asset.id
+`
+
+type GetAccessibleAssetsByMemoryIDParams struct {
+	MemoryID pgtype.UUID
+	OwnerID  pgtype.UUID
+}
+
+func (q *Queries) GetAccessibleAssetsByMemoryID(ctx context.Context, arg GetAccessibleAssetsByMemoryIDParams) ([]Asset, error) {
+	rows, err := q.db.Query(ctx, getAccessibleAssetsByMemoryID, arg.MemoryID, arg.OwnerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Asset
+	for rows.Next() {
+		var i Asset
+		if err := rows.Scan(
+			&i.ID,
+			&i.DeviceAssetId,
+			&i.OwnerId,
+			&i.DeviceId,
+			&i.Type,
+			&i.OriginalPath,
+			&i.FileCreatedAt,
+			&i.FileModifiedAt,
+			&i.IsFavorite,
+			&i.Duration,
+			&i.EncodedVideoPath,
+			&i.Checksum,
+			&i.LivePhotoVideoId,
+			&i.UpdatedAt,
+			&i.CreatedAt,
+			&i.OriginalFileName,
+			&i.SidecarPath,
+			&i.Thumbhash,
+			&i.IsOffline,
+			&i.LibraryId,
+			&i.IsExternal,
+			&i.DeletedAt,
+			&i.LocalDateTime,
+			&i.StackId,
+			&i.DuplicateId,
+			&i.Status,
+			&i.UpdateId,
+			&i.Visibility,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAccessibleMemoryAssetIDs = `-- name: GetAccessibleMemoryAssetIDs :many
+SELECT asset.id
+FROM memories_assets_assets memory_asset
+JOIN memories memory ON memory.id = memory_asset."memoriesId"
+JOIN assets asset ON asset.id = memory_asset."assetsId"
+WHERE memory.id = $1
+  AND memory."ownerId" = $2
+  AND memory."deletedAt" IS NULL
+  AND asset."deletedAt" IS NULL
+  AND asset.status != 'deleted'::assets_status_enum
+  AND (
+      asset."ownerId" = $2
+      OR EXISTS (
+          SELECT 1
+          FROM albums_assets_assets album_asset
+          JOIN albums_shared_users_users shared_user
+            ON shared_user."albumsId" = album_asset."albumsId"
+          JOIN albums album ON album.id = album_asset."albumsId"
+          WHERE album_asset."assetsId" = asset.id
+            AND shared_user."usersId" = $2
+            AND album."deletedAt" IS NULL
+      )
+  )
+ORDER BY asset."fileCreatedAt" DESC, asset.id
+`
+
+type GetAccessibleMemoryAssetIDsParams struct {
+	MemoryID pgtype.UUID
+	OwnerID  pgtype.UUID
+}
+
+func (q *Queries) GetAccessibleMemoryAssetIDs(ctx context.Context, arg GetAccessibleMemoryAssetIDsParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, getAccessibleMemoryAssetIDs, arg.MemoryID, arg.OwnerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getActivity = `-- name: GetActivity :one
@@ -3003,6 +3446,69 @@ func (q *Queries) GetAlbumsForUser(ctx context.Context, arg GetAlbumsForUserPara
 	return items, nil
 }
 
+const getAllUserAssetsForDeletion = `-- name: GetAllUserAssetsForDeletion :many
+SELECT id, "deviceAssetId", "ownerId", "deviceId", type, "originalPath", "fileCreatedAt", "fileModifiedAt", "isFavorite", duration, "encodedVideoPath", checksum, "livePhotoVideoId", "updatedAt", "createdAt", "originalFileName", "sidecarPath", thumbhash, "isOffline", "libraryId", "isExternal", "deletedAt", "localDateTime", "stackId", "duplicateId", status, "updateId", visibility FROM assets
+WHERE "ownerId" = $1
+ORDER BY id
+LIMIT $3
+OFFSET $2
+`
+
+type GetAllUserAssetsForDeletionParams struct {
+	OwnerID    pgtype.UUID
+	PageOffset int32
+	PageSize   int32
+}
+
+func (q *Queries) GetAllUserAssetsForDeletion(ctx context.Context, arg GetAllUserAssetsForDeletionParams) ([]Asset, error) {
+	rows, err := q.db.Query(ctx, getAllUserAssetsForDeletion, arg.OwnerID, arg.PageOffset, arg.PageSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Asset
+	for rows.Next() {
+		var i Asset
+		if err := rows.Scan(
+			&i.ID,
+			&i.DeviceAssetId,
+			&i.OwnerId,
+			&i.DeviceId,
+			&i.Type,
+			&i.OriginalPath,
+			&i.FileCreatedAt,
+			&i.FileModifiedAt,
+			&i.IsFavorite,
+			&i.Duration,
+			&i.EncodedVideoPath,
+			&i.Checksum,
+			&i.LivePhotoVideoId,
+			&i.UpdatedAt,
+			&i.CreatedAt,
+			&i.OriginalFileName,
+			&i.SidecarPath,
+			&i.Thumbhash,
+			&i.IsOffline,
+			&i.LibraryId,
+			&i.IsExternal,
+			&i.DeletedAt,
+			&i.LocalDateTime,
+			&i.StackId,
+			&i.DuplicateId,
+			&i.Status,
+			&i.UpdateId,
+			&i.Visibility,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getAllUsers = `-- name: GetAllUsers :many
 SELECT id, email, password, "createdAt", "profileImagePath", "isAdmin", "shouldChangePassword", "deletedAt", "oauthId", "updatedAt", "storageLabel", name, "quotaSizeInBytes", "quotaUsageInBytes", status, "profileChangedAt", "updateId", "avatarColor", "pinCode", "isOnboarded" FROM users
 WHERE "deletedAt" IS NULL
@@ -3245,7 +3751,9 @@ func (q *Queries) GetArchivedAssets(ctx context.Context, arg GetArchivedAssetsPa
 
 const getAsset = `-- name: GetAsset :one
 SELECT id, "deviceAssetId", "ownerId", "deviceId", type, "originalPath", "fileCreatedAt", "fileModifiedAt", "isFavorite", duration, "encodedVideoPath", checksum, "livePhotoVideoId", "updatedAt", "createdAt", "originalFileName", "sidecarPath", thumbhash, "isOffline", "libraryId", "isExternal", "deletedAt", "localDateTime", "stackId", "duplicateId", status, "updateId", visibility FROM assets
-WHERE id = $1 AND "deletedAt" IS NULL
+WHERE id = $1
+  AND "deletedAt" IS NULL
+  AND status != 'deleted'::assets_status_enum
 `
 
 // Asset queries
@@ -3338,6 +3846,54 @@ type GetAssetByIDAndUserParams struct {
 
 func (q *Queries) GetAssetByIDAndUser(ctx context.Context, arg GetAssetByIDAndUserParams) (Asset, error) {
 	row := q.db.QueryRow(ctx, getAssetByIDAndUser, arg.ID, arg.OwnerId)
+	var i Asset
+	err := row.Scan(
+		&i.ID,
+		&i.DeviceAssetId,
+		&i.OwnerId,
+		&i.DeviceId,
+		&i.Type,
+		&i.OriginalPath,
+		&i.FileCreatedAt,
+		&i.FileModifiedAt,
+		&i.IsFavorite,
+		&i.Duration,
+		&i.EncodedVideoPath,
+		&i.Checksum,
+		&i.LivePhotoVideoId,
+		&i.UpdatedAt,
+		&i.CreatedAt,
+		&i.OriginalFileName,
+		&i.SidecarPath,
+		&i.Thumbhash,
+		&i.IsOffline,
+		&i.LibraryId,
+		&i.IsExternal,
+		&i.DeletedAt,
+		&i.LocalDateTime,
+		&i.StackId,
+		&i.DuplicateId,
+		&i.Status,
+		&i.UpdateId,
+		&i.Visibility,
+	)
+	return i, err
+}
+
+const getAssetByIDAndUserForDeletion = `-- name: GetAssetByIDAndUserForDeletion :one
+SELECT id, "deviceAssetId", "ownerId", "deviceId", type, "originalPath", "fileCreatedAt", "fileModifiedAt", "isFavorite", duration, "encodedVideoPath", checksum, "livePhotoVideoId", "updatedAt", "createdAt", "originalFileName", "sidecarPath", thumbhash, "isOffline", "libraryId", "isExternal", "deletedAt", "localDateTime", "stackId", "duplicateId", status, "updateId", visibility FROM assets
+WHERE id = $1 AND "ownerId" = $2
+`
+
+type GetAssetByIDAndUserForDeletionParams struct {
+	ID      pgtype.UUID
+	OwnerId pgtype.UUID
+}
+
+// Includes deletion tombstones so cleanup can repair objects left by older
+// releases or resume after database finalization.
+func (q *Queries) GetAssetByIDAndUserForDeletion(ctx context.Context, arg GetAssetByIDAndUserForDeletionParams) (Asset, error) {
+	row := q.db.QueryRow(ctx, getAssetByIDAndUserForDeletion, arg.ID, arg.OwnerId)
 	var i Asset
 	err := row.Scan(
 		&i.ID,
@@ -3517,6 +4073,31 @@ func (q *Queries) GetAssetExif(ctx context.Context, assetid pgtype.UUID) (Exif, 
 	return i, err
 }
 
+const getAssetFaceByID = `-- name: GetAssetFaceByID :one
+SELECT "assetId", "personId", "imageWidth", "imageHeight", "boundingBoxX1", "boundingBoxY1", "boundingBoxX2", "boundingBoxY2", id, "sourceType", "deletedAt" FROM asset_faces
+WHERE id = $1
+AND "deletedAt" IS NULL
+`
+
+func (q *Queries) GetAssetFaceByID(ctx context.Context, id pgtype.UUID) (AssetFace, error) {
+	row := q.db.QueryRow(ctx, getAssetFaceByID, id)
+	var i AssetFace
+	err := row.Scan(
+		&i.AssetId,
+		&i.PersonId,
+		&i.ImageWidth,
+		&i.ImageHeight,
+		&i.BoundingBoxX1,
+		&i.BoundingBoxY1,
+		&i.BoundingBoxX2,
+		&i.BoundingBoxY2,
+		&i.ID,
+		&i.SourceType,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
 const getAssetFaces = `-- name: GetAssetFaces :many
 SELECT af."assetId", af."personId", af."imageWidth", af."imageHeight", af."boundingBoxX1", af."boundingBoxY1", af."boundingBoxX2", af."boundingBoxY2", af.id, af."sourceType", af."deletedAt", p.name as person_name FROM asset_faces af
 LEFT JOIN person p ON af."personId" = p.id
@@ -3668,6 +4249,53 @@ func (q *Queries) GetAssetFilesByType(ctx context.Context, arg GetAssetFilesByTy
 		return nil, err
 	}
 	return items, nil
+}
+
+const getAssetForOriginalFileWrite = `-- name: GetAssetForOriginalFileWrite :one
+SELECT id, "deviceAssetId", "ownerId", "deviceId", type, "originalPath", "fileCreatedAt", "fileModifiedAt", "isFavorite", duration, "encodedVideoPath", checksum, "livePhotoVideoId", "updatedAt", "createdAt", "originalFileName", "sidecarPath", thumbhash, "isOffline", "libraryId", "isExternal", "deletedAt", "localDateTime", "stackId", "duplicateId", status, "updateId", visibility FROM assets
+WHERE id = $1
+  AND "deletedAt" IS NULL
+  AND status != 'deleted'::assets_status_enum
+FOR UPDATE
+`
+
+// Original-file writers hold this row lock through their storage write and
+// database finalization. Permanent deletion's status update therefore either
+// waits and later sweeps the written object, or wins and makes this guard fail.
+func (q *Queries) GetAssetForOriginalFileWrite(ctx context.Context, id pgtype.UUID) (Asset, error) {
+	row := q.db.QueryRow(ctx, getAssetForOriginalFileWrite, id)
+	var i Asset
+	err := row.Scan(
+		&i.ID,
+		&i.DeviceAssetId,
+		&i.OwnerId,
+		&i.DeviceId,
+		&i.Type,
+		&i.OriginalPath,
+		&i.FileCreatedAt,
+		&i.FileModifiedAt,
+		&i.IsFavorite,
+		&i.Duration,
+		&i.EncodedVideoPath,
+		&i.Checksum,
+		&i.LivePhotoVideoId,
+		&i.UpdatedAt,
+		&i.CreatedAt,
+		&i.OriginalFileName,
+		&i.SidecarPath,
+		&i.Thumbhash,
+		&i.IsOffline,
+		&i.LibraryId,
+		&i.IsExternal,
+		&i.DeletedAt,
+		&i.LocalDateTime,
+		&i.StackId,
+		&i.DuplicateId,
+		&i.Status,
+		&i.UpdateId,
+		&i.Visibility,
+	)
+	return i, err
 }
 
 const getAssetJobStatus = `-- name: GetAssetJobStatus :one
@@ -5094,6 +5722,53 @@ func (q *Queries) GetExifByAssetId(ctx context.Context, assetid pgtype.UUID) (Ex
 	return i, err
 }
 
+const getFaceForReassignmentByID = `-- name: GetFaceForReassignmentByID :one
+SELECT af."assetId", af."personId", af."imageWidth", af."imageHeight", af."boundingBoxX1", af."boundingBoxY1", af."boundingBoxX2", af."boundingBoxY2", af.id, af."sourceType", af."deletedAt", a."ownerId" AS asset_owner_id
+FROM asset_faces af
+JOIN assets a ON a.id = af."assetId"
+WHERE af.id = $1
+  AND af."deletedAt" IS NULL
+  AND a."deletedAt" IS NULL
+FOR UPDATE OF af, a
+`
+
+type GetFaceForReassignmentByIDRow struct {
+	AssetId       pgtype.UUID
+	PersonId      pgtype.UUID
+	ImageWidth    int32
+	ImageHeight   int32
+	BoundingBoxX1 int32
+	BoundingBoxY1 int32
+	BoundingBoxX2 int32
+	BoundingBoxY2 int32
+	ID            pgtype.UUID
+	SourceType    Sourcetype
+	DeletedAt     pgtype.Timestamptz
+	AssetOwnerID  pgtype.UUID
+}
+
+// Lock one live face and its asset so a single-face reassignment can verify
+// tenant ownership and that the source person has not changed.
+func (q *Queries) GetFaceForReassignmentByID(ctx context.Context, faceID pgtype.UUID) (GetFaceForReassignmentByIDRow, error) {
+	row := q.db.QueryRow(ctx, getFaceForReassignmentByID, faceID)
+	var i GetFaceForReassignmentByIDRow
+	err := row.Scan(
+		&i.AssetId,
+		&i.PersonId,
+		&i.ImageWidth,
+		&i.ImageHeight,
+		&i.BoundingBoxX1,
+		&i.BoundingBoxY1,
+		&i.BoundingBoxX2,
+		&i.BoundingBoxY2,
+		&i.ID,
+		&i.SourceType,
+		&i.DeletedAt,
+		&i.AssetOwnerID,
+	)
+	return i, err
+}
+
 const getFaceSearch = `-- name: GetFaceSearch :many
 SELECT "faceId", embedding FROM face_search
 WHERE "faceId" = $1
@@ -5184,6 +5859,73 @@ func (q *Queries) GetFacesByPerson(ctx context.Context, personid pgtype.UUID) ([
 			&i.ID,
 			&i.SourceType,
 			&i.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getFacesForReassignment = `-- name: GetFacesForReassignment :many
+SELECT af."assetId", af."personId", af."imageWidth", af."imageHeight", af."boundingBoxX1", af."boundingBoxY1", af."boundingBoxX2", af."boundingBoxY2", af.id, af."sourceType", af."deletedAt", a."ownerId" AS asset_owner_id
+FROM asset_faces af
+JOIN assets a ON a.id = af."assetId"
+WHERE af."assetId" = $1
+  AND af."personId" = $2
+  AND af."deletedAt" IS NULL
+  AND a."deletedAt" IS NULL
+ORDER BY af.id
+FOR UPDATE OF af, a
+`
+
+type GetFacesForReassignmentParams struct {
+	AssetID        pgtype.UUID
+	SourcePersonID pgtype.UUID
+}
+
+type GetFacesForReassignmentRow struct {
+	AssetId       pgtype.UUID
+	PersonId      pgtype.UUID
+	ImageWidth    int32
+	ImageHeight   int32
+	BoundingBoxX1 int32
+	BoundingBoxY1 int32
+	BoundingBoxX2 int32
+	BoundingBoxY2 int32
+	ID            pgtype.UUID
+	SourceType    Sourcetype
+	DeletedAt     pgtype.Timestamptz
+	AssetOwnerID  pgtype.UUID
+}
+
+// Lock every matching face so the complete bulk request can be authorized
+// before any of its rows are changed.
+func (q *Queries) GetFacesForReassignment(ctx context.Context, arg GetFacesForReassignmentParams) ([]GetFacesForReassignmentRow, error) {
+	rows, err := q.db.Query(ctx, getFacesForReassignment, arg.AssetID, arg.SourcePersonID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetFacesForReassignmentRow
+	for rows.Next() {
+		var i GetFacesForReassignmentRow
+		if err := rows.Scan(
+			&i.AssetId,
+			&i.PersonId,
+			&i.ImageWidth,
+			&i.ImageHeight,
+			&i.BoundingBoxX1,
+			&i.BoundingBoxY1,
+			&i.BoundingBoxX2,
+			&i.BoundingBoxY2,
+			&i.ID,
+			&i.SourceType,
+			&i.DeletedAt,
+			&i.AssetOwnerID,
 		); err != nil {
 			return nil, err
 		}
@@ -5691,6 +6433,208 @@ func (q *Queries) GetNotifications(ctx context.Context, arg GetNotificationsPara
 		return nil, err
 	}
 	return items, nil
+}
+
+const getOwnedAlbumForUpdate = `-- name: GetOwnedAlbumForUpdate :one
+SELECT id, "ownerId", "albumName", "createdAt", "albumThumbnailAssetId", "updatedAt", description, "deletedAt", "isActivityEnabled", "order", "updateId" FROM albums
+WHERE id = $1
+  AND "ownerId" = $2
+  AND "deletedAt" IS NULL
+FOR UPDATE
+`
+
+type GetOwnedAlbumForUpdateParams struct {
+	AlbumID pgtype.UUID
+	OwnerID pgtype.UUID
+}
+
+// Lock the album while an owner-authorized update validates related rows.
+func (q *Queries) GetOwnedAlbumForUpdate(ctx context.Context, arg GetOwnedAlbumForUpdateParams) (Album, error) {
+	row := q.db.QueryRow(ctx, getOwnedAlbumForUpdate, arg.AlbumID, arg.OwnerID)
+	var i Album
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerId,
+		&i.AlbumName,
+		&i.CreatedAt,
+		&i.AlbumThumbnailAssetId,
+		&i.UpdatedAt,
+		&i.Description,
+		&i.DeletedAt,
+		&i.IsActivityEnabled,
+		&i.Order,
+		&i.UpdateId,
+	)
+	return i, err
+}
+
+const getOwnedAlbumThumbnailForUpdate = `-- name: GetOwnedAlbumThumbnailForUpdate :one
+SELECT a.id, a."deviceAssetId", a."ownerId", a."deviceId", a.type, a."originalPath", a."fileCreatedAt", a."fileModifiedAt", a."isFavorite", a.duration, a."encodedVideoPath", a.checksum, a."livePhotoVideoId", a."updatedAt", a."createdAt", a."originalFileName", a."sidecarPath", a.thumbhash, a."isOffline", a."libraryId", a."isExternal", a."deletedAt", a."localDateTime", a."stackId", a."duplicateId", a.status, a."updateId", a.visibility FROM assets a
+JOIN albums_assets_assets aa ON aa."assetsId" = a.id
+WHERE aa."albumsId" = $1
+  AND a.id = $2
+  AND a."ownerId" = $3
+  AND a."deletedAt" IS NULL
+FOR UPDATE OF a, aa
+`
+
+type GetOwnedAlbumThumbnailForUpdateParams struct {
+	AlbumID pgtype.UUID
+	AssetID pgtype.UUID
+	OwnerID pgtype.UUID
+}
+
+// A thumbnail must be a live asset owned by the album owner and already in
+// the album. Lock both the asset and membership until the album update ends.
+func (q *Queries) GetOwnedAlbumThumbnailForUpdate(ctx context.Context, arg GetOwnedAlbumThumbnailForUpdateParams) (Asset, error) {
+	row := q.db.QueryRow(ctx, getOwnedAlbumThumbnailForUpdate, arg.AlbumID, arg.AssetID, arg.OwnerID)
+	var i Asset
+	err := row.Scan(
+		&i.ID,
+		&i.DeviceAssetId,
+		&i.OwnerId,
+		&i.DeviceId,
+		&i.Type,
+		&i.OriginalPath,
+		&i.FileCreatedAt,
+		&i.FileModifiedAt,
+		&i.IsFavorite,
+		&i.Duration,
+		&i.EncodedVideoPath,
+		&i.Checksum,
+		&i.LivePhotoVideoId,
+		&i.UpdatedAt,
+		&i.CreatedAt,
+		&i.OriginalFileName,
+		&i.SidecarPath,
+		&i.Thumbhash,
+		&i.IsOffline,
+		&i.LibraryId,
+		&i.IsExternal,
+		&i.DeletedAt,
+		&i.LocalDateTime,
+		&i.StackId,
+		&i.DuplicateId,
+		&i.Status,
+		&i.UpdateId,
+		&i.Visibility,
+	)
+	return i, err
+}
+
+const getOwnedAssetForOriginalFileWrite = `-- name: GetOwnedAssetForOriginalFileWrite :one
+SELECT id, "deviceAssetId", "ownerId", "deviceId", type, "originalPath", "fileCreatedAt", "fileModifiedAt", "isFavorite", duration, "encodedVideoPath", checksum, "livePhotoVideoId", "updatedAt", "createdAt", "originalFileName", "sidecarPath", thumbhash, "isOffline", "libraryId", "isExternal", "deletedAt", "localDateTime", "stackId", "duplicateId", status, "updateId", visibility FROM assets
+WHERE id = $1
+  AND "ownerId" = $2
+  AND "deletedAt" IS NULL
+  AND status != 'deleted'::assets_status_enum
+FOR UPDATE
+`
+
+type GetOwnedAssetForOriginalFileWriteParams struct {
+	ID      pgtype.UUID
+	OwnerId pgtype.UUID
+}
+
+func (q *Queries) GetOwnedAssetForOriginalFileWrite(ctx context.Context, arg GetOwnedAssetForOriginalFileWriteParams) (Asset, error) {
+	row := q.db.QueryRow(ctx, getOwnedAssetForOriginalFileWrite, arg.ID, arg.OwnerId)
+	var i Asset
+	err := row.Scan(
+		&i.ID,
+		&i.DeviceAssetId,
+		&i.OwnerId,
+		&i.DeviceId,
+		&i.Type,
+		&i.OriginalPath,
+		&i.FileCreatedAt,
+		&i.FileModifiedAt,
+		&i.IsFavorite,
+		&i.Duration,
+		&i.EncodedVideoPath,
+		&i.Checksum,
+		&i.LivePhotoVideoId,
+		&i.UpdatedAt,
+		&i.CreatedAt,
+		&i.OriginalFileName,
+		&i.SidecarPath,
+		&i.Thumbhash,
+		&i.IsOffline,
+		&i.LibraryId,
+		&i.IsExternal,
+		&i.DeletedAt,
+		&i.LocalDateTime,
+		&i.StackId,
+		&i.DuplicateId,
+		&i.Status,
+		&i.UpdateId,
+		&i.Visibility,
+	)
+	return i, err
+}
+
+const getOwnedMemory = `-- name: GetOwnedMemory :one
+SELECT id, "createdAt", "updatedAt", "deletedAt", "ownerId", type, data, "isSaved", "memoryAt", "seenAt", "showAt", "hideAt", "updateId" FROM memories
+WHERE id = $1
+  AND "ownerId" = $2
+  AND "deletedAt" IS NULL
+`
+
+type GetOwnedMemoryParams struct {
+	MemoryID pgtype.UUID
+	OwnerID  pgtype.UUID
+}
+
+func (q *Queries) GetOwnedMemory(ctx context.Context, arg GetOwnedMemoryParams) (Memory, error) {
+	row := q.db.QueryRow(ctx, getOwnedMemory, arg.MemoryID, arg.OwnerID)
+	var i Memory
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.OwnerId,
+		&i.Type,
+		&i.Data,
+		&i.IsSaved,
+		&i.MemoryAt,
+		&i.SeenAt,
+		&i.ShowAt,
+		&i.HideAt,
+		&i.UpdateId,
+	)
+	return i, err
+}
+
+const getOwnedPersonForMerge = `-- name: GetOwnedPersonForMerge :one
+SELECT id, "createdAt", "updatedAt", "ownerId", name, "thumbnailPath", "isHidden", "birthDate", "faceAssetId", "isFavorite", color, "updateId" FROM person
+WHERE id = $1 AND "ownerId" = $2
+FOR UPDATE
+`
+
+type GetOwnedPersonForMergeParams struct {
+	PersonID pgtype.UUID
+	OwnerID  pgtype.UUID
+}
+
+// Lock every participant while MergePeople validates and applies its changes.
+func (q *Queries) GetOwnedPersonForMerge(ctx context.Context, arg GetOwnedPersonForMergeParams) (Person, error) {
+	row := q.db.QueryRow(ctx, getOwnedPersonForMerge, arg.PersonID, arg.OwnerID)
+	var i Person
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.OwnerId,
+		&i.Name,
+		&i.ThumbnailPath,
+		&i.IsHidden,
+		&i.BirthDate,
+		&i.FaceAssetId,
+		&i.IsFavorite,
+		&i.Color,
+		&i.UpdateId,
+	)
+	return i, err
 }
 
 const getPartners = `-- name: GetPartners :many
@@ -7850,6 +8794,23 @@ func (q *Queries) IsSessionElevated(ctx context.Context, id pgtype.UUID) (bool, 
 	return is_elevated, err
 }
 
+const isSystemInitialized = `-- name: IsSystemInitialized :one
+SELECT
+    EXISTS (
+        SELECT 1
+        FROM system_metadata
+        WHERE key = 'initial_admin_bootstrap'
+    )
+    OR EXISTS (SELECT 1 FROM users)
+`
+
+func (q *Queries) IsSystemInitialized(ctx context.Context) (pgtype.Bool, error) {
+	row := q.db.QueryRow(ctx, isSystemInitialized)
+	var column_1 pgtype.Bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const listAssetMetadata = `-- name: ListAssetMetadata :many
 
 SELECT "assetId", key, value, "createdAt", "updatedAt" FROM asset_metadata
@@ -8256,6 +9217,24 @@ func (q *Queries) MarkNotificationAsRead(ctx context.Context, id pgtype.UUID) (N
 	return i, err
 }
 
+const markUserForPermanentDeletion = `-- name: MarkUserForPermanentDeletion :execrows
+UPDATE users
+SET status = 'removing',
+    "updatedAt" = now()
+WHERE id = $1
+`
+
+// This row lock is the deletion fence. CreateAsset/CreateLibraryAsset take a
+// SHARE lock while requiring status=active, so asset inserts either commit
+// before cleanup enumerates them or fail after this transition.
+func (q *Queries) MarkUserForPermanentDeletion(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, markUserForPermanentDeletion, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const moveAssetToTrash = `-- name: MoveAssetToTrash :exec
 UPDATE assets
 SET status = 'trashed',
@@ -8311,6 +9290,42 @@ type PermanentlyDeleteAssetsParams struct {
 
 func (q *Queries) PermanentlyDeleteAssets(ctx context.Context, arg PermanentlyDeleteAssetsParams) error {
 	_, err := q.db.Exec(ctx, permanentlyDeleteAssets, arg.Column1, arg.OwnerId)
+	return err
+}
+
+const reassignFacesByIDs = `-- name: ReassignFacesByIDs :execrows
+UPDATE asset_faces
+SET "personId" = $1
+WHERE id = ANY($2::uuid[])
+  AND "deletedAt" IS NULL
+`
+
+type ReassignFacesByIDsParams struct {
+	TargetPersonID pgtype.UUID
+	FaceIds        []pgtype.UUID
+}
+
+func (q *Queries) ReassignFacesByIDs(ctx context.Context, arg ReassignFacesByIDsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, reassignFacesByIDs, arg.TargetPersonID, arg.FaceIds)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const reassignPersonFaces = `-- name: ReassignPersonFaces :exec
+UPDATE asset_faces
+SET "personId" = $1
+WHERE "personId" = ANY($2::uuid[])
+`
+
+type ReassignPersonFacesParams struct {
+	TargetID  pgtype.UUID
+	SourceIds []pgtype.UUID
+}
+
+func (q *Queries) ReassignPersonFaces(ctx context.Context, arg ReassignPersonFacesParams) error {
+	_, err := q.db.Exec(ctx, reassignPersonFaces, arg.TargetID, arg.SourceIds)
 	return err
 }
 
@@ -8421,6 +9436,38 @@ func (q *Queries) RemoveUserFromAlbum(ctx context.Context, arg RemoveUserFromAlb
 	return err
 }
 
+const repairFeatureFacesAfterReassignment = `-- name: RepairFeatureFacesAfterReassignment :exec
+UPDATE person p
+SET "faceAssetId" = (
+        SELECT af.id
+        FROM asset_faces af
+        WHERE af."personId" = p.id
+          AND af."deletedAt" IS NULL
+        ORDER BY af.id
+        LIMIT 1
+    ),
+    "updatedAt" = now()
+WHERE p.id = ANY($1::uuid[])
+  AND (
+      p."faceAssetId" IS NULL
+      OR NOT EXISTS (
+          SELECT 1
+          FROM asset_faces feature_face
+          WHERE feature_face.id = p."faceAssetId"
+            AND feature_face."personId" = p.id
+            AND feature_face."deletedAt" IS NULL
+      )
+  )
+`
+
+// Keep feature-face pointers attached to their own person after faces move.
+// The target receives a feature face when it did not already have one, while
+// a source whose feature moved receives another remaining face or NULL.
+func (q *Queries) RepairFeatureFacesAfterReassignment(ctx context.Context, personIds []pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, repairFeatureFacesAfterReassignment, personIds)
+	return err
+}
+
 const replaceAssetFile = `-- name: ReplaceAssetFile :one
 UPDATE assets
 SET checksum = $1,
@@ -8430,6 +9477,7 @@ SET checksum = $1,
 WHERE id = $3
 AND "ownerId" = $4
 AND "deletedAt" IS NULL
+AND status != 'deleted'::assets_status_enum
 RETURNING id, "deviceAssetId", "ownerId", "deviceId", type, "originalPath", "fileCreatedAt", "fileModifiedAt", "isFavorite", duration, "encodedVideoPath", checksum, "livePhotoVideoId", "updatedAt", "createdAt", "originalFileName", "sidecarPath", thumbhash, "isOffline", "libraryId", "isExternal", "deletedAt", "localDateTime", "stackId", "duplicateId", status, "updateId", visibility
 `
 
@@ -8493,11 +9541,14 @@ func (q *Queries) RestoreAssetFromTrash(ctx context.Context, id pgtype.UUID) err
 	return err
 }
 
-const restoreAssets = `-- name: RestoreAssets :exec
+const restoreAssets = `-- name: RestoreAssets :execrows
 UPDATE assets
 SET status = 'active',
     "updatedAt" = now()
-WHERE id = ANY($1::uuid[]) AND "ownerId" = $2
+WHERE id = ANY($1::uuid[])
+  AND "ownerId" = $2
+  AND "deletedAt" IS NULL
+  AND status = 'trashed'::assets_status_enum
 `
 
 type RestoreAssetsParams struct {
@@ -8505,9 +9556,12 @@ type RestoreAssetsParams struct {
 	OwnerId pgtype.UUID
 }
 
-func (q *Queries) RestoreAssets(ctx context.Context, arg RestoreAssetsParams) error {
-	_, err := q.db.Exec(ctx, restoreAssets, arg.Column1, arg.OwnerId)
-	return err
+func (q *Queries) RestoreAssets(ctx context.Context, arg RestoreAssetsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, restoreAssets, arg.Column1, arg.OwnerId)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const restoreUser = `-- name: RestoreUser :one
@@ -9847,7 +10901,9 @@ UPDATE assets
 SET "encodedVideoPath" = $2,
     "updatedAt" = now(),
     "updateId" = immich_uuid_v7()
-WHERE id = $1 AND "deletedAt" IS NULL
+WHERE id = $1
+  AND "deletedAt" IS NULL
+  AND status != 'deleted'::assets_status_enum
 RETURNING id, "deviceAssetId", "ownerId", "deviceId", type, "originalPath", "fileCreatedAt", "fileModifiedAt", "isFavorite", duration, "encodedVideoPath", checksum, "livePhotoVideoId", "updatedAt", "createdAt", "originalFileName", "sidecarPath", thumbhash, "isOffline", "libraryId", "isExternal", "deletedAt", "localDateTime", "stackId", "duplicateId", status, "updateId", visibility
 `
 

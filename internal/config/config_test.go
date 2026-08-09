@@ -36,11 +36,17 @@ func TestServerConfig(t *testing.T) {
 	assert.Equal(t, "/metrics", cfg.MetricsPath)
 }
 
+func TestServerMetricsDefaultToDisabled(t *testing.T) {
+	var cfg Config
+	setDefaults(&cfg)
+	assert.False(t, cfg.Server.MetricsEnabled)
+}
+
 func TestDatabaseConfig(t *testing.T) {
 	cfg := DatabaseConfig{
 		URL:             "postgres://user:pass@localhost:5432/db",
 		MaxOpenConns:    25,
-		MaxIdleConns:    5,
+		MinIdleConns:    5,
 		MaxConnLifetime: time.Hour,
 		ConnectTimeout:  30 * time.Second,
 		QueryTimeout:    30 * time.Second,
@@ -50,7 +56,7 @@ func TestDatabaseConfig(t *testing.T) {
 
 	assert.Equal(t, "postgres://user:pass@localhost:5432/db", cfg.URL)
 	assert.Equal(t, 25, cfg.MaxOpenConns)
-	assert.Equal(t, 5, cfg.MaxIdleConns)
+	assert.Equal(t, 5, cfg.MinIdleConns)
 	assert.Equal(t, time.Hour, cfg.MaxConnLifetime)
 	assert.False(t, cfg.LogQueries)
 	assert.True(t, cfg.AutoMigrate)
@@ -161,55 +167,73 @@ database:
   max_open_conns: 10
 
 auth:
-  jwt_secret: "test-secret"
+  jwt_secret: "0123456789abcdef0123456789abcdef"
   password_min_length: 10
 `
 		err := os.WriteFile(configPath, []byte(configContent), 0o600)
 		require.NoError(t, err)
 
-		// Test loading - Note: LoadConfig may not be exported
-		// This is a conceptual test that would need adjustment based on actual implementation
+		cfg, err := LoadConfig(configPath)
+		require.NoError(t, err)
+		assert.Equal(t, "127.0.0.1:8080", cfg.Server.Address)
+		assert.Equal(t, "0123456789abcdef0123456789abcdef", cfg.Auth.JWTSecret)
 	})
 
 	t.Run("handles missing config file gracefully", func(t *testing.T) {
-		// Try to load from non-existent path
-		// Should fall back to defaults or environment variables
-		// Actual behavior depends on implementation
+		cfg, err := LoadConfigWithoutValidation(filepath.Join(t.TempDir(), "missing.yaml"))
+		require.NoError(t, err)
+		assert.Equal(t, "0.0.0.0:8080", cfg.Server.Address)
+	})
+
+	t.Run("rejects unknown YAML fields", func(t *testing.T) {
+		configPath := filepath.Join(t.TempDir(), "config.yaml")
+		require.NoError(t, os.WriteFile(configPath, []byte("storage:\n  upload_location: ./ignored\n"), 0o600))
+
+		_, err := LoadConfigWithoutValidation(configPath)
+		require.ErrorContains(t, err, "field upload_location not found")
 	})
 }
 
+func TestShippedConfigUsesOnlySupportedFields(t *testing.T) {
+	_, err := LoadConfigWithoutValidation(filepath.Join("..", "..", "config.yaml"))
+	require.NoError(t, err)
+}
+
 func TestConfigValidation(t *testing.T) {
-	t.Run("valid config passes validation", func(t *testing.T) {
-		cfg := &Config{
-			Server: ServerConfig{
-				Address: "0.0.0.0:8080",
-			},
-			Database: DatabaseConfig{
-				URL: "postgres://user:pass@localhost:5432/db",
-			},
-			Auth: AuthConfig{
-				JWTSecret:         "secret-key-long-enough",
-				PasswordMinLength: 8,
-			},
-		}
+	tests := []struct {
+		name    string
+		secret  string
+		wantErr string
+	}{
+		{name: "valid 32 byte secret", secret: "0123456789abcdef0123456789abcdef"},
+		{name: "missing", wantErr: "AUTH_JWT_SECRET is required"},
+		{name: "too short", secret: "short-but-not-a-placeholder", wantErr: "at least 32 bytes"},
+		{
+			name:    "shipped placeholder",
+			secret:  "your-super-secret-jwt-key-change-this-in-production",
+			wantErr: "placeholder value",
+		},
+		{
+			name:    "padded change-me placeholder",
+			secret:  "CHANGE_ME_32_BYTES_CHANGE_ME_32_BYTES",
+			wantErr: "placeholder value",
+		},
+	}
 
-		// If validateConfig is exported, test it
-		// err := validateConfig(cfg)
-		// assert.NoError(t, err)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var cfg Config
+			setDefaults(&cfg)
+			cfg.Auth.JWTSecret = tc.secret
 
-		assert.NotNil(t, cfg)
-	})
-
-	t.Run("missing required fields", func(t *testing.T) {
-		cfg := &Config{
-			Auth: AuthConfig{
-				JWTSecret: "", // Empty JWT secret should fail validation
-			},
-		}
-
-		// Test validation failure
-		assert.NotNil(t, cfg)
-	})
+			err := validateConfig(&cfg)
+			if tc.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorContains(t, err, tc.wantErr)
+		})
+	}
 }
 
 func TestTLSConfig(t *testing.T) {
@@ -233,22 +257,24 @@ func TestTLSConfig(t *testing.T) {
 		assert.True(t, cfg.Enabled)
 		assert.Equal(t, "/path/to/cert.pem", cfg.CertFile)
 		assert.Equal(t, "/path/to/key.pem", cfg.KeyFile)
-		assert.False(t, cfg.AutoGenerate)
-	})
-
-	t.Run("TLS with auto-generate", func(t *testing.T) {
-		cfg := TLSConfig{
-			Enabled:      true,
-			AutoGenerate: true,
-		}
-
-		assert.True(t, cfg.Enabled)
-		assert.True(t, cfg.AutoGenerate)
 	})
 }
 
+func TestTLSRequiresCertificatePair(t *testing.T) {
+	var cfg Config
+	setDefaults(&cfg)
+	cfg.Auth.JWTSecret = "0123456789abcdef0123456789abcdef"
+	cfg.Server.TLS.Enabled = true
+
+	require.ErrorContains(t, validateConfig(&cfg), "TLS_CERT_FILE and TLS_KEY_FILE")
+
+	cfg.Server.TLS.CertFile = "/tls/cert.pem"
+	cfg.Server.TLS.KeyFile = "/tls/key.pem"
+	require.NoError(t, validateConfig(&cfg))
+}
+
 func TestLoadConfigFromEnv_JobsRetryMaxRetries(t *testing.T) {
-	t.Setenv("AUTH_JWT_SECRET", "test-secret-for-env")
+	t.Setenv("AUTH_JWT_SECRET", "test-secret-for-env-0123456789abcdef")
 	t.Setenv("DATABASE_URL", "postgres://user:pass@localhost:5432/db")
 	t.Setenv("SERVER_ADDRESS", "0.0.0.0:8080")
 	t.Setenv("SERVER_GRPC_ADDRESS", "0.0.0.0:9090")
@@ -257,4 +283,11 @@ func TestLoadConfigFromEnv_JobsRetryMaxRetries(t *testing.T) {
 	cfg, err := LoadConfig("")
 	require.NoError(t, err)
 	assert.Equal(t, 25, cfg.Jobs.RetryMaxRetries)
+}
+
+func TestDeprecatedMaximumIdleConnectionsSettingIsRejected(t *testing.T) {
+	t.Setenv("DATABASE_MAX_IDLE_CONNS", "5")
+
+	_, err := LoadConfigWithoutValidation("")
+	require.ErrorContains(t, err, "DATABASE_MIN_IDLE_CONNS")
 }

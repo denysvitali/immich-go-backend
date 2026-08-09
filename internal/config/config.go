@@ -1,10 +1,12 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/denysvitali/immich-go-backend/internal/storage"
@@ -152,9 +154,6 @@ type TLSConfig struct {
 
 	// Private key file path
 	KeyFile string `yaml:"key_file"`
-
-	// Auto-generate self-signed certificate
-	AutoGenerate bool `yaml:"auto_generate"`
 }
 
 // DatabaseConfig represents database configuration
@@ -165,8 +164,8 @@ type DatabaseConfig struct {
 	// Maximum number of open connections
 	MaxOpenConns int `yaml:"max_open_conns"`
 
-	// Maximum number of idle connections
-	MaxIdleConns int `yaml:"max_idle_conns"`
+	// Minimum number of idle connections retained by pgxpool
+	MinIdleConns int `yaml:"min_idle_conns"`
 
 	// Maximum connection lifetime
 	MaxConnLifetime time.Duration `yaml:"max_conn_lifetime"`
@@ -346,8 +345,28 @@ type FeatureConfig struct {
 	SharingEnabled bool `yaml:"sharing_enabled"`
 }
 
-// LoadConfig loads configuration from file and environment variables
+const minJWTSecretBytes = 32
+
+// LoadConfig loads configuration from file and environment variables and
+// validates that it is safe and complete enough to start the server.
 func LoadConfig(configPath string) (*Config, error) {
+	config, err := LoadConfigWithoutValidation(configPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := validateConfig(config); err != nil {
+		return nil, fmt.Errorf("invalid configuration: %w", err)
+	}
+
+	return config, nil
+}
+
+// LoadConfigWithoutValidation loads and resolves configuration without
+// applying server-runtime validation. It is intended for utility commands
+// such as version, migrations, and OpenAPI coverage that do not sign tokens or
+// start network listeners. Server startup must use LoadConfig.
+func LoadConfigWithoutValidation(configPath string) (*Config, error) {
 	config := &Config{}
 
 	// Set defaults
@@ -365,11 +384,6 @@ func LoadConfig(configPath string) (*Config, error) {
 		return nil, fmt.Errorf("failed to load config from environment: %w", err)
 	}
 
-	// Validate configuration
-	if err := validateConfig(config); err != nil {
-		return nil, fmt.Errorf("invalid configuration: %w", err)
-	}
-
 	return config, nil
 }
 
@@ -385,7 +399,7 @@ func setDefaults(config *Config) {
 		CORSEnabled:        true,
 		CORSAllowedOrigins: []string{"*"},
 		RequestLogging:     true,
-		MetricsEnabled:     true,
+		MetricsEnabled:     false,
 		MetricsPath:        "/metrics",
 		HealthCheckEnabled: true,
 		HealthCheckPath:    "/health",
@@ -394,7 +408,7 @@ func setDefaults(config *Config) {
 	config.Database = DatabaseConfig{
 		URL:             "postgres://immich:immich@localhost:5432/immich?sslmode=disable",
 		MaxOpenConns:    25,
-		MaxIdleConns:    5,
+		MinIdleConns:    5,
 		MaxConnLifetime: time.Hour,
 		ConnectTimeout:  30 * time.Second,
 		QueryTimeout:    30 * time.Second,
@@ -497,100 +511,192 @@ func loadFromFile(config *Config, configPath string) error {
 		return err
 	}
 
-	return yaml.Unmarshal(data, config)
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(config); err != nil {
+		return fmt.Errorf("decode configuration (unknown fields are not allowed): %w", err)
+	}
+	return nil
 }
 
-// loadFromEnv loads configuration from environment variables
+// configEnvBinding is one environment variable in the public runtime contract.
+// Keeping the name and setter together lets tests prove that every literal
+// variable emitted by the Helm chart is understood by the binary.
+type configEnvBinding struct {
+	name  string
+	apply func(*Config, string) error
+}
+
+func stringEnv(name string, set func(*Config, string)) configEnvBinding {
+	return configEnvBinding{
+		name: name,
+		apply: func(config *Config, value string) error {
+			set(config, value)
+			return nil
+		},
+	}
+}
+
+func boolEnv(name string, set func(*Config, bool)) configEnvBinding {
+	return configEnvBinding{
+		name: name,
+		apply: func(config *Config, value string) error {
+			parsed, err := strconv.ParseBool(value)
+			if err != nil {
+				return fmt.Errorf("%s must be a boolean: %w", name, err)
+			}
+			set(config, parsed)
+			return nil
+		},
+	}
+}
+
+func intEnv(name string, set func(*Config, int)) configEnvBinding {
+	return configEnvBinding{
+		name: name,
+		apply: func(config *Config, value string) error {
+			parsed, err := strconv.Atoi(value)
+			if err != nil {
+				return fmt.Errorf("%s must be an integer: %w", name, err)
+			}
+			set(config, parsed)
+			return nil
+		},
+	}
+}
+
+func durationEnv(name string, set func(*Config, time.Duration)) configEnvBinding {
+	return configEnvBinding{
+		name: name,
+		apply: func(config *Config, value string) error {
+			parsed, err := time.ParseDuration(value)
+			if err != nil {
+				return fmt.Errorf("%s must be a Go duration such as 30s or 1h: %w", name, err)
+			}
+			set(config, parsed)
+			return nil
+		},
+	}
+}
+
+func stringListEnv(name string, set func(*Config, []string)) configEnvBinding {
+	return configEnvBinding{
+		name: name,
+		apply: func(config *Config, value string) error {
+			if strings.TrimSpace(value) == "" {
+				set(config, nil)
+				return nil
+			}
+
+			items := strings.Split(value, ",")
+			for i := range items {
+				items[i] = strings.TrimSpace(items[i])
+				if items[i] == "" {
+					return fmt.Errorf("%s must be a comma-separated list without empty entries", name)
+				}
+			}
+			set(config, items)
+			return nil
+		},
+	}
+}
+
+var configEnvBindings = []configEnvBinding{
+	stringEnv("SERVER_ADDRESS", func(c *Config, v string) { c.Server.Address = v }),
+	stringEnv("SERVER_GRPC_ADDRESS", func(c *Config, v string) { c.Server.GRPCAddress = v }),
+	durationEnv("SERVER_READ_TIMEOUT", func(c *Config, v time.Duration) { c.Server.ReadTimeout = v }),
+	durationEnv("SERVER_WRITE_TIMEOUT", func(c *Config, v time.Duration) { c.Server.WriteTimeout = v }),
+	durationEnv("SERVER_IDLE_TIMEOUT", func(c *Config, v time.Duration) { c.Server.IdleTimeout = v }),
+	durationEnv("SERVER_SHUTDOWN_TIMEOUT", func(c *Config, v time.Duration) { c.Server.ShutdownTimeout = v }),
+	boolEnv("SERVER_CORS_ENABLED", func(c *Config, v bool) { c.Server.CORSEnabled = v }),
+	stringListEnv("SERVER_CORS_ALLOWED_ORIGINS", func(c *Config, v []string) { c.Server.CORSAllowedOrigins = v }),
+	boolEnv("SERVER_REQUEST_LOGGING", func(c *Config, v bool) { c.Server.RequestLogging = v }),
+	boolEnv("SERVER_METRICS_ENABLED", func(c *Config, v bool) { c.Server.MetricsEnabled = v }),
+	stringEnv("SERVER_METRICS_PATH", func(c *Config, v string) { c.Server.MetricsPath = v }),
+	boolEnv("SERVER_HEALTH_CHECK_ENABLED", func(c *Config, v bool) { c.Server.HealthCheckEnabled = v }),
+	stringEnv("SERVER_HEALTH_CHECK_PATH", func(c *Config, v string) { c.Server.HealthCheckPath = v }),
+	boolEnv("TLS_ENABLED", func(c *Config, v bool) { c.Server.TLS.Enabled = v }),
+	stringEnv("TLS_CERT_FILE", func(c *Config, v string) { c.Server.TLS.CertFile = v }),
+	stringEnv("TLS_KEY_FILE", func(c *Config, v string) { c.Server.TLS.KeyFile = v }),
+
+	stringEnv("DATABASE_URL", func(c *Config, v string) { c.Database.URL = v }),
+	intEnv("DATABASE_MAX_OPEN_CONNS", func(c *Config, v int) { c.Database.MaxOpenConns = v }),
+	intEnv("DATABASE_MIN_IDLE_CONNS", func(c *Config, v int) { c.Database.MinIdleConns = v }),
+	{
+		name: "DATABASE_MAX_IDLE_CONNS",
+		apply: func(*Config, string) error {
+			return fmt.Errorf("DATABASE_MAX_IDLE_CONNS is unsupported because pgxpool has no maximum-idle setting; use DATABASE_MIN_IDLE_CONNS")
+		},
+	},
+	durationEnv("DATABASE_MAX_CONN_LIFETIME", func(c *Config, v time.Duration) { c.Database.MaxConnLifetime = v }),
+	durationEnv("DATABASE_CONNECT_TIMEOUT", func(c *Config, v time.Duration) { c.Database.ConnectTimeout = v }),
+	durationEnv("DATABASE_QUERY_TIMEOUT", func(c *Config, v time.Duration) { c.Database.QueryTimeout = v }),
+	boolEnv("DATABASE_LOG_QUERIES", func(c *Config, v bool) { c.Database.LogQueries = v }),
+	boolEnv("IMMICH_DATABASE_AUTO_MIGRATE", func(c *Config, v bool) { c.Database.AutoMigrate = v }),
+
+	stringEnv("AUTH_JWT_SECRET", func(c *Config, v string) { c.Auth.JWTSecret = v }),
+	durationEnv("AUTH_JWT_EXPIRY", func(c *Config, v time.Duration) { c.Auth.JWTExpiry = v }),
+	durationEnv("AUTH_JWT_REFRESH_EXPIRY", func(c *Config, v time.Duration) { c.Auth.JWTRefreshExpiry = v }),
+	stringEnv("AUTH_JWT_ISSUER", func(c *Config, v string) { c.Auth.JWTIssuer = v }),
+	boolEnv("AUTH_REGISTRATION_ENABLED", func(c *Config, v bool) { c.Auth.RegistrationEnabled = v }),
+	intEnv("AUTH_LOGIN_RATE_LIMIT", func(c *Config, v int) { c.Auth.LoginRateLimit = v }),
+	durationEnv("AUTH_LOGIN_RATE_WINDOW", func(c *Config, v time.Duration) { c.Auth.LoginRateWindow = v }),
+
+	stringEnv("STORAGE_BACKEND", func(c *Config, v string) { c.Storage.Backend = v }),
+	stringEnv("STORAGE_LOCAL_ROOT", func(c *Config, v string) { c.Storage.Local.RootPath = v }),
+	stringEnv("UPLOAD_TEMP_DIR", func(c *Config, v string) { c.Storage.Upload.TempDir = v }),
+	boolEnv("S3_ENABLED", func(c *Config, v bool) { c.Storage.S3.Enabled = v }),
+	boolEnv("S3_DIRECT_UPLOAD", func(c *Config, v bool) { c.Storage.S3.DirectUpload = v }),
+	stringEnv("S3_ENDPOINT", func(c *Config, v string) { c.Storage.S3.Endpoint = v }),
+	stringEnv("S3_REGION", func(c *Config, v string) { c.Storage.S3.Region = v }),
+	stringEnv("S3_BUCKET", func(c *Config, v string) { c.Storage.S3.Bucket = v }),
+	stringEnv("S3_ACCESS_KEY_ID", func(c *Config, v string) { c.Storage.S3.AccessKeyID = v }),
+	stringEnv("S3_SECRET_ACCESS_KEY", func(c *Config, v string) { c.Storage.S3.SecretAccessKey = v }),
+	boolEnv("S3_USE_SSL", func(c *Config, v bool) { c.Storage.S3.UseSSL = v }),
+	stringEnv("S3_PATH_PREFIX", func(c *Config, v string) { c.Storage.S3.PathPrefix = v }),
+	boolEnv("S3_FORCE_PATH_STYLE", func(c *Config, v bool) { c.Storage.S3.ForcePathStyle = v }),
+	durationEnv("S3_PRESIGNED_URL_EXPIRY", func(c *Config, v time.Duration) { c.Storage.S3.PresignedURLExpiry = v }),
+
+	boolEnv("JOBS_ENABLED", func(c *Config, v bool) { c.Jobs.Enabled = v }),
+	stringEnv("JOBS_REDIS_URL", func(c *Config, v string) { c.Jobs.RedisURL = v }),
+	intEnv("JOBS_WORKERS", func(c *Config, v int) { c.Jobs.Workers = v }),
+	intEnv("IMMICH_JOBS_RETRY_MAX_RETRIES", func(c *Config, v int) { c.Jobs.RetryMaxRetries = v }),
+	durationEnv("JOBS_JOB_TIMEOUT", func(c *Config, v time.Duration) { c.Jobs.JobTimeout = v }),
+
+	stringEnv("LOG_LEVEL", func(c *Config, v string) { c.Logging.Level = v }),
+	stringEnv("LOG_FORMAT", func(c *Config, v string) { c.Logging.Format = v }),
+	stringEnv("LOG_OUTPUT", func(c *Config, v string) { c.Logging.Output = v }),
+
+	boolEnv("FEATURE_MACHINE_LEARNING_ENABLED", func(c *Config, v bool) { c.Features.MachineLearningEnabled = v }),
+	boolEnv("FEATURE_FACE_RECOGNITION_ENABLED", func(c *Config, v bool) { c.Features.FaceRecognitionEnabled = v }),
+	boolEnv("FEATURE_OBJECT_DETECTION_ENABLED", func(c *Config, v bool) { c.Features.ObjectDetectionEnabled = v }),
+	boolEnv("FEATURE_CLIP_SEARCH_ENABLED", func(c *Config, v bool) { c.Features.CLIPSearchEnabled = v }),
+	boolEnv("FEATURE_VIDEO_TRANSCODING_ENABLED", func(c *Config, v bool) { c.Features.VideoTranscodingEnabled = v }),
+	boolEnv("FEATURE_THUMBNAIL_GENERATION_ENABLED", func(c *Config, v bool) { c.Features.ThumbnailGenerationEnabled = v }),
+	boolEnv("FEATURE_EXIF_EXTRACTION_ENABLED", func(c *Config, v bool) { c.Features.EXIFExtractionEnabled = v }),
+	boolEnv("FEATURE_DUPLICATE_DETECTION_ENABLED", func(c *Config, v bool) { c.Features.DuplicateDetectionEnabled = v }),
+	boolEnv("FEATURE_BACKUP_SYNC_ENABLED", func(c *Config, v bool) { c.Features.BackupSyncEnabled = v }),
+	boolEnv("FEATURE_SHARING_ENABLED", func(c *Config, v bool) { c.Features.SharingEnabled = v }),
+
+	boolEnv("MACHINE_LEARNING_ENABLED", func(c *Config, v bool) { c.MachineLearning.Enabled = v }),
+	stringEnv("MACHINE_LEARNING_URL", func(c *Config, v string) { c.MachineLearning.URL = v }),
+	durationEnv("MACHINE_LEARNING_TIMEOUT", func(c *Config, v time.Duration) { c.MachineLearning.Timeout = v }),
+	stringEnv("IMMICH_WEBUI_DIR", func(c *Config, v string) { c.WebUIDir = v }),
+}
+
+// loadFromEnv applies environment overrides. A present variable is always
+// authoritative, including an explicitly empty string. Invalid typed values
+// are rejected instead of silently falling back to a different configuration.
 func loadFromEnv(config *Config) error {
-	// This is a simplified implementation
-	// In a real application, you might want to use a library like viper
-	// or implement a more sophisticated environment variable mapping
-
-	if val := os.Getenv("SERVER_ADDRESS"); val != "" {
-		config.Server.Address = val
-	}
-	if val := os.Getenv("SERVER_GRPC_ADDRESS"); val != "" {
-		config.Server.GRPCAddress = val
-	}
-
-	if val := os.Getenv("DATABASE_URL"); val != "" {
-		config.Database.URL = val
-	}
-	if val := os.Getenv("IMMICH_DATABASE_AUTO_MIGRATE"); val != "" {
-		if b, err := strconv.ParseBool(val); err == nil {
-			config.Database.AutoMigrate = b
+	for _, binding := range configEnvBindings {
+		value, ok := os.LookupEnv(binding.name)
+		if !ok {
+			continue
+		}
+		if err := binding.apply(config, value); err != nil {
+			return err
 		}
 	}
-
-	if val := os.Getenv("AUTH_JWT_SECRET"); val != "" {
-		config.Auth.JWTSecret = val
-	}
-	if val := os.Getenv("AUTH_LOGIN_RATE_LIMIT"); val != "" {
-		if n, err := strconv.Atoi(val); err == nil {
-			config.Auth.LoginRateLimit = n
-		}
-	}
-	if val := os.Getenv("AUTH_LOGIN_RATE_WINDOW"); val != "" {
-		if d, err := time.ParseDuration(val); err == nil {
-			config.Auth.LoginRateWindow = d
-		}
-	}
-
-	if val := os.Getenv("STORAGE_BACKEND"); val != "" {
-		config.Storage.Backend = val
-	}
-	if val := os.Getenv("STORAGE_LOCAL_ROOT"); val != "" {
-		config.Storage.Local.RootPath = val
-	}
-	if val := os.Getenv("UPLOAD_TEMP_DIR"); val != "" {
-		config.Storage.Upload.TempDir = val
-	}
-
-	if val := os.Getenv("IMMICH_WEBUI_DIR"); val != "" {
-		config.WebUIDir = val
-	}
-
-	if val := os.Getenv("IMMICH_JOBS_RETRY_MAX_RETRIES"); val != "" {
-		if n, err := strconv.Atoi(val); err == nil {
-			config.Jobs.RetryMaxRetries = n
-		}
-	}
-
-	// Machine learning
-	if val := os.Getenv("MACHINE_LEARNING_ENABLED"); val != "" {
-		if b, err := strconv.ParseBool(val); err == nil {
-			config.MachineLearning.Enabled = b
-		}
-	}
-	if val := os.Getenv("MACHINE_LEARNING_URL"); val != "" {
-		config.MachineLearning.URL = val
-	}
-	if val := os.Getenv("MACHINE_LEARNING_TIMEOUT"); val != "" {
-		if d, err := time.ParseDuration(val); err == nil {
-			config.MachineLearning.Timeout = d
-		}
-	}
-	if val := os.Getenv("FEATURE_MACHINE_LEARNING_ENABLED"); val != "" {
-		if b, err := strconv.ParseBool(val); err == nil {
-			config.Features.MachineLearningEnabled = b
-		}
-	}
-	if val := os.Getenv("FEATURE_FACE_RECOGNITION_ENABLED"); val != "" {
-		if b, err := strconv.ParseBool(val); err == nil {
-			config.Features.FaceRecognitionEnabled = b
-		}
-	}
-	if val := os.Getenv("FEATURE_CLIP_SEARCH_ENABLED"); val != "" {
-		if b, err := strconv.ParseBool(val); err == nil {
-			config.Features.CLIPSearchEnabled = b
-		}
-	}
-	if val := os.Getenv("FEATURE_DUPLICATE_DETECTION_ENABLED"); val != "" {
-		if b, err := strconv.ParseBool(val); err == nil {
-			config.Features.DuplicateDetectionEnabled = b
-		}
-	}
-
 	return nil
 }
 
@@ -626,9 +732,8 @@ func (c *Config) DuplicateDetectionActive() bool {
 
 // validateConfig validates the configuration
 func validateConfig(config *Config) error {
-	// Validate JWT secret
-	if config.Auth.JWTSecret == "" {
-		return fmt.Errorf("AUTH_JWT_SECRET is required")
+	if err := validateJWTSecret(config.Auth.JWTSecret); err != nil {
+		return err
 	}
 
 	// Validate database URL
@@ -648,6 +753,34 @@ func validateConfig(config *Config) error {
 
 	if config.Server.GRPCAddress == "" {
 		return fmt.Errorf("SERVER_GRPC_ADDRESS is required")
+	}
+	if config.Server.TLS.Enabled && (config.Server.TLS.CertFile == "" || config.Server.TLS.KeyFile == "") {
+		return fmt.Errorf("TLS_CERT_FILE and TLS_KEY_FILE are required when TLS is enabled")
+	}
+
+	return nil
+}
+
+func validateJWTSecret(secret string) error {
+	trimmed := strings.TrimSpace(secret)
+	if trimmed == "" {
+		return fmt.Errorf("AUTH_JWT_SECRET is required")
+	}
+
+	// Normalize separators so common variants such as CHANGE_ME,
+	// change-me, and "change me" cannot be made to look production-safe by
+	// padding or repetition.
+	normalized := strings.ToLower(trimmed)
+	compact := strings.NewReplacer("-", "", "_", "", " ", "").Replace(normalized)
+	if normalized == "your-super-secret-jwt-key-change-this-in-production" ||
+		strings.Contains(compact, "changeme") ||
+		strings.Contains(compact, "replaceme") ||
+		strings.Contains(compact, "yourjwtsecret") {
+		return fmt.Errorf("AUTH_JWT_SECRET must not be a placeholder value")
+	}
+
+	if len(trimmed) < minJWTSecretBytes {
+		return fmt.Errorf("AUTH_JWT_SECRET must be at least %d bytes", minJWTSecretBytes)
 	}
 
 	return nil

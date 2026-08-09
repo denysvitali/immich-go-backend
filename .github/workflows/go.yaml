@@ -12,7 +12,7 @@ permissions:
   security-events: write  # Required for uploading SARIF results
 
 env:
-  GO_VERSION: '1.24'
+  GO_VERSION: '1.26.5'
   BUF_VERSION: '1.49.0'
   IMMICH_UPSTREAM_REF: 'v2.7.5'
   OPENAPI_UPSTREAM_REF: 'v3.0.1'
@@ -91,6 +91,9 @@ jobs:
 
     - name: Build application
       run: go build -o bin/immich-go-backend ./cmd
+
+    - name: Check reachable runtime vulnerabilities
+      run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./cmd
 
     - name: Check OpenAPI parity
       run: |
@@ -222,8 +225,8 @@ jobs:
         buf breaking --against 'https://github.com/${{ github.repository }}.git#branch=${{ github.base_ref }}'
 
   # Job 4: Security Scanning.
-  # Gosec runs on every push/PR. Trivy (slow vuln-DB pull) moved to a
-  # nightly workflow in security-nightly.yaml.
+  # Source and reachable dependency checks run on every push/PR. Trivy (slow
+  # image/filesystem DB pull) lives in security-nightly.yaml.
   security:
     name: Security Scan
     runs-on: ubuntu-latest

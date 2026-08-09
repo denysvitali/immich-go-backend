@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
@@ -11,7 +12,6 @@ import (
 	"github.com/denysvitali/immich-go-backend/internal/db/sqlc"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
-	"golang.org/x/crypto/bcrypt"
 )
 
 type Service struct {
@@ -44,17 +44,13 @@ func (s *Service) GenerateAPIKey() (string, error) {
 
 // HashAPIKey hashes an API key for storage
 func (s *Service) HashAPIKey(key string) (string, error) {
-	hashedBytes, err := bcrypt.GenerateFromPassword([]byte(key), bcrypt.DefaultCost)
-	if err != nil {
-		return "", fmt.Errorf("failed to hash API key: %w", err)
-	}
-	return string(hashedBytes), nil
+	return hashAPIKey(key), nil
 }
 
 // VerifyAPIKey verifies an API key against its hash
 func (s *Service) VerifyAPIKey(key, hash string) bool {
-	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(key))
-	return err == nil
+	want := hashAPIKey(key)
+	return subtle.ConstantTimeCompare([]byte(want), []byte(hash)) == 1
 }
 
 // CreateAPIKey creates a new API key for a user
@@ -112,8 +108,8 @@ func (s *Service) ValidateAPIKey(ctx context.Context, rawKey string) (*sqlc.ApiK
 	// Note: In production, you'd want to implement caching here to avoid
 	// hitting the database for every API request
 
-	// Look up the API key directly in the database
-	// The key is stored hashed in the database, so we compare the hashed value
+	// API keys contain 256 bits of randomness, so a deterministic SHA-256 digest
+	// is safe for indexed lookup without making the credential recoverable.
 	apiKey, err := s.db.GetApiKey(ctx, hashAPIKey(rawKey))
 	if err != nil {
 		return nil, fmt.Errorf("invalid API key: %w", err)

@@ -121,7 +121,7 @@ livenessProbe:
 readinessProbe:
   enabled: true
   httpGet:
-    path: /api/server/ping
+    path: /health
     port: http
   initialDelaySeconds: 5
   periodSeconds: 10
@@ -176,9 +176,11 @@ database:
   # postgres://user:pass@host:5432/immich?sslmode=require
   url: ""
   maxOpenConns: "25"
-  maxIdleConns: "5"
+  minIdleConns: "5"
   maxConnLifetime: "1h"
   connectTimeout: "30s"
+  queryTimeout: "30s"
+  logQueries: "false"
   # Run migrations on serve. Prefer true for single-replica; use Job/init for multi-replica.
   autoMigrate: "true"
 
@@ -197,13 +199,16 @@ auth:
   registrationEnabled: "true"
 
 ## Use an existing Secret instead of creating one from values.
-## Keys expected: DATABASE_URL, AUTH_JWT_SECRET (and optionally JOBS_REDIS_URL, S3_*).
+## Keys expected: DATABASE_URL and AUTH_JWT_SECRET. JOBS_REDIS_URL is optional;
+## S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY are required when S3 is selected.
 existingSecret: ""
 # Map secret keys if your secret uses different key names
 existingSecretKeys:
   databaseUrl: DATABASE_URL
   authJwtSecret: AUTH_JWT_SECRET
   jobsRedisUrl: JOBS_REDIS_URL
+  s3AccessKeyId: S3_ACCESS_KEY_ID
+  s3SecretAccessKey: S3_SECRET_ACCESS_KEY
 
 ## Storage backend: local | s3 | rclone
 storage:
@@ -228,10 +233,24 @@ storage:
 server:
   address: "0.0.0.0:3001"
   grpcAddress: "0.0.0.0:3002"
-  metricsEnabled: "true"
+  readTimeout: "30s"
+  writeTimeout: "30s"
+  idleTimeout: "120s"
+  shutdownTimeout: "30s"
+  # The endpoint is public; opt in after confirming scrape-network isolation.
+  metricsEnabled: "false"
   metricsPath: "/metrics"
   corsEnabled: "true"
+  corsAllowedOrigins:
+    - "*"
   requestLogging: "true"
+  healthCheckEnabled: "true"
+  healthCheckPath: "/health"
+  tls:
+    enabled: "false"
+    # Mount certificate files with extraVolumes/extraVolumeMounts when enabled.
+    certFile: ""
+    keyFile: ""
 
 ## Logging
 logging:
@@ -243,17 +262,28 @@ logging:
 features:
   machineLearningEnabled: "false"
   faceRecognitionEnabled: "false"
+  objectDetectionEnabled: "false"
   clipSearchEnabled: "false"
   videoTranscodingEnabled: "true"
   thumbnailGenerationEnabled: "true"
   exifExtractionEnabled: "true"
   duplicateDetectionEnabled: "false"
+  backupSyncEnabled: "true"
   sharingEnabled: "true"
+
+## External Immich machine-learning service. Both this and the relevant
+## feature flags above must be enabled before the backend sends ML requests.
+machineLearning:
+  enabled: "false"
+  url: ""
+  timeout: "60s"
 
 ## Jobs / asynq workers
 jobs:
   enabled: "true"
   workers: "4"
+  retryMaxRetries: "10"
+  jobTimeout: "30m"
 
 ## Optional static Immich web UI directory inside the image (if baked in)
 webuiDir: ""

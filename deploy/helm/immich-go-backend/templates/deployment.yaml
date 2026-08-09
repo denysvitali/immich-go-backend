@@ -92,6 +92,18 @@ spec:
                   name: {{ .Values.existingSecret }}
                   key: {{ .Values.existingSecretKeys.jobsRedisUrl }}
                   optional: true
+            {{- if and .Values.storage.s3.enabled (eq .Values.storage.backend "s3") }}
+            - name: S3_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecret }}
+                  key: {{ .Values.existingSecretKeys.s3AccessKeyId }}
+            - name: S3_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecret }}
+                  key: {{ .Values.existingSecretKeys.s3SecretAccessKey }}
+            {{- end }}
             {{- end }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}

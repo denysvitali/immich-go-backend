@@ -18,11 +18,13 @@ deploy/monitoring/
 
 | Path | When | Scrape target |
 |------|------|---------------|
-| App config `server.metrics_path` (default `/metrics`) | Documented in `DEPLOYMENT.md` / `server.metrics_enabled` | REST `:3001/metrics` |
-| OTel autoexport Prometheus exporter | `telemetry.NewProvider` + `OTEL_METRICS_EXPORTER=prometheus` | `OTEL_EXPORTER_PROMETHEUS_HOST:PORT` (default `localhost:9464`) `/metrics` |
-| OTLP | `OTEL_METRICS_EXPORTER=otlp` (or unset default for autoexport) + `OTEL_EXPORTER_OTLP_ENDPOINT` | Scrape collector / backend, not the app |
+| App config `server.metrics_path` (default `/metrics`) | `server.metrics_enabled: true` | Public REST endpoint `:3001/metrics` |
+| OTLP | `telemetry.metrics_enabled: true` plus `OTEL_METRICS_EXPORTER=otlp` (the autoexport default) and `OTEL_EXPORTER_OTLP_ENDPOINT` | Collector / backend, not the app |
 
-Instruments are created via `telemetry.GetMeter()` (`Meter("immich-go-backend")`) in domain services. Prometheus export uses `go.opentelemetry.io/otel/exporters/prometheus` naming:
+The REST endpoint and the OTLP exporter are readers on the same OpenTelemetry
+meter provider, so both receive instruments created by domain services after
+startup. Prometheus export uses `go.opentelemetry.io/otel/exporters/prometheus`
+naming:
 
 - Monotonic counters → `*_total` (names that already end in `_total` stay stable)
 - Histograms → `*_bucket` / `*_sum` / `*_count`
@@ -30,7 +32,7 @@ Instruments are created via `telemetry.GetMeter()` (`Meter("immich-go-backend")`
 - Attributes (e.g. `operation`) → labels
 - Optional `target_info`, `otel_scope_name`, `otel_scope_version`
 
-> **Note:** `telemetry.NewMetrics` in `internal/telemetry/telemetry.go` defines extra names (`http_requests_total`, `db_queries_total`, …) but **is not called** by the binary today. Those names are **not** included in the dashboard or alerts. There are also **no** `go_*` / `process_*` collectors registered in-tree — do not expect them unless you bridge a Prometheus registry with runtime collectors.
+> **Note:** `telemetry.NewMetrics` in `internal/telemetry/telemetry.go` defines extra names (`http_requests_total`, `db_queries_total`, …) but **is not called** by the binary today. Those names are **not** included in the dashboard or alerts. The REST registry does include the standard `go_*` and `process_*` collectors.
 
 ## Metric names used
 
