@@ -494,7 +494,7 @@ jobs:
         database:
           url: "postgres://immich:immich@127.0.0.1:5432/immich?sslmode=disable"
           max_open_conns: 10
-          max_idle_conns: 5
+          min_idle_conns: 5
           max_conn_lifetime: 1h
 
         logging:
@@ -535,11 +535,6 @@ jobs:
 
         features:
           video_transcoding_enabled: true
-
-        redis:
-          host: "127.0.0.1"
-          port: 6379
-          db: 0
         YAML
 
     - name: Start backend
