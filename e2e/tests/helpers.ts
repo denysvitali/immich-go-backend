@@ -189,35 +189,29 @@ export async function signUpAdmin(
 ): Promise<TestUser> {
   const admin = await ensureRootAdmin(request);
   const email = uniqueEmail(prefix);
-  const signup = await request.post('/api/auth/admin-sign-up', {
+  const created = await request.post('/api/admin/users', {
+    headers: admin.headers,
     data: { email, password, name },
   });
-  await expectOk(signup);
+  await expectOk(created);
+  const createdBody = (await created.json()) as { id: string; email: string; isAdmin: boolean };
+  expect(createdBody.email).toBe(email);
+  expect(createdBody.id).toBeTruthy();
+  expect(createdBody.isAdmin).toBe(false);
 
-  const signupBody = await signup.json();
-  expect(signupBody.accessToken).toBeTruthy();
-  expect(signupBody.userEmail).toBe(email);
-  expect(signupBody.userId).toBeTruthy();
-  expect(typeof signupBody.isAdmin).toBe('boolean');
-
-  const user = userFromAuthResponse(email, signupBody);
-
-  if (user.isAdmin) {
-    rootAdmin ??= user;
-    return user;
-  }
-
-  const promoted = await request.put(`/api/admin/users/${user.userId}`, {
+  const promoted = await request.put(`/api/admin/users/${createdBody.id}`, {
     headers: admin.headers,
     data: { isAdmin: true },
   });
   await expectOk(promoted);
 
-  const session = await login(request, user);
+  const session = await login(request, { email, password });
   expect(session.body.isAdmin).toBe(true);
 
   return {
-    ...user,
+    email,
+    password,
+    userId: createdBody.id,
     isAdmin: true,
     accessToken: session.accessToken,
     headers: session.headers,
@@ -229,17 +223,28 @@ export async function signUpUser(
   prefix = 'e2e-user',
   name = 'E2E User',
 ): Promise<TestUser> {
-  await ensureRootAdmin(request);
+  const admin = await ensureRootAdmin(request);
   const email = uniqueEmail(prefix);
-  const signup = await request.post('/api/auth/admin-sign-up', {
+  const created = await request.post('/api/admin/users', {
+    headers: admin.headers,
     data: { email, password, name },
   });
-  await expectOk(signup);
+  await expectOk(created);
+  const createdBody = (await created.json()) as { id: string; email: string; isAdmin: boolean };
+  expect(createdBody.email).toBe(email);
+  expect(createdBody.id).toBeTruthy();
+  expect(createdBody.isAdmin).toBe(false);
 
-  const user = userFromAuthResponse(email, await signup.json());
-  expect(user.isAdmin).toBe(false);
-
-  return user;
+  const session = await login(request, { email, password });
+  expect(session.body.isAdmin).toBe(false);
+  return {
+    email,
+    password,
+    userId: createdBody.id,
+    isAdmin: false,
+    accessToken: session.accessToken,
+    headers: session.headers,
+  };
 }
 
 export async function login(
